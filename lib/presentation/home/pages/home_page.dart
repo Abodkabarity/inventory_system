@@ -10,6 +10,14 @@ import '../bloc/branch_rules_state.dart';
 import '../bloc/catalog_bloc.dart';
 import '../bloc/catalog_event.dart';
 import '../bloc/catalog_state.dart';
+import '../bloc/demand_bloc/ordering_calc_bloc.dart';
+import '../bloc/demand_bloc/ordering_calc_event.dart';
+import '../bloc/demand_bloc/ordering_calc_state.dart';
+import '../bloc/demand_bloc/ordering_calcbloc_factory.dart';
+import '../bloc/stock_bloc/stock_bloc.dart';
+import '../bloc/stock_bloc/stock_bloc_factory.dart';
+import '../bloc/stock_bloc/stock_event.dart';
+import '../bloc/stock_bloc/stock_state.dart';
 import '../widgets/items_table.dart';
 
 class HomePage extends StatelessWidget {
@@ -21,6 +29,8 @@ class HomePage extends StatelessWidget {
       providers: [
         BlocProvider(create: (_) => CatalogBloc()),
         BlocProvider(create: (_) => BranchRulesBlocFactory.create()),
+        BlocProvider(create: (_) => StockBlocFactory.create()),
+        BlocProvider(create: (_) => OrderingCalcBlocFactory.create()),
         BlocProvider(create: (_) => BranchBloc()..add(const LoadMyBranch())),
       ],
       child: const _HomeView(),
@@ -38,6 +48,10 @@ class _HomeView extends StatefulWidget {
 class _HomeViewState extends State<_HomeView> {
   String? _loadedBranchRulesFor;
 
+  final String _storeName = 'STORE';
+
+  int _lastCalcKey = 0;
+
   String _normCode(String v) {
     var s = v.trim().replaceAll(' ', '');
     if (s.endsWith('.0')) s = s.substring(0, s.length - 2);
@@ -52,7 +66,12 @@ class _HomeViewState extends State<_HomeView> {
     if (_loadedBranchRulesFor == b) return;
 
     _loadedBranchRulesFor = b;
+
     context.read<BranchRulesBloc>().add(LoadBranchRules(b));
+
+    context.read<StockBloc>().add(
+      LoadStockMaps(branchName: b, storeName: _storeName),
+    );
   }
 
   void _onCreateOrderPressed(BuildContext context) {
@@ -104,6 +123,62 @@ class _HomeViewState extends State<_HomeView> {
     return v == null ? '' : v.toString();
   }
 
+  int _calcRowsKey({
+    required String branchName,
+    required List<Map<String, dynamic>> rows,
+  }) {
+    if (rows.isEmpty) return branchName.hashCode;
+
+    final first = _normCode((rows.first['item_code'] ?? '').toString());
+    final last = _normCode((rows.last['item_code'] ?? '').toString());
+
+    final len = rows.length;
+    final a = first.hashCode;
+    final b = last.hashCode;
+    final c = branchName.hashCode;
+
+    return len ^ a ^ (b << 1) ^ (c << 2);
+  }
+
+  void _triggerCalcIfReady({
+    required BuildContext context,
+    required String? branchName,
+    required CatalogState catalog,
+    required BranchRulesState rules,
+    required StockState stock,
+    required BranchState branchState,
+    required List<Map<String, dynamic>> mergedRows,
+  }) {
+    if (branchName == null || branchName.trim().isEmpty) return;
+    if (mergedRows.isEmpty) return;
+
+    final isLoading =
+        catalog.isLoading ||
+        rules.status == BranchRulesStatus.loading ||
+        branchState.status == BranchStatus.loading ||
+        stock.status == StockStatus.loading;
+
+    if (isLoading) return;
+
+    if (rules.status == BranchRulesStatus.loading) return;
+    if (rules.status == BranchRulesStatus.failure) return;
+
+    if (stock.status == StockStatus.loading) return;
+    if (stock.status == StockStatus.failure) return;
+
+    final key = _calcRowsKey(branchName: branchName, rows: mergedRows);
+    if (key == _lastCalcKey) return;
+
+    _lastCalcKey = key;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<OrderingCalcBloc>().add(
+        CalculateOrderingColumns(mergedRows),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<CatalogBloc, CatalogState>(
@@ -144,6 +219,7 @@ class _HomeViewState extends State<_HomeView> {
                     ),
                   ],
                   const SizedBox(height: 16),
+
                   BlocBuilder<BranchRulesBloc, BranchRulesState>(
                     builder: (context, rules) {
                       final inOrder = state.viewRows.where((r) {
@@ -163,7 +239,6 @@ class _HomeViewState extends State<_HomeView> {
                         final code = _normCode(
                           (r['item_code'] ?? '').toString(),
                         );
-
                         final type =
                             rules.formularyTypeByItemCode[code] ?? 'NON';
 
@@ -206,6 +281,7 @@ class _HomeViewState extends State<_HomeView> {
                       );
                     },
                   ),
+
                   const SizedBox(height: 16),
                   Expanded(
                     child: Container(
@@ -232,42 +308,90 @@ class _HomeViewState extends State<_HomeView> {
                             child:
                                 BlocBuilder<BranchRulesBloc, BranchRulesState>(
                                   builder: (context, rules) {
-                                    final mergedRows = _mergeRulesIntoRows(
-                                      rows: state.viewRows,
-                                      formularyTypeByItemCode:
-                                          rules.formularyTypeByItemCode,
-                                      assortmentByItemCode:
-                                          rules.assortmentByItemCode,
-                                      tmaByItemCode: rules.tmaByItemCode,
-                                      maxAdjByItemCode: rules.maxAdjByItemCode,
-                                      demand30ByItemCode: rules
-                                          .demand30ByItemCode, // <-- ADD THIS
-                                    );
-
-                                    return ItemsTable(
-                                      rows: mergedRows,
-                                      isLoading:
-                                          state.isLoading ||
-                                          rules.status ==
-                                              BranchRulesStatus.loading ||
-                                          branchState.status ==
-                                              BranchStatus.loading,
-                                      onCreateOrder: () =>
-                                          _onCreateOrderPressed(context),
-                                      onEditQty: (index, qty, reason) {
-                                        context.read<CatalogBloc>().add(
-                                          UpdateRowField(
-                                            index: index,
-                                            field: 'final_qty',
-                                            value: qty,
-                                          ),
+                                    return BlocBuilder<StockBloc, StockState>(
+                                      builder: (context, stock) {
+                                        final mergedRules = _mergeRulesIntoRows(
+                                          rows: state.viewRows,
+                                          formularyTypeByItemCode:
+                                              rules.formularyTypeByItemCode,
+                                          assortmentByItemCode:
+                                              rules.assortmentByItemCode,
+                                          tmaByItemCode: rules.tmaByItemCode,
+                                          maxAdjByItemCode:
+                                              rules.maxAdjByItemCode,
+                                          demand30ByItemCode:
+                                              rules.demand30ByItemCode,
                                         );
-                                        context.read<CatalogBloc>().add(
-                                          UpdateRowField(
-                                            index: index,
-                                            field: 'reason',
-                                            value: reason,
-                                          ),
+
+                                        final mergedRows = _mergeStockIntoRows(
+                                          rows: mergedRules,
+                                          storeStockByItemCode:
+                                              stock.storeStockByItemCode,
+                                          mismatchDiffByItemCode:
+                                              stock.mismatchDiffByItemCode,
+                                          pendingByItemCode:
+                                              stock.pendingByItemCode,
+                                          branchStockFinalByItemCode:
+                                              stock.branchStockFinalByItemCode,
+                                        );
+
+                                        _triggerCalcIfReady(
+                                          context: context,
+                                          branchName: branchName,
+                                          catalog: state,
+                                          rules: rules,
+                                          stock: stock,
+                                          branchState: branchState,
+                                          mergedRows: mergedRows,
+                                        );
+
+                                        return BlocBuilder<
+                                          OrderingCalcBloc,
+                                          OrderingCalcState
+                                        >(
+                                          builder: (context, calc) {
+                                            final rowsForTable =
+                                                calc.status ==
+                                                    OrderingCalcStatus.success
+                                                ? calc.rows
+                                                : mergedRows;
+
+                                            return ItemsTable(
+                                              rows: rowsForTable,
+                                              isLoading:
+                                                  state.isLoading ||
+                                                  rules.status ==
+                                                      BranchRulesStatus
+                                                          .loading ||
+                                                  branchState.status ==
+                                                      BranchStatus.loading ||
+                                                  stock.status ==
+                                                      StockStatus.loading ||
+                                                  calc.status ==
+                                                      OrderingCalcStatus
+                                                          .calculating,
+                                              onCreateOrder: () =>
+                                                  _onCreateOrderPressed(
+                                                    context,
+                                                  ),
+                                              onEditQty: (index, qty, reason) {
+                                                context.read<CatalogBloc>().add(
+                                                  UpdateRowField(
+                                                    index: index,
+                                                    field: 'final_qty',
+                                                    value: qty,
+                                                  ),
+                                                );
+                                                context.read<CatalogBloc>().add(
+                                                  UpdateRowField(
+                                                    index: index,
+                                                    field: 'reason',
+                                                    value: reason,
+                                                  ),
+                                                );
+                                              },
+                                            );
+                                          },
                                         );
                                       },
                                     );
@@ -296,8 +420,13 @@ class _HomeViewState extends State<_HomeView> {
 
   String? rulesErrorText(BuildContext context, CatalogState state) {
     final rules = context.watch<BranchRulesBloc>().state;
+    final stock = context.watch<StockBloc>().state;
+    final calc = context.watch<OrderingCalcBloc>().state;
+
     if (state.error != null) return state.error;
     if (rules.status == BranchRulesStatus.failure) return rules.error;
+    if (stock.status == StockStatus.failure) return stock.error;
+    if (calc.status == OrderingCalcStatus.failure) return calc.error;
     return null;
   }
 
@@ -307,7 +436,7 @@ class _HomeViewState extends State<_HomeView> {
     required Map<String, Map<String, dynamic>> assortmentByItemCode,
     required Map<String, Map<String, dynamic>> tmaByItemCode,
     required Map<String, Map<String, dynamic>> maxAdjByItemCode,
-    required Map<String, num> demand30ByItemCode, // <-- ADD THIS
+    required Map<String, num> demand30ByItemCode,
   }) {
     if (rows.isEmpty) return rows;
 
@@ -324,19 +453,17 @@ class _HomeViewState extends State<_HomeView> {
       final demand30 = demand30ByItemCode[code] ?? 0;
       final demand30Text = demand30.toString();
 
+      final baseStock = assortment != null
+          ? (assortment['assortment_qty'] ?? '')
+          : (formulary == 'NON' ? '0' : '1');
+
       return {
         ...r,
         'branch_formulary': formulary,
         'max_adjustment_30d': maxAdjValue,
-
-        // <-- SALES RESULT COLUMN
         'qty_30_days_from_last_45d': demand30Text,
-
+        'assortment_qty_base_stock': baseStock,
         if (assortment != null) ...{
-          'assortment_qty_base_stock':
-              assortment['assortment_qty'] ??
-              r['assortment_qty_base_stock'] ??
-              '',
           'assortment_by':
               assortment['assortment_by'] ?? r['assortment_by'] ?? '',
           'assortment_start':
@@ -350,6 +477,33 @@ class _HomeViewState extends State<_HomeView> {
           'tma_start': tma['start_date'] ?? r['tma_start'] ?? '',
           'tma_end': tma['end_date'] ?? r['tma_end'] ?? '',
         },
+      };
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> _mergeStockIntoRows({
+    required List<Map<String, dynamic>> rows,
+    required Map<String, num> storeStockByItemCode,
+    required Map<String, num> mismatchDiffByItemCode,
+    required Map<String, num> pendingByItemCode,
+    required Map<String, num> branchStockFinalByItemCode,
+  }) {
+    if (rows.isEmpty) return rows;
+
+    return rows.map((r) {
+      final code = _normCode((r['item_code'] ?? '').toString());
+
+      final storeStock = storeStockByItemCode[code] ?? 0;
+      final mismatch = mismatchDiffByItemCode[code] ?? 0;
+      final pending = pendingByItemCode[code] ?? 0;
+      final branchStockFinal = branchStockFinalByItemCode[code] ?? 0;
+
+      return {
+        ...r,
+        'store_stock': storeStock.toString(),
+        'mismatch_stock': mismatch.toString(),
+        'pending_stock_received': pending.toString(),
+        'branch_stock': branchStockFinal.toString(),
       };
     }).toList();
   }

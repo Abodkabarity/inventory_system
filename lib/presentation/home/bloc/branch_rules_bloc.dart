@@ -77,6 +77,13 @@ class BranchRulesBloc extends Bloc<BranchRulesEvent, BranchRulesState> {
         branchName: branchName,
         branchColumn: 'branch_name',
       );
+      final maxAdjRows = await _fetchAllByBranch(
+        table: 'max_adj',
+        select:
+            'branch_name,item_code,max_adjustment_30d,adjustment_type,update_date',
+        branchName: branchName,
+        branchColumn: 'branch_name',
+      );
 
       final assortmentRows = await _fetchAllByBranch(
         table: 'assortment',
@@ -102,6 +109,7 @@ class BranchRulesBloc extends Bloc<BranchRulesEvent, BranchRulesState> {
       debugPrint('formulary=${formularyRows.length}');
       debugPrint('assortment=${assortmentRows.length}');
       debugPrint('tma=${tmaRows.length}');
+      debugPrint('MAX=${maxAdjRows.length}');
       debugPrint('demand30Keys=${demand30ByItemCode.length}');
 
       final formularyMap = <String, String>{};
@@ -117,6 +125,12 @@ class BranchRulesBloc extends Bloc<BranchRulesEvent, BranchRulesState> {
         if (code.isEmpty) continue;
         assortmentMap[code] = r;
       }
+      final maxAdjMap = <String, Map<String, dynamic>>{};
+      for (final r in maxAdjRows) {
+        final code = _norm(r['item_code']);
+        if (code.isEmpty) continue;
+        maxAdjMap[code] = r;
+      }
 
       final tmaMap = <String, Map<String, dynamic>>{};
       for (final r in tmaRows) {
@@ -131,6 +145,8 @@ class BranchRulesBloc extends Bloc<BranchRulesEvent, BranchRulesState> {
           formularyTypeByItemCode: formularyMap,
           assortmentByItemCode: assortmentMap,
           tmaByItemCode: tmaMap,
+          maxAdjByItemCode: maxAdjMap,
+
           demand30ByItemCode: demand30ByItemCode,
         ),
       );
