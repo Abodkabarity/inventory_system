@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:pluto_grid/pluto_grid.dart';
+import 'package:syncfusion_flutter_core/theme.dart';
+import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../core/theme/app_colors.dart';
 
@@ -7,7 +8,6 @@ class ItemsTable extends StatefulWidget {
   final List<Map<String, dynamic>> rows;
   final bool isLoading;
   final VoidCallback onCreateOrder;
-
   final void Function(int rowIndex, String qty, String reason) onEditQty;
 
   const ItemsTable({
@@ -70,167 +70,318 @@ class ItemsTable extends StatefulWidget {
     'final_qty',
   ];
 
+  static List<String> get visibleColumns =>
+      columns.where((c) => c != '_row_index').toList();
+
   @override
   State<ItemsTable> createState() => _ItemsTableState();
 }
 
 class _ItemsTableState extends State<ItemsTable> {
-  PlutoGridStateManager? _manager;
+  late ItemsDataSource _source;
+
+  final TextEditingController _searchController = TextEditingController();
+  String _searchText = '';
+
+  final Map<String, double> _colWidths = {};
+
+  @override
+  void initState() {
+    super.initState();
+
+    _source = ItemsDataSource(
+      rows: widget.rows,
+      searchText: _searchText,
+      onDoubleTapEdit: _onDoubleTapEdit,
+    );
+
+    for (final c in ItemsTable.visibleColumns) {
+      _colWidths[c] = _defaultWidthFor(c);
+    }
+  }
 
   @override
   void didUpdateWidget(covariant ItemsTable oldWidget) {
     super.didUpdateWidget(oldWidget);
-
-    if (_manager != null) {
-      if (!identical(oldWidget.rows, widget.rows)) {
-        _rebuildRows();
-      }
-      if (oldWidget.isLoading != widget.isLoading) {
-        _manager!.setShowLoading(widget.isLoading);
-      }
+    if (!identical(oldWidget.rows, widget.rows)) {
+      _source.updateRows(widget.rows, _searchText);
     }
   }
 
-  void _rebuildRows() {
-    final m = _manager!;
-    m.removeAllRows();
-    if (widget.rows.isNotEmpty) {
-      m.appendRows(_toPlutoRows(widget.rows));
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  String _titleFor(String key) {
+    switch (key) {
+      case 'branch':
+        return 'BRANCH';
+      case 'item_code':
+        return 'ITEM CODE';
+      case 'item_name':
+        return 'ITEM NAME';
+
+      case 'branch_stock':
+        return 'BRANCH STOCK';
+      case 'store_stock':
+        return 'STORE STOCK';
+      case 'mismatch_stock':
+        return 'MISMATCH';
+      case 'pending_stock_received':
+        return 'PENDING';
+
+      case 'max_adjustment_30d':
+        return 'MAX ADJ';
+      case 'branch_formulary':
+        return 'FORMULARY';
+
+      case 'qty_30_days_from_last_45d':
+        return '30D (FROM 45D)';
+
+      case 'final_qty':
+        return 'FINAL QTY';
+
+      case 'final_reorder_qty_store_stock_gt_0':
+        return 'FINAL REORDER\n(Store > 0)';
+      case 'date_of_last_qty_received_in_branch':
+        return 'DATE OF LAST\nQTY RECEIVED';
+
+      default:
+        return key.replaceAll('_', ' ').toUpperCase();
     }
   }
 
-  List<PlutoColumn> _buildColumns() {
-    return ItemsTable.columns.map((key) {
-      if (key == '_row_index') {
-        return PlutoColumn(
-          title: '',
-          field: key,
-          type: PlutoColumnType.number(),
-          width: 0,
-          minWidth: 0,
-          enableSorting: false,
-          enableFilterMenuItem: false,
-          enableContextMenu: false,
-          enableColumnDrag: false,
-          hide: true,
-          enableEditingMode: false,
-          renderer: (_) => const SizedBox.shrink(),
-        );
-      }
+  _ColGroup _groupFor(String key) {
+    if (key == 'branch' || key == 'item_code' || key == 'item_name') {
+      return _ColGroup.identity;
+    }
 
-      final title = key.replaceAll('_', ' ').toUpperCase();
+    if (key == 'branch_stock' ||
+        key == 'store_stock' ||
+        key == 'mismatch_stock' ||
+        key == 'pending_stock_received') {
+      return _ColGroup.stock;
+    }
 
-      double width = 150;
-      if (key == 'branch') width = 170;
-      if (key == 'item_code') width = 130;
-      if (key == 'item_name') width = 320;
-      if (key == 'final_qty') width = 110;
+    if (key == 'branch_formulary' ||
+        key == 'max_adjustment_30d' ||
+        key == 'assortment_qty_base_stock' ||
+        key == 'assortment_by' ||
+        key == 'assortment_start' ||
+        key == 'assortment_end' ||
+        key == 'tma_qty' ||
+        key == 'tma_start' ||
+        key == 'tma_end') {
+      return _ColGroup.rules;
+    }
 
-      return PlutoColumn(
-        title: title,
-        field: key,
-        type: PlutoColumnType.text(),
-        width: width,
-        minWidth: 110,
-        enableColumnDrag: true,
-        enableSorting: true,
-        enableFilterMenuItem: true,
-        enableContextMenu: true,
-        enableEditingMode: false,
-        renderer: (ctx) {
-          final v = (ctx.cell.value ?? '').toString();
-          return Text(
-            v.isEmpty ? '—' : v,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 12.5, color: AppColors.text),
-          );
-        },
-      );
-    }).toList();
+    if (key == 'qty_30_days_from_last_45d' ||
+        key == 'total_sold_qty_cash_last_90' ||
+        key == 'total_sold_qty_online_last_90' ||
+        key == 'total_sold_qty_insurance_last_90' ||
+        key == 'demand_for_30_days') {
+      return _ColGroup.sales;
+    }
+
+    if (key == 'reorder_point_min' ||
+        key == 'reorder_max' ||
+        key == 'reorder_qty' ||
+        key == 'final_reorder_qty_store_stock_gt_0' ||
+        key == 'final_qty' ||
+        key == 'reason') {
+      return _ColGroup.ordering;
+    }
+
+    return _ColGroup.other;
   }
 
-  List<PlutoRow> _toPlutoRows(List<Map<String, dynamic>> data) {
-    return List.generate(data.length, (i) {
-      final r = data[i];
-      final cells = <String, PlutoCell>{};
+  double _defaultWidthFor(String key) {
+    double w = 150;
 
-      for (final c in ItemsTable.columns) {
-        if (c == '_row_index') {
-          cells[c] = PlutoCell(value: i);
-        } else {
-          cells[c] = PlutoCell(value: r[c] ?? '');
-        }
-      }
+    if (key == 'branch') w = 170;
+    if (key == 'item_code') w = 150;
+    if (key == 'item_name') w = 420;
 
-      return PlutoRow(cells: cells);
+    if (key == 'company') w = 240;
+    if (key == 'supplier') w = 240;
+
+    if (key == 'branch_stock') w = 140;
+    if (key == 'store_stock') w = 140;
+    if (key == 'mismatch_stock') w = 130;
+    if (key == 'pending_stock_received') w = 140;
+
+    if (key == 'branch_formulary') w = 150;
+
+    if (key == 'final_qty') w = 130;
+    if (key == 'reason') w = 260;
+
+    if (key == 'final_reorder_qty_store_stock_gt_0') w = 200;
+    if (key == 'date_of_last_qty_received_in_branch') w = 190;
+
+    return w;
+  }
+
+  void _applySearch(String v) {
+    setState(() {
+      _searchText = v.trim().toLowerCase();
+      _source.updateRows(widget.rows, _searchText);
     });
+  }
+
+  Future<void> _onDoubleTapEdit(int rowIndex, Map<String, dynamic> r) async {
+    final res = await _openEditDialog(
+      context,
+      itemCode: (r['item_code'] ?? '').toString(),
+      itemName: (r['item_name'] ?? '').toString(),
+      initialQty: (r['final_qty'] ?? '').toString(),
+      initialReason: (r['reason'] ?? '').toString(),
+    );
+    if (res != null) {
+      widget.onEditQty(rowIndex, res.$1, res.$2);
+    }
+  }
+
+  Widget _toolbar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              onChanged: _applySearch,
+              decoration: InputDecoration(
+                hintText: 'Search in all columns...',
+                prefixIcon: const Icon(Icons.search, size: 18),
+                filled: true,
+                fillColor: AppColors.blueSoft,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: AppColors.border.withOpacity(.8),
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: AppColors.border.withOpacity(.8),
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(
+                    color: AppColors.blue,
+                    width: 1.4,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          OutlinedButton.icon(
+            onPressed: () {
+              _searchController.clear();
+              _applySearch('');
+            },
+            icon: const Icon(Icons.clear_all),
+            label: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    // ✅ إذا لا يوجد rows لكن isLoading true -> لا تعرض Create Order
     if (widget.rows.isEmpty) {
-      if (widget.isLoading) {
+      if (widget.isLoading)
         return const Center(child: CircularProgressIndicator());
-      }
       return _EmptyState(disabled: false, onCreateOrder: widget.onCreateOrder);
     }
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
-      child: PlutoGrid(
-        columns: _buildColumns(),
-        rows: _toPlutoRows(widget.rows),
-        onLoaded: (event) {
-          _manager = event.stateManager;
-          _manager!.setShowLoading(widget.isLoading);
-          _manager!.setSelectingMode(PlutoGridSelectingMode.row);
-          _manager!.setShowColumnFilter(false);
-          _manager!.setPageSize(999999);
-        },
-        onRowDoubleTap: (event) async {
-          final idx = (event.row.cells['_row_index']?.value ?? -1) as int;
-          if (idx < 0 || idx >= widget.rows.length) return;
+    return Column(
+      children: [
+        _toolbar(),
+        const SizedBox(height: 10),
+        Expanded(
+          child: Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: SfDataGridTheme(
+                  data: SfDataGridThemeData(
+                    headerColor: const Color(0xFFF7F8FC),
+                    gridLineColor: AppColors.border.withOpacity(.8),
+                    selectionColor: const Color(0xFFEAF2FF),
+                  ),
+                  child: SfDataGrid(
+                    source: _source,
 
-          final r = widget.rows[idx];
-          final res = await _openEditDialog(
-            context,
-            itemCode: (r['item_code'] ?? '').toString(),
-            itemName: (r['item_name'] ?? '').toString(),
-            initialQty: (r['final_qty'] ?? '').toString(),
-            initialReason: (r['reason'] ?? '').toString(),
-          );
-          if (res != null) {
-            widget.onEditQty(idx, res.$1, res.$2);
-          }
-        },
-        configuration: PlutoGridConfiguration(
-          style: PlutoGridStyleConfig(
-            gridBorderColor: AppColors.border,
-            borderColor: AppColors.border,
-            activatedBorderColor: AppColors.blue,
-            rowColor: AppColors.white,
-            oddRowColor: AppColors.white,
-            columnTextStyle: const TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w800,
-              color: AppColors.headerText,
-            ),
-            cellTextStyle: const TextStyle(
-              fontSize: 12.5,
-              color: AppColors.text,
-            ),
-            columnHeight: 48,
-            rowHeight: 46,
-          ),
-          scrollbar: const PlutoGridScrollbarConfig(
-            isAlwaysShown: true,
-            scrollbarThickness: 10,
-            scrollbarThicknessWhileDragging: 12,
+                    // ✅ فلترة فقط (بدون sorting -> تختفي الأسهم)
+                    allowSorting: false,
+                    allowFiltering: true,
+
+                    gridLinesVisibility: GridLinesVisibility.both,
+                    headerGridLinesVisibility: GridLinesVisibility.both,
+                    columnWidthMode: ColumnWidthMode.none,
+
+                    // ✅ resize الأعمدة
+                    allowColumnsResizing: true,
+                    onColumnResizeUpdate: (details) {
+                      setState(() {
+                        _colWidths[details.column.columnName] = details.width;
+                      });
+                      return true;
+                    },
+
+                    frozenColumnsCount: 3,
+                    selectionMode: SelectionMode.single,
+                    navigationMode: GridNavigationMode.row,
+
+                    rowHeight: 46,
+                    headerRowHeight: 58,
+
+                    columns: ItemsTable.visibleColumns.map((key) {
+                      final group = _groupFor(key);
+
+                      return GridColumn(
+                        columnName: key,
+                        width: _colWidths[key] ?? _defaultWidthFor(key),
+                        minimumWidth: 110,
+                        label: _HeaderCell(
+                          title: _titleFor(key),
+                          bg: group.headerBg,
+                          fg: group.headerFg,
+                          maxLines: _titleFor(key).contains('\n') ? 2 : 1,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+              if (widget.isLoading)
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(.55),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Center(child: CircularProgressIndicator()),
+                ),
+            ],
           ),
         ),
-      ),
+      ],
     );
   }
 
@@ -338,10 +489,314 @@ class _ItemsTableState extends State<ItemsTable> {
       ),
     );
 
-    if (ok == true) {
+    if (ok == true)
       return (qtyController.text.trim(), reasonController.text.trim());
-    }
     return null;
+  }
+}
+
+class _HeaderCell extends StatelessWidget {
+  final String title;
+  final Color bg;
+  final Color fg;
+  final int maxLines;
+
+  const _HeaderCell({
+    required this.title,
+    required this.bg,
+    required this.fg,
+    required this.maxLines,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: bg,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      alignment: Alignment.centerLeft,
+      child: Tooltip(
+        message: title.replaceAll('\n', ' '),
+        child: Text(
+          title,
+          maxLines: maxLines,
+          overflow: TextOverflow.ellipsis,
+          softWrap: true,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w900,
+            color: fg,
+            height: 1.15,
+            letterSpacing: 0.2,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ===========================
+// DataSource (سريع)
+// ===========================
+class ItemsDataSource extends DataGridSource {
+  List<Map<String, dynamic>> _allRows = [];
+  List<Map<String, dynamic>> _viewRows = [];
+
+  final void Function(int rowIndex, Map<String, dynamic> row) onDoubleTapEdit;
+
+  final List<DataGridRow> _gridRows = [];
+  final Map<DataGridRow, int> _rowToIndex = {};
+
+  ItemsDataSource({
+    required List<Map<String, dynamic>> rows,
+    required String searchText,
+    required this.onDoubleTapEdit,
+  }) {
+    updateRows(rows, searchText);
+  }
+
+  void updateRows(List<Map<String, dynamic>> rows, String searchText) {
+    _allRows = rows;
+
+    final q = searchText.trim().toLowerCase();
+    if (q.isEmpty) {
+      _viewRows = List<Map<String, dynamic>>.from(_allRows);
+    } else {
+      _viewRows = _allRows.where((r) {
+        for (final k in ItemsTable.visibleColumns) {
+          final v = (r[k] ?? '').toString().toLowerCase();
+          if (v.contains(q)) return true;
+        }
+        return false;
+      }).toList();
+    }
+
+    _gridRows.clear();
+    _rowToIndex.clear();
+
+    for (var i = 0; i < _viewRows.length; i++) {
+      final r = _viewRows[i];
+
+      final row = DataGridRow(
+        cells: ItemsTable.visibleColumns
+            .map((c) => DataGridCell<dynamic>(columnName: c, value: r[c] ?? ''))
+            .toList(),
+      );
+
+      _gridRows.add(row);
+      _rowToIndex[row] = i;
+    }
+
+    notifyListeners();
+  }
+
+  @override
+  List<DataGridRow> get rows => _gridRows;
+
+  String _formatCell(String key, dynamic raw) {
+    final s = (raw ?? '').toString().trim();
+    if (s.isEmpty) return '';
+
+    const numericKeys = {
+      'branch_stock',
+      'store_stock',
+      'mismatch_stock',
+      'pending_stock_received',
+      'qty_30_days_from_last_45d',
+      'demand_for_30_days',
+      'reorder_point_min',
+      'reorder_max',
+      'reorder_qty',
+      'final_qty',
+    };
+
+    if (numericKeys.contains(key)) {
+      final n = num.tryParse(s);
+      if (n == null) return s;
+      if (n == n.roundToDouble()) return n.toInt().toString();
+      return n.toStringAsFixed(2);
+    }
+
+    return s;
+  }
+
+  bool _isNumberLike(String key) {
+    return {
+      'final_qty',
+      'branch_stock',
+      'store_stock',
+      'mismatch_stock',
+      'pending_stock_received',
+      'qty_30_days_from_last_45d',
+      'reorder_point_min',
+      'reorder_max',
+      'reorder_qty',
+      'demand_for_30_days',
+    }.contains(key);
+  }
+
+  Color _textColorFor(String key, String value) {
+    if (key == 'branch_formulary') {
+      final t = value.trim().toUpperCase();
+      if (t == 'ESSENTIAL') return Colors.green;
+      if (t == 'NON') return Colors.red;
+      return AppColors.text;
+    }
+
+    final n = num.tryParse(value) ?? 0;
+
+    if (key == 'mismatch_stock') {
+      if (n < 0) return Colors.red;
+      if (n > 0) return Colors.orange;
+      return AppColors.text;
+    }
+
+    if (key == 'pending_stock_received') {
+      if (n > 0) return AppColors.blueDark;
+      return AppColors.subText;
+    }
+
+    if (key == 'store_stock') {
+      if (n == 0) return AppColors.subText;
+      return AppColors.text;
+    }
+
+    if (key == 'branch_stock') {
+      if (n <= 0) return Colors.red;
+      if (n < 3) return Colors.orange;
+      return AppColors.text;
+    }
+
+    if (key == 'final_qty') {
+      if (value.trim().isNotEmpty) return AppColors.blueDark;
+      return AppColors.subText;
+    }
+
+    return AppColors.text;
+  }
+
+  Color _badgeBg(String value) {
+    final t = value.trim().toUpperCase();
+    if (t == 'ESSENTIAL') return const Color(0xFFE9F7EE);
+    if (t == 'NON') return const Color(0xFFFDECEC);
+    return Colors.transparent;
+  }
+
+  @override
+  DataGridRowAdapter buildRow(DataGridRow row) {
+    final viewIndex = _rowToIndex[row] ?? 0;
+    final mapRow = (viewIndex >= 0 && viewIndex < _viewRows.length)
+        ? _viewRows[viewIndex]
+        : null;
+
+    return DataGridRowAdapter(
+      cells: row.getCells().map((cell) {
+        final key = cell.columnName;
+        final v = _formatCell(key, cell.value);
+        final align = _isNumberLike(key)
+            ? Alignment.centerRight
+            : Alignment.centerLeft;
+        final color = _textColorFor(key, v);
+
+        if (key == 'branch_formulary') {
+          return Container(
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: v.isEmpty
+                ? const Text('—')
+                : Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _badgeBg(v),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Text(
+                      v,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w900,
+                        color: color,
+                      ),
+                    ),
+                  ),
+          );
+        }
+
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onDoubleTap: () {
+            if (mapRow == null) return;
+
+            final originalIndex = (mapRow['_row_index'] is int)
+                ? mapRow['_row_index'] as int
+                : int.tryParse((mapRow['_row_index'] ?? '').toString()) ??
+                      viewIndex;
+
+            onDoubleTapEdit(originalIndex, mapRow);
+          },
+          child: Container(
+            alignment: align,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Tooltip(
+              message: v.isEmpty ? '' : v,
+              child: Text(
+                v.isEmpty ? '—' : v,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: key == 'final_qty'
+                      ? FontWeight.w900
+                      : FontWeight.w600,
+                  color: color,
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+enum _ColGroup { identity, stock, sales, rules, ordering, other }
+
+extension _ColGroupStyle on _ColGroup {
+  Color get headerBg {
+    switch (this) {
+      case _ColGroup.identity:
+        return const Color(0xFFEFF6FF);
+      case _ColGroup.stock:
+        return const Color(0xFFEFFAF3);
+      case _ColGroup.sales:
+        return const Color(0xFFFFF7E6);
+      case _ColGroup.rules:
+        return const Color(0xFFF3F0FF);
+      case _ColGroup.ordering:
+        return const Color(0xFFFFEEF2);
+      case _ColGroup.other:
+        return const Color(0xFFF6F7FB);
+    }
+  }
+
+  Color get headerFg {
+    switch (this) {
+      case _ColGroup.identity:
+        return const Color(0xFF0B2A4A);
+      case _ColGroup.stock:
+        return const Color(0xFF0F3D1F);
+      case _ColGroup.sales:
+        return const Color(0xFF5A3A00);
+      case _ColGroup.rules:
+        return const Color(0xFF2B1C5A);
+      case _ColGroup.ordering:
+        return const Color(0xFF5A1025);
+      case _ColGroup.other:
+        return AppColors.headerText;
+    }
   }
 }
 
