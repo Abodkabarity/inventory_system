@@ -21,7 +21,7 @@ class SupabaseBranchRulesRemoteDs {
       final data = await client
           .from(table)
           .select(select)
-          .eq('branch_name', branchName)
+          .ilike('branch_name', branchName.trim())
           .range(from, from + pageSize - 1);
 
       final list = (data as List).cast<Map<String, dynamic>>();

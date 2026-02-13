@@ -21,15 +21,15 @@ class AppBloc extends Bloc<AppEvent, AppState> {
         return;
       }
 
-      // print('AUTH USER (AppStarted): ${user.id}');
-
       final me = await getMe();
 
       if (me == null) {
         emit(state.copyWith(status: AppStatus.unauthenticated, me: null));
-      } else {
-        emit(state.copyWith(status: AppStatus.authenticated, me: me));
+        return;
       }
+
+      // debugPrint('ME role=${me.role} branchId=${me.branchId}');
+      emit(state.copyWith(status: AppStatus.authenticated, me: me));
     } catch (e) {
       emit(state.copyWith(status: AppStatus.failure, error: e.toString()));
     }

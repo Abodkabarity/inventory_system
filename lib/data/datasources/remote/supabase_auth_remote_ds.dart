@@ -22,19 +22,25 @@ class SupabaseAuthRemoteDs {
 
     final data = await client
         .from('app_users')
-        .select('user_id, role, branch_id, is_active')
+        .select('user_id, role, branch_id')
         .eq('user_id', uid)
         .maybeSingle();
 
-    print('getMeFromAppUsers uid=$uid data=$data');
+    if (data == null) return null;
 
-    if (data == null) {
-      throw Exception(
-        'No app_users row found for this uid (or blocked by RLS).',
-      );
+    final role = (data['role'] ?? '').toString().trim().toLowerCase();
+    final branchId = data['branch_id'] as String?;
+
+    // Inventory does NOT require branch_id
+    if (role == 'inventory') {
+      return AppUserModel.fromMap({
+        'user_id': data['user_id'],
+        'role': data['role'],
+        'branch_id': null,
+      });
     }
 
-    final branchId = data['branch_id'] as String?;
+    // Other roles MUST have branch_id
     if (branchId == null || branchId.isEmpty) {
       throw Exception('No branch assigned for this user in app_users.');
     }

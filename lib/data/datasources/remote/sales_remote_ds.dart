@@ -17,7 +17,7 @@ class SalesRemoteDs {
       final data = await client
           .from('sales_last_45_days')
           .select('branch_name,item_code,qty,inv_date')
-          .eq('branch_name', branchName)
+          .ilike('branch_name', branchName.trim())
           .order('inv_date', ascending: true)
           .order('item_code', ascending: true)
           .range(from, from + pageSize - 1);

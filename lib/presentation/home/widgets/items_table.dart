@@ -92,7 +92,7 @@ class _ItemsTableState extends State<ItemsTable> {
     _source = ItemsDataSource(
       rows: widget.rows,
       searchText: _searchText,
-      onDoubleTapEdit: _onDoubleTapEdit,
+      onEditQty: widget.onEditQty,
     );
 
     for (final c in ItemsTable.visibleColumns) {
@@ -230,19 +230,6 @@ class _ItemsTableState extends State<ItemsTable> {
     });
   }
 
-  Future<void> _onDoubleTapEdit(int rowIndex, Map<String, dynamic> r) async {
-    final res = await _openEditDialog(
-      context,
-      itemCode: (r['item_code'] ?? '').toString(),
-      itemName: (r['item_name'] ?? '').toString(),
-      initialQty: (r['final_qty'] ?? '').toString(),
-      initialReason: (r['reason'] ?? '').toString(),
-    );
-    if (res != null) {
-      widget.onEditQty(rowIndex, res.$1, res.$2);
-    }
-  }
-
   Widget _toolbar() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
@@ -305,8 +292,9 @@ class _ItemsTableState extends State<ItemsTable> {
   @override
   Widget build(BuildContext context) {
     if (widget.rows.isEmpty) {
-      if (widget.isLoading)
+      if (widget.isLoading) {
         return const Center(child: CircularProgressIndicator());
+      }
       return _EmptyState(disabled: false, onCreateOrder: widget.onCreateOrder);
     }
 
@@ -327,16 +315,11 @@ class _ItemsTableState extends State<ItemsTable> {
                   ),
                   child: SfDataGrid(
                     source: _source,
-
-                    // ✅ فلترة فقط (بدون sorting -> تختفي الأسهم)
                     allowSorting: false,
                     allowFiltering: true,
-
                     gridLinesVisibility: GridLinesVisibility.both,
                     headerGridLinesVisibility: GridLinesVisibility.both,
                     columnWidthMode: ColumnWidthMode.none,
-
-                    // ✅ resize الأعمدة
                     allowColumnsResizing: true,
                     onColumnResizeUpdate: (details) {
                       setState(() {
@@ -344,13 +327,22 @@ class _ItemsTableState extends State<ItemsTable> {
                       });
                       return true;
                     },
-
                     frozenColumnsCount: 3,
                     selectionMode: SelectionMode.single,
                     navigationMode: GridNavigationMode.row,
-
                     rowHeight: 46,
                     headerRowHeight: 58,
+
+                    // ✅ Double click to edit (without blocking text selection)
+                    onCellDoubleTap: (details) {
+                      final rowIndex = details.rowColumnIndex.rowIndex;
+                      final colIndex = details.rowColumnIndex.columnIndex;
+
+                      if (rowIndex <= 0) return;
+                      if (colIndex <= 0) return;
+
+                      _source.handleDoubleTap(rowIndex - 1);
+                    },
 
                     columns: ItemsTable.visibleColumns.map((key) {
                       final group = _groupFor(key);
@@ -384,9 +376,127 @@ class _ItemsTableState extends State<ItemsTable> {
       ],
     );
   }
+}
 
-  Future<(String, String)?> _openEditDialog(
-    BuildContext context, {
+class _HeaderCell extends StatelessWidget {
+  final String title;
+  final Color bg;
+  final Color fg;
+  final int maxLines;
+
+  const _HeaderCell({
+    required this.title,
+    required this.bg,
+    required this.fg,
+    required this.maxLines,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: bg,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      alignment: Alignment.centerLeft,
+      child: Tooltip(
+        message: title.replaceAll('\n', ' '),
+        child: Text(
+          title,
+          maxLines: maxLines,
+          overflow: TextOverflow.ellipsis,
+          softWrap: true,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w900,
+            color: fg,
+            height: 1.15,
+            letterSpacing: 0.2,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class ItemsDataSource extends DataGridSource {
+  List<Map<String, dynamic>> _allRows = [];
+  List<Map<String, dynamic>> _viewRows = [];
+
+  final void Function(int rowIndex, String qty, String reason) onEditQty;
+
+  final List<DataGridRow> _gridRows = [];
+  final Map<DataGridRow, int> _rowToIndex = {};
+
+  ItemsDataSource({
+    required List<Map<String, dynamic>> rows,
+    required String searchText,
+    required this.onEditQty,
+  }) {
+    updateRows(rows, searchText);
+  }
+
+  void updateRows(List<Map<String, dynamic>> rows, String searchText) {
+    _allRows = rows;
+
+    final q = searchText.trim().toLowerCase();
+    if (q.isEmpty) {
+      _viewRows = List<Map<String, dynamic>>.from(_allRows);
+    } else {
+      _viewRows = _allRows.where((r) {
+        for (final k in ItemsTable.visibleColumns) {
+          final v = (r[k] ?? '').toString().toLowerCase();
+          if (v.contains(q)) return true;
+        }
+        return false;
+      }).toList();
+    }
+
+    _gridRows.clear();
+    _rowToIndex.clear();
+
+    for (var i = 0; i < _viewRows.length; i++) {
+      final r = _viewRows[i];
+      final row = DataGridRow(
+        cells: ItemsTable.visibleColumns
+            .map((c) => DataGridCell<dynamic>(columnName: c, value: r[c] ?? ''))
+            .toList(),
+      );
+
+      _gridRows.add(row);
+      _rowToIndex[row] = i;
+    }
+
+    notifyListeners();
+  }
+
+  // Called from SfDataGrid.onCellDoubleTap
+  void handleDoubleTap(int viewRowIndex) async {
+    if (viewRowIndex < 0 || viewRowIndex >= _viewRows.length) return;
+
+    final r = _viewRows[viewRowIndex];
+
+    final originalIndex = (r['_row_index'] is int)
+        ? r['_row_index'] as int
+        : int.tryParse((r['_row_index'] ?? '').toString()) ?? viewRowIndex;
+
+    final itemCode = (r['item_code'] ?? '').toString();
+    final itemName = (r['item_name'] ?? '').toString();
+
+    final qty = (r['final_qty'] ?? '').toString();
+    final reason = (r['reason'] ?? '').toString();
+
+    final res = await _openEditDialog(
+      itemCode: itemCode,
+      itemName: itemName,
+      initialQty: qty,
+      initialReason: reason,
+    );
+
+    if (res != null) {
+      onEditQty(originalIndex, res.$1, res.$2);
+    }
+  }
+
+  Future<(String, String)?> _openEditDialog({
     required String itemCode,
     required String itemName,
     required String initialQty,
@@ -395,8 +505,11 @@ class _ItemsTableState extends State<ItemsTable> {
     final qtyController = TextEditingController(text: initialQty);
     final reasonController = TextEditingController(text: initialReason);
 
+    final ctx = navigatorKey.currentContext;
+    if (ctx == null) return null;
+
     final ok = await showDialog<bool>(
-      context: context,
+      context: ctx,
       builder: (_) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         child: Container(
@@ -424,7 +537,7 @@ class _ItemsTableState extends State<ItemsTable> {
                   ),
                   const Spacer(),
                   IconButton(
-                    onPressed: () => Navigator.pop(context, false),
+                    onPressed: () => Navigator.pop(ctx, false),
                     icon: const Icon(Icons.close),
                   ),
                 ],
@@ -473,12 +586,12 @@ class _ItemsTableState extends State<ItemsTable> {
               Row(
                 children: [
                   OutlinedButton(
-                    onPressed: () => Navigator.pop(context, false),
+                    onPressed: () => Navigator.pop(ctx, false),
                     child: const Text('Cancel'),
                   ),
                   const Spacer(),
                   FilledButton(
-                    onPressed: () => Navigator.pop(context, true),
+                    onPressed: () => Navigator.pop(ctx, true),
                     child: const Text('Save'),
                   ),
                 ],
@@ -489,104 +602,10 @@ class _ItemsTableState extends State<ItemsTable> {
       ),
     );
 
-    if (ok == true)
+    if (ok == true) {
       return (qtyController.text.trim(), reasonController.text.trim());
+    }
     return null;
-  }
-}
-
-class _HeaderCell extends StatelessWidget {
-  final String title;
-  final Color bg;
-  final Color fg;
-  final int maxLines;
-
-  const _HeaderCell({
-    required this.title,
-    required this.bg,
-    required this.fg,
-    required this.maxLines,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: bg,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      alignment: Alignment.centerLeft,
-      child: Tooltip(
-        message: title.replaceAll('\n', ' '),
-        child: Text(
-          title,
-          maxLines: maxLines,
-          overflow: TextOverflow.ellipsis,
-          softWrap: true,
-          style: TextStyle(
-            fontSize: 12.5,
-            fontWeight: FontWeight.w900,
-            color: fg,
-            height: 1.15,
-            letterSpacing: 0.2,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ===========================
-// DataSource (سريع)
-// ===========================
-class ItemsDataSource extends DataGridSource {
-  List<Map<String, dynamic>> _allRows = [];
-  List<Map<String, dynamic>> _viewRows = [];
-
-  final void Function(int rowIndex, Map<String, dynamic> row) onDoubleTapEdit;
-
-  final List<DataGridRow> _gridRows = [];
-  final Map<DataGridRow, int> _rowToIndex = {};
-
-  ItemsDataSource({
-    required List<Map<String, dynamic>> rows,
-    required String searchText,
-    required this.onDoubleTapEdit,
-  }) {
-    updateRows(rows, searchText);
-  }
-
-  void updateRows(List<Map<String, dynamic>> rows, String searchText) {
-    _allRows = rows;
-
-    final q = searchText.trim().toLowerCase();
-    if (q.isEmpty) {
-      _viewRows = List<Map<String, dynamic>>.from(_allRows);
-    } else {
-      _viewRows = _allRows.where((r) {
-        for (final k in ItemsTable.visibleColumns) {
-          final v = (r[k] ?? '').toString().toLowerCase();
-          if (v.contains(q)) return true;
-        }
-        return false;
-      }).toList();
-    }
-
-    _gridRows.clear();
-    _rowToIndex.clear();
-
-    for (var i = 0; i < _viewRows.length; i++) {
-      final r = _viewRows[i];
-
-      final row = DataGridRow(
-        cells: ItemsTable.visibleColumns
-            .map((c) => DataGridCell<dynamic>(columnName: c, value: r[c] ?? ''))
-            .toList(),
-      );
-
-      _gridRows.add(row);
-      _rowToIndex[row] = i;
-    }
-
-    notifyListeners();
   }
 
   @override
@@ -607,6 +626,7 @@ class ItemsDataSource extends DataGridSource {
       'reorder_max',
       'reorder_qty',
       'final_qty',
+      'item_minimum_order_unit',
     };
 
     if (numericKeys.contains(key)) {
@@ -631,6 +651,7 @@ class ItemsDataSource extends DataGridSource {
       'reorder_max',
       'reorder_qty',
       'demand_for_30_days',
+      'item_minimum_order_unit',
     }.contains(key);
   }
 
@@ -683,11 +704,6 @@ class ItemsDataSource extends DataGridSource {
 
   @override
   DataGridRowAdapter buildRow(DataGridRow row) {
-    final viewIndex = _rowToIndex[row] ?? 0;
-    final mapRow = (viewIndex >= 0 && viewIndex < _viewRows.length)
-        ? _viewRows[viewIndex]
-        : null;
-
     return DataGridRowAdapter(
       cells: row.getCells().map((cell) {
         final key = cell.columnName;
@@ -702,7 +718,7 @@ class ItemsDataSource extends DataGridSource {
             alignment: Alignment.centerLeft,
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: v.isEmpty
-                ? const Text('—')
+                ? const SelectableText('—')
                 : Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -713,8 +729,9 @@ class ItemsDataSource extends DataGridSource {
                       borderRadius: BorderRadius.circular(999),
                       border: Border.all(color: AppColors.border),
                     ),
-                    child: Text(
+                    child: SelectableText(
                       v,
+                      enableInteractiveSelection: true,
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w900,
@@ -725,34 +742,21 @@ class ItemsDataSource extends DataGridSource {
           );
         }
 
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onDoubleTap: () {
-            if (mapRow == null) return;
-
-            final originalIndex = (mapRow['_row_index'] is int)
-                ? mapRow['_row_index'] as int
-                : int.tryParse((mapRow['_row_index'] ?? '').toString()) ??
-                      viewIndex;
-
-            onDoubleTapEdit(originalIndex, mapRow);
-          },
-          child: Container(
-            alignment: align,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Tooltip(
-              message: v.isEmpty ? '' : v,
-              child: Text(
-                v.isEmpty ? '—' : v,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: key == 'final_qty'
-                      ? FontWeight.w900
-                      : FontWeight.w600,
-                  color: color,
-                ),
+        return Container(
+          alignment: align,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: Tooltip(
+            message: v.isEmpty ? '' : v,
+            child: SelectableText(
+              v.isEmpty ? '—' : v,
+              enableInteractiveSelection: true,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: key == 'final_qty'
+                    ? FontWeight.w900
+                    : FontWeight.w600,
+                color: color,
               ),
             ),
           ),
@@ -848,3 +852,7 @@ class _EmptyState extends StatelessWidget {
     );
   }
 }
+
+// Provide a global key in your app root (MaterialApp)
+// MaterialApp(navigatorKey: navigatorKey, ...)
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();

@@ -34,7 +34,6 @@ class CatalogBloc extends Bloc<CatalogEvent, CatalogState> {
     try {
       final client = Supabase.instance.client;
 
-      // ✅ عدّ إجمالي الصفوف (طريقة متوافقة مع نسخ supabase القديمة)
       final countList = await client.from('item_report').select('item_code');
       final total = (countList as List).length;
 
@@ -69,7 +68,6 @@ class CatalogBloc extends Bloc<CatalogEvent, CatalogState> {
             .range(from, to);
 
         for (final obj in (data as List)) {
-          // ✅ مهم للويب: نحول أي LegacyJavaScriptObject إلى Dart primitives
           final clean = _normalizeMap(obj as Map);
           buffer.add(_mapItemReportToRow(clean));
         }
@@ -114,7 +112,6 @@ class CatalogBloc extends Bloc<CatalogEvent, CatalogState> {
   void _onUpdateRowField(UpdateRowField event, Emitter<CatalogState> emit) {
     if (event.index < 0 || event.index >= state.viewRows.length) return;
 
-    // نعدّل داخل viewRows ثم ننعكس على allRows عبر item_code (أضمن من index)
     final viewRows = List<Map<String, dynamic>>.from(state.viewRows);
     final row = Map<String, dynamic>.from(viewRows[event.index]);
     row[event.field] = event.value;
@@ -169,21 +166,26 @@ class CatalogBloc extends Bloc<CatalogEvent, CatalogState> {
       'pack_size_volume': r['pack_size_volume'],
       'concentration': r['concentration'],
 
-      // ✅ نفس اسم الحقل الذي كنت تستخدمه
+      // Existing key (kept)
       'product_type_form': r['product_type'],
 
-      // ✅ تركته كما هو عندك (حتى لو كان اسم العمود retail)
+      // ✅ Alias used by ItemsTable
+      'product_type': r['product_type'],
+
       'retail': r['retail'],
-
-      // ✅ tax_percent من الريكورد
       'tax_percent': r['tax_percent'],
-
-      // ✅ موجود عندك بالـ row حتى لو غير جاي من select (سيكون null وهذا OK)
       'vat': r['vat'],
 
       'is_upp': r['is_upp'],
+
+      // Existing keys (kept)
       'insurance_tier': r['insurance_tier'],
       'min_order_unit': r['min_order_unit'],
+
+      // ✅ Aliases used by ItemsTable
+      'tier': r['insurance_tier'],
+      'item_minimum_order_unit': r['min_order_unit'],
+
       'barcode': r['barcode'],
       'store_classification': r['store_classification'],
       'item_status': r['item_status'],
@@ -223,7 +225,6 @@ class CatalogBloc extends Bloc<CatalogEvent, CatalogState> {
     };
   }
 
-  // ✅ تنظيف بيانات Supabase للويب (LegacyJavaScriptObject -> Dart types)
   Map<String, dynamic> _normalizeMap(Map m) {
     return m.map((key, value) => MapEntry(key.toString(), _toDart(value)));
   }

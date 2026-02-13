@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/csv_exporter_web.dart';
 import '../bloc/branch_bloc.dart';
 import '../bloc/branch_rules_bloc.dart';
 import '../bloc/branch_rules_bloc_factory.dart';
@@ -197,7 +198,24 @@ class _HomeViewState extends State<_HomeView> {
                   _Header(
                     onSearch: (v) =>
                         context.read<CatalogBloc>().add(SearchChanged(v)),
+                    onExport: () {
+                      final calc = context.read<OrderingCalcBloc>().state;
+                      final catalog = context.read<CatalogBloc>().state;
+
+                      final rows = (calc.status == OrderingCalcStatus.success)
+                          ? calc.rows
+                          : catalog.viewRows;
+
+                      if (rows.isEmpty) return;
+
+                      CsvExporterWeb.downloadCsv(
+                        rows: rows,
+                        columns: ItemsTable.visibleColumns,
+                        fileName: 'orders_export.csv',
+                      );
+                    },
                   ),
+
                   const SizedBox(height: 10),
                   if (branchState.status == BranchStatus.loading) ...[
                     const Text(
@@ -440,6 +458,34 @@ class _HomeViewState extends State<_HomeView> {
   }) {
     if (rows.isEmpty) return rows;
 
+    num _n(dynamic v) {
+      if (v == null) return 0;
+      final s = v.toString().trim();
+      if (s.isEmpty) return 0;
+      final x = num.tryParse(s.replaceAll(',', ''));
+      return x ?? 0;
+    }
+
+    int _minUnitFromRow(Map<String, dynamic> r) {
+      // item_minimum_order_unit عندك أحياناً يكون موجود بهذا الاسم
+      final a = _n(r['item_minimum_order_unit']);
+      final b = _n(r['min_order_unit']);
+      final c = _n(r['min_order_unit'] ?? r['item_minimum_order_unit']);
+
+      final raw = a > 0 ? a : (b > 0 ? b : c);
+      final v = raw <= 0 ? 1 : raw;
+      return v.round();
+    }
+
+    int _ceilToMultiple(num qty, int unit) {
+      if (unit <= 0) unit = 1;
+      if (qty <= 0) return 0;
+      final q = qty.toDouble();
+      final u = unit.toDouble();
+      final m = (q / u).ceil();
+      return (m * unit).toInt();
+    }
+
     return rows.map((r) {
       final code = _normCode((r['item_code'] ?? '').toString());
 
@@ -453,16 +499,33 @@ class _HomeViewState extends State<_HomeView> {
       final demand30 = demand30ByItemCode[code] ?? 0;
       final demand30Text = demand30.toString();
 
-      final baseStock = assortment != null
-          ? (assortment['assortment_qty'] ?? '')
-          : (formulary == 'NON' ? '0' : '1');
+      final minUnit = _minUnitFromRow(r);
+
+      num baseQtyRaw;
+      if (assortment != null) {
+        baseQtyRaw = _n(assortment['assortment_qty']);
+        if (baseQtyRaw < 0) baseQtyRaw = 0;
+      } else {
+        if (formulary == 'NON') {
+          baseQtyRaw = 0;
+        } else {
+          baseQtyRaw = 1 * minUnit;
+        }
+      }
+
+      final baseStockInt = _ceilToMultiple(baseQtyRaw, minUnit);
 
       return {
         ...r,
+
+        'item_minimum_order_unit': minUnit.toString(),
+
         'branch_formulary': formulary,
         'max_adjustment_30d': maxAdjValue,
         'qty_30_days_from_last_45d': demand30Text,
-        'assortment_qty_base_stock': baseStock,
+
+        'assortment_qty_base_stock': baseStockInt.toString(),
+
         if (assortment != null) ...{
           'assortment_by':
               assortment['assortment_by'] ?? r['assortment_by'] ?? '',
@@ -472,6 +535,7 @@ class _HomeViewState extends State<_HomeView> {
               assortment['assortment_end'] ?? r['assortment_end'] ?? '',
           'reason': assortment['reason'] ?? r['reason'] ?? '',
         },
+
         if (tma != null) ...{
           'tma_qty': tma['final_qty_to_keep'] ?? r['tma_qty'] ?? '',
           'tma_start': tma['start_date'] ?? r['tma_start'] ?? '',
@@ -511,7 +575,9 @@ class _HomeViewState extends State<_HomeView> {
 
 class _Header extends StatelessWidget {
   final ValueChanged<String> onSearch;
-  const _Header({required this.onSearch});
+  final VoidCallback onExport;
+
+  const _Header({required this.onSearch, required this.onExport});
 
   @override
   Widget build(BuildContext context) {
@@ -566,10 +632,12 @@ class _Header extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 12),
+
+        // ✅ بدل Add New -> Export CSV (يفتح Excel)
         FilledButton.icon(
-          onPressed: () {},
-          icon: const Icon(Icons.add),
-          label: const Text('Add New'),
+          onPressed: onExport,
+          icon: const Icon(Icons.download),
+          label: const Text('Export Excel'),
         ),
       ],
     );
