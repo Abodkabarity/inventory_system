@@ -4,36 +4,37 @@ class CalcDemand30 {
   const CalcDemand30();
 
   int call(CalcInput input) {
-    final f = input.formulary.trim().toLowerCase();
-    final r = input.reason.trim().toLowerCase();
+    final formularyRaw = input.formulary.trim().toUpperCase();
+    final formularyLower = input.formulary.trim().toLowerCase();
+    final reasonLower = input.reason.trim().toLowerCase();
 
     final maxAdj = _toNum(input.maxAdjustment30d);
     final assortment = _toNum(input.assortmentQtyBaseStock);
     final sales = _toNum(input.sales30dFrom45d);
     final tma = _toNum(input.tmaQty);
 
+    final isNon = formularyLower == 'non';
+    final isEssential = formularyRaw == 'ESSENTIAL';
+
+    final hasTma = tma > 0;
+    final isNewItem = reasonLower == 'new item';
+
     double maxVal;
 
-    final hasMaxAdj = maxAdj.isFinite && maxAdj >= 0;
-    final tmaIsZero = tma == 0;
-    final tmaIsPresent = tma != 0;
-
-    if (input.formulary.trim() == 'ESSENTIAL' && tmaIsZero && hasMaxAdj) {
+    if (isEssential && !hasTma && maxAdj > 0) {
       maxVal = maxAdj;
-    } else if (f == 'non') {
-      if (r == 'new item' && tmaIsZero) {
+    } else if (isNon) {
+      if (isNewItem && !hasTma) {
         maxVal = assortment;
-      } else if (tmaIsZero) {
+      } else if (!hasTma) {
         maxVal = 0;
       } else {
         maxVal = _max4(maxAdj, assortment, sales, tma);
       }
-    } else if (maxAdj > 0 && tmaIsZero) {
+    } else if (maxAdj > 0 && !hasTma) {
       maxVal = maxAdj;
-    } else if (maxAdj == 0 && tmaIsZero) {
+    } else if (maxAdj == 0 && !hasTma) {
       maxVal = _max2(assortment, sales);
-    } else if (tmaIsPresent) {
-      maxVal = _max4(maxAdj, assortment, sales, tma);
     } else {
       maxVal = _max4(maxAdj, assortment, sales, tma);
     }

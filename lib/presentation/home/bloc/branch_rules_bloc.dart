@@ -33,11 +33,13 @@ class BranchRulesBloc extends Bloc<BranchRulesEvent, BranchRulesState> {
     final all = <Map<String, dynamic>>[];
     var from = 0;
 
+    final bn = branchName.trim();
+
     while (true) {
       final data = await client
           .from(table)
           .select(select)
-          .eq(branchColumn, branchName)
+          .ilike(branchColumn, bn)
           .range(from, from + pageSize - 1);
 
       final list = (data as List).cast<Map<String, dynamic>>();
