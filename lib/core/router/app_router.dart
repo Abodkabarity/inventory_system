@@ -14,17 +14,25 @@ class AppRouter {
         final app = context.read<AppBloc>().state;
         final path = state.uri.path;
 
-        // Not logged in -> always go login
-        if (app.status == AppStatus.unauthenticated) {
-          return path == '/login' ? null : '/login';
+        final isAuth = app.status == AppStatus.authenticated;
+        final isUnauth = app.status == AppStatus.unauthenticated;
+        final isLogin = path == '/login';
+
+        // While app is still initializing, do not redirect.
+        if (app.status == AppStatus.initial) {
+          return null;
         }
 
-        // Logged in -> prevent staying on /login
-        if (app.status == AppStatus.authenticated && path == '/login') {
+        // Not logged in -> always go to login.
+        if (isUnauth) {
+          return isLogin ? null : '/login';
+        }
+
+        // Logged in -> prevent staying on login.
+        if (isAuth && isLogin) {
           return '/';
         }
 
-        // While app is loading (initial) allow current path
         return null;
       },
       routes: [

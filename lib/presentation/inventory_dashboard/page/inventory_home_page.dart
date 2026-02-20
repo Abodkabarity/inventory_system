@@ -3,7 +3,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../bloc/inventory_orders_bloc.dart';
-import '../bloc/inventory_orders_bloc_factory.dart';
 import '../bloc/inventory_orders_event.dart';
 import '../bloc/inventory_orders_state.dart';
 import '../inventory_order_details/page/inventory_order_details_page.dart';
@@ -13,12 +12,7 @@ class InventoryHomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) =>
-          InventoryOrdersBlocFactory.create()
-            ..add(const LoadHeaders(pageIndex: 0)),
-      child: const _InventoryView(),
-    );
+    return const _InventoryView();
   }
 }
 
