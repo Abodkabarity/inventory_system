@@ -1,3 +1,4 @@
+/*
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../data/datasources/remote/inventory_orders_remote_ds.dart';
@@ -16,9 +17,9 @@ class InventoryOrdersBlocFactory {
 
     return InventoryOrdersBloc(
       loadHeadersPage: LoadHeadersPage(repo),
-      generateAllOrders: GenerateAllOrders(repo),
       stepGenerateAllOrders: StepGenerateAllOrders(repo),
       getOrderJob: GetOrderJob(repo),
     );
   }
 }
+*/

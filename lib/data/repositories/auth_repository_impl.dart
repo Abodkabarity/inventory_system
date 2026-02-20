@@ -17,7 +17,13 @@ class AuthRepositoryImpl implements AuthRepository {
   AppUser? getCurrentUserBasic() {
     final u = ds.currentUser();
     if (u == null) return null;
-    return AppUser(userId: u.id, role: 'unknown', branchId: null);
+
+    return AppUser(
+      userId: u.id,
+      role: 'unknown',
+      branchName: null,
+      isActive: true,
+    );
   }
 
   @override

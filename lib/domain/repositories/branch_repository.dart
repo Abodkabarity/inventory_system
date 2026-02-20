@@ -1,5 +1,8 @@
-import '../entities/branch.dart';
-
 abstract class BranchRepository {
-  Future<Branch?> getBranchById(String branchId);
+  Future<String> getMyBranchName();
+
+  Future<String> getBranchNameById({required String branchId});
+
+  // Keep this for backward compatibility, but make it abstract
+  Future<String> getBranchById({required String branchId});
 }

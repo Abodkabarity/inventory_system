@@ -22,26 +22,32 @@ class SupabaseAuthRemoteDs {
 
     final data = await client
         .from('app_users')
-        .select('user_id, role, branch_id')
+        .select('user_id, role, branch_name, is_active')
         .eq('user_id', uid)
         .maybeSingle();
 
     if (data == null) return null;
 
     final role = (data['role'] ?? '').toString().trim().toLowerCase();
-    final branchId = data['branch_id'] as String?;
+    final isActive = (data['is_active'] as bool?) ?? true;
+    final branchName = (data['branch_name'] ?? '').toString().trim();
 
-    // Inventory does NOT require branch_id
+    if (!isActive) {
+      throw Exception('This user is inactive in app_users.');
+    }
+
+    // Inventory does NOT require branch_name
     if (role == 'inventory') {
       return AppUserModel.fromMap({
         'user_id': data['user_id'],
         'role': data['role'],
-        'branch_id': null,
+        'branch_name': null,
+        'is_active': isActive,
       });
     }
 
-    // Other roles MUST have branch_id
-    if (branchId == null || branchId.isEmpty) {
+    // Other roles MUST have branch_name
+    if (branchName.isEmpty) {
       throw Exception('No branch assigned for this user in app_users.');
     }
 

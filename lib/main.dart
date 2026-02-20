@@ -49,20 +49,21 @@ Future<void> main() async {
   final router = AppRouter.createRouter();
 
   runApp(
-    MultiBlocProvider(
+    MultiRepositoryProvider(
       providers: [
-        BlocProvider(
-          create: (_) => AppBloc(getMe: getMe)..add(const AppStarted()),
-        ),
-        BlocProvider(
-          create: (_) => AuthBloc(signIn: signIn, signOut: signOut),
-        ),
-        // CatalogBloc will be created in HomePage (needs branchId)
+        RepositoryProvider.value(value: getMyBranch),
+        RepositoryProvider.value(value: getCatalog),
       ],
-      child: MyApp(
-        router: router,
-        getMyBranch: getMyBranch,
-        getCatalog: getCatalog,
+      child: MultiBlocProvider(
+        providers: [
+          BlocProvider(
+            create: (_) => AppBloc(getMe: getMe)..add(const AppStarted()),
+          ),
+          BlocProvider(
+            create: (_) => AuthBloc(signIn: signIn, signOut: signOut),
+          ),
+        ],
+        child: MyApp(router: router),
       ),
     ),
   );
@@ -70,28 +71,15 @@ Future<void> main() async {
 
 class MyApp extends StatelessWidget {
   final GoRouter router;
-  final GetMyBranch getMyBranch;
-  final GetCatalogItemsForBranch getCatalog;
 
-  const MyApp({
-    super.key,
-    required this.router,
-    required this.getMyBranch,
-    required this.getCatalog,
-  });
+  const MyApp({super.key, required this.router});
 
   @override
   Widget build(BuildContext context) {
-    return RepositoryProvider.value(
-      value: getMyBranch,
-      child: RepositoryProvider.value(
-        value: getCatalog,
-        child: MaterialApp.router(
-          debugShowCheckedModeBanner: false,
-          routerConfig: router,
-          theme: ThemeData(useMaterial3: true),
-        ),
-      ),
+    return MaterialApp.router(
+      debugShowCheckedModeBanner: false,
+      routerConfig: router,
+      theme: ThemeData(useMaterial3: true),
     );
   }
 }
