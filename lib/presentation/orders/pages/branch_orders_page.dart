@@ -3,12 +3,11 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../domain/entities/daily_order_row.dart';
-import '../bloc/orders_bloc.dart';
-import '../bloc/orders_bloc_factory.dart';
-import '../bloc/orders_event.dart';
-import '../bloc/orders_state.dart';
-// ✅ NEW widgets (لا تغير منطقك القديم، بس UI)
-import '../widgets/final_reorder_side_panel.dart';
+import '../bloc/order_bloc/orders_bloc.dart';
+import '../bloc/order_bloc/orders_bloc_factory.dart';
+import '../bloc/order_bloc/orders_event.dart';
+import '../bloc/order_bloc/orders_state.dart';
+import '../final_reorder/widgets/final_reorder_side_panel.dart';
 import '../widgets/orders_table.dart';
 import '../widgets/orders_toolbar.dart';
 import '../widgets/review_changes_dialog.dart';
@@ -43,10 +42,8 @@ class _BranchOrdersView extends StatelessWidget {
       builder: (context, s) {
         final isBusy = s.isBusy;
 
-        // ✅ stats على كامل rows (مش viewRows)
         final statsAll = _calcStats(s.rows);
 
-        // ✅ categories من كامل rows
         final categories = _extractCategories(s.rows);
 
         return Scaffold(
@@ -63,9 +60,7 @@ class _BranchOrdersView extends StatelessWidget {
                   ),
                   const SizedBox(height: 14),
 
-                  // ==========================
-                  // Initial screen (Generate center)
-                  // ==========================
+                  // Initial screen
                   if (s.isInitial)
                     Expanded(
                       child: Center(
@@ -83,9 +78,7 @@ class _BranchOrdersView extends StatelessWidget {
                       ),
                     )
                   else ...[
-                    // ==========================
-                    // Progress strip while generating/loading
-                    // ==========================
+                    // Progress strip
                     if (s.status == OrdersStatus.generating ||
                         s.status == OrdersStatus.loading)
                       Padding(
@@ -105,7 +98,6 @@ class _BranchOrdersView extends StatelessWidget {
                         ),
                       ),
 
-                    // KPI cards
                     Row(
                       children: [
                         Expanded(
@@ -168,8 +160,6 @@ class _BranchOrdersView extends StatelessWidget {
                           onOpenColumns: () =>
                               Scaffold.of(context).openEndDrawer(),
                           onExport: () {},
-
-                          // ✅ NEW: Review Changes button (بدون عمود Actions بالجدول)
                           actions: [
                             if (s.hasEdits)
                               _ReviewEditsButton(
@@ -212,11 +202,7 @@ class _BranchOrdersView extends StatelessWidget {
                                 isLoading: isBusy,
                                 visibleOptionalColumns:
                                     s.visibleOptionalColumns,
-
-                                // ✅ NEW
                                 finalEdits: s.finalEdits,
-
-                                // ✅ click على final reorder cell يفتح Side Panel
                                 onTapFinalReorder: (row) => _openSidePanel(
                                   context: context,
                                   state: s,
@@ -239,7 +225,7 @@ class _BranchOrdersView extends StatelessWidget {
   }
 
   // ==========================
-  // ✅ Review dialog (آخر مراجعة للتعديلات)
+  // Review dialog
   // ==========================
   Future<void> _openReviewDialog({
     required BuildContext context,
@@ -267,7 +253,7 @@ class _BranchOrdersView extends StatelessWidget {
   }
 
   // ==========================
-  // ✅ Side Panel (فتح عند click على خلية Final Reorder)
+  // Side panel
   // ==========================
   Future<void> _openSidePanel({
     required BuildContext context,
@@ -282,8 +268,10 @@ class _BranchOrdersView extends StatelessWidget {
 
     final edit = state.finalEdits[itemCode];
     final initialQty = edit?.newQty ?? oldQty;
+    final initialReason = edit?.reason ?? '';
 
-    final isLimitedStock = (row.isLimitedStock ?? false);
+    // ✅ TAKE IT FROM VIEW COLUMN (best)
+    final totalReorderAllBranches = _toInt(row.totalReorderAllBranches);
 
     await showGeneralDialog(
       context: context,
@@ -297,20 +285,19 @@ class _BranchOrdersView extends StatelessWidget {
             row: row,
             oldQty: oldQty,
             initialQty: initialQty,
-            isLimitedStock: isLimitedStock,
+            initialReason: initialReason,
             onClose: () => Navigator.of(context).pop(),
-
-            onSave: (newQty) {
+            onSave: (newQty, reason) {
               context.read<OrdersBloc>().add(
                 OrdersApplyFinalEdit(
                   itemCode: itemCode,
                   oldQty: oldQty,
                   newQty: newQty,
+                  reason: reason,
                 ),
               );
               Navigator.of(context).pop();
             },
-
             onReset: () {
               context.read<OrdersBloc>().add(OrdersResetFinalEdit(itemCode));
               Navigator.of(context).pop();
@@ -322,7 +309,41 @@ class _BranchOrdersView extends StatelessWidget {
   }
 
   // ==========================
-  // ✅ STATS
+  // Helpers
+  // ==========================
+  int _toInt(dynamic v) {
+    if (v == null) return 0;
+    if (v is int) return v;
+    if (v is num) return v.round();
+    final s = v.toString().trim();
+    if (s.isEmpty) return 0;
+    return int.tryParse(s.replaceAll(',', '')) ?? 0;
+  }
+
+  int _sumReorderForItem({
+    required List<DailyOrderRow> rows,
+    required Map<String, FinalReorderEdit> edits,
+    required String itemCode,
+  }) {
+    int sum = 0;
+    for (final r in rows) {
+      if (r.itemCode != itemCode) continue;
+
+      // ✅ Use edited qty if exists, otherwise auto
+      final e = edits[r.itemCode];
+      if (e != null) {
+        sum += e.newQty;
+      } else {
+        sum += _toInt(
+          _extractNumericFinalReorder(r.finalReorderQtyStoreStockGt0),
+        );
+      }
+    }
+    return sum;
+  }
+
+  // ==========================
+  // STATS
   // ==========================
   _Stats _calcStats(List<DailyOrderRow> rows) {
     int essential = 0;
@@ -341,8 +362,6 @@ class _BranchOrdersView extends StatelessWidget {
     return _Stats(sumFinalReorder: sumFinal, essential: essential, non: non);
   }
 
-  // يأخذ "4" أو "4.5" أو "  3 " => رقم
-  // يأخذ "NON FORMULARY" أو "" => 0
   num _extractNumericFinalReorder(String? v) {
     final s = (v ?? '').toString().trim();
     if (s.isEmpty) return 0;
@@ -365,10 +384,7 @@ class _BranchOrdersView extends StatelessWidget {
     return ['ALL', ...list];
   }
 
-  String _formatInt(num v) {
-    final n = v.round();
-    return n.toString();
-  }
+  String _formatInt(num v) => v.round().toString();
 }
 
 class _Stats {
@@ -383,7 +399,6 @@ class _Stats {
   });
 }
 
-// ✅ NEW small widget for toolbar action
 class _ReviewEditsButton extends StatelessWidget {
   final int count;
   final VoidCallback onPressed;
@@ -523,7 +538,7 @@ class _GenerateCard extends StatelessWidget {
 }
 
 class _ProgressStrip extends StatelessWidget {
-  final int progress; // 0..100
+  final int progress;
   final String message;
 
   const _ProgressStrip({required this.progress, required this.message});
@@ -543,7 +558,7 @@ class _ProgressStrip extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.sync, size: 18, color: AppColors.blueDark),
+              const Icon(Icons.sync, size: 18, color: AppColors.primaryColor),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -846,7 +861,7 @@ class _TableTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Row(
       children: [
-        Icon(Icons.table_rows_outlined, color: AppColors.blueDark),
+        Icon(Icons.table_rows_outlined, color: AppColors.primaryColor),
         SizedBox(width: 8),
         Text(
           'Main Table',

@@ -17,13 +17,14 @@ class OrdersRemoteDs {
     var from = 0;
 
     const cols = '''
-      run_date, branch, item_code, item_name,
-      branch_stock, mismatch_stock, store_stock, pending_stock_received,
-      extra_qty_more_than_month, max_adjustment_30d, demand_for_30_days,
-      final_reorder_qty_store_stock_gt_0, qty_30_days_from_last_45d,
-      branch_formulary, assortment_qty_base_stock, assortment_by,
-      item_purchase_type, category, is_upp, item_minimum_order_unit
-    ''';
+  run_date, branch, item_code, item_name,
+  branch_stock, mismatch_stock, store_stock, pending_stock_received,
+  extra_qty_more_than_month, max_adjustment_30d, demand_for_30_days,
+  reorder_qty_num,
+  final_reorder_qty_store_stock_gt_0, qty_30_days_from_last_45d,
+  branch_formulary, assortment_qty_base_stock, assortment_by,
+  item_purchase_type, category, is_upp, item_minimum_order_unit
+''';
 
     while (true) {
       var q = client

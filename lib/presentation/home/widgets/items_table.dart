@@ -268,7 +268,7 @@ class _ItemsTableState extends State<ItemsTable> {
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: const BorderSide(
-                    color: AppColors.blue,
+                    color: AppColors.secondaryColor,
                     width: 1.4,
                   ),
                 ),
@@ -525,7 +525,7 @@ class ItemsDataSource extends DataGridSource {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.edit_note, color: AppColors.blueDark),
+                  const Icon(Icons.edit_note, color: AppColors.primaryColor),
                   const SizedBox(width: 8),
                   const Text(
                     'Edit Quantity',
@@ -672,7 +672,7 @@ class ItemsDataSource extends DataGridSource {
     }
 
     if (key == 'pending_stock_received') {
-      if (n > 0) return AppColors.blueDark;
+      if (n > 0) return AppColors.primaryColor;
       return AppColors.subText;
     }
 
@@ -688,7 +688,7 @@ class ItemsDataSource extends DataGridSource {
     }
 
     if (key == 'final_qty') {
-      if (value.trim().isNotEmpty) return AppColors.blueDark;
+      if (value.trim().isNotEmpty) return AppColors.primaryColor;
       return AppColors.subText;
     }
 
@@ -827,7 +827,7 @@ class _EmptyState extends StatelessWidget {
             const Icon(
               Icons.inbox_outlined,
               size: 40,
-              color: AppColors.blueDark,
+              color: AppColors.primaryColor,
             ),
             const SizedBox(height: 10),
             const Text(
