@@ -1,6 +1,7 @@
+// orders_state.dart
 import 'package:equatable/equatable.dart';
 
-import '../../../domain/entities/daily_order_row.dart';
+import '../../../../domain/entities/daily_order_row.dart';
 
 enum OrdersStatus { idle, generating, loading, ready, failure }
 
@@ -8,25 +9,28 @@ class FinalReorderEdit extends Equatable {
   final String itemCode;
   final int oldQty; // auto/suggested numeric only
   final int newQty; // user edited qty numeric only
+  final String reason; // required
 
   const FinalReorderEdit({
     required this.itemCode,
     required this.oldQty,
     required this.newQty,
+    required this.reason,
   });
 
   int get diff => newQty - oldQty;
 
-  FinalReorderEdit copyWith({int? oldQty, int? newQty}) {
+  FinalReorderEdit copyWith({int? oldQty, int? newQty, String? reason}) {
     return FinalReorderEdit(
       itemCode: itemCode,
       oldQty: oldQty ?? this.oldQty,
       newQty: newQty ?? this.newQty,
+      reason: reason ?? this.reason,
     );
   }
 
   @override
-  List<Object?> get props => [itemCode, oldQty, newQty];
+  List<Object?> get props => [itemCode, oldQty, newQty, reason];
 }
 
 class OrdersState extends Equatable {
@@ -37,10 +41,10 @@ class OrdersState extends Equatable {
 
   final String search;
 
-  /// كل بيانات الفرع بعد enrich
+  /// All branch rows after enrich
   final List<DailyOrderRow> rows;
 
-  /// بعد filters + search
+  /// After filters + search
   final List<DailyOrderRow> viewRows;
 
   /// UI Progress 0..100
@@ -56,10 +60,10 @@ class OrdersState extends Equatable {
   final String formularyFilter;
   final bool nonWithSales45Only;
 
-  // ✅ NEW: edited final reorder values (by item_code)
+  // Edited final reorder values (by item_code)
   final Map<String, FinalReorderEdit> finalEdits;
 
-  // ✅ NEW: for opening side panel
+  // For opening side panel
   final String? selectedItemCode;
 
   const OrdersState({

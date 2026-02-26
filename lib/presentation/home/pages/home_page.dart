@@ -625,7 +625,10 @@ class _Header extends StatelessWidget {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.all(Radius.circular(14)),
-                borderSide: BorderSide(color: AppColors.blue, width: 1.4),
+                borderSide: BorderSide(
+                  color: AppColors.secondaryColor,
+                  width: 1.4,
+                ),
               ),
             ),
             onChanged: onSearch,
@@ -651,7 +654,7 @@ class _TableTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Row(
       children: [
-        Icon(Icons.table_rows_outlined, color: AppColors.blueDark),
+        Icon(Icons.table_rows_outlined, color: AppColors.primaryColor),
         SizedBox(width: 8),
         Text(
           'Main Table',
@@ -746,7 +749,7 @@ class _StatCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: AppColors.border),
             ),
-            child: Icon(icon, color: AppColors.blueDark),
+            child: Icon(icon, color: AppColors.primaryColor),
           ),
           const SizedBox(width: 12),
           Expanded(

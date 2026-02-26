@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../domain/entities/daily_order_row.dart';
-import '../bloc/orders_state.dart';
+import '../bloc/order_bloc/orders_state.dart';
 
 class ReviewChangesDialog extends StatelessWidget {
   final List<DailyOrderRow> rows;
@@ -36,7 +36,7 @@ class ReviewChangesDialog extends StatelessWidget {
     return Dialog(
       insetPadding: const EdgeInsets.all(16),
       child: SizedBox(
-        width: 820,
+        width: 980,
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -67,7 +67,6 @@ class ReviewChangesDialog extends StatelessWidget {
               const SizedBox(height: 8),
               const Divider(height: 1),
               const SizedBox(height: 12),
-
               if (list.isEmpty)
                 const Padding(
                   padding: EdgeInsets.all(18),
@@ -79,12 +78,13 @@ class ReviewChangesDialog extends StatelessWidget {
                     child: DataTable(
                       headingRowHeight: 44,
                       dataRowMinHeight: 44,
-                      dataRowMaxHeight: 56,
+                      dataRowMaxHeight: 72,
                       columns: const [
                         DataColumn(label: Text('Item')),
                         DataColumn(label: Text('Auto')),
                         DataColumn(label: Text('New')),
                         DataColumn(label: Text('Diff')),
+                        DataColumn(label: Text('Reason')),
                         DataColumn(label: Text('')),
                       ],
                       rows: list.map((e) {
@@ -119,6 +119,18 @@ class ReviewChangesDialog extends StatelessWidget {
                               ),
                             ),
                             DataCell(
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 320,
+                                ),
+                                child: Text(
+                                  e.reason,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                            DataCell(
                               Row(
                                 children: [
                                   TextButton(
@@ -138,7 +150,6 @@ class ReviewChangesDialog extends StatelessWidget {
                     ),
                   ),
                 ),
-
               const SizedBox(height: 14),
               Align(
                 alignment: Alignment.centerRight,

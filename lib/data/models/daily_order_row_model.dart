@@ -14,13 +14,19 @@ class DailyOrderRowModel extends DailyOrderRow {
     required super.demandFor30Days,
     required super.finalReorderQtyStoreStockGt0,
     required super.qty30DaysFromLast45d,
+
+    // ✅ ADDED
+    required super.reorderQtyNum,
+
+    required super.totalReorderAllBranches,
     super.branchFormulary,
     super.assortmentQtyBaseStock,
     super.assortmentBy,
     super.itemPurchaseType,
     super.category,
     super.isUpp,
-
+    super.uppThiqa,
+    super.uppBasic,
     super.minOrderUnit,
     super.subCategory,
     super.company,
@@ -35,6 +41,15 @@ class DailyOrderRowModel extends DailyOrderRow {
     final s = v.toString().trim();
     if (s.isEmpty) return 0;
     return num.tryParse(s.replaceAll(',', '')) ?? 0;
+  }
+
+  static int _i(dynamic v) {
+    if (v == null) return 0;
+    if (v is int) return v;
+    if (v is num) return v.round();
+    final s = v.toString().trim();
+    if (s.isEmpty) return 0;
+    return int.tryParse(s.replaceAll(',', '')) ?? 0;
   }
 
   static bool? _b(dynamic v) {
@@ -66,7 +81,12 @@ class DailyOrderRowModel extends DailyOrderRow {
       ).trim(),
       qty30DaysFromLast45d: _n(m['qty_30_days_from_last_45d']),
 
-      // ✅ From v_daily_order_latest directly
+      // ✅ ADDED
+      reorderQtyNum: _n(m['reorder_qty_num']),
+
+      // keep if you still have it in view
+      totalReorderAllBranches: _i(m['total_reorder_all_branches']),
+
       branchFormulary: _s(m['branch_formulary']).trim().isEmpty
           ? null
           : _s(m['branch_formulary']).trim(),
@@ -93,7 +113,6 @@ class DailyOrderRowModel extends DailyOrderRow {
           ? null
           : _s(m['item_minimum_order_unit']).trim(),
 
-      // Optional (إذا كانت موجودة في الـ view)
       subCategory: _s(m['sub_category']).trim().isEmpty
           ? null
           : _s(m['sub_category']).trim(),

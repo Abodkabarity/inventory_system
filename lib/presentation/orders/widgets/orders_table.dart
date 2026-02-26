@@ -1,17 +1,18 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../domain/entities/daily_order_row.dart';
-import '../bloc/orders_state.dart';
+import '../bloc/order_bloc/orders_state.dart';
 
 class OrdersTable extends StatefulWidget {
   final List<DailyOrderRow> rows;
   final bool isLoading;
   final Set<String> visibleOptionalColumns;
 
-  // ✅ NEW
+  // NEW
   final Map<String, FinalReorderEdit> finalEdits;
   final ValueChanged<DailyOrderRow> onTapFinalReorder;
 
@@ -129,8 +130,8 @@ class _OrdersTableState extends State<OrdersTable> {
           widget.visibleOptionalColumns,
         );
 
-    final editsChanged =
-        oldWidget.finalEdits.length != widget.finalEdits.length;
+    // FIX: edits can change without length change (qty/reason updates)
+    final editsChanged = !mapEquals(oldWidget.finalEdits, widget.finalEdits);
 
     if (!identical(oldWidget.rows, widget.rows) ||
         colsChanged ||
@@ -227,20 +228,24 @@ class _OrdersTableState extends State<OrdersTable> {
                 return true;
               },
 
-              // ✅ NEW: click cell => if final reorder column then open side panel
+              // FIX: use effectiveRows to map taps after filtering/sorting
               onCellTap: (details) {
-                // rowIndex: 0 is header
                 if (details.rowColumnIndex.rowIndex <= 0) return;
 
                 final columnIndex = details.rowColumnIndex.columnIndex;
-                final rowIndex = details.rowColumnIndex.rowIndex - 1;
+                final effectiveRowIndex = details.rowColumnIndex.rowIndex - 1;
 
-                if (rowIndex < 0 || rowIndex >= widget.rows.length) return;
+                if (columnIndex < 0 || columnIndex >= _visibleColumns.length) {
+                  return;
+                }
 
                 final colName = _visibleColumns[columnIndex];
-                if (colName == 'final_reorder_qty_store_stock_gt_0') {
-                  widget.onTapFinalReorder(widget.rows[rowIndex]);
-                }
+                if (colName != 'final_reorder_qty_store_stock_gt_0') return;
+
+                final daily = _source.rowAtEffectiveIndex(effectiveRowIndex);
+                if (daily == null) return;
+
+                widget.onTapFinalReorder(daily);
               },
 
               columns: _visibleColumns.map((key) {
@@ -352,6 +357,19 @@ class _OrdersDataSource extends DataGridSource {
     notifyListeners();
   }
 
+  // NEW: resolve tapped row after filtering using effectiveRows mapping
+  DailyOrderRow? rowAtEffectiveIndex(int effectiveIndex) {
+    final er = effectiveRows;
+    if (effectiveIndex < 0 || effectiveIndex >= er.length) return null;
+
+    final gridRow = er[effectiveIndex];
+    final originalIndex = _rowToIndex[gridRow];
+    if (originalIndex == null) return null;
+
+    if (originalIndex < 0 || originalIndex >= _rows.length) return null;
+    return _rows[originalIndex];
+  }
+
   dynamic _value(DailyOrderRow r, String key) {
     switch (key) {
       case 'branch':
@@ -378,7 +396,6 @@ class _OrdersDataSource extends DataGridSource {
         return r.demandFor30Days;
 
       case 'final_reorder_qty_store_stock_gt_0':
-        // ✅ display edited value if exists (for quick view)
         final e = _edits[r.itemCode];
         if (e != null) return e.newQty.toString();
         return r.finalReorderQtyStoreStockGt0;
@@ -459,7 +476,7 @@ class _OrdersDataSource extends DataGridSource {
     }
 
     if (key == 'pending_stock_received') {
-      if (n > 0) return AppColors.blueDark;
+      if (n > 0) return AppColors.primaryColor;
       return AppColors.subText;
     }
 
@@ -472,7 +489,6 @@ class _OrdersDataSource extends DataGridSource {
       if (n < 3) return Colors.orange;
     }
 
-    // ✅ highlight edited final reorder
     if (key == 'final_reorder_qty_store_stock_gt_0') {
       return AppColors.text;
     }
@@ -504,7 +520,6 @@ class _OrdersDataSource extends DataGridSource {
     final edited = daily != null && _edits.containsKey(daily.itemCode);
 
     return DataGridRowAdapter(
-      // ✅ highlight entire row if edited (soft)
       color: edited ? const Color(0xFFF7F5FF) : null,
       cells: row.getCells().map((c) {
         final key = c.columnName;
@@ -516,7 +531,6 @@ class _OrdersDataSource extends DataGridSource {
             : Alignment.centerLeft;
         final color = _textColorFor(key, text);
 
-        // ✅ Formulary badge
         if (key == 'branch_formulary') {
           return Container(
             alignment: Alignment.centerLeft,
@@ -546,7 +560,6 @@ class _OrdersDataSource extends DataGridSource {
           );
         }
 
-        // ✅ FINAL REORDER cell shows Old/New
         if (key == 'final_reorder_qty_store_stock_gt_0' && daily != null) {
           final oldQty = _extractNumeric(daily.finalReorderQtyStoreStockGt0);
           final edit = _edits[daily.itemCode];
@@ -607,7 +620,7 @@ class _OrdersDataSource extends DataGridSource {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  showNew ? 'Auto: $oldQty' : 'Auto: $oldQty',
+                  'Auto: $oldQty',
                   style: const TextStyle(
                     fontSize: 11.5,
                     color: Color(0xFF6B7280),

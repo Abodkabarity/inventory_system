@@ -18,6 +18,9 @@ class DailyOrderRow {
   final String finalReorderQtyStoreStockGt0;
   final num qty30DaysFromLast45d;
 
+  // ✅ NEW: numeric reorder qty from DB (reorder_qty_num)
+  final num reorderQtyNum;
+
   // ✅ From v_daily_order_latest directly
   final String? branchFormulary;
   final String? assortmentQtyBaseStock;
@@ -37,6 +40,9 @@ class DailyOrderRow {
   final String? supplier;
   final String? barcode;
 
+  // (Optional) keep it if you still use it elsewhere, but SidePanel won't need it
+  final int totalReorderAllBranches;
+
   const DailyOrderRow({
     required this.branch,
     required this.itemCode,
@@ -45,15 +51,16 @@ class DailyOrderRow {
     required this.mismatchStock,
     required this.storeStock,
     required this.pendingStockReceived,
-
-    // ✅ ADDED
     this.isLimitedStock,
-
     required this.extraQtyMoreThanMonth,
     required this.maxAdjustment30d,
     required this.demandFor30Days,
     required this.finalReorderQtyStoreStockGt0,
     required this.qty30DaysFromLast45d,
+
+    // ✅ ADDED
+    required this.reorderQtyNum,
+
     this.branchFormulary,
     this.assortmentQtyBaseStock,
     this.assortmentBy,
@@ -67,6 +74,7 @@ class DailyOrderRow {
     this.company,
     this.supplier,
     this.barcode,
+    required this.totalReorderAllBranches,
   });
 
   DailyOrderRow copyWith({
@@ -77,15 +85,16 @@ class DailyOrderRow {
     num? mismatchStock,
     num? storeStock,
     num? pendingStockReceived,
-
-    // ✅ ADDED
     bool? isLimitedStock,
-
     num? extraQtyMoreThanMonth,
     num? maxAdjustment30d,
     num? demandFor30Days,
     String? finalReorderQtyStoreStockGt0,
     num? qty30DaysFromLast45d,
+
+    // ✅ ADDED
+    num? reorderQtyNum,
+
     String? branchFormulary,
     String? assortmentQtyBaseStock,
     String? assortmentBy,
@@ -99,6 +108,7 @@ class DailyOrderRow {
     String? company,
     String? supplier,
     String? barcode,
+    int? totalReorderAllBranches,
   }) {
     return DailyOrderRow(
       branch: branch ?? this.branch,
@@ -108,10 +118,7 @@ class DailyOrderRow {
       mismatchStock: mismatchStock ?? this.mismatchStock,
       storeStock: storeStock ?? this.storeStock,
       pendingStockReceived: pendingStockReceived ?? this.pendingStockReceived,
-
-      // ✅ ADDED
       isLimitedStock: isLimitedStock ?? this.isLimitedStock,
-
       extraQtyMoreThanMonth:
           extraQtyMoreThanMonth ?? this.extraQtyMoreThanMonth,
       maxAdjustment30d: maxAdjustment30d ?? this.maxAdjustment30d,
@@ -119,6 +126,10 @@ class DailyOrderRow {
       finalReorderQtyStoreStockGt0:
           finalReorderQtyStoreStockGt0 ?? this.finalReorderQtyStoreStockGt0,
       qty30DaysFromLast45d: qty30DaysFromLast45d ?? this.qty30DaysFromLast45d,
+
+      // ✅ ADDED
+      reorderQtyNum: reorderQtyNum ?? this.reorderQtyNum,
+
       branchFormulary: branchFormulary ?? this.branchFormulary,
       assortmentQtyBaseStock:
           assortmentQtyBaseStock ?? this.assortmentQtyBaseStock,
@@ -133,6 +144,8 @@ class DailyOrderRow {
       company: company ?? this.company,
       supplier: supplier ?? this.supplier,
       barcode: barcode ?? this.barcode,
+      totalReorderAllBranches:
+          totalReorderAllBranches ?? this.totalReorderAllBranches,
     );
   }
 }

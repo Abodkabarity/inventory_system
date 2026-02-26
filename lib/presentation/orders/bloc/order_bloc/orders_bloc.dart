@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../../domain/entities/daily_order_row.dart';
-import '../../../domain/repositories/orders_repository.dart';
-import '../../../domain/usecases/fetch_orders_all.dart';
-import '../../../domain/usecases/generate_branch_order.dart';
+import '../../../../domain/entities/daily_order_row.dart';
+import '../../../../domain/repositories/orders_repository.dart';
+import '../../../../domain/usecases/fetch_orders_all.dart';
+import '../../../../domain/usecases/generate_branch_order.dart';
 import 'orders_event.dart';
 import 'orders_state.dart';
 
@@ -34,7 +34,6 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     on<OrdersFormularyChanged>(_onFormularyChanged);
     on<OrdersNonWithSales45Toggled>(_onNonWithSales45Toggled);
 
-    // ✅ NEW
     on<OrdersSelectItemForEdit>(_onSelectItemForEdit);
     on<OrdersClearSelection>(_onClearSelection);
     on<OrdersApplyFinalEdit>(_onApplyFinalEdit);
@@ -48,9 +47,6 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     return super.close();
   }
 
-  // ==========================
-  // Generate flow
-  // ==========================
   Future<void> _onPressedGenerate(
     OrdersPressedGenerate e,
     Emitter<OrdersState> emit,
@@ -104,9 +100,6 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     });
   }
 
-  // ==========================
-  // Load all rows + filter
-  // ==========================
   Future<void> _onLoadAll(OrdersLoadAll e, Emitter<OrdersState> emit) async {
     emit(
       state.copyWith(
@@ -166,9 +159,6 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     }
   }
 
-  // ==========================
-  // Search (client-side)
-  // ==========================
   void _onSearchChanged(OrdersSearchChanged e, Emitter<OrdersState> emit) {
     final nextSearch = e.search;
 
@@ -196,9 +186,6 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     return rows.where(hit).toList();
   }
 
-  // ==========================
-  // Columns
-  // ==========================
   void _onToggleColumn(OrdersToggleColumn e, Emitter<OrdersState> emit) {
     final next = Set<String>.from(state.visibleOptionalColumns);
     if (e.visible) {
@@ -217,9 +204,6 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     );
   }
 
-  // ==========================
-  // Filters
-  // ==========================
   void _onCategoryChanged(OrdersCategoryChanged e, Emitter<OrdersState> emit) {
     final view = _applyUiFilters(
       rows: _applySearch(state.rows, state.search),
@@ -294,9 +278,6 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     return num.tryParse(s.replaceAll(',', '')) ?? 0;
   }
 
-  // ==========================
-  // ✅ NEW: Side panel selection
-  // ==========================
   void _onSelectItemForEdit(
     OrdersSelectItemForEdit e,
     Emitter<OrdersState> emit,
@@ -308,16 +289,21 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     emit(state.copyWith(selectedItemCode: null));
   }
 
-  // ==========================
-  // ✅ NEW: Apply edit
-  // ==========================
+  // ✅ UPDATED: reason required and stored
   void _onApplyFinalEdit(OrdersApplyFinalEdit e, Emitter<OrdersState> emit) {
     final next = Map<String, FinalReorderEdit>.from(state.finalEdits);
 
-    // إذا نفس القديم = الجديد -> احذف edit
+    final reason = e.reason.trim();
+
+    // If no change -> remove
     if (e.newQty == e.oldQty) {
       next.remove(e.itemCode);
       emit(state.copyWith(finalEdits: next));
+      return;
+    }
+
+    // Reason is mandatory: if empty, do not apply edit
+    if (reason.isEmpty) {
       return;
     }
 
@@ -325,6 +311,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       itemCode: e.itemCode,
       oldQty: e.oldQty,
       newQty: e.newQty,
+      reason: reason,
     );
 
     emit(state.copyWith(finalEdits: next));
