@@ -1,3 +1,6 @@
+// branch_orders_page.dart
+// Full file. No Arabic inside code.
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -8,9 +11,11 @@ import '../bloc/order_bloc/orders_bloc_factory.dart';
 import '../bloc/order_bloc/orders_event.dart';
 import '../bloc/order_bloc/orders_state.dart';
 import '../final_reorder/widgets/final_reorder_side_panel.dart';
+import '../widgets/orders_grid_controller.dart';
 import '../widgets/orders_table.dart';
 import '../widgets/orders_toolbar.dart';
 import '../widgets/review_changes_dialog.dart';
+import 'branch_widgets/columns_panel.dart';
 
 class BranchOrdersPage extends StatelessWidget {
   final String runDate;
@@ -32,9 +37,42 @@ class BranchOrdersPage extends StatelessWidget {
   }
 }
 
-class _BranchOrdersView extends StatelessWidget {
+class _BranchOrdersView extends StatefulWidget {
   final String branchName;
   const _BranchOrdersView({required this.branchName});
+
+  @override
+  State<_BranchOrdersView> createState() => _BranchOrdersViewState();
+}
+
+class _BranchOrdersViewState extends State<_BranchOrdersView> {
+  late final OrdersGridController _grid;
+
+  @override
+  void initState() {
+    super.initState();
+    _grid = OrdersGridController();
+  }
+
+  List<String> _orderedVisibleColumns(OrdersState s) {
+    final order = s.columnOrder;
+    final visible = s.visibleColumns;
+
+    final out = <String>[];
+
+    // Always show row number first (even if not in column order).
+    if (!out.contains('row_no')) out.add('row_no');
+
+    for (final k in order) {
+      if (visible.contains(k)) out.add(k);
+    }
+
+    // Always keep identity columns near the front.
+    if (!out.contains('item_code')) out.insert(1, 'item_code');
+    if (!out.contains('item_name')) out.insert(2, 'item_name');
+
+    return out;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,11 +81,13 @@ class _BranchOrdersView extends StatelessWidget {
         final isBusy = s.isBusy;
 
         final statsAll = _calcStats(s.rows);
-
         final categories = _extractCategories(s.rows);
+
+        final orderedColumns = _orderedVisibleColumns(s);
 
         return Scaffold(
           backgroundColor: const Color(0xFFF6F7FB),
+          endDrawer: const ColumnsPanel(),
           body: SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(18),
@@ -55,12 +95,10 @@ class _BranchOrdersView extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _TopHeader(
-                    title: branchName,
+                    title: widget.branchName,
                     subtitle: 'Orders • ${s.runDate}',
                   ),
                   const SizedBox(height: 14),
-
-                  // Initial screen
                   if (s.isInitial)
                     Expanded(
                       child: Center(
@@ -78,7 +116,6 @@ class _BranchOrdersView extends StatelessWidget {
                       ),
                     )
                   else ...[
-                    // Progress strip
                     if (s.status == OrdersStatus.generating ||
                         s.status == OrdersStatus.loading)
                       Padding(
@@ -88,7 +125,6 @@ class _BranchOrdersView extends StatelessWidget {
                           message: s.progressMessage ?? 'Working...',
                         ),
                       ),
-
                     if (s.status == OrdersStatus.failure && s.error != null)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 10),
@@ -97,10 +133,21 @@ class _BranchOrdersView extends StatelessWidget {
                           style: const TextStyle(color: Colors.red),
                         ),
                       ),
-
-                    Row(
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
                       children: [
-                        Expanded(
+                        SizedBox(
+                          width: 320,
+                          child: _KpiCard(
+                            title: 'Total Products',
+                            value: _formatInt(statsAll.totalProducts),
+                            subtitle: 'All items loaded for this branch',
+                            icon: Icons.list_alt_outlined,
+                          ),
+                        ),
+                        SizedBox(
+                          width: 320,
                           child: _KpiCard(
                             title: 'Products in Order',
                             value: _formatInt(statsAll.sumFinalReorder),
@@ -108,8 +155,8 @@ class _BranchOrdersView extends StatelessWidget {
                             icon: Icons.inventory_2_outlined,
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
+                        SizedBox(
+                          width: 320,
                           child: _KpiCard(
                             title: 'Essential',
                             value: '${statsAll.essential}',
@@ -117,8 +164,8 @@ class _BranchOrdersView extends StatelessWidget {
                             icon: Icons.star_border,
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
+                        SizedBox(
+                          width: 320,
                           child: _KpiCard(
                             title: 'Non',
                             value: '${statsAll.non}',
@@ -128,14 +175,13 @@ class _BranchOrdersView extends StatelessWidget {
                         ),
                       ],
                     ),
-
                     const SizedBox(height: 12),
-
                     _FiltersBar(
                       categories: categories,
                       selectedCategory: s.categoryFilter,
                       selectedFormulary: s.formularyFilter,
                       nonWithSales45Only: s.nonWithSales45Only,
+                      numericFinalOnly: s.numericFinalOnly,
                       onCategoryChanged: (v) => context.read<OrdersBloc>().add(
                         OrdersCategoryChanged(v),
                       ),
@@ -145,10 +191,19 @@ class _BranchOrdersView extends StatelessWidget {
                       onNonWithSales45Changed: (v) => context
                           .read<OrdersBloc>()
                           .add(OrdersNonWithSales45Toggled(v)),
+                      onNumericFinalOnlyChanged: (v) => context
+                          .read<OrdersBloc>()
+                          .add(OrdersNumericFinalOnlyToggled(v)),
+                      onClearAll: () {
+                        context.read<OrdersBloc>().add(
+                          const OrdersClearAllFilters(),
+                        );
+
+                        // Clear Syncfusion grid UI filters + selection.
+                        _grid.resetGridUi();
+                      },
                     ),
-
                     const SizedBox(height: 12),
-
                     BlocSelector<OrdersBloc, OrdersState, String>(
                       selector: (s) => s.search,
                       builder: (context, search) {
@@ -173,9 +228,7 @@ class _BranchOrdersView extends StatelessWidget {
                         );
                       },
                     ),
-
                     const SizedBox(height: 10),
-
                     Expanded(
                       child: Container(
                         decoration: BoxDecoration(
@@ -200,14 +253,30 @@ class _BranchOrdersView extends StatelessWidget {
                               child: OrdersTable(
                                 rows: s.viewRows,
                                 isLoading: isBusy,
-                                visibleOptionalColumns:
-                                    s.visibleOptionalColumns,
+                                orderedColumns: orderedColumns,
+                                columnWidths: s.columnWidths,
                                 finalEdits: s.finalEdits,
                                 onTapFinalReorder: (row) => _openSidePanel(
                                   context: context,
                                   state: s,
                                   row: row,
                                 ),
+
+                                // Use ONE controller only (from OrdersGridController).
+                                controller: _grid.controller,
+
+                                // Provide grid controller to clear filters (source.clearFilters()).
+                                gridController: _grid,
+
+                                // Push column resize changes into BLoC (no setState).
+                                onColumnResized: (key, width) {
+                                  context.read<OrdersBloc>().add(
+                                    OrdersColumnResized(
+                                      columnKey: key,
+                                      width: width,
+                                    ),
+                                  );
+                                },
                               ),
                             ),
                           ],
@@ -224,9 +293,6 @@ class _BranchOrdersView extends StatelessWidget {
     );
   }
 
-  // ==========================
-  // Review dialog
-  // ==========================
   Future<void> _openReviewDialog({
     required BuildContext context,
     required OrdersState state,
@@ -252,9 +318,6 @@ class _BranchOrdersView extends StatelessWidget {
     );
   }
 
-  // ==========================
-  // Side panel
-  // ==========================
   Future<void> _openSidePanel({
     required BuildContext context,
     required OrdersState state,
@@ -269,9 +332,6 @@ class _BranchOrdersView extends StatelessWidget {
     final edit = state.finalEdits[itemCode];
     final initialQty = edit?.newQty ?? oldQty;
     final initialReason = edit?.reason ?? '';
-
-    // ✅ TAKE IT FROM VIEW COLUMN (best)
-    final totalReorderAllBranches = _toInt(row.totalReorderAllBranches);
 
     await showGeneralDialog(
       context: context,
@@ -308,47 +368,9 @@ class _BranchOrdersView extends StatelessWidget {
     );
   }
 
-  // ==========================
-  // Helpers
-  // ==========================
-  int _toInt(dynamic v) {
-    if (v == null) return 0;
-    if (v is int) return v;
-    if (v is num) return v.round();
-    final s = v.toString().trim();
-    if (s.isEmpty) return 0;
-    return int.tryParse(s.replaceAll(',', '')) ?? 0;
-  }
-
-  int _sumReorderForItem({
-    required List<DailyOrderRow> rows,
-    required Map<String, FinalReorderEdit> edits,
-    required String itemCode,
-  }) {
-    int sum = 0;
-    for (final r in rows) {
-      if (r.itemCode != itemCode) continue;
-
-      // ✅ Use edited qty if exists, otherwise auto
-      final e = edits[r.itemCode];
-      if (e != null) {
-        sum += e.newQty;
-      } else {
-        sum += _toInt(
-          _extractNumericFinalReorder(r.finalReorderQtyStoreStockGt0),
-        );
-      }
-    }
-    return sum;
-  }
-
-  // ==========================
-  // STATS
-  // ==========================
   _Stats _calcStats(List<DailyOrderRow> rows) {
     int essential = 0;
     int non = 0;
-
     num sumFinal = 0;
 
     for (final row in rows) {
@@ -359,7 +381,12 @@ class _BranchOrdersView extends StatelessWidget {
       if (f == 'NON') non++;
     }
 
-    return _Stats(sumFinalReorder: sumFinal, essential: essential, non: non);
+    return _Stats(
+      totalProducts: rows.length,
+      sumFinalReorder: sumFinal,
+      essential: essential,
+      non: non,
+    );
   }
 
   num _extractNumericFinalReorder(String? v) {
@@ -388,11 +415,13 @@ class _BranchOrdersView extends StatelessWidget {
 }
 
 class _Stats {
+  final int totalProducts;
   final num sumFinalReorder;
   final int essential;
   final int non;
 
   const _Stats({
+    required this.totalProducts,
     required this.sumFinalReorder,
     required this.essential,
     required this.non,
@@ -684,19 +713,26 @@ class _FiltersBar extends StatelessWidget {
   final String selectedCategory;
   final String selectedFormulary;
   final bool nonWithSales45Only;
+  final bool numericFinalOnly;
 
   final ValueChanged<String> onCategoryChanged;
   final ValueChanged<String> onFormularyChanged;
   final ValueChanged<bool> onNonWithSales45Changed;
+  final ValueChanged<bool> onNumericFinalOnlyChanged;
+
+  final VoidCallback onClearAll;
 
   const _FiltersBar({
     required this.categories,
     required this.selectedCategory,
     required this.selectedFormulary,
     required this.nonWithSales45Only,
+    required this.numericFinalOnly,
     required this.onCategoryChanged,
     required this.onFormularyChanged,
     required this.onNonWithSales45Changed,
+    required this.onNumericFinalOnlyChanged,
+    required this.onClearAll,
   });
 
   @override
@@ -734,6 +770,24 @@ class _FiltersBar extends StatelessWidget {
               subtitle: 'Show NON items with sales > 0',
               value: nonWithSales45Only,
               onChanged: onNonWithSales45Changed,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _SwitchTile(
+              title: 'Items you Will Received',
+              subtitle: 'Available Item in Order',
+              value: numericFinalOnly,
+              onChanged: onNumericFinalOnlyChanged,
+            ),
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            height: 56,
+            child: OutlinedButton.icon(
+              onPressed: onClearAll,
+              icon: const Icon(Icons.filter_alt_off_outlined),
+              label: const Text('Clear All Filters'),
             ),
           ),
         ],
