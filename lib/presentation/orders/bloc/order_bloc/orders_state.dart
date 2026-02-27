@@ -7,9 +7,9 @@ enum OrdersStatus { idle, generating, loading, ready, failure }
 
 class FinalReorderEdit extends Equatable {
   final String itemCode;
-  final int oldQty; // auto/suggested numeric only
-  final int newQty; // user edited qty numeric only
-  final String reason; // required
+  final int oldQty;
+  final int newQty;
+  final String reason;
 
   const FinalReorderEdit({
     required this.itemCode,
@@ -19,15 +19,6 @@ class FinalReorderEdit extends Equatable {
   });
 
   int get diff => newQty - oldQty;
-
-  FinalReorderEdit copyWith({int? oldQty, int? newQty, String? reason}) {
-    return FinalReorderEdit(
-      itemCode: itemCode,
-      oldQty: oldQty ?? this.oldQty,
-      newQty: newQty ?? this.newQty,
-      reason: reason ?? this.reason,
-    );
-  }
 
   @override
   List<Object?> get props => [itemCode, oldQty, newQty, reason];
@@ -41,29 +32,27 @@ class OrdersState extends Equatable {
 
   final String search;
 
-  /// All branch rows after enrich
   final List<DailyOrderRow> rows;
-
-  /// After filters + search
   final List<DailyOrderRow> viewRows;
 
-  /// UI Progress 0..100
   final int progress;
   final String? progressMessage;
 
   final String? error;
 
-  final Set<String> visibleOptionalColumns;
+  final Set<String> visibleColumns;
+  final List<String> columnOrder;
 
-  // Filters
+  final Map<String, double> columnWidths;
+
   final String categoryFilter;
   final String formularyFilter;
   final bool nonWithSales45Only;
 
-  // Edited final reorder values (by item_code)
+  final bool numericFinalOnly;
+
   final Map<String, FinalReorderEdit> finalEdits;
 
-  // For opening side panel
   final String? selectedItemCode;
 
   const OrdersState({
@@ -74,22 +63,115 @@ class OrdersState extends Equatable {
     required this.rows,
     required this.viewRows,
     required this.progress,
-    required this.visibleOptionalColumns,
+    required this.visibleColumns,
+    required this.columnOrder,
+    required this.columnWidths,
     required this.categoryFilter,
     required this.formularyFilter,
     required this.nonWithSales45Only,
+    required this.numericFinalOnly,
     required this.finalEdits,
     this.selectedItemCode,
     this.progressMessage,
     this.error,
   });
 
-  static const Set<String> defaultOptionalVisible = {};
+  static const List<String> defaultVisibleInTable = [
+    'item_code',
+    'item_name',
+    'branch_stock',
+    'store_stock',
+    'demand_for_30_days',
+    'final_reorder_qty_store_stock_gt_0',
+    'qty_30_days_from_last_45d',
+    'branch_formulary',
+  ];
+
+  static const List<String> defaultColumnOrder = [
+    ...defaultVisibleInTable,
+    'branch',
+    'mismatch_stock',
+    'pending_stock_received',
+    'extra_qty_more_than_month',
+    'max_adjustment_30d',
+    'reorder_point_min',
+    'reorder_max',
+    'reorder_qty',
+    'date_of_last_qty_received_in_branch',
+    'assortment_qty_base_stock',
+    'assortment_by',
+    'reason',
+    'assortment_start',
+    'assortment_end',
+    'tma_qty',
+    'tma_start',
+    'tma_end',
+    'item_purchase_type',
+    'sales_orientation',
+    'category',
+    'sub_category',
+    'company',
+    'supplier',
+    'indication',
+    'active_ingredient',
+    'pack_size',
+    'concentration',
+    'product_type_form',
+    'retail_price',
+    'vat',
+    'is_upp',
+    'upp_thiqa',
+    'upp_basic',
+    'tier',
+    'item_minimum_order_unit',
+    'barcode',
+    'store_item_classifications',
+    'goods_received_last_7_days',
+    'total_sold_qty_cash_last_90',
+    'total_sold_qty_online_last_90',
+    'total_sold_qty_insurance_last_90',
+  ];
+
+  static const double defaultMinWidth = 120;
+
+  static double defaultWidthFor(String key) {
+    if (key == 'row_no') return 70;
+
+    if (key == 'item_name') return 420;
+    if (key == 'item_code') return 160;
+    if (key == 'branch') return 170;
+
+    if (key == 'final_reorder_qty_store_stock_gt_0') return 260;
+    if (key == 'max_adjustment_30d') return 240;
+    if (key == 'reason_for_max_adjustment_30d') return 280;
+    if (key == 'pending_stock_received') return 220;
+    if (key == 'extra_qty_more_than_month') return 230;
+
+    if (key == 'store_item_classifications') return 260;
+    if (key == 'active_ingredient') return 240;
+    if (key == 'product_type_form') return 210;
+
+    if (key == 'category' || key == 'company' || key == 'supplier') return 220;
+    if (key == 'barcode') return 190;
+    if (key == 'branch_formulary') return 170;
+
+    return 170;
+  }
+
+  static Map<String, double> defaultColumnWidths(Iterable<String> allKeys) {
+    final map = <String, double>{};
+    for (final k in allKeys) {
+      map[k] = defaultWidthFor(k);
+    }
+    return map;
+  }
 
   factory OrdersState.initial({
     required String runDate,
     required String branchName,
   }) {
+    final allKeys = <String>['row_no', ...defaultColumnOrder];
+
     return OrdersState(
       status: OrdersStatus.idle,
       runDate: runDate,
@@ -100,10 +182,13 @@ class OrdersState extends Equatable {
       progress: 0,
       progressMessage: null,
       error: null,
-      visibleOptionalColumns: defaultOptionalVisible,
+      visibleColumns: defaultVisibleInTable.toSet(),
+      columnOrder: defaultColumnOrder,
+      columnWidths: defaultColumnWidths(allKeys),
       categoryFilter: 'ALL',
       formularyFilter: 'ALL',
       nonWithSales45Only: false,
+      numericFinalOnly: true,
       finalEdits: const {},
       selectedItemCode: null,
     );
@@ -118,6 +203,9 @@ class OrdersState extends Equatable {
 
   int get editsCount => finalEdits.length;
 
+  List<String> get orderedVisibleColumns =>
+      columnOrder.where(visibleColumns.contains).toList();
+
   OrdersState copyWith({
     OrdersStatus? status,
     String? runDate,
@@ -128,10 +216,13 @@ class OrdersState extends Equatable {
     int? progress,
     String? progressMessage,
     String? error,
-    Set<String>? visibleOptionalColumns,
+    Set<String>? visibleColumns,
+    List<String>? columnOrder,
+    Map<String, double>? columnWidths,
     String? categoryFilter,
     String? formularyFilter,
     bool? nonWithSales45Only,
+    bool? numericFinalOnly,
     Map<String, FinalReorderEdit>? finalEdits,
     String? selectedItemCode,
   }) {
@@ -145,11 +236,13 @@ class OrdersState extends Equatable {
       progress: progress ?? this.progress,
       progressMessage: progressMessage ?? this.progressMessage,
       error: error,
-      visibleOptionalColumns:
-          visibleOptionalColumns ?? this.visibleOptionalColumns,
+      visibleColumns: visibleColumns ?? this.visibleColumns,
+      columnOrder: columnOrder ?? this.columnOrder,
+      columnWidths: columnWidths ?? this.columnWidths,
       categoryFilter: categoryFilter ?? this.categoryFilter,
       formularyFilter: formularyFilter ?? this.formularyFilter,
       nonWithSales45Only: nonWithSales45Only ?? this.nonWithSales45Only,
+      numericFinalOnly: numericFinalOnly ?? this.numericFinalOnly,
       finalEdits: finalEdits ?? this.finalEdits,
       selectedItemCode: selectedItemCode ?? this.selectedItemCode,
     );
@@ -166,10 +259,13 @@ class OrdersState extends Equatable {
     progress,
     progressMessage,
     error,
-    visibleOptionalColumns,
+    visibleColumns,
+    columnOrder,
+    columnWidths,
     categoryFilter,
     formularyFilter,
     nonWithSales45Only,
+    numericFinalOnly,
     finalEdits,
     selectedItemCode,
   ];

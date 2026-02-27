@@ -1,3 +1,4 @@
+// orders_bloc.dart
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -27,13 +28,21 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
 
     on<OrdersSearchChanged>(_onSearchChanged);
 
-    on<OrdersToggleColumn>(_onToggleColumn);
-    on<OrdersResetColumns>(_onResetColumns);
-
+    // ✅ Columns
+    on<OrdersSetColumnVisible>(_onSetColumnVisible);
+    on<OrdersReorderColumns>(_onReorderColumns);
+    on<OrdersResetColumnsToDefault>(_onResetColumnsToDefault);
+    on<OrdersColumnResized>(_onColumnResized);
+    // Filters
     on<OrdersCategoryChanged>(_onCategoryChanged);
     on<OrdersFormularyChanged>(_onFormularyChanged);
     on<OrdersNonWithSales45Toggled>(_onNonWithSales45Toggled);
 
+    // ✅ NEW Filters
+    on<OrdersNumericFinalOnlyToggled>(_onNumericFinalOnlyToggled);
+    on<OrdersClearAllFilters>(_onClearAllFilters);
+
+    // Side panel + edits
     on<OrdersSelectItemForEdit>(_onSelectItemForEdit);
     on<OrdersClearSelection>(_onClearSelection);
     on<OrdersApplyFinalEdit>(_onApplyFinalEdit);
@@ -47,6 +56,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     return super.close();
   }
 
+  // ==========================
+  // Generate
+  // ==========================
   Future<void> _onPressedGenerate(
     OrdersPressedGenerate e,
     Emitter<OrdersState> emit,
@@ -100,6 +112,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     });
   }
 
+  // ==========================
+  // Load
+  // ==========================
   Future<void> _onLoadAll(OrdersLoadAll e, Emitter<OrdersState> emit) async {
     emit(
       state.copyWith(
@@ -143,6 +158,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         categoryFilter: state.categoryFilter,
         formularyFilter: state.formularyFilter,
         nonWithSales45Only: state.nonWithSales45Only,
+        numericFinalOnly: state.numericFinalOnly,
       );
 
       emit(
@@ -159,6 +175,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     }
   }
 
+  // ==========================
+  // Search
+  // ==========================
   void _onSearchChanged(OrdersSearchChanged e, Emitter<OrdersState> emit) {
     final nextSearch = e.search;
 
@@ -167,6 +186,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       categoryFilter: state.categoryFilter,
       formularyFilter: state.formularyFilter,
       nonWithSales45Only: state.nonWithSales45Only,
+      numericFinalOnly: state.numericFinalOnly,
     );
 
     emit(state.copyWith(search: nextSearch, viewRows: view));
@@ -186,30 +206,61 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     return rows.where(hit).toList();
   }
 
-  void _onToggleColumn(OrdersToggleColumn e, Emitter<OrdersState> emit) {
-    final next = Set<String>.from(state.visibleOptionalColumns);
+  // ==========================
+  // Columns
+  // ==========================
+  void _onSetColumnVisible(
+    OrdersSetColumnVisible e,
+    Emitter<OrdersState> emit,
+  ) {
+    final next = Set<String>.from(state.visibleColumns);
+
     if (e.visible) {
       next.add(e.columnKey);
     } else {
       next.remove(e.columnKey);
     }
-    emit(state.copyWith(visibleOptionalColumns: next));
+
+    emit(state.copyWith(visibleColumns: next));
   }
 
-  void _onResetColumns(OrdersResetColumns e, Emitter<OrdersState> emit) {
+  void _onReorderColumns(OrdersReorderColumns e, Emitter<OrdersState> emit) {
+    final list = List<String>.from(state.columnOrder);
+
+    var newIndex = e.newIndex;
+    if (newIndex > e.oldIndex) newIndex -= 1;
+
+    if (e.oldIndex < 0 || e.oldIndex >= list.length) return;
+    if (newIndex < 0 || newIndex >= list.length) return;
+
+    final item = list.removeAt(e.oldIndex);
+    list.insert(newIndex, item);
+
+    emit(state.copyWith(columnOrder: list));
+  }
+
+  void _onResetColumnsToDefault(
+    OrdersResetColumnsToDefault e,
+    Emitter<OrdersState> emit,
+  ) {
     emit(
       state.copyWith(
-        visibleOptionalColumns: OrdersState.defaultOptionalVisible,
+        visibleColumns: OrdersState.defaultVisibleInTable.toSet(),
+        columnOrder: OrdersState.defaultColumnOrder,
       ),
     );
   }
 
+  // ==========================
+  // Filters
+  // ==========================
   void _onCategoryChanged(OrdersCategoryChanged e, Emitter<OrdersState> emit) {
     final view = _applyUiFilters(
       rows: _applySearch(state.rows, state.search),
       categoryFilter: e.category,
       formularyFilter: state.formularyFilter,
       nonWithSales45Only: state.nonWithSales45Only,
+      numericFinalOnly: state.numericFinalOnly,
     );
     emit(state.copyWith(categoryFilter: e.category, viewRows: view));
   }
@@ -223,6 +274,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       categoryFilter: state.categoryFilter,
       formularyFilter: e.formulary,
       nonWithSales45Only: state.nonWithSales45Only,
+      numericFinalOnly: state.numericFinalOnly,
     );
     emit(state.copyWith(formularyFilter: e.formulary, viewRows: view));
   }
@@ -236,8 +288,55 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       categoryFilter: state.categoryFilter,
       formularyFilter: state.formularyFilter,
       nonWithSales45Only: e.value,
+      numericFinalOnly: state.numericFinalOnly,
     );
     emit(state.copyWith(nonWithSales45Only: e.value, viewRows: view));
+  }
+
+  // ✅ NEW: numeric final reorder only
+  void _onNumericFinalOnlyToggled(
+    OrdersNumericFinalOnlyToggled e,
+    Emitter<OrdersState> emit,
+  ) {
+    final view = _applyUiFilters(
+      rows: _applySearch(state.rows, state.search),
+      categoryFilter: state.categoryFilter,
+      formularyFilter: state.formularyFilter,
+      nonWithSales45Only: state.nonWithSales45Only,
+      numericFinalOnly: e.value,
+    );
+
+    emit(state.copyWith(numericFinalOnly: e.value, viewRows: view));
+  }
+
+  // ✅ NEW: clear all filters (keep numericFinalOnly ON by default)
+  void _onClearAllFilters(OrdersClearAllFilters e, Emitter<OrdersState> emit) {
+    const category = 'ALL';
+    const formulary = 'ALL';
+    const nonSales = false;
+    const search = '';
+
+    // keep ON
+    const numericFinalOnly = true;
+
+    final view = _applyUiFilters(
+      rows: _applySearch(state.rows, search),
+      categoryFilter: category,
+      formularyFilter: formulary,
+      nonWithSales45Only: nonSales,
+      numericFinalOnly: numericFinalOnly,
+    );
+
+    emit(
+      state.copyWith(
+        search: search,
+        categoryFilter: category,
+        formularyFilter: formulary,
+        nonWithSales45Only: nonSales,
+        numericFinalOnly: numericFinalOnly,
+        viewRows: view,
+      ),
+    );
   }
 
   List<DailyOrderRow> _applyUiFilters({
@@ -245,6 +344,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     required String categoryFilter,
     required String formularyFilter,
     required bool nonWithSales45Only,
+    required bool numericFinalOnly,
   }) {
     bool matchCategory(DailyOrderRow r) {
       if (categoryFilter == 'ALL') return true;
@@ -265,9 +365,25 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       return f == 'NON' && sales45 > 0;
     }
 
+    // ✅ NEW: strict numeric final reorder only
+    bool matchNumericFinalOnly(DailyOrderRow r) {
+      if (!numericFinalOnly) return true;
+      return _isStrictNumericFinalReorder(r.finalReorderQtyStoreStockGt0);
+    }
+
     return rows.where((r) {
-      return matchCategory(r) && matchFormulary(r) && matchNonWithSales45(r);
+      return matchCategory(r) &&
+          matchFormulary(r) &&
+          matchNonWithSales45(r) &&
+          matchNumericFinalOnly(r);
     }).toList();
+  }
+
+  bool _isStrictNumericFinalReorder(String? v) {
+    final s = (v ?? '').toString().trim();
+    if (s.isEmpty) return false;
+    final normalized = s.replaceAll(',', '');
+    return num.tryParse(normalized) != null;
   }
 
   num _toNum(dynamic v) {
@@ -278,6 +394,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     return num.tryParse(s.replaceAll(',', '')) ?? 0;
   }
 
+  // ==========================
+  // Side panel selection
+  // ==========================
   void _onSelectItemForEdit(
     OrdersSelectItemForEdit e,
     Emitter<OrdersState> emit,
@@ -289,10 +408,11 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     emit(state.copyWith(selectedItemCode: null));
   }
 
-  // ✅ UPDATED: reason required and stored
+  // ==========================
+  // Final edits
+  // ==========================
   void _onApplyFinalEdit(OrdersApplyFinalEdit e, Emitter<OrdersState> emit) {
     final next = Map<String, FinalReorderEdit>.from(state.finalEdits);
-
     final reason = e.reason.trim();
 
     // If no change -> remove
@@ -302,10 +422,8 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       return;
     }
 
-    // Reason is mandatory: if empty, do not apply edit
-    if (reason.isEmpty) {
-      return;
-    }
+    // Reason is mandatory
+    if (reason.isEmpty) return;
 
     next[e.itemCode] = FinalReorderEdit(
       itemCode: e.itemCode,
@@ -325,5 +443,11 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
 
   void _onClearAllEdits(OrdersClearAllEdits e, Emitter<OrdersState> emit) {
     emit(state.copyWith(finalEdits: const {}));
+  }
+
+  void _onColumnResized(OrdersColumnResized e, Emitter<OrdersState> emit) {
+    final next = Map<String, double>.from(state.columnWidths);
+    next[e.columnKey] = e.width;
+    emit(state.copyWith(columnWidths: next));
   }
 }

@@ -35,13 +35,11 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
   void didUpdateWidget(covariant OrdersToolbar oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // ✅ لا تغيّري النص أثناء الكتابة إلا إذا فعلاً تغير من الخارج
     if (oldWidget.search != widget.search &&
         widget.search != _controller.text) {
       final sel = _controller.selection;
       _controller.text = widget.search;
 
-      // حافظي على المؤشر (cursor)
       final offset = sel.baseOffset.clamp(0, _controller.text.length);
       _controller.selection = TextSelection.collapsed(offset: offset);
     }
