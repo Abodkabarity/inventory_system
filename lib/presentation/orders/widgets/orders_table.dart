@@ -1,4 +1,7 @@
-// orders_table.dart (full file)
+// orders_table.dart (full file) - UPDATED
+// ✅ Added: isSubmitted to disable Final Reorder tap after submit
+// ✅ Added: hide edit icon (and Edited badge) after submit
+// ✅ Optional: show lock icon after submit (instead of edit)
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -15,11 +18,21 @@ class OrdersTable extends StatefulWidget {
   final bool isLoading;
 
   final List<String> orderedColumns;
-
   final Map<String, double> columnWidths;
 
+  // Final edits
   final Map<String, FinalReorderEdit> finalEdits;
   final ValueChanged<DailyOrderRow> onTapFinalReorder;
+
+  // NEW: Additional requests (draft + sent)
+  final Map<String, AdditionalRequestEdit> additionalEdits;
+  final Map<String, num> sentAdditionalQtyByItemCode;
+
+  // NEW: open additional request side panel
+  final ValueChanged<DailyOrderRow> onTapAdditionalRequest;
+
+  // ✅ NEW: submitted flag (locks final reorder tap + hides edit icon)
+  final bool isSubmitted;
 
   // Controller for selection/scroll.
   final DataGridController? controller;
@@ -38,13 +51,21 @@ class OrdersTable extends StatefulWidget {
     required this.columnWidths,
     required this.finalEdits,
     required this.onTapFinalReorder,
+    required this.additionalEdits,
+    required this.sentAdditionalQtyByItemCode,
+    required this.onTapAdditionalRequest,
     required this.gridController,
     required this.onColumnResized,
+    required this.isSubmitted, // ✅ NEW
     this.controller,
   });
 
   static const List<String> allColumns = [
     'row_no',
+
+    // NEW
+    'additional_request',
+
     'branch',
     'item_code',
     'item_name',
@@ -99,6 +120,10 @@ class OrdersTable extends StatefulWidget {
 
   static const Map<String, String> titles = {
     'row_no': '#',
+
+    // NEW
+    'additional_request': 'ADDITIONAL\nREQUEST',
+
     'branch': 'BRANCH',
     'item_code': 'ITEM CODE',
     'item_name': 'ITEM NAME',
@@ -152,7 +177,9 @@ class OrdersTable extends StatefulWidget {
     'barcode': 'BARCODE',
     'store_item_classifications': 'STORE ITEM\nCLASSIFICATIONS',
   };
+
   static const Map<String, String> optionalTitles = {};
+
   @override
   State<OrdersTable> createState() => _OrdersTableState();
 }
@@ -170,9 +197,11 @@ class _OrdersTableState extends State<OrdersTable> {
       rows: widget.rows,
       columns: _columns,
       finalEdits: widget.finalEdits,
+      additionalEdits: widget.additionalEdits,
+      sentAdditionalQtyByItemCode: widget.sentAdditionalQtyByItemCode,
+      isSubmitted: widget.isSubmitted, // ✅ NEW
     );
 
-    // Attach the source so parent can clear filters using source.clearFilters().
     widget.gridController.attachSource(_source);
   }
 
@@ -184,18 +213,32 @@ class _OrdersTableState extends State<OrdersTable> {
       oldWidget.orderedColumns,
       widget.orderedColumns,
     );
+
     final editsChanged = !mapEquals(oldWidget.finalEdits, widget.finalEdits);
+
+    final addChanged =
+        !mapEquals(oldWidget.additionalEdits, widget.additionalEdits) ||
+        !mapEquals(
+          oldWidget.sentAdditionalQtyByItemCode,
+          widget.sentAdditionalQtyByItemCode,
+        );
+
+    final submittedChanged = oldWidget.isSubmitted != widget.isSubmitted;
 
     if (!identical(oldWidget.rows, widget.rows) ||
         colsChanged ||
-        editsChanged) {
+        editsChanged ||
+        addChanged ||
+        submittedChanged) {
       _source.update(
         rows: widget.rows,
         columns: _columns,
         finalEdits: widget.finalEdits,
+        additionalEdits: widget.additionalEdits,
+        sentAdditionalQtyByItemCode: widget.sentAdditionalQtyByItemCode,
+        isSubmitted: widget.isSubmitted, // ✅ NEW
       );
 
-      // Ensure controller still points to the current source.
       widget.gridController.attachSource(_source);
     }
   }
@@ -210,6 +253,7 @@ class _OrdersTableState extends State<OrdersTable> {
 
   _ColGroup _groupFor(String key) {
     if (key == 'row_no' ||
+        key == 'additional_request' ||
         key == 'item_code' ||
         key == 'item_name' ||
         key == 'branch') {
@@ -264,6 +308,7 @@ class _OrdersTableState extends State<OrdersTable> {
   int _frozenCount() {
     var count = 0;
     if (_columns.contains('row_no')) count++;
+    if (_columns.contains('additional_request')) count++;
     if (_columns.contains('item_code')) count++;
     if (_columns.contains('item_name')) count++;
     if (_columns.contains('branch')) count++;
@@ -301,7 +346,7 @@ class _OrdersTableState extends State<OrdersTable> {
               allowColumnsResizing: true,
               columnWidthMode: ColumnWidthMode.none,
               frozenColumnsCount: frozenCount,
-              rowHeight: 50,
+              rowHeight: 52,
               headerRowHeight: 72,
               onColumnResizeUpdate: (d) {
                 widget.onColumnResized(d.column.columnName, d.width);
@@ -316,12 +361,21 @@ class _OrdersTableState extends State<OrdersTable> {
                 if (columnIndex < 0 || columnIndex >= _columns.length) return;
 
                 final colName = _columns[columnIndex];
-                if (colName != 'final_reorder_qty_store_stock_gt_0') return;
 
                 final daily = _source.rowAtEffectiveIndex(effectiveRowIndex);
                 if (daily == null) return;
 
-                widget.onTapFinalReorder(daily);
+                if (colName == 'final_reorder_qty_store_stock_gt_0') {
+                  // ✅ disable after submit
+                  if (widget.isSubmitted) return;
+                  widget.onTapFinalReorder(daily);
+                  return;
+                }
+
+                if (colName == 'additional_request') {
+                  widget.onTapAdditionalRequest(daily);
+                  return;
+                }
               },
               columns: _columns.map((key) {
                 final group = _groupFor(key);
@@ -402,29 +456,57 @@ class _OrdersDataSource extends DataGridSource {
   List<DataGridRow> _gridRows = [];
   List<DailyOrderRow> _rows = [];
   List<String> _columns = [];
+
   Map<String, FinalReorderEdit> _edits = const {};
+
+  // NEW
+  Map<String, AdditionalRequestEdit> _additionalEdits = const {};
+  Map<String, num> _sentAdditionalQtyByItemCode = const {};
+
+  // ✅ NEW
+  bool _isSubmitted = false;
+
   final Map<DataGridRow, int> _rowToIndex = {};
 
   _OrdersDataSource({
     required List<DailyOrderRow> rows,
     required List<String> columns,
     required Map<String, FinalReorderEdit> finalEdits,
+    required Map<String, AdditionalRequestEdit> additionalEdits,
+    required Map<String, num> sentAdditionalQtyByItemCode,
+    required bool isSubmitted, // ✅ NEW
   }) {
-    update(rows: rows, columns: columns, finalEdits: finalEdits);
+    update(
+      rows: rows,
+      columns: columns,
+      finalEdits: finalEdits,
+      additionalEdits: additionalEdits,
+      sentAdditionalQtyByItemCode: sentAdditionalQtyByItemCode,
+      isSubmitted: isSubmitted, // ✅ NEW
+    );
   }
 
   void update({
     required List<DailyOrderRow> rows,
     required List<String> columns,
     required Map<String, FinalReorderEdit> finalEdits,
+    required Map<String, AdditionalRequestEdit> additionalEdits,
+    required Map<String, num> sentAdditionalQtyByItemCode,
+    required bool isSubmitted, // ✅ NEW
   }) {
     _rows = rows;
     _columns = columns;
     _edits = finalEdits;
 
+    _additionalEdits = additionalEdits;
+    _sentAdditionalQtyByItemCode = sentAdditionalQtyByItemCode;
+
+    _isSubmitted = isSubmitted; // ✅ NEW
+
     _gridRows = rows.asMap().entries.map((entry) {
       final idx = entry.key;
       final r = entry.value;
+
       return DataGridRow(
         cells: _columns.map((c) {
           return DataGridCell(columnName: c, value: _value(r, c, idx));
@@ -456,6 +538,10 @@ class _OrdersDataSource extends DataGridSource {
     switch (key) {
       case 'row_no':
         return (index + 1).toString();
+
+      // NEW: additional request column text is computed in buildRow (we can keep simple)
+      case 'additional_request':
+        return '';
 
       case 'branch':
         return r.branch;
@@ -637,14 +723,30 @@ class _OrdersDataSource extends DataGridSource {
     return (num.tryParse(m.group(0) ?? '') ?? 0).round();
   }
 
+  // NEW helpers
+  num _sentQtyFor(DailyOrderRow d) {
+    final v = _sentAdditionalQtyByItemCode[d.itemCode];
+    if (v == null) return 0;
+    return v;
+  }
+
+  AdditionalRequestEdit? _draftAdditionalFor(DailyOrderRow d) {
+    return _additionalEdits[d.itemCode];
+  }
+
   @override
   DataGridRowAdapter buildRow(DataGridRow row) {
     final idx = _rowToIndex[row] ?? -1;
     final daily = (idx >= 0 && idx < _rows.length) ? _rows[idx] : null;
-    final edited = daily != null && _edits.containsKey(daily.itemCode);
+
+    final editedFinal = daily != null && _edits.containsKey(daily.itemCode);
+    final hasDraftAdditional =
+        daily != null && _additionalEdits.containsKey(daily.itemCode);
+
+    final highlight = editedFinal || hasDraftAdditional;
 
     return DataGridRowAdapter(
-      color: edited ? const Color(0xFFF7F5FF) : null,
+      color: highlight ? const Color(0xFFF7F5FF) : null,
       cells: row.getCells().map((c) {
         final key = c.columnName;
         final raw = c.value;
@@ -654,8 +756,83 @@ class _OrdersDataSource extends DataGridSource {
             ? Alignment.centerLeft
             : Alignment.center;
 
+        // ============ NEW: Additional request cell UI ============
+        if (key == 'additional_request' && daily != null) {
+          final draft = _draftAdditionalFor(daily);
+          final sent = _sentQtyFor(daily);
+
+          final hasDraft = draft != null;
+          final hasSent = sent != 0;
+
+          // display qty: prefer draft if exists
+          final qtyText = hasDraft
+              ? draft.requestQty.toString()
+              : (hasSent ? sent.toString() : '');
+
+          final chipText = hasDraft
+              ? 'Draft: $qtyText'
+              : (hasSent ? 'Sent: $qtyText' : 'Add');
+
+          final bg = hasDraft
+              ? const Color(0xFFEEF2FF)
+              : (hasSent ? const Color(0xFFF3F4F6) : const Color(0xFFF9FAFB));
+
+          final fg = hasDraft
+              ? const Color(0xFF3F2AA5)
+              : (hasSent ? const Color(0xFF111827) : const Color(0xFF111827));
+
+          return Container(
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: bg,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: const Color(0xFFE6E8F0)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        hasDraft
+                            ? Icons.edit_note_outlined
+                            : Icons.add_circle_outline,
+                        size: 16,
+                        color: fg,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        chipText,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w900,
+                          color: fg,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: Color(0xFF6B7280),
+                ),
+              ],
+            ),
+          );
+        }
+
         final color = _textColorFor(key, text);
 
+        // branch_formulary badge
         if (key == 'branch_formulary') {
           return Container(
             alignment: Alignment.center,
@@ -685,6 +862,7 @@ class _OrdersDataSource extends DataGridSource {
           );
         }
 
+        // final reorder cell (✅ hide edit icon after submit)
         if (key == 'final_reorder_qty_store_stock_gt_0' && daily != null) {
           final oldQty = _extractNumeric(daily.finalReorderQtyStoreStockGt0);
           final edit = _edits[daily.itemCode];
@@ -694,6 +872,8 @@ class _OrdersDataSource extends DataGridSource {
           final main = showNew
               ? newQty.toString()
               : (text.isEmpty ? '—' : text);
+
+          final locked = _isSubmitted;
 
           return Container(
             alignment: Alignment.center,
@@ -705,7 +885,8 @@ class _OrdersDataSource extends DataGridSource {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    if (showNew)
+                    // ✅ after submit: hide "Edited" badge too (because editing is locked now)
+                    if (showNew && !locked)
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
@@ -724,7 +905,8 @@ class _OrdersDataSource extends DataGridSource {
                           ),
                         ),
                       ),
-                    const SizedBox(width: 8),
+                    if (showNew && !locked) const SizedBox(width: 8),
+
                     Text(
                       main,
                       style: TextStyle(
@@ -735,12 +917,23 @@ class _OrdersDataSource extends DataGridSource {
                             : AppColors.text,
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    const Icon(
-                      Icons.edit_outlined,
-                      size: 16,
-                      color: Color(0xFF6B7280),
-                    ),
+
+                    // ✅ hide edit icon after submit, show lock icon instead (optional)
+                    if (!locked) ...[
+                      const SizedBox(width: 6),
+                      const Icon(
+                        Icons.edit_outlined,
+                        size: 16,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ] else ...[
+                      const SizedBox(width: 6),
+                      const Icon(
+                        Icons.lock_outline,
+                        size: 16,
+                        color: Color(0xFF9CA3AF),
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 3),

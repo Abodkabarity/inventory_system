@@ -24,6 +24,145 @@ class FinalReorderEdit extends Equatable {
   List<Object?> get props => [itemCode, oldQty, newQty, reason];
 }
 
+class AdditionalRequestEdit extends Equatable {
+  final String itemCode;
+  final String itemName;
+  final num requestQty;
+  final String reason;
+
+  const AdditionalRequestEdit({
+    required this.itemCode,
+    required this.itemName,
+    required this.requestQty,
+    required this.reason,
+  });
+
+  @override
+  List<Object?> get props => [itemCode, itemName, requestQty, reason];
+}
+
+// Tracking row (flat list) for additional requests
+class AdditionalRequestRow extends Equatable {
+  final String id;
+  final String itemCode;
+  final String itemName;
+
+  final num requestQty;
+  final String reason;
+
+  final String status; // pending / sent_to_store / done
+  final num? fulfilledQty; // optional
+  final String? storeNote; // optional
+
+  final DateTime createdAt;
+  final DateTime? sentToStoreAt;
+  final DateTime? doneAt;
+
+  const AdditionalRequestRow({
+    required this.id,
+    required this.itemCode,
+    required this.itemName,
+    required this.requestQty,
+    required this.reason,
+    required this.status,
+    required this.fulfilledQty,
+    required this.storeNote,
+    required this.createdAt,
+    required this.sentToStoreAt,
+    required this.doneAt,
+  });
+
+  bool get isModifiedQty {
+    if (fulfilledQty == null) return false;
+    return fulfilledQty != requestQty;
+  }
+
+  AdditionalRequestRow copyWith({
+    String? status,
+    num? fulfilledQty,
+    String? storeNote,
+    DateTime? sentToStoreAt,
+    DateTime? doneAt,
+  }) {
+    return AdditionalRequestRow(
+      id: id,
+      itemCode: itemCode,
+      itemName: itemName,
+      requestQty: requestQty,
+      reason: reason,
+      status: status ?? this.status,
+      fulfilledQty: fulfilledQty ?? this.fulfilledQty,
+      storeNote: storeNote ?? this.storeNote,
+      createdAt: createdAt,
+      sentToStoreAt: sentToStoreAt ?? this.sentToStoreAt,
+      doneAt: doneAt ?? this.doneAt,
+    );
+  }
+
+  static num _toNum(dynamic v) {
+    if (v == null) return 0;
+    if (v is num) return v;
+    final s = v.toString().trim();
+    if (s.isEmpty) return 0;
+    return num.tryParse(s.replaceAll(',', '')) ?? 0;
+  }
+
+  static DateTime? _toDt(dynamic v) {
+    if (v == null) return null;
+    final s = v.toString().trim();
+    if (s.isEmpty) return null;
+    return DateTime.tryParse(s);
+  }
+
+  static AdditionalRequestRow fromMap(Map<String, dynamic> map) {
+    final id = (map['id'] ?? '').toString().trim();
+    final itemCode = (map['item_code'] ?? '').toString().trim();
+    final itemName = (map['item_name'] ?? '').toString().trim();
+    final requestQty = _toNum(map['request_qty']);
+    final reason = (map['reason'] ?? '').toString();
+    final status = (map['status'] ?? 'pending').toString().trim();
+
+    final fulfilled = (map.containsKey('fulfilled_qty'))
+        ? (map['fulfilled_qty'] == null ? null : _toNum(map['fulfilled_qty']))
+        : null;
+
+    final storeNote = map['store_note']?.toString();
+
+    final createdAt = _toDt(map['created_at']) ?? DateTime.now();
+    final sentToStoreAt = _toDt(map['sent_to_store_at']);
+    final doneAt = _toDt(map['done_at']);
+
+    return AdditionalRequestRow(
+      id: id,
+      itemCode: itemCode,
+      itemName: itemName,
+      requestQty: requestQty,
+      reason: reason,
+      status: status,
+      fulfilledQty: fulfilled,
+      storeNote: storeNote,
+      createdAt: createdAt,
+      sentToStoreAt: sentToStoreAt,
+      doneAt: doneAt,
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+    id,
+    itemCode,
+    itemName,
+    requestQty,
+    reason,
+    status,
+    fulfilledQty,
+    storeNote,
+    createdAt,
+    sentToStoreAt,
+    doneAt,
+  ];
+}
+
 class OrdersState extends Equatable {
   final OrdersStatus status;
 
@@ -40,20 +179,35 @@ class OrdersState extends Equatable {
 
   final String? error;
 
+  final Map<String, List<Map<String, dynamic>>> sentAdditionalHistoryByItemCode;
+
   final Set<String> visibleColumns;
   final List<String> columnOrder;
-
   final Map<String, double> columnWidths;
 
   final String categoryFilter;
   final String formularyFilter;
   final bool nonWithSales45Only;
-
   final bool numericFinalOnly;
 
   final Map<String, FinalReorderEdit> finalEdits;
 
+  // additional requests (local draft)
+  final Map<String, AdditionalRequestEdit> additionalEdits;
+
+  // already sent additional requests (loaded from db) - per item_code sum
+  final Map<String, num> sentAdditionalQtyByItemCode;
+
+  // filter additional only
+  final bool additionalOnly;
+
+  // submission status
+  final String submissionStatus; // draft/submitted
+
   final String? selectedItemCode;
+
+  // tracking list (flat list of requests rows)
+  final List<AdditionalRequestRow> additionalTrackingRows;
 
   const OrdersState({
     required this.status,
@@ -71,6 +225,12 @@ class OrdersState extends Equatable {
     required this.nonWithSales45Only,
     required this.numericFinalOnly,
     required this.finalEdits,
+    required this.additionalEdits,
+    required this.sentAdditionalQtyByItemCode,
+    required this.additionalOnly,
+    required this.submissionStatus,
+    required this.sentAdditionalHistoryByItemCode,
+    required this.additionalTrackingRows,
     this.selectedItemCode,
     this.progressMessage,
     this.error,
@@ -89,6 +249,10 @@ class OrdersState extends Equatable {
 
   static const List<String> defaultColumnOrder = [
     ...defaultVisibleInTable,
+
+    // Keep it in the system, but it becomes visible only after submit
+    'additional_request',
+
     'branch',
     'mismatch_stock',
     'pending_stock_received',
@@ -132,10 +296,12 @@ class OrdersState extends Equatable {
     'total_sold_qty_insurance_last_90',
   ];
 
+  // ✅ FIX: needed by other files that reference OrdersState.defaultMinWidth
   static const double defaultMinWidth = 120;
 
   static double defaultWidthFor(String key) {
     if (key == 'row_no') return 70;
+    if (key == 'additional_request') return 190;
 
     if (key == 'item_name') return 420;
     if (key == 'item_code') return 160;
@@ -170,7 +336,11 @@ class OrdersState extends Equatable {
     required String runDate,
     required String branchName,
   }) {
-    final allKeys = <String>['row_no', ...defaultColumnOrder];
+    final allKeys = <String>[
+      'row_no',
+      'additional_request',
+      ...defaultColumnOrder,
+    ];
 
     return OrdersState(
       status: OrdersStatus.idle,
@@ -190,7 +360,13 @@ class OrdersState extends Equatable {
       nonWithSales45Only: false,
       numericFinalOnly: true,
       finalEdits: const {},
+      additionalEdits: const {},
+      sentAdditionalHistoryByItemCode: const {},
+      sentAdditionalQtyByItemCode: const {},
+      additionalOnly: false,
+      submissionStatus: 'draft',
       selectedItemCode: null,
+      additionalTrackingRows: const [],
     );
   }
 
@@ -203,8 +379,32 @@ class OrdersState extends Equatable {
 
   int get editsCount => finalEdits.length;
 
+  bool get hasAdditional => additionalEdits.isNotEmpty;
+
+  int get additionalCount => additionalEdits.length;
+
+  bool get isSubmitted => submissionStatus == 'submitted';
+
   List<String> get orderedVisibleColumns =>
       columnOrder.where(visibleColumns.contains).toList();
+
+  // tracking stats
+  int get trackingTotal => additionalTrackingRows.length;
+
+  int get trackingPending => additionalTrackingRows
+      .where((r) => r.status.trim().toLowerCase() == 'pending')
+      .length;
+
+  int get trackingSentToStore => additionalTrackingRows
+      .where((r) => r.status.trim().toLowerCase() == 'sent_to_store')
+      .length;
+
+  int get trackingDone => additionalTrackingRows
+      .where((r) => r.status.trim().toLowerCase() == 'done')
+      .length;
+
+  int get trackingModifiedQty =>
+      additionalTrackingRows.where((r) => r.isModifiedQty).length;
 
   OrdersState copyWith({
     OrdersStatus? status,
@@ -214,6 +414,7 @@ class OrdersState extends Equatable {
     List<DailyOrderRow>? rows,
     List<DailyOrderRow>? viewRows,
     int? progress,
+    Map<String, List<Map<String, dynamic>>>? sentAdditionalHistoryByItemCode,
     String? progressMessage,
     String? error,
     Set<String>? visibleColumns,
@@ -224,7 +425,12 @@ class OrdersState extends Equatable {
     bool? nonWithSales45Only,
     bool? numericFinalOnly,
     Map<String, FinalReorderEdit>? finalEdits,
+    Map<String, AdditionalRequestEdit>? additionalEdits,
+    Map<String, num>? sentAdditionalQtyByItemCode,
+    bool? additionalOnly,
+    String? submissionStatus,
     String? selectedItemCode,
+    List<AdditionalRequestRow>? additionalTrackingRows,
   }) {
     return OrdersState(
       status: status ?? this.status,
@@ -244,7 +450,17 @@ class OrdersState extends Equatable {
       nonWithSales45Only: nonWithSales45Only ?? this.nonWithSales45Only,
       numericFinalOnly: numericFinalOnly ?? this.numericFinalOnly,
       finalEdits: finalEdits ?? this.finalEdits,
+      additionalEdits: additionalEdits ?? this.additionalEdits,
+      sentAdditionalQtyByItemCode:
+          sentAdditionalQtyByItemCode ?? this.sentAdditionalQtyByItemCode,
+      additionalOnly: additionalOnly ?? this.additionalOnly,
+      submissionStatus: submissionStatus ?? this.submissionStatus,
       selectedItemCode: selectedItemCode ?? this.selectedItemCode,
+      sentAdditionalHistoryByItemCode:
+          sentAdditionalHistoryByItemCode ??
+          this.sentAdditionalHistoryByItemCode,
+      additionalTrackingRows:
+          additionalTrackingRows ?? this.additionalTrackingRows,
     );
   }
 
@@ -267,6 +483,12 @@ class OrdersState extends Equatable {
     nonWithSales45Only,
     numericFinalOnly,
     finalEdits,
+    sentAdditionalHistoryByItemCode,
+    additionalEdits,
+    sentAdditionalQtyByItemCode,
+    additionalOnly,
+    submissionStatus,
     selectedItemCode,
+    additionalTrackingRows,
   ];
 }

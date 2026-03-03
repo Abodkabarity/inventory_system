@@ -14,13 +14,13 @@ class OrdersRepositoryImpl implements OrdersRepository {
     required String runDate,
     required String branchName,
     int batchSize = 5000,
-    void Function(int loaded)? onProgress, // ✅ NEW
+    void Function(int loaded)? onProgress,
   }) async {
     final raw = await remote.fetchOrdersAll(
       runDate: runDate,
       branchName: branchName,
       batchSize: batchSize,
-      onProgress: onProgress, // ✅ pass through
+      onProgress: onProgress,
     );
     return raw.map(DailyOrderRowModel.fromMap).toList();
   }
@@ -65,5 +65,100 @@ class OrdersRepositoryImpl implements OrdersRepository {
   @override
   Future<Map<String, dynamic>?> fetchJob({required String jobId}) {
     return remote.fetchJob(jobId: jobId);
+  }
+
+  @override
+  Future<String> fetchBranchZone({required String branchName}) {
+    return remote.fetchBranchZone(branchName: branchName);
+  }
+
+  @override
+  Future<void> upsertOrderEdits({
+    required String runDate,
+    required String zone,
+    required String branchName,
+    required List<Map<String, dynamic>> rows,
+  }) {
+    return remote.upsertOrderEdits(
+      runDate: runDate,
+      zone: zone,
+      branchName: branchName,
+      rows: rows,
+    );
+  }
+
+  @override
+  Future<void> upsertSubmission({
+    required String runDate,
+    required String zone,
+    required String branchName,
+    required String status,
+  }) {
+    return remote.upsertSubmission(
+      runDate: runDate,
+      zone: zone,
+      branchName: branchName,
+      status: status,
+    );
+  }
+
+  @override
+  Future<String> fetchSubmissionStatus({
+    required String runDate,
+    required String branchName,
+  }) {
+    return remote.fetchSubmissionStatus(
+      runDate: runDate,
+      branchName: branchName,
+    );
+  }
+
+  @override
+  Future<void> insertAdditionalRequests({
+    required String runDate,
+    required String zone,
+    required String branchName,
+    required List<Map<String, dynamic>> rows,
+  }) {
+    return remote.insertAdditionalRequests(
+      runDate: runDate,
+      zone: zone,
+      branchName: branchName,
+      rows: rows,
+    );
+  }
+
+  @override
+  Future<Map<String, num>> fetchAdditionalRequestsForBranch({
+    required String runDate,
+    required String branchName,
+  }) {
+    return remote.fetchAdditionalRequestsForBranch(
+      runDate: runDate,
+      branchName: branchName,
+    );
+  }
+
+  @override
+  Future<Map<String, List<Map<String, dynamic>>>>
+  fetchAdditionalRequestsHistoryForBranch({
+    required String runDate,
+    required String branchName,
+  }) {
+    return remote.fetchAdditionalRequestsHistoryForBranch(
+      runDate: runDate,
+      branchName: branchName,
+    );
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchAdditionalRequestsTrackingForBranch({
+    required String runDate,
+    required String branchName,
+  }) {
+    return remote.fetchAdditionalRequestsTrackingForBranch(
+      runDate: runDate,
+      branchName: branchName,
+    );
   }
 }
