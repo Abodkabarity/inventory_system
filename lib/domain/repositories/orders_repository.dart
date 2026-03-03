@@ -6,7 +6,7 @@ abstract class OrdersRepository {
     required String runDate,
     required String branchName,
     int batchSize,
-    void Function(int loaded)? onProgress, // ✅ NEW
+    void Function(int loaded)? onProgress,
   });
 
   Future<Map<String, ProductInfo>> fetchProductInfoBatch({
@@ -28,4 +28,52 @@ abstract class OrdersRepository {
   });
 
   Future<Map<String, dynamic>?> fetchJob({required String jobId});
+
+  // zone
+  Future<String> fetchBranchZone({required String branchName});
+
+  // edits + submission
+  Future<void> upsertOrderEdits({
+    required String runDate,
+    required String zone,
+    required String branchName,
+    required List<Map<String, dynamic>> rows,
+  });
+
+  Future<void> upsertSubmission({
+    required String runDate,
+    required String zone,
+    required String branchName,
+    required String status,
+  });
+
+  Future<String> fetchSubmissionStatus({
+    required String runDate,
+    required String branchName,
+  });
+
+  // additional requests
+  Future<void> insertAdditionalRequests({
+    required String runDate,
+    required String zone,
+    required String branchName,
+    required List<Map<String, dynamic>> rows,
+  });
+
+  Future<Map<String, num>> fetchAdditionalRequestsForBranch({
+    required String runDate,
+    required String branchName,
+  });
+
+  Future<Map<String, List<Map<String, dynamic>>>>
+  fetchAdditionalRequestsHistoryForBranch({
+    required String runDate,
+    required String branchName,
+  });
+
+  // tracking list (flat rows with status/fulfilled/store_note)
+  Future<List<Map<String, dynamic>>> fetchAdditionalRequestsTrackingForBranch({
+    required String runDate,
+    required String branchName,
+  });
 }

@@ -28,18 +28,20 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
 
     on<OrdersSearchChanged>(_onSearchChanged);
 
-    // ✅ Columns
+    // Columns
     on<OrdersSetColumnVisible>(_onSetColumnVisible);
     on<OrdersReorderColumns>(_onReorderColumns);
     on<OrdersResetColumnsToDefault>(_onResetColumnsToDefault);
     on<OrdersColumnResized>(_onColumnResized);
+
     // Filters
     on<OrdersCategoryChanged>(_onCategoryChanged);
     on<OrdersFormularyChanged>(_onFormularyChanged);
     on<OrdersNonWithSales45Toggled>(_onNonWithSales45Toggled);
 
-    // ✅ NEW Filters
+    // NEW Filters
     on<OrdersNumericFinalOnlyToggled>(_onNumericFinalOnlyToggled);
+    on<OrdersAdditionalOnlyToggled>(_onAdditionalOnlyToggled);
     on<OrdersClearAllFilters>(_onClearAllFilters);
 
     // Side panel + edits
@@ -48,6 +50,15 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     on<OrdersApplyFinalEdit>(_onApplyFinalEdit);
     on<OrdersResetFinalEdit>(_onResetFinalEdit);
     on<OrdersClearAllEdits>(_onClearAllEdits);
+
+    // additional request edits
+    on<OrdersApplyAdditionalRequest>(_onApplyAdditionalRequest);
+    on<OrdersRemoveAdditionalRequest>(_onRemoveAdditionalRequest);
+    on<OrdersSendAdditionalRequestsPressed>(_onSendAdditionalRequestsPressed);
+    on<OrdersSubmitOrderPressed>(_onSubmitOrderPressed);
+
+    // NEW: tracking
+    on<OrdersLoadAdditionalTracking>(_onLoadAdditionalTracking);
   }
 
   @override
@@ -126,6 +137,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     );
 
     try {
+      // 1) Load base rows
       final baseRows = await fetchOrdersAll(
         runDate: state.runDate,
         branchName: state.branchName,
@@ -143,11 +155,71 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         },
       );
 
+      // 2) Load submission status + sent additional requests map
+      emit(
+        state.copyWith(
+          status: OrdersStatus.loading,
+          progress: 91,
+          progressMessage: 'Syncing status...',
+        ),
+      );
+
+      final submissionStatus = await repo.fetchSubmissionStatus(
+        runDate: state.runDate,
+        branchName: state.branchName,
+      );
+
+      final sentHistory = await repo.fetchAdditionalRequestsHistoryForBranch(
+        runDate: state.runDate,
+        branchName: state.branchName,
+      );
+
+      // build qty summary map (sum per item_code)
+      final sentAdditional = <String, num>{};
+      sentHistory.forEach((code, rows) {
+        num total = 0;
+        for (final r in rows) {
+          final v = r['request_qty'];
+          total += (v is num) ? v : (num.tryParse((v ?? '').toString()) ?? 0);
+        }
+        sentAdditional[code] = total;
+      });
+
+      // Show additional_request column ONLY if submitted
+      final nextVisible = Set<String>.from(state.visibleColumns);
+      if (submissionStatus.trim().toLowerCase() == 'submitted') {
+        nextVisible.add('additional_request');
+      } else {
+        nextVisible.remove('additional_request');
+      }
+
       emit(
         state.copyWith(
           status: OrdersStatus.loading,
           progress: 92,
           progressMessage: 'Applying filters...',
+          submissionStatus: submissionStatus,
+          visibleColumns: nextVisible,
+          sentAdditionalQtyByItemCode: sentAdditional,
+          sentAdditionalHistoryByItemCode: sentHistory,
+        ),
+      );
+
+      // 3) Load tracking list (flat requests with status)
+      final trackingRaw = await repo.fetchAdditionalRequestsTrackingForBranch(
+        runDate: state.runDate,
+        branchName: state.branchName,
+      );
+      final trackingRows = trackingRaw
+          .map(AdditionalRequestRow.fromMap)
+          .toList();
+
+      emit(
+        state.copyWith(
+          status: OrdersStatus.loading,
+          progress: 93,
+          progressMessage: 'Syncing tracking...',
+          additionalTrackingRows: trackingRows,
         ),
       );
 
@@ -159,6 +231,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         formularyFilter: state.formularyFilter,
         nonWithSales45Only: state.nonWithSales45Only,
         numericFinalOnly: state.numericFinalOnly,
+        additionalOnly: state.additionalOnly,
+        additionalEdits: state.additionalEdits,
+        sentAdditionalQtyByItemCode: sentAdditional,
       );
 
       emit(
@@ -168,10 +243,31 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
           progressMessage: 'Done ${baseRows.length}/${baseRows.length}',
           rows: baseRows,
           viewRows: view,
+          error: null,
         ),
       );
     } catch (err) {
       emit(state.copyWith(status: OrdersStatus.failure, error: err.toString()));
+    }
+  }
+
+  // ==========================
+  // NEW: Load tracking list only
+  // ==========================
+  Future<void> _onLoadAdditionalTracking(
+    OrdersLoadAdditionalTracking e,
+    Emitter<OrdersState> emit,
+  ) async {
+    try {
+      final raw = await repo.fetchAdditionalRequestsTrackingForBranch(
+        runDate: state.runDate,
+        branchName: state.branchName,
+      );
+      final rows = raw.map(AdditionalRequestRow.fromMap).toList();
+
+      emit(state.copyWith(additionalTrackingRows: rows));
+    } catch (err) {
+      // keep UI stable; do not break whole page
     }
   }
 
@@ -187,6 +283,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       formularyFilter: state.formularyFilter,
       nonWithSales45Only: state.nonWithSales45Only,
       numericFinalOnly: state.numericFinalOnly,
+      additionalOnly: state.additionalOnly,
+      additionalEdits: state.additionalEdits,
+      sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
     );
 
     emit(state.copyWith(search: nextSearch, viewRows: view));
@@ -261,6 +360,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       formularyFilter: state.formularyFilter,
       nonWithSales45Only: state.nonWithSales45Only,
       numericFinalOnly: state.numericFinalOnly,
+      additionalOnly: state.additionalOnly,
+      additionalEdits: state.additionalEdits,
+      sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
     );
     emit(state.copyWith(categoryFilter: e.category, viewRows: view));
   }
@@ -275,6 +377,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       formularyFilter: e.formulary,
       nonWithSales45Only: state.nonWithSales45Only,
       numericFinalOnly: state.numericFinalOnly,
+      additionalOnly: state.additionalOnly,
+      additionalEdits: state.additionalEdits,
+      sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
     );
     emit(state.copyWith(formularyFilter: e.formulary, viewRows: view));
   }
@@ -289,11 +394,13 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       formularyFilter: state.formularyFilter,
       nonWithSales45Only: e.value,
       numericFinalOnly: state.numericFinalOnly,
+      additionalOnly: state.additionalOnly,
+      additionalEdits: state.additionalEdits,
+      sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
     );
     emit(state.copyWith(nonWithSales45Only: e.value, viewRows: view));
   }
 
-  // ✅ NEW: numeric final reorder only
   void _onNumericFinalOnlyToggled(
     OrdersNumericFinalOnlyToggled e,
     Emitter<OrdersState> emit,
@@ -304,20 +411,39 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       formularyFilter: state.formularyFilter,
       nonWithSales45Only: state.nonWithSales45Only,
       numericFinalOnly: e.value,
+      additionalOnly: state.additionalOnly,
+      additionalEdits: state.additionalEdits,
+      sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
     );
 
     emit(state.copyWith(numericFinalOnly: e.value, viewRows: view));
   }
 
-  // ✅ NEW: clear all filters (keep numericFinalOnly ON by default)
+  void _onAdditionalOnlyToggled(
+    OrdersAdditionalOnlyToggled e,
+    Emitter<OrdersState> emit,
+  ) {
+    final view = _applyUiFilters(
+      rows: _applySearch(state.rows, state.search),
+      categoryFilter: state.categoryFilter,
+      formularyFilter: state.formularyFilter,
+      nonWithSales45Only: state.nonWithSales45Only,
+      numericFinalOnly: state.numericFinalOnly,
+      additionalOnly: e.value,
+      additionalEdits: state.additionalEdits,
+      sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
+    );
+
+    emit(state.copyWith(additionalOnly: e.value, viewRows: view));
+  }
+
   void _onClearAllFilters(OrdersClearAllFilters e, Emitter<OrdersState> emit) {
     const category = 'ALL';
     const formulary = 'ALL';
     const nonSales = false;
     const search = '';
-
-    // keep ON
     const numericFinalOnly = true;
+    const additionalOnly = false;
 
     final view = _applyUiFilters(
       rows: _applySearch(state.rows, search),
@@ -325,6 +451,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       formularyFilter: formulary,
       nonWithSales45Only: nonSales,
       numericFinalOnly: numericFinalOnly,
+      additionalOnly: additionalOnly,
+      additionalEdits: state.additionalEdits,
+      sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
     );
 
     emit(
@@ -334,6 +463,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         formularyFilter: formulary,
         nonWithSales45Only: nonSales,
         numericFinalOnly: numericFinalOnly,
+        additionalOnly: additionalOnly,
         viewRows: view,
       ),
     );
@@ -345,6 +475,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     required String formularyFilter,
     required bool nonWithSales45Only,
     required bool numericFinalOnly,
+    required bool additionalOnly,
+    required Map<String, AdditionalRequestEdit> additionalEdits,
+    required Map<String, num> sentAdditionalQtyByItemCode,
   }) {
     bool matchCategory(DailyOrderRow r) {
       if (categoryFilter == 'ALL') return true;
@@ -365,17 +498,25 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       return f == 'NON' && sales45 > 0;
     }
 
-    // ✅ NEW: strict numeric final reorder only
     bool matchNumericFinalOnly(DailyOrderRow r) {
       if (!numericFinalOnly) return true;
       return _isStrictNumericFinalReorder(r.finalReorderQtyStoreStockGt0);
+    }
+
+    bool matchAdditionalOnly(DailyOrderRow r) {
+      if (!additionalOnly) return true;
+      final hasLocalDraft = additionalEdits.containsKey(r.itemCode);
+      final sentQty = sentAdditionalQtyByItemCode[r.itemCode] ?? 0;
+      final hasSent = sentQty > 0;
+      return hasLocalDraft || hasSent;
     }
 
     return rows.where((r) {
       return matchCategory(r) &&
           matchFormulary(r) &&
           matchNonWithSales45(r) &&
-          matchNumericFinalOnly(r);
+          matchNumericFinalOnly(r) &&
+          matchAdditionalOnly(r);
     }).toList();
   }
 
@@ -415,14 +556,12 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     final next = Map<String, FinalReorderEdit>.from(state.finalEdits);
     final reason = e.reason.trim();
 
-    // If no change -> remove
     if (e.newQty == e.oldQty) {
       next.remove(e.itemCode);
       emit(state.copyWith(finalEdits: next));
       return;
     }
 
-    // Reason is mandatory
     if (reason.isEmpty) return;
 
     next[e.itemCode] = FinalReorderEdit(
@@ -449,5 +588,240 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     final next = Map<String, double>.from(state.columnWidths);
     next[e.columnKey] = e.width;
     emit(state.copyWith(columnWidths: next));
+  }
+
+  // ==========================
+  // Additional requests (local draft)
+  // ==========================
+  void _onApplyAdditionalRequest(
+    OrdersApplyAdditionalRequest e,
+    Emitter<OrdersState> emit,
+  ) {
+    final code = e.itemCode.trim();
+    final name = e.itemName.trim();
+    final reason = e.reason.trim();
+
+    if (code.isEmpty) return;
+    if (name.isEmpty) return;
+    if (e.requestQty <= 0) return;
+    if (reason.isEmpty) return;
+
+    final next = Map<String, AdditionalRequestEdit>.from(state.additionalEdits);
+    next[code] = AdditionalRequestEdit(
+      itemCode: code,
+      itemName: name,
+      requestQty: e.requestQty,
+      reason: reason,
+    );
+
+    final view = _applyUiFilters(
+      rows: _applySearch(state.rows, state.search),
+      categoryFilter: state.categoryFilter,
+      formularyFilter: state.formularyFilter,
+      nonWithSales45Only: state.nonWithSales45Only,
+      numericFinalOnly: state.numericFinalOnly,
+      additionalOnly: state.additionalOnly,
+      additionalEdits: next,
+      sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
+    );
+
+    emit(state.copyWith(additionalEdits: next, viewRows: view));
+  }
+
+  void _onRemoveAdditionalRequest(
+    OrdersRemoveAdditionalRequest e,
+    Emitter<OrdersState> emit,
+  ) {
+    final next = Map<String, AdditionalRequestEdit>.from(state.additionalEdits);
+    next.remove(e.itemCode);
+
+    final view = _applyUiFilters(
+      rows: _applySearch(state.rows, state.search),
+      categoryFilter: state.categoryFilter,
+      formularyFilter: state.formularyFilter,
+      nonWithSales45Only: state.nonWithSales45Only,
+      numericFinalOnly: state.numericFinalOnly,
+      additionalOnly: state.additionalOnly,
+      additionalEdits: next,
+      sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
+    );
+
+    emit(state.copyWith(additionalEdits: next, viewRows: view));
+  }
+
+  // ==========================
+  // Send additional requests to DB
+  // ==========================
+  Future<void> _onSendAdditionalRequestsPressed(
+    OrdersSendAdditionalRequestsPressed e,
+    Emitter<OrdersState> emit,
+  ) async {
+    final zone = e.zone.trim();
+    if (zone.isEmpty) return;
+    if (state.branchName.trim().isEmpty) return;
+
+    if (state.additionalEdits.isEmpty) return;
+
+    emit(
+      state.copyWith(
+        status: OrdersStatus.loading,
+        error: null,
+        progressMessage: 'Sending additional requests...',
+      ),
+    );
+
+    try {
+      final nowIso = DateTime.now().toIso8601String();
+
+      final payload = state.additionalEdits.values.map((a) {
+        return <String, dynamic>{
+          'run_date': state.runDate,
+          'zone': zone,
+          'branch_name': state.branchName,
+          'item_code': a.itemCode,
+          'item_name': a.itemName,
+          'request_qty': a.requestQty,
+          'reason': a.reason,
+          'created_at': nowIso,
+        };
+      }).toList();
+
+      // 1) Insert
+      await repo.insertAdditionalRequests(
+        runDate: state.runDate,
+        zone: zone,
+        branchName: state.branchName,
+        rows: payload,
+      );
+
+      // 2) Reload sent qty summary (per item_code)
+      final sentAdditionalQty = await repo.fetchAdditionalRequestsForBranch(
+        runDate: state.runDate,
+        branchName: state.branchName,
+      );
+
+      // 3) Reload full history map (per item_code)
+      final sentHistory = await repo.fetchAdditionalRequestsHistoryForBranch(
+        runDate: state.runDate,
+        branchName: state.branchName,
+      );
+
+      // 4) Reload tracking rows (status + fulfilled)
+      final trackingRaw = await repo.fetchAdditionalRequestsTrackingForBranch(
+        runDate: state.runDate,
+        branchName: state.branchName,
+      );
+      final trackingRows = trackingRaw
+          .map(AdditionalRequestRow.fromMap)
+          .toList();
+
+      // 5) Rebuild view with filters
+      final view = _applyUiFilters(
+        rows: _applySearch(state.rows, state.search),
+        categoryFilter: state.categoryFilter,
+        formularyFilter: state.formularyFilter,
+        nonWithSales45Only: state.nonWithSales45Only,
+        numericFinalOnly: state.numericFinalOnly,
+        additionalOnly: state.additionalOnly,
+        additionalEdits: const {},
+        sentAdditionalQtyByItemCode: sentAdditionalQty,
+      );
+
+      // 6) Update state
+      emit(
+        state.copyWith(
+          status: OrdersStatus.ready,
+          additionalEdits: const {},
+          sentAdditionalQtyByItemCode: sentAdditionalQty,
+          sentAdditionalHistoryByItemCode: sentHistory,
+          additionalTrackingRows: trackingRows,
+          viewRows: view,
+          progressMessage: 'Additional requests sent',
+        ),
+      );
+    } catch (err) {
+      emit(state.copyWith(status: OrdersStatus.failure, error: err.toString()));
+    }
+  }
+
+  // ==========================
+  // Submit order (save edits + status -> submitted)
+  // ==========================
+  Future<void> _onSubmitOrderPressed(
+    OrdersSubmitOrderPressed e,
+    Emitter<OrdersState> emit,
+  ) async {
+    final zone = e.zone.trim();
+    if (zone.isEmpty) return;
+    if (state.branchName.trim().isEmpty) return;
+
+    emit(
+      state.copyWith(
+        status: OrdersStatus.loading,
+        error: null,
+        progressMessage: 'Submitting order...',
+      ),
+    );
+
+    try {
+      // 1) Save final edits into order_edits first
+      if (state.finalEdits.isNotEmpty) {
+        final now = DateTime.now().toIso8601String();
+
+        final rowsByCode = <String, DailyOrderRow>{};
+        for (final r in state.rows) {
+          rowsByCode[r.itemCode] = r;
+        }
+
+        final editsPayload = <Map<String, dynamic>>[];
+        for (final edit in state.finalEdits.values) {
+          final row = rowsByCode[edit.itemCode];
+          final itemName = row?.itemName ?? '';
+
+          editsPayload.add(<String, dynamic>{
+            'run_date': state.runDate,
+            'zone': zone,
+            'branch_name': state.branchName,
+            'item_code': edit.itemCode,
+            'item_name': itemName,
+            'old_qty': edit.oldQty,
+            'new_qty': edit.newQty,
+            'reason': edit.reason,
+            'created_at': now,
+            'updated_at': now,
+          });
+        }
+
+        await repo.upsertOrderEdits(
+          runDate: state.runDate,
+          zone: zone,
+          branchName: state.branchName,
+          rows: editsPayload,
+        );
+      }
+
+      // 2) Mark submission as submitted
+      await repo.upsertSubmission(
+        runDate: state.runDate,
+        zone: zone,
+        branchName: state.branchName,
+        status: 'submitted',
+      );
+
+      // 3) Show additional_request column after submit
+      final nextVisible = Set<String>.from(state.visibleColumns);
+      nextVisible.add('additional_request');
+
+      emit(
+        state.copyWith(
+          status: OrdersStatus.ready,
+          submissionStatus: 'submitted',
+          visibleColumns: nextVisible,
+          progressMessage: 'Submitted',
+        ),
+      );
+    } catch (err) {
+      emit(state.copyWith(status: OrdersStatus.failure, error: err.toString()));
+    }
   }
 }

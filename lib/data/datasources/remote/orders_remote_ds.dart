@@ -7,9 +7,9 @@ class OrdersRemoteDs {
   OrdersRemoteDs(this.client);
 
   // ==========================
-  // ✅ Fetch ALL rows for a branch (batched + progress)
-  // - Uses keyset pagination (item_code > lastItemCode) to avoid OFFSET timeouts
-  // - Includes simple retry on Postgres timeout (57014)
+  // Fetch ALL rows for a branch (batched + progress)
+  // - Keyset pagination to avoid OFFSET timeouts
+  // - Retry on Postgres timeout (57014)
   // ==========================
   Future<List<Map<String, dynamic>>> fetchOrdersAll({
     required String runDate,
@@ -50,7 +50,6 @@ store_item_classifications
           q = q.eq('branch', branchName);
         }
 
-        // ✅ Keyset pagination: only fetch rows after the last item_code
         if (lastItemCode.isNotEmpty) {
           q = q.gt('item_code', lastItemCode);
         }
@@ -67,7 +66,6 @@ store_item_classifications
       out.addAll(list);
       onProgress?.call(out.length);
 
-      // update cursor
       lastItemCode = (list.last['item_code'] ?? '').toString().trim();
       if (lastItemCode.isEmpty) break;
 
@@ -78,7 +76,7 @@ store_item_classifications
   }
 
   // ==========================
-  // ✅ Fetch product info in safe chunks (avoid huge IN queries)
+  // Fetch product info in safe chunks
   // ==========================
   Future<List<Map<String, dynamic>>> fetchProductInfoBatch({
     required List<String> itemCodes,
@@ -110,7 +108,7 @@ store_item_classifications
   }
 
   // ==========================
-  // ✅ Generate branch order
+  // Generate branch order
   // ==========================
   Future<String> generateBranchOrder({
     required String runDate,
@@ -156,6 +154,224 @@ store_item_classifications
   }
 
   // ==========================
+  // NEW: Fetch branch zone from branches table
+  // ==========================
+  Future<String> fetchBranchZone({required String branchName}) async {
+    final row = await _retryOnTimeout<Map<String, dynamic>?>(() async {
+      final res = await client
+          .from('branches')
+          .select('zone')
+          .eq('branch_name', branchName)
+          .maybeSingle();
+
+      if (res == null) return null;
+      return (res as Map).cast<String, dynamic>();
+    });
+
+    if (row == null) {
+      throw Exception('Branch not found in branches table');
+    }
+
+    final z = (row['zone'] ?? '').toString().trim();
+    if (z.isEmpty) {
+      throw Exception('Zone is empty for this branch');
+    }
+
+    return z;
+  }
+
+  // ==========================
+  // NEW: Upsert order edits (changed items only)
+  // ==========================
+  Future<void> upsertOrderEdits({
+    required String runDate,
+    required String zone,
+    required String branchName,
+    required List<Map<String, dynamic>> rows,
+  }) async {
+    if (rows.isEmpty) return;
+
+    const chunkSize = 500;
+
+    for (var i = 0; i < rows.length; i += chunkSize) {
+      final end = (i + chunkSize > rows.length) ? rows.length : i + chunkSize;
+      final part = rows.sublist(i, end);
+
+      await _retryOnTimeout<void>(() async {
+        await client
+            .from('order_edits')
+            .upsert(part, onConflict: 'run_date,branch_name,item_code');
+      });
+    }
+  }
+
+  // ==========================
+  // NEW: Submission status (draft/submitted)
+  // ==========================
+  Future<void> upsertSubmission({
+    required String runDate,
+    required String zone,
+    required String branchName,
+    required String status,
+  }) async {
+    await _retryOnTimeout<void>(() async {
+      final payload = <String, dynamic>{
+        'run_date': runDate,
+        'zone': zone,
+        'branch_name': branchName,
+        'status': status,
+        'submitted_at': status == 'submitted'
+            ? DateTime.now().toIso8601String()
+            : null,
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+
+      await client
+          .from('order_submissions')
+          .upsert(payload, onConflict: 'run_date,branch_name');
+    });
+  }
+
+  Future<String> fetchSubmissionStatus({
+    required String runDate,
+    required String branchName,
+  }) async {
+    final row = await _retryOnTimeout<Map<String, dynamic>?>(() async {
+      final res = await client
+          .from('order_submissions')
+          .select('status')
+          .eq('run_date', runDate)
+          .eq('branch_name', branchName)
+          .maybeSingle();
+
+      if (res == null) return null;
+      return (res as Map).cast<String, dynamic>();
+    });
+
+    if (row == null) return 'draft';
+    final s = (row['status'] ?? 'draft').toString().trim();
+    return s.isEmpty ? 'draft' : s;
+  }
+
+  // ==========================
+  // NEW: Additional requests (history insert)
+  // ==========================
+  Future<void> insertAdditionalRequests({
+    required String runDate,
+    required String zone,
+    required String branchName,
+    required List<Map<String, dynamic>> rows,
+  }) async {
+    if (rows.isEmpty) return;
+
+    const chunkSize = 500;
+    for (var i = 0; i < rows.length; i += chunkSize) {
+      final end = (i + chunkSize > rows.length) ? rows.length : i + chunkSize;
+      final part = rows.sublist(i, end);
+
+      await _retryOnTimeout<void>(() async {
+        await client.from('additional_requests').insert(part);
+      });
+    }
+  }
+
+  Future<Map<String, num>> fetchAdditionalRequestsForBranch({
+    required String runDate,
+    required String branchName,
+  }) async {
+    final list = await _retryOnTimeout<List<Map<String, dynamic>>>(() async {
+      final res = await client
+          .from('additional_requests')
+          .select('item_code, request_qty')
+          .eq('run_date', runDate)
+          .eq('branch_name', branchName);
+
+      return (res as List).cast<Map<String, dynamic>>();
+    });
+
+    final out = <String, num>{};
+    for (final r in list) {
+      final code = (r['item_code'] ?? '').toString().trim();
+      if (code.isEmpty) continue;
+
+      final v = r['request_qty'];
+      num qty = 0;
+      if (v is num) {
+        qty = v;
+      } else {
+        qty = num.tryParse((v ?? '').toString().trim()) ?? 0;
+      }
+
+      out[code] = (out[code] ?? 0) + qty;
+    }
+
+    return out;
+  }
+
+  Future<Map<String, List<Map<String, dynamic>>>>
+  fetchAdditionalRequestsHistoryForBranch({
+    required String runDate,
+    required String branchName,
+  }) async {
+    final list = await _retryOnTimeout<List<Map<String, dynamic>>>(() async {
+      final res = await client
+          .from('additional_requests')
+          .select('item_code, request_qty, reason, created_at')
+          .eq('run_date', runDate)
+          .eq('branch_name', branchName)
+          .order('created_at', ascending: false);
+
+      return (res as List).cast<Map<String, dynamic>>();
+    });
+
+    final out = <String, List<Map<String, dynamic>>>{};
+
+    for (final r in list) {
+      final code = (r['item_code'] ?? '').toString().trim();
+      if (code.isEmpty) continue;
+
+      (out[code] ??= <Map<String, dynamic>>[]).add(r);
+    }
+
+    return out;
+  }
+
+  // ==========================
+  // NEW: Tracking list for branch
+  // ==========================
+  Future<List<Map<String, dynamic>>> fetchAdditionalRequestsTrackingForBranch({
+    required String runDate,
+    required String branchName,
+  }) async {
+    const cols = '''
+id,
+item_code,
+item_name,
+request_qty,
+reason,
+status,
+fulfilled_qty,
+store_note,
+created_at,
+sent_to_store_at,
+done_at
+''';
+
+    final list = await _retryOnTimeout<List<Map<String, dynamic>>>(() async {
+      final res = await client
+          .from('additional_requests')
+          .select(cols)
+          .eq('run_date', runDate)
+          .eq('branch_name', branchName)
+          .order('created_at', ascending: false);
+
+      return (res as List).cast<Map<String, dynamic>>();
+    });
+
+    return list;
+  }
+
+  // ==========================
   // Helpers
   // ==========================
   Future<T> _retryOnTimeout<T>(
@@ -173,7 +389,6 @@ store_item_classifications
         final isTimeout = _isStatementTimeout(e);
         if (!isTimeout || attempt == maxAttempts) rethrow;
 
-        // Backoff: 250ms, 600ms, 1100ms ...
         final waitMs = 200 + (attempt * attempt * 200);
         await Future.delayed(Duration(milliseconds: waitMs));
       }
