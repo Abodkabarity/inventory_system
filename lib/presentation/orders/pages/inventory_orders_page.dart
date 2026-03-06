@@ -6,7 +6,6 @@ import '../bloc/orders_bloc.dart';
 import '../bloc/orders_bloc_factory.dart';
 import '../bloc/orders_event.dart';
 import '../bloc/orders_state.dart';
-import '../widgets/columns_toggle_panel.dart';
 import '../widgets/orders_table.dart';
 import '../widgets/orders_toolbar.dart';
 import '../widgets/toggle_item.dart';

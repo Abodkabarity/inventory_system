@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/theme/app_colors.dart';
 import '../../bloc/order_bloc/orders_bloc.dart';
 import '../../bloc/order_bloc/orders_event.dart';
 import '../../bloc/order_bloc/orders_state.dart';
@@ -179,7 +180,12 @@ class _ColumnTile extends StatelessWidget {
             subtitle,
             style: const TextStyle(fontSize: 11.5, color: Color(0xFF6B7280)),
           ),
-          trailing: Switch(value: value, onChanged: enabled ? onChanged : null),
+          trailing: Switch(
+            value: value,
+            onChanged: enabled ? onChanged : null,
+            activeThumbColor: AppColors.primaryColor,
+            inactiveThumbColor: AppColors.secondaryColor,
+          ),
         ),
       ),
     );

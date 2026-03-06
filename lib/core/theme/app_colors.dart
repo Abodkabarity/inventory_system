@@ -4,6 +4,7 @@ class AppColors {
   // Brand
   static const Color primaryColor = Color(0xff4eb0de);
   static const Color secondaryColor = Color(0xff122d40);
+  static const Color backgroundWidget = Color(0x1a4eb0de);
   static const Color blueSoft = Color(0xFFEFF6FF);
   static const Color white = Color(0xFFFFFFFF);
 

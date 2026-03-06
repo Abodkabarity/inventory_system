@@ -1,6 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-enum TrackTab { all, pending, sent, done }
+enum TrackTab { all, pending, sent, done, rejected }
 
 class TrackingFilterState {
   final TrackTab tab;

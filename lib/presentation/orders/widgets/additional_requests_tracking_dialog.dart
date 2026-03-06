@@ -1,3 +1,4 @@
+import 'package:daily_order/core/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -5,6 +6,8 @@ import '../bloc/order_bloc/orders_bloc.dart';
 import '../bloc/order_bloc/orders_event.dart';
 import '../bloc/order_bloc/orders_state.dart';
 import 'additional_requests_tracking_cubit.dart';
+
+enum _TrackKey { pending, sent, done, rejected, unknown }
 
 class AdditionalTrackingDialog extends StatelessWidget {
   const AdditionalTrackingDialog({super.key});
@@ -34,6 +37,86 @@ class _DialogBodyState extends State<_DialogBody> {
     super.dispose();
   }
 
+  _TrackKey _keyOfStatus(String statusRaw) {
+    final s = statusRaw.trim().toLowerCase();
+
+    // Pending variants
+    if (s == 'pending' ||
+        s == 'pending_inventory' ||
+        s == 'pending_for_inventory' ||
+        s == 'pending_for_inventory_approval') {
+      return _TrackKey.pending;
+    }
+
+    // Sent variants
+    if (s == 'sent' || s == 'sent_to_store' || s == 'sent_store') {
+      return _TrackKey.sent;
+    }
+
+    // Done variants
+    if (s == 'done' || s == 'completed' || s == 'fulfilled') {
+      return _TrackKey.done;
+    }
+
+    // Rejected variants
+    if (s == 'rejected' || s == 'reject' || s == 'declined') {
+      return _TrackKey.rejected;
+    }
+
+    return _TrackKey.unknown;
+  }
+
+  bool _matchTab(AdditionalRequestRow r, TrackTab tab) {
+    final k = _keyOfStatus(r.status);
+
+    switch (tab) {
+      case TrackTab.all:
+        return true;
+      case TrackTab.pending:
+        return k == _TrackKey.pending;
+      case TrackTab.sent:
+        return k == _TrackKey.sent;
+      case TrackTab.done:
+        return k == _TrackKey.done;
+      case TrackTab.rejected:
+        return k == _TrackKey.rejected;
+    }
+  }
+
+  bool _matchQuery(AdditionalRequestRow r, String qLower) {
+    if (qLower.trim().isEmpty) return true;
+
+    final code = r.itemCode.toLowerCase();
+    final name = r.itemName.toLowerCase();
+    final reason = r.reason.toLowerCase();
+    final note = (r.storeNote ?? '').toLowerCase();
+
+    return code.contains(qLower) ||
+        name.contains(qLower) ||
+        reason.contains(qLower) ||
+        note.contains(qLower);
+  }
+
+  _TabCounts _computeCounts(List<AdditionalRequestRow> rows) {
+    int p = 0, s = 0, d = 0, rj = 0;
+
+    for (final x in rows) {
+      final k = _keyOfStatus(x.status);
+      if (k == _TrackKey.pending) p++;
+      if (k == _TrackKey.sent) s++;
+      if (k == _TrackKey.done) d++;
+      if (k == _TrackKey.rejected) rj++;
+    }
+
+    return _TabCounts(
+      all: rows.length,
+      pending: p,
+      sent: s,
+      done: d,
+      rejected: rj,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -46,10 +129,10 @@ class _DialogBodyState extends State<_DialogBody> {
         decoration: BoxDecoration(
           color: cs.surface,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: cs.outlineVariant.withOpacity(.55)),
+          border: Border.all(color: cs.outlineVariant.withValues(alpha: .55)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(.08),
+              color: Colors.black.withValues(alpha: .08),
               blurRadius: 30,
               offset: const Offset(0, 16),
             ),
@@ -59,41 +142,18 @@ class _DialogBodyState extends State<_DialogBody> {
           buildWhen: (p, n) =>
               p.additionalTrackingRows != n.additionalTrackingRows ||
               p.status != n.status ||
-              p.trackingTotal != n.trackingTotal ||
-              p.trackingPending != n.trackingPending ||
-              p.trackingSentToStore != n.trackingSentToStore ||
-              p.trackingDone != n.trackingDone ||
               p.trackingModifiedQty != n.trackingModifiedQty,
           builder: (context, s) {
             return BlocBuilder<TrackingFilterCubit, TrackingFilterState>(
               builder: (context, fs) {
-                final q = fs.query.toLowerCase();
                 final base = s.additionalTrackingRows;
+                final counts = _computeCounts(base);
+                final qLower = fs.query.toLowerCase().trim();
 
-                List<AdditionalRequestRow> filtered = base;
-
-                if (fs.tab != TrackTab.all) {
-                  final want = switch (fs.tab) {
-                    TrackTab.pending => 'pending',
-                    TrackTab.sent => 'sent_to_store',
-                    TrackTab.done => 'done',
-                    TrackTab.all => '',
-                  };
-
-                  filtered = filtered
-                      .where((r) => r.status.trim().toLowerCase() == want)
-                      .toList();
-                }
-
-                if (q.isNotEmpty) {
-                  bool hit(AdditionalRequestRow r) {
-                    return r.itemCode.toLowerCase().contains(q) ||
-                        r.itemName.toLowerCase().contains(q) ||
-                        r.reason.toLowerCase().contains(q);
-                  }
-
-                  filtered = filtered.where(hit).toList();
-                }
+                final filtered = base
+                    .where((r) => _matchTab(r, fs.tab))
+                    .where((r) => _matchQuery(r, qLower))
+                    .toList();
 
                 return Column(
                   children: [
@@ -104,10 +164,11 @@ class _DialogBodyState extends State<_DialogBody> {
                       onRefresh: () => context.read<OrdersBloc>().add(
                         const OrdersLoadAdditionalTracking(),
                       ),
-                      total: s.trackingTotal,
-                      pending: s.trackingPending,
-                      sent: s.trackingSentToStore,
-                      done: s.trackingDone,
+                      total: counts.all,
+                      pending: counts.pending,
+                      sent: counts.sent,
+                      done: counts.done,
+                      rejected: counts.rejected,
                       modified: s.trackingModifiedQty,
                     ),
                     const Divider(height: 1),
@@ -137,13 +198,18 @@ class _DialogBodyState extends State<_DialogBody> {
                                         icon: const Icon(Icons.close),
                                       ),
                                 filled: true,
-                                fillColor: cs.surfaceContainerHighest
-                                    .withOpacity(.55),
+                                fillColor: AppColors.backgroundWidget,
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 14,
                                   vertical: 12,
                                 ),
                                 border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderSide: BorderSide(
+                                    color: AppColors.primaryColor,
+                                  ),
                                   borderRadius: BorderRadius.circular(14),
                                 ),
                               ),
@@ -154,12 +220,7 @@ class _DialogBodyState extends State<_DialogBody> {
                             tab: fs.tab,
                             onChanged: (t) =>
                                 context.read<TrackingFilterCubit>().setTab(t),
-                            counts: _TabCounts(
-                              all: s.trackingTotal,
-                              pending: s.trackingPending,
-                              sent: s.trackingSentToStore,
-                              done: s.trackingDone,
-                            ),
+                            counts: counts,
                           ),
                         ],
                       ),
@@ -171,7 +232,7 @@ class _DialogBodyState extends State<_DialogBody> {
                           : ListView.separated(
                               padding: const EdgeInsets.all(14),
                               itemCount: filtered.length,
-                              separatorBuilder: (_, __) =>
+                              separatorBuilder: (_, _) =>
                                   const SizedBox(height: 10),
                               itemBuilder: (context, i) {
                                 final r = filtered[i];
@@ -200,6 +261,7 @@ class _TrackHeader extends StatelessWidget {
   final int pending;
   final int sent;
   final int done;
+  final int rejected;
   final int modified;
 
   const _TrackHeader({
@@ -211,13 +273,12 @@ class _TrackHeader extends StatelessWidget {
     required this.pending,
     required this.sent,
     required this.done,
+    required this.rejected,
     required this.modified,
   });
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 12, 12),
       child: Row(
@@ -271,6 +332,12 @@ class _TrackHeader extends StatelessWidget {
                       bg: const Color(0xFFECFDF3),
                       fg: const Color(0xFF027A48),
                     ),
+                    _MiniStat(
+                      label: 'Rejected',
+                      value: '$rejected',
+                      bg: const Color(0xFFFEF2F2),
+                      fg: const Color(0xFFB91C1C),
+                    ),
                     if (modified > 0)
                       _MiniStat(
                         label: 'Qty changed',
@@ -287,7 +354,7 @@ class _TrackHeader extends StatelessWidget {
           IconButton(
             tooltip: 'Refresh',
             onPressed: onRefresh,
-            icon: Icon(Icons.refresh, color: cs.primary),
+            icon: Icon(Icons.refresh, color: AppColors.secondaryColor),
           ),
           IconButton(
             tooltip: 'Close',
@@ -353,11 +420,14 @@ class _TabCounts {
   final int pending;
   final int sent;
   final int done;
+  final int rejected;
+
   const _TabCounts({
     required this.all,
     required this.pending,
     required this.sent,
     required this.done,
+    required this.rejected,
   });
 }
 
@@ -419,7 +489,7 @@ class _TabPills extends StatelessWidget {
                   ),
                   decoration: BoxDecoration(
                     color: active
-                        ? Colors.white.withOpacity(.85)
+                        ? Colors.white.withValues(alpha: .85)
                         : const Color(0xFFF3F4F6),
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(color: const Color(0xFFE6E8F0)),
@@ -447,6 +517,7 @@ class _TabPills extends StatelessWidget {
           text: 'All',
           active: tab == TrackTab.all,
           count: counts.all,
+          activeFg: AppColors.primaryColor,
           onTap: () => onChanged(TrackTab.all),
         ),
         pill(
@@ -472,6 +543,14 @@ class _TabPills extends StatelessWidget {
           activeBg: const Color(0xFFECFDF3),
           activeFg: const Color(0xFF027A48),
           onTap: () => onChanged(TrackTab.done),
+        ),
+        pill(
+          text: 'Rejected',
+          active: tab == TrackTab.rejected,
+          count: counts.rejected,
+          activeBg: const Color(0xFFFEF2F2),
+          activeFg: const Color(0xFFB91C1C),
+          onTap: () => onChanged(TrackTab.rejected),
         ),
       ],
     );
@@ -525,22 +604,27 @@ class _TrackRowCard extends StatelessWidget {
     String status,
   ) {
     final s = status.trim().toLowerCase();
-    if (s == 'pending') {
+
+    if (s == 'pending_inventory' ||
+        s == 'pending' ||
+        s == 'pending_for_inventory_approval') {
       return (
         bg: const Color(0xFFFFFBEB),
         fg: const Color(0xFF92400E),
-        label: 'Pending',
+        label: 'Pending For Inventory Approval',
         icon: Icons.hourglass_bottom,
       );
     }
-    if (s == 'sent_to_store') {
+
+    if (s == 'sent_to_store' || s == 'sent') {
       return (
         bg: const Color(0xFFEFF6FF),
         fg: const Color(0xFF1D4ED8),
-        label: 'Sent to store',
+        label: 'Sent To Store',
         icon: Icons.local_shipping_outlined,
       );
     }
+
     if (s == 'done') {
       return (
         bg: const Color(0xFFECFDF3),
@@ -549,6 +633,16 @@ class _TrackRowCard extends StatelessWidget {
         icon: Icons.check_circle_outline,
       );
     }
+
+    if (s == 'rejected' || s == 'reject') {
+      return (
+        bg: const Color(0xFFFEF2F2),
+        fg: const Color(0xFFB91C1C),
+        label: 'Rejected',
+        icon: Icons.cancel_outlined,
+      );
+    }
+
     return (
       bg: const Color(0xFFF3F4F6),
       fg: const Color(0xFF111827),
@@ -579,7 +673,7 @@ class _TrackRowCard extends StatelessWidget {
         border: Border.all(color: const Color(0xFFE6E8F0)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(.03),
+            color: Colors.black.withValues(alpha: .03),
             blurRadius: 14,
             offset: const Offset(0, 8),
           ),

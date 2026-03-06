@@ -1,3 +1,4 @@
+import 'package:daily_order/core/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 
 import 'toggle_item.dart';
@@ -44,6 +45,9 @@ class ColumnsTogglePanel extends StatelessWidget {
                     value: isOn,
                     title: Text(it.title),
                     onChanged: (v) => onToggle(it.key, v),
+                    activeThumbColor: AppColors.primaryColor,
+                    activeTrackColor: Colors.redAccent,
+                    inactiveThumbColor: AppColors.primaryColor,
                   );
                 },
               ),

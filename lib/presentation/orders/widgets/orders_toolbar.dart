@@ -1,15 +1,18 @@
 // orders_toolbar.dart
 import 'package:flutter/material.dart';
 
+import '../../../core/theme/app_colors.dart';
+
 class OrdersToolbar extends StatefulWidget {
   final String search;
   final ValueChanged<String> onSearchChanged;
 
   final VoidCallback onOpenColumns;
   final VoidCallback onExport;
+  final VoidCallback onClearAll;
 
-  final Widget? statusChip; // e.g. Submitted/Draft
-  final Widget? extraLeft; // e.g. switches row
+  final Widget? statusChip;
+  final Widget? extraLeft;
   final List<Widget> actions;
 
   const OrdersToolbar({
@@ -21,6 +24,7 @@ class OrdersToolbar extends StatefulWidget {
     this.statusChip,
     this.extraLeft,
     required this.actions,
+    required this.onClearAll,
   });
 
   @override
@@ -71,58 +75,66 @@ class OrdersToolbar extends StatefulWidget {
   }
 
   /// Modern action button you can use in `actions`.
+  /// ✅ UPDATED: now matches "Clear All Filters" button style.
   static Widget actionButton({
     required String label,
     required IconData icon,
     required VoidCallback? onPressed,
     int badgeCount = 0,
-    bool filled = false,
+    bool filled = true, // default filled like Clear
     Color? color,
     String? tooltip,
   }) {
-    final btn = filled
-        ? FilledButton.icon(
-            onPressed: onPressed,
-            icon: Icon(icon, size: 18),
-            label: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(label),
-                if (badgeCount > 0) ...[
-                  const SizedBox(width: 8),
-                  OrdersToolbar.badge(count: badgeCount),
-                ],
-              ],
-            ),
-            style: FilledButton.styleFrom(
-              backgroundColor: color,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+    final bg = color ?? AppColors.primaryColor;
+
+    final labelWidget = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+        if (badgeCount > 0) ...[
+          const SizedBox(width: 8),
+          OrdersToolbar.badge(
+            count: badgeCount,
+            bg: Colors.white.withValues(alpha: .22),
+            fg: Colors.white,
+          ),
+        ],
+      ],
+    );
+
+    final btn = SizedBox(
+      child: filled
+          ? ElevatedButton.icon(
+              onPressed: onPressed,
+              icon: Icon(icon, size: 18, color: Colors.white),
+              label: labelWidget,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: bg,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            )
+          : OutlinedButton.icon(
+              onPressed: onPressed,
+              icon: Icon(icon, size: 18, color: bg),
+              label: DefaultTextStyle.merge(
+                style: TextStyle(color: bg, fontWeight: FontWeight.bold),
+                child: labelWidget,
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: bg,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                side: BorderSide(color: bg),
               ),
             ),
-          )
-        : OutlinedButton.icon(
-            onPressed: onPressed,
-            icon: Icon(icon, size: 18),
-            label: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(label),
-                if (badgeCount > 0) ...[
-                  const SizedBox(width: 8),
-                  OrdersToolbar.badge(count: badgeCount),
-                ],
-              ],
-            ),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: color,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-          );
+    );
 
     if (tooltip == null) return btn;
     return Tooltip(message: tooltip, child: btn);
@@ -184,12 +196,12 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
       color: Colors.transparent,
       child: Container(
         decoration: BoxDecoration(
-          color: cs.surface,
+          color: Colors.white,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: cs.outlineVariant.withOpacity(.55)),
+          border: Border.all(color: cs.outlineVariant.withValues(alpha: .55)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(.04),
+              color: Colors.black.withValues(alpha: .04),
               blurRadius: 18,
               offset: const Offset(0, 8),
             ),
@@ -198,23 +210,19 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         child: LayoutBuilder(
           builder: (context, c) {
-            final isNarrow = c.maxWidth < 860;
-
-            return Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              crossAxisAlignment: WrapCrossAlignment.center,
+            return Row(
               children: [
                 // ==========================
                 // Search
                 // ==========================
-                SizedBox(
-                  width: isNarrow ? c.maxWidth : 430,
+                Expanded(
+                  flex: 2,
                   child: Directionality(
                     textDirection: TextDirection.ltr,
                     child: TextField(
                       controller: _controller,
                       focusNode: _focus,
+
                       textDirection: TextDirection.ltr,
                       keyboardType: TextInputType.text,
                       textInputAction: TextInputAction.search,
@@ -229,7 +237,7 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
                                 icon: const Icon(Icons.close),
                               ),
                         filled: true,
-                        fillColor: cs.surfaceContainerHighest.withOpacity(.55),
+                        fillColor: AppColors.backgroundWidget,
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 14,
                           vertical: 12,
@@ -251,6 +259,7 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
                     ),
                   ),
                 ),
+                const SizedBox(width: 6),
 
                 if (widget.statusChip != null) widget.statusChip!,
                 if (widget.extraLeft != null) widget.extraLeft!,
@@ -258,38 +267,92 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
                 // ==========================
                 // Columns
                 // ==========================
-                OutlinedButton.icon(
-                  onPressed: widget.onOpenColumns,
-                  icon: const Icon(Icons.view_column_outlined, size: 18),
-                  label: const Text('Columns'),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
+                SizedBox(
+                  width: 200,
+                  child: OutlinedButton.icon(
+                    onPressed: widget.onOpenColumns,
+                    icon: const Icon(
+                      Icons.view_column_outlined,
+                      color: Colors.white,
                     ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                    label: const Text(
+                      'Add Columns',
+                      style: TextStyle(
+                        color: AppColors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: Colors.deepPurple,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                     ),
                   ),
                 ),
+                const SizedBox(width: 6),
 
                 // ==========================
                 // Export
                 // ==========================
-                FilledButton.icon(
-                  onPressed: widget.onExport,
-                  icon: const Icon(Icons.download, size: 18),
-                  label: const Text('Export'),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
+                SizedBox(
+                  width: 200,
+                  child: FilledButton.icon(
+                    onPressed: widget.onExport,
+
+                    icon: const Icon(Icons.download, size: 18),
+                    label: const Text(
+                      'Export',
+                      style: TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.blueGrey,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                     ),
                   ),
                 ),
+                const SizedBox(width: 6),
+
+                // ==========================
+                // Clear All Filters (reference style)
+                // ==========================
+                SizedBox(
+                  width: 200,
+                  child: ElevatedButton.icon(
+                    onPressed: widget.onClearAll,
+                    icon: const Icon(
+                      Icons.filter_alt_off_outlined,
+                      color: AppColors.white,
+                    ),
+                    label: const Text(
+                      'Clear All Filters',
+                      style: TextStyle(
+                        color: AppColors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent,
+                      foregroundColor: AppColors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
 
                 // ==========================
                 // Extra actions (Track / Send / Submitted ...)

@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 
+import '../../../core/theme/app_colors.dart';
 import '../../app/bloc/app_bloc.dart';
 import '../../app/bloc/app_event.dart';
 import '../bloc/auth_bloc.dart';
@@ -110,6 +111,7 @@ class _LoginPageState extends State<LoginPage> {
                                     width: 18,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
+                                      color: AppColors.primaryColor,
                                     ),
                                   )
                                 : const Text('Sign In'),
