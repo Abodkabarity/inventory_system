@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../../core/theme/app_colors.dart';
 import '../../../../domain/entities/daily_order_row.dart';
 
 class FinalReorderHeader extends StatelessWidget {
@@ -213,17 +214,21 @@ class _StatBox extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(12),
+      alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
+        color: AppColors.backgroundWidget,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE6E8F0)),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.secondaryColor,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 6),
           Text(
@@ -245,15 +250,22 @@ class NumericField extends StatelessWidget {
   final bool enabled;
   final String label;
   final String helperText;
-  final ValueChanged<String>? onChanged; // ✅ NEW
-
+  final ValueChanged<String>? onChanged;
+  final VoidCallback onDec;
+  final VoidCallback onInc;
+  final bool canInc;
+  final bool canDec;
   const NumericField({
     super.key,
     required this.controller,
     required this.enabled,
     required this.label,
     required this.helperText,
-    this.onChanged, // ✅ NEW
+    this.onChanged,
+    required this.onDec,
+    required this.onInc,
+    required this.canInc,
+    required this.canDec,
   });
 
   @override
@@ -261,17 +273,24 @@ class NumericField extends StatelessWidget {
     return TextField(
       controller: controller,
       enabled: enabled,
-      onChanged: onChanged, // ✅ NEW
+      onChanged: onChanged,
+      textAlign: TextAlign.center,
       keyboardType: TextInputType.number,
       inputFormatters: [
         FilteringTextInputFormatter.digitsOnly,
         LengthLimitingTextInputFormatter(9),
       ],
+      style: TextStyle(
+        fontWeight: FontWeight.bold,
+        color: AppColors.secondaryColor,
+      ),
+
       decoration: InputDecoration(
         labelText: label,
         helperText: helperText,
         filled: true,
-        fillColor: const Color(0xFFF9FAFB),
+        labelStyle: TextStyle(color: AppColors.secondaryColor),
+        fillColor: AppColors.backgroundWidget,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: Color(0xFFE6E8F0)),
@@ -282,7 +301,24 @@ class NumericField extends StatelessWidget {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFF4338CA), width: 1.4),
+          borderSide: const BorderSide(
+            color: AppColors.primaryColor,
+            width: 1.4,
+          ),
+        ),
+        prefixIcon: IconButton(
+          onPressed: canDec ? onDec : null,
+          icon: Icon(
+            Icons.remove_circle_outline,
+            color: canDec ? AppColors.secondaryColor : Colors.grey,
+          ),
+        ),
+        suffixIcon: IconButton(
+          onPressed: canInc ? onInc : null,
+          icon: Icon(
+            Icons.add_circle_outline,
+            color: canInc ? AppColors.secondaryColor : Colors.grey,
+          ),
         ),
       ),
     );
@@ -315,7 +351,8 @@ class ReasonField extends StatelessWidget {
         hintText: 'Why are you increasing or decreasing this item?',
         errorText: showError ? 'Reason is required.' : null,
         filled: true,
-        fillColor: const Color(0xFFF9FAFB),
+        fillColor: AppColors.backgroundWidget,
+        labelStyle: TextStyle(color: AppColors.secondaryColor),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: Color(0xFFE6E8F0)),
@@ -326,7 +363,10 @@ class ReasonField extends StatelessWidget {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFF4338CA), width: 1.4),
+          borderSide: const BorderSide(
+            color: AppColors.primaryColor,
+            width: 1.4,
+          ),
         ),
       ),
     );
@@ -404,7 +444,7 @@ class DiffChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: isZero ? const Color(0xFFF3F4F6) : const Color(0xFFEEF2FF),
+        color: isZero ? AppColors.backgroundWidget : const Color(0xFFEEF2FF),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: const Color(0xFFE6E8F0)),
       ),
@@ -418,20 +458,20 @@ class DiffChip extends StatelessWidget {
 
 class MiniStats extends StatelessWidget {
   final DailyOrderRow row;
+  final int minReOrder;
   final int storeStock;
-  final int maxAllowed;
   final bool onlyDecrease;
   final int reorderQtyNum;
-  final int oldQty;
+  final int maxReorder;
 
   const MiniStats({
     super.key,
     required this.row,
+    required this.minReOrder,
     required this.storeStock,
-    required this.maxAllowed,
     required this.onlyDecrease,
     required this.reorderQtyNum,
-    required this.oldQty,
+    required this.maxReorder,
   });
 
   @override
@@ -444,14 +484,12 @@ class MiniStats extends StatelessWidget {
       children: [
         const SectionTitle('Quick info'),
         const SizedBox(height: 10),
-        _kv('Store stock', storeStock.toString()),
-        _kv('Reorder qty (num)', reorderQtyNum.toString()),
-        if (onlyDecrease) _kv('Rule', 'Increase disabled (only decrease)'),
-        _kv('Max allowed (this branch)', maxAllowed.toString()),
-        _kv('Auto (Old)', oldQty.toString()),
-        _kv('Branch stock', t(row.branchStock)),
-        _kv('Demand 30d', t(row.demandFor30Days)),
-        _kv('Purchase type', t(row.itemPurchaseType)),
+        _kv('Store Stock', storeStock.toString()),
+        _kv('Min Reorder', minReOrder.toString()),
+        _kv('Max Reorder', maxReorder.toString()),
+        _kv('Reorder QTY', reorderQtyNum.toString()),
+        _kv('Mismatch', t(row.mismatchStock)),
+        _kv('Purchase Type', t(row.itemPurchaseType)),
         _kv('Formulary', t(row.branchFormulary)),
       ],
     );

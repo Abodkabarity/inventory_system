@@ -103,25 +103,24 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                         ),
                       ),
 
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
                         SizedBox(
                           width: 320,
                           child: _KpiCard(
                             title: 'Total Products',
                             value: statsAll.totalProducts.toString(),
-                            subtitle: 'All items loaded for this branch',
+                            subtitle: 'All APG Items',
                             icon: Icons.list_alt_outlined,
                           ),
                         ),
                         SizedBox(
                           width: 320,
                           child: _KpiCard(
-                            title: 'Products in Order',
+                            title: 'Items in Order',
                             value: statsAll.sumFinalReorder.round().toString(),
-                            subtitle: 'Sum of numeric final reorder only',
+                            subtitle: '',
                             icon: Icons.inventory_2_outlined,
                           ),
                         ),
@@ -130,7 +129,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                           child: _KpiCard(
                             title: 'Essential',
                             value: '${statsAll.essential}',
-                            subtitle: 'Branch formulary = ESSENTIAL',
+                            subtitle: '',
                             icon: Icons.star_border,
                           ),
                         ),
@@ -139,7 +138,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                           child: _KpiCard(
                             title: 'Non',
                             value: '${statsAll.non}',
-                            subtitle: 'Branch formulary = NON',
+                            subtitle: '',
                             icon: Icons.layers_outlined,
                           ),
                         ),
@@ -148,7 +147,8 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                           child: _KpiCard(
                             title: 'Additional Orders',
                             value: '$sentAddCount',
-                            subtitle: 'Sent additional requests (today)',
+                            subtitle:
+                                'Number of Sent additional requests (today)',
                             icon: Icons.add_box_outlined,
                           ),
                         ),
@@ -179,12 +179,6 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                       onAdditionalOnlyChanged: (v) => context
                           .read<OrdersBloc>()
                           .add(OrdersAdditionalOnlyToggled(v)),
-                      onClearAll: () {
-                        context.read<OrdersBloc>().add(
-                          const OrdersClearAllFilters(),
-                        );
-                        _grid.resetGridUi();
-                      },
                     ),
 
                     const SizedBox(height: 12),
@@ -208,9 +202,10 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                               statusChip: null,
                               actions: [
                                 OrdersToolbar.actionButton(
-                                  label: 'Track',
+                                  label: 'Additional Order Track',
                                   icon: Icons.track_changes_outlined,
                                   badgeCount: s.trackingPending,
+                                  color: AppColors.primaryColor,
                                   tooltip: 'Track additional requests status',
                                   onPressed: (s.isSubmitted && !isBusy)
                                       ? () =>
@@ -219,53 +214,63 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                             )
                                       : null,
                                 ),
-
                                 if (s.hasEdits && !s.isSubmitted)
-                                  _ReviewEditsButton(
-                                    count: s.editsCount,
+                                  SizedBox(width: 6),
+                                if (s.hasEdits && !s.isSubmitted)
+                                  OrdersToolbar.actionButton(
+                                    label: 'Review Changes (${s.editsCount})',
+                                    icon: Icons.fact_check_outlined,
+                                    color: AppColors.primaryColor,
                                     onPressed: () =>
                                         BranchOrdersActions.openReviewDialog(
                                           context: context,
                                           state: s,
                                         ),
                                   ),
-
-                                FilledButton.tonalIcon(
-                                  onPressed:
-                                      (!zoneReady ||
-                                          s.additionalEdits.isEmpty ||
-                                          isBusy)
-                                      ? null
-                                      : () {
-                                          context.read<OrdersBloc>().add(
-                                            OrdersSendAdditionalRequestsPressed(
-                                              zone: zs.zone!,
-                                            ),
-                                          );
-                                        },
-                                  icon: const Icon(Icons.add_box_outlined),
-                                  label: Text(
-                                    'Send Additional ($draftAddCount)',
+                                if (s.isSubmitted) SizedBox(width: 6),
+                                if (s.isSubmitted)
+                                  OrdersToolbar.actionButton(
+                                    label: 'Send Additional ($draftAddCount)',
+                                    icon: Icons.add_box_outlined,
+                                    badgeCount: draftAddCount,
+                                    color: AppColors.secondaryColor,
+                                    onPressed:
+                                        (!zoneReady ||
+                                            s.additionalEdits.isEmpty ||
+                                            isBusy)
+                                        ? null
+                                        : () {
+                                            context.read<OrdersBloc>().add(
+                                              OrdersSendAdditionalRequestsPressed(
+                                                zone: zs.zone!,
+                                              ),
+                                            );
+                                          },
                                   ),
-                                ),
-
-                                FilledButton.icon(
-                                  onPressed:
-                                      (!zoneReady || s.isSubmitted || isBusy)
-                                      ? null
-                                      : () {
-                                          context.read<OrdersBloc>().add(
-                                            OrdersSubmitOrderPressed(
-                                              zone: zs.zone!,
-                                            ),
-                                          );
-                                        },
-                                  icon: const Icon(Icons.check_circle_outline),
-                                  label: Text(
-                                    s.isSubmitted ? 'Submitted' : 'Submit',
+                                if (!s.isSubmitted) SizedBox(width: 6),
+                                if (!s.isSubmitted)
+                                  OrdersToolbar.actionButton(
+                                    label: 'Submit',
+                                    icon: Icons.check_circle_outline,
+                                    color: AppColors.secondaryColor,
+                                    onPressed:
+                                        (!zoneReady || s.isSubmitted || isBusy)
+                                        ? null
+                                        : () {
+                                            context.read<OrdersBloc>().add(
+                                              OrdersSubmitOrderPressed(
+                                                zone: zs.zone!,
+                                              ),
+                                            );
+                                          },
                                   ),
-                                ),
                               ],
+                              onClearAll: () {
+                                context.read<OrdersBloc>().add(
+                                  const OrdersClearAllFilters(),
+                                );
+                                _grid.resetGridUi();
+                              },
                             );
                           },
                         );
@@ -282,7 +287,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                           border: Border.all(color: const Color(0xFFE6E8F0)),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.04),
+                              color: Colors.black.withValues(alpha: 0.04),
                               blurRadius: 18,
                               offset: const Offset(0, 10),
                             ),
@@ -404,7 +409,7 @@ class _ZoneChip extends StatelessWidget {
           const Icon(Icons.place_outlined, size: 16, color: Color(0xFF111827)),
           const SizedBox(width: 6),
           Text(
-            z.isEmpty ? 'Zone: -' : 'Zone: $z',
+            z.isEmpty ? 'Zone: -' : z,
             style: const TextStyle(fontWeight: FontWeight.w900),
           ),
         ],
@@ -421,10 +426,17 @@ class _ReviewEditsButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton.tonalIcon(
-      onPressed: onPressed,
-      icon: const Icon(Icons.fact_check_outlined),
-      label: Text('Review Changes ($count)'),
+    return Container(
+      color: AppColors.primaryColor,
+      child: FilledButton.tonalIcon(
+        onPressed: onPressed,
+
+        icon: const Icon(Icons.fact_check_outlined, color: AppColors.white),
+        label: Text(
+          'Review Changes ($count)',
+          style: TextStyle(color: AppColors.white),
+        ),
+      ),
     );
   }
 }
@@ -441,26 +453,58 @@ class _TopHeader extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  color: Color(0xFF111827),
+              Container(
+                width: 100,
+                height: 50,
+                decoration: BoxDecoration(
+                  image: DecorationImage(
+                    image: AssetImage("assets/images/logo1.png"),
+                    fit: BoxFit.cover,
+                  ),
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+              SizedBox(width: 6),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 15, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.secondaryColor,
+                      gradient: LinearGradient(
+                        colors: [
+                          AppColors.secondaryColor,
+                          AppColors.primaryColor,
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.white,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF6B7280),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
-        if (right != null) right!,
+        ?right,
       ],
     );
   }
@@ -492,7 +536,7 @@ class _GenerateCard extends StatelessWidget {
         border: Border.all(color: const Color(0xFFE6E8F0)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 30,
             offset: const Offset(0, 16),
           ),
@@ -509,7 +553,11 @@ class _GenerateCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(18),
               border: Border.all(color: const Color(0xFFE6E8F0)),
             ),
-            child: const Icon(Icons.bolt, color: Color(0xFF4338CA), size: 30),
+            child: const Icon(
+              Icons.bolt,
+              color: AppColors.primaryColor,
+              size: 30,
+            ),
           ),
           const SizedBox(height: 14),
           const Text(
@@ -522,7 +570,7 @@ class _GenerateCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Press generate to build the order, then we will load all items for this branch.',
+            'Press generate to build the order, then we will load all items for your branch.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
           ),
@@ -544,6 +592,9 @@ class _GenerateCard extends StatelessWidget {
             child: FilledButton.icon(
               onPressed: isBusy ? null : onGenerate,
               icon: const Icon(Icons.play_arrow_rounded),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primaryColor,
+              ),
               label: const Text('Generate Order'),
             ),
           ),
@@ -596,6 +647,8 @@ class _ProgressStrip extends StatelessWidget {
             child: LinearProgressIndicator(
               value: p / 100.0,
               minHeight: 8,
+              color: AppColors.primaryColor,
+
               backgroundColor: const Color(0xFFE5E7EB),
             ),
           ),
@@ -629,7 +682,7 @@ class _KpiCard extends StatelessWidget {
         border: Border.all(color: const Color(0xFFE6E8F0)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 18,
             offset: const Offset(0, 10),
           ),
@@ -645,7 +698,7 @@ class _KpiCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: const Color(0xFFE6E8F0)),
             ),
-            child: Icon(icon, color: const Color(0xFF4338CA)),
+            child: Icon(icon, color: AppColors.primaryColor),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -669,7 +722,7 @@ class _KpiCard extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.w900,
-                        color: Color(0xFF111827),
+                        color: AppColors.secondaryColor,
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -710,8 +763,6 @@ class _FiltersBar extends StatelessWidget {
   final ValueChanged<bool> onNonWithSales45Changed;
   final ValueChanged<bool> onNumericFinalOnlyChanged;
 
-  final VoidCallback onClearAll;
-
   const _FiltersBar({
     required this.categories,
     required this.selectedCategory,
@@ -724,7 +775,6 @@ class _FiltersBar extends StatelessWidget {
     required this.onFormularyChanged,
     required this.onNonWithSales45Changed,
     required this.onNumericFinalOnlyChanged,
-    required this.onClearAll,
   });
 
   @override
@@ -782,15 +832,6 @@ class _FiltersBar extends StatelessWidget {
               onChanged: onAdditionalOnlyChanged,
             ),
           ),
-          const SizedBox(width: 12),
-          SizedBox(
-            height: 56,
-            child: OutlinedButton.icon(
-              onPressed: onClearAll,
-              icon: const Icon(Icons.filter_alt_off_outlined),
-              label: const Text('Clear All Filters'),
-            ),
-          ),
         ],
       ),
     );
@@ -816,7 +857,7 @@ class _ModernDropdown extends StatelessWidget {
       decoration: InputDecoration(
         labelText: label,
         filled: true,
-        fillColor: const Color(0xFFF9FAFB),
+        fillColor: AppColors.backgroundWidget,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 12,
           vertical: 12,
@@ -870,7 +911,7 @@ class _SwitchTile extends StatelessWidget {
       height: 56,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
+        color: AppColors.backgroundWidget,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE6E8F0)),
       ),
@@ -886,7 +927,7 @@ class _SwitchTile extends StatelessWidget {
                   style: const TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 12.5,
-                    color: Color(0xFF111827),
+                    color: AppColors.secondaryColor,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -902,7 +943,12 @@ class _SwitchTile extends StatelessWidget {
               ],
             ),
           ),
-          Switch(value: value, onChanged: onChanged),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeThumbColor: AppColors.primaryColor,
+            inactiveThumbColor: AppColors.secondaryColor,
+          ),
         ],
       ),
     );

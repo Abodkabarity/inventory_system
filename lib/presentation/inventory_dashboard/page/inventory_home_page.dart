@@ -123,7 +123,9 @@ class _InventoryView extends StatelessWidget {
                                 s.status == InventoryOrdersStatus.loading &&
                                     s.headers.isEmpty
                                 ? const Center(
-                                    child: CircularProgressIndicator(),
+                                    child: CircularProgressIndicator(
+                                      color: AppColors.primaryColor,
+                                    ),
                                   )
                                 : ListView.separated(
                                     itemCount: s.headers.length,

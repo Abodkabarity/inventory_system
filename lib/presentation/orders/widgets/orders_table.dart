@@ -319,7 +319,9 @@ class _OrdersTableState extends State<OrdersTable> {
   Widget build(BuildContext context) {
     if (widget.rows.isEmpty) {
       if (widget.isLoading) {
-        return const Center(child: CircularProgressIndicator());
+        return const Center(
+          child: CircularProgressIndicator(color: AppColors.primaryColor),
+        );
       }
       return const Center(child: Text('No data'));
     }
@@ -403,7 +405,9 @@ class _OrdersTableState extends State<OrdersTable> {
               color: Colors.white.withOpacity(0.55),
               borderRadius: BorderRadius.circular(14),
             ),
-            child: const Center(child: CircularProgressIndicator()),
+            child: const Center(
+              child: CircularProgressIndicator(color: AppColors.primaryColor),
+            ),
           ),
       ],
     );

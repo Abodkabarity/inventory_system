@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/theme/app_colors.dart';
 import '../../../../domain/entities/daily_order_row.dart';
 import '../bloc/final_reorder_bloc.dart';
 import '../bloc/final_reorder_event.dart';
@@ -67,7 +68,6 @@ class _FinalReorderSidePanelState extends State<FinalReorderSidePanel> {
         listenWhen: (p, n) =>
             p.dialog != n.dialog || p.qty != n.qty || p.reason != n.reason,
         listener: (context, s) async {
-          // 1) Sync controllers safely (بدون setState)
           final qtyText = s.qty.toString();
           if (_qtyCtrl.text != qtyText) {
             _qtyCtrl.value = TextEditingValue(
@@ -157,7 +157,7 @@ class _FinalReorderSidePanelState extends State<FinalReorderSidePanel> {
                             const SizedBox(height: 10),
 
                             TwoValuesRow(
-                              leftTitle: 'Auto (Old)',
+                              leftTitle: 'Old QTY',
                               leftValue: s.oldQty.toString(),
                               rightTitle: 'Your Edit (New)',
                               rightValue: s.qty.toString(),
@@ -174,10 +174,19 @@ class _FinalReorderSidePanelState extends State<FinalReorderSidePanel> {
                                   : 'Numbers only. Max allowed: ${s.capForThisBranch}.',
                               onChanged: (v) => context
                                   .read<FinalReorderBloc>()
-                                  .add(FinalReorderQtyTextChanged(v)), // ✅ NEW
+                                  .add(FinalReorderQtyTextChanged(v)),
+                              onDec: () => context.read<FinalReorderBloc>().add(
+                                const FinalReorderDecPressed(),
+                              ),
+                              onInc: () => context.read<FinalReorderBloc>().add(
+                                const FinalReorderIncPressed(),
+                              ),
+                              canInc: s.canIncrease,
+                              canDec: s.canDecrease,
+                              // ✅ NEW
                             ),
 
-                            const SizedBox(height: 10),
+                            /* const SizedBox(height: 10),
 
                             StepperRow(
                               value: s.qty,
@@ -190,8 +199,7 @@ class _FinalReorderSidePanelState extends State<FinalReorderSidePanel> {
                               canInc: s.canIncrease,
                               canDec: s.canDecrease,
                               disabled: s.isLocked,
-                            ),
-
+                            ),*/
                             const SizedBox(height: 10),
 
                             DiffChip(oldQty: s.oldQty, newQty: s.qty),
@@ -216,10 +224,10 @@ class _FinalReorderSidePanelState extends State<FinalReorderSidePanel> {
                             MiniStats(
                               row: r,
                               storeStock: s.storeStock,
-                              maxAllowed: s.capForThisBranch,
+                              minReOrder: r.reorderPointMin!.toInt(),
                               onlyDecrease: s.onlyDecrease,
                               reorderQtyNum: s.reorderQtyNum,
-                              oldQty: s.oldQty,
+                              maxReorder: r.reorderMax!.toInt(),
                             ),
 
                             const SizedBox(height: 18),
@@ -229,19 +237,17 @@ class _FinalReorderSidePanelState extends State<FinalReorderSidePanel> {
                             Row(
                               children: [
                                 Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: s.isLocked
-                                        ? null
-                                        : () => context
-                                              .read<FinalReorderBloc>()
-                                              .add(
-                                                const FinalReorderResetPressed(),
-                                              ),
-                                    icon: const Icon(Icons.restart_alt),
-                                    label: const Text('Reset to Auto'),
+                                  child: TextButton(
+                                    onPressed: widget.onClose,
+                                    child: const Text(
+                                      'Close',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.secondaryColor,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                                const SizedBox(width: 10),
                                 Expanded(
                                   child: FilledButton.icon(
                                     onPressed: s.canSave
@@ -251,6 +257,9 @@ class _FinalReorderSidePanelState extends State<FinalReorderSidePanel> {
                                                 const FinalReorderSavePressed(),
                                               )
                                         : null,
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: AppColors.primaryColor,
+                                    ),
                                     icon: const Icon(Icons.save),
                                     label: const Text('Save'),
                                   ),
@@ -259,13 +268,6 @@ class _FinalReorderSidePanelState extends State<FinalReorderSidePanel> {
                             ),
 
                             const SizedBox(height: 10),
-                            SizedBox(
-                              width: double.infinity,
-                              child: TextButton(
-                                onPressed: widget.onClose,
-                                child: const Text('Close'),
-                              ),
-                            ),
                           ],
                         ),
                       ),

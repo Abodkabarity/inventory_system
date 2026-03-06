@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/theme/app_colors.dart';
 import '../../../domain/entities/daily_order_row.dart';
 
 class SentAdditionalRequest {
@@ -174,7 +175,7 @@ class _AdditionalRequestSidePanelState
                   child: ListView.separated(
                     padding: const EdgeInsets.all(10),
                     itemCount: history.length,
-                    separatorBuilder: (_, __) => const Divider(height: 14),
+                    separatorBuilder: (_, _) => const Divider(height: 14),
                     itemBuilder: (context, i) {
                       final h = history[i];
                       return _HistoryRow(
@@ -189,7 +190,7 @@ class _AdditionalRequestSidePanelState
               const SizedBox(height: 12),
             ],
 
-            _FieldLabel('Request Qty (no limits)'),
+            _FieldLabel('Request Qty'),
             TextField(
               controller: _qty,
               keyboardType: const TextInputType.numberWithOptions(
@@ -200,11 +201,15 @@ class _AdditionalRequestSidePanelState
                 FilteringTextInputFormatter.allow(RegExp(r'[-0-9.,]')),
               ],
               decoration: InputDecoration(
-                hintText: 'e.g. 25',
+                hintText: 'Enter Your Additional Quantity',
                 filled: true,
-                fillColor: const Color(0xFFF9FAFB),
+                fillColor: AppColors.backgroundWidget,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: AppColors.primaryColor),
                 ),
               ),
             ),
@@ -217,9 +222,13 @@ class _AdditionalRequestSidePanelState
               decoration: InputDecoration(
                 hintText: 'Write the reason...',
                 filled: true,
-                fillColor: const Color(0xFFF9FAFB),
+                fillColor: AppColors.backgroundWidget,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: AppColors.primaryColor),
                 ),
               ),
             ),
@@ -236,8 +245,17 @@ class _AdditionalRequestSidePanelState
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: widget.onRemove,
-                    icon: const Icon(Icons.delete_outline),
-                    label: const Text('Remove Draft'),
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: Colors.redAccent,
+                    ),
+                    icon: const Icon(
+                      Icons.delete_outline,
+                      color: AppColors.white,
+                    ),
+                    label: const Text(
+                      'Remove Draft',
+                      style: TextStyle(color: AppColors.white),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -270,9 +288,15 @@ class _HistoryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 2,
+      shadowColor: AppColors.primaryColor,
+      child: ListTile(
+        leading: Container(
+          width: 40,
+          height: 40,
+          alignment: Alignment.center,
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: const Color(0xFFEEF2FF),
@@ -281,36 +305,32 @@ class _HistoryRow extends StatelessWidget {
           ),
           child: Text(
             '$qty',
-            style: const TextStyle(fontWeight: FontWeight.w900),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 15,
+              color: AppColors.secondaryColor,
+            ),
           ),
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                reason,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF111827),
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                createdAt,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF6B7280),
-                  fontSize: 12,
-                ),
-              ),
-            ],
+        title: Text(
+          reason,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            color: AppColors.secondaryColor,
           ),
         ),
-      ],
+        subtitle: Text(
+          createdAt,
+          style: const TextStyle(
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF6B7280),
+            fontSize: 12,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -349,7 +369,7 @@ class _Header extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontSize: 12.5,
-                  color: Color(0xFF6B7280),
+                  color: AppColors.secondaryColor,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -378,7 +398,7 @@ class _InfoBox extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
+        color: AppColors.backgroundWidget,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE6E8F0)),
       ),

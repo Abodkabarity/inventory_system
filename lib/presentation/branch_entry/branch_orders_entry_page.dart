@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../core/theme/app_colors.dart';
 import '../app/bloc/app_bloc.dart';
 import '../orders/pages/branch_orders_page.dart';
 import 'bloc/branch_entry_bloc.dart';
@@ -38,7 +39,9 @@ class BranchOrdersEntryPage extends StatelessWidget {
           if (s.status == BranchEntryStatus.loading ||
               s.status == BranchEntryStatus.initial) {
             return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
+              body: Center(
+                child: CircularProgressIndicator(color: AppColors.primaryColor),
+              ),
             );
           }
 

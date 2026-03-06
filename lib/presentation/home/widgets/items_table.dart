@@ -256,13 +256,13 @@ class _ItemsTableState extends State<ItemsTable> {
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide(
-                    color: AppColors.border.withOpacity(.8),
+                    color: AppColors.border.withValues(alpha: .8),
                   ),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide(
-                    color: AppColors.border.withOpacity(.8),
+                    color: AppColors.border.withValues(alpha: .8),
                   ),
                 ),
                 focusedBorder: OutlineInputBorder(
@@ -293,7 +293,9 @@ class _ItemsTableState extends State<ItemsTable> {
   Widget build(BuildContext context) {
     if (widget.rows.isEmpty) {
       if (widget.isLoading) {
-        return const Center(child: CircularProgressIndicator());
+        return const Center(
+          child: CircularProgressIndicator(color: AppColors.primaryColor),
+        );
       }
       return _EmptyState(disabled: false, onCreateOrder: widget.onCreateOrder);
     }
@@ -310,7 +312,7 @@ class _ItemsTableState extends State<ItemsTable> {
                 child: SfDataGridTheme(
                   data: SfDataGridThemeData(
                     headerColor: const Color(0xFFF7F8FC),
-                    gridLineColor: AppColors.border.withOpacity(.8),
+                    gridLineColor: AppColors.border.withValues(alpha: .8),
                     selectionColor: const Color(0xFFEAF2FF),
                   ),
                   child: SfDataGrid(
@@ -365,10 +367,14 @@ class _ItemsTableState extends State<ItemsTable> {
               if (widget.isLoading)
                 Container(
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(.55),
+                    color: Colors.white.withValues(alpha: .55),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: const Center(child: CircularProgressIndicator()),
+                  child: const Center(
+                    child: CircularProgressIndicator(
+                      color: AppColors.primaryColor,
+                    ),
+                  ),
                 ),
             ],
           ),
