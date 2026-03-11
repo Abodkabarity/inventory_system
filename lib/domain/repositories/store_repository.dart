@@ -1,0 +1,17 @@
+import '../entities/additional_request_group.dart';
+import '../entities/store_order_item.dart';
+
+abstract class StoreRepository {
+  Future<List<String>> fetchAllBranches();
+
+  Future<List<String>> fetchSubmittedBranches(String runDate);
+
+  Future<List<StoreOrderItem>> fetchBranchItems({
+    required String runDate,
+    required String branch,
+  });
+
+  Future<List<AdditionalRequestGroup>> fetchAdditionalRequests(String runDate);
+
+  Future<void> approveRequest({required String id, required num qty});
+}
