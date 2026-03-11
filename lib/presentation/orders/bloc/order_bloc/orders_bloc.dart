@@ -2,6 +2,7 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../../domain/entities/daily_order_row.dart';
 import '../../../../domain/repositories/orders_repository.dart';
@@ -673,8 +674,12 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     try {
       final nowIso = DateTime.now().toIso8601String();
 
+      const uuid = Uuid();
+      final requestGroupId = uuid.v4();
+
       final payload = state.additionalEdits.values.map((a) {
         return <String, dynamic>{
+          'request_group_id': requestGroupId,
           'run_date': state.runDate,
           'zone': zone,
           'branch_name': state.branchName,
@@ -682,11 +687,11 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
           'item_name': a.itemName,
           'request_qty': a.requestQty,
           'reason': a.reason,
+          'status': 'pending',
           'created_at': nowIso,
         };
       }).toList();
 
-      // 1) Insert
       await repo.insertAdditionalRequests(
         runDate: state.runDate,
         zone: zone,
@@ -694,28 +699,25 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         rows: payload,
       );
 
-      // 2) Reload sent qty summary (per item_code)
       final sentAdditionalQty = await repo.fetchAdditionalRequestsForBranch(
         runDate: state.runDate,
         branchName: state.branchName,
       );
 
-      // 3) Reload full history map (per item_code)
       final sentHistory = await repo.fetchAdditionalRequestsHistoryForBranch(
         runDate: state.runDate,
         branchName: state.branchName,
       );
 
-      // 4) Reload tracking rows (status + fulfilled)
       final trackingRaw = await repo.fetchAdditionalRequestsTrackingForBranch(
         runDate: state.runDate,
         branchName: state.branchName,
       );
+
       final trackingRows = trackingRaw
           .map(AdditionalRequestRow.fromMap)
           .toList();
 
-      // 5) Rebuild view with filters
       final view = _applyUiFilters(
         rows: _applySearch(state.rows, state.search),
         categoryFilter: state.categoryFilter,
@@ -727,7 +729,6 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         sentAdditionalQtyByItemCode: sentAdditionalQty,
       );
 
-      // 6) Update state
       emit(
         state.copyWith(
           status: OrdersStatus.ready,
