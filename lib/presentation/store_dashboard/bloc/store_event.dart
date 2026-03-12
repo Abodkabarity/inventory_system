@@ -7,11 +7,12 @@ class StoreEvent extends Equatable {
 
 class LoadStoreDashboard extends StoreEvent {
   final String runDate;
+  final bool silent;
 
-  LoadStoreDashboard(this.runDate);
+  LoadStoreDashboard(this.runDate, {this.silent = false});
 
   @override
-  List<Object?> get props => [runDate];
+  List<Object?> get props => [runDate, silent];
 }
 
 class SelectBranch extends StoreEvent {
@@ -36,4 +37,14 @@ class ApproveAdditionalRequest extends StoreEvent {
 
   @override
   List<Object?> get props => [requestId, qty, note];
+}
+
+class LoadAdditionalHistory extends StoreEvent {
+  final DateTime from;
+  final DateTime to;
+
+  LoadAdditionalHistory({required this.from, required this.to});
+
+  @override
+  List<Object?> get props => [from, to];
 }

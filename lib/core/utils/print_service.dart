@@ -31,18 +31,35 @@ class PrintService {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
 
-        margin: const pw.EdgeInsets.all(20),
+        /// رفع الهامش السفلي حتى لا تقص الطابعة الفوتر
+        margin: const pw.EdgeInsets.fromLTRB(20, 20, 20, 70),
 
-        header: (context) {
-          return _header(branch);
-        },
+        /// HEADER
+        header: (context) => _header(branch),
 
+        /// FOOTER
         footer: (context) {
-          return pw.Align(
-            alignment: pw.Alignment.centerRight,
-            child: pw.Text(
-              "Page ${context.pageNumber} / ${context.pagesCount}",
-              style: const pw.TextStyle(fontSize: 10),
+          return pw.Container(
+            padding: const pw.EdgeInsets.only(top: 6, bottom: 10),
+
+            child: pw.Column(
+              mainAxisSize: pw.MainAxisSize.min,
+              children: [
+                /// خط فاصل
+                pw.Container(
+                  width: double.infinity,
+                  height: 1,
+                  color: PdfColors.grey600,
+                ),
+
+                pw.SizedBox(height: 6),
+
+                /// رقم الصفحة
+                pw.Text(
+                  "Page ${context.pageNumber} of ${context.pagesCount}",
+                  style: const pw.TextStyle(fontSize: 10),
+                ),
+              ],
             ),
           );
         },
@@ -64,7 +81,6 @@ class PrintService {
 
       child: pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-
         children: [
           pw.Text(
             branch,
@@ -90,13 +106,12 @@ class PrintService {
 
       columnWidths: {
         0: const pw.FixedColumnWidth(50),
-
         1: const pw.FlexColumnWidth(),
-
         2: const pw.FixedColumnWidth(170),
       },
 
       children: [
+        /// HEADER
         pw.TableRow(
           decoration: const pw.BoxDecoration(color: PdfColors.grey300),
 
@@ -114,6 +129,7 @@ class PrintService {
           }).toList(),
         ),
 
+        /// ROWS
         ...items.map((e) {
           final barcode = e.barcode.toString().replaceAll(".0", "");
 

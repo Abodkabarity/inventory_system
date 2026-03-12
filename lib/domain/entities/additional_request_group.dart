@@ -3,13 +3,19 @@ class AdditionalRequestGroup {
   final String branchName;
   final DateTime createdAt;
   final int itemsCount;
-  final bool done;
+
+  final String status;
+
+  final String itemNames;
+  final String itemCodes;
 
   AdditionalRequestGroup({
     required this.groupId,
     required this.branchName,
     required this.createdAt,
     required this.itemsCount,
-    required this.done,
+    required this.status,
+    required this.itemNames,
+    required this.itemCodes,
   });
 }

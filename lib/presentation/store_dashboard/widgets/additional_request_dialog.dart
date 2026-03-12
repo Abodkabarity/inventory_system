@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/theme/app_colors.dart';
+
 class AdditionalRequestDialog extends StatefulWidget {
   final String groupId;
   final String branch;
@@ -44,15 +46,24 @@ class _AdditionalRequestDialogState extends State<AdditionalRequestDialog> {
 
     if (items.isNotEmpty) {
       final status = items.first['status'] ?? '';
-      approved = status == 'done';
+
+      approved = status == 'done' || status == 'rejected';
     }
 
     for (var item in items) {
       final id = item['id'].toString();
 
-      qtyControllers[id] = TextEditingController(
-        text: (item['fulfilled_qty'] ?? item['request_qty']).toString(),
-      );
+      /// PRIORITY:
+      /// inventory_qty
+      /// fulfilled_qty
+      /// request_qty
+      final inventoryQty = item['inventory_qty'];
+      final fulfilledQty = item['fulfilled_qty'];
+      final requestQty = item['request_qty'];
+
+      final qty = inventoryQty ?? fulfilledQty ?? requestQty;
+
+      qtyControllers[id] = TextEditingController(text: qty.toString());
 
       noteControllers[id] = TextEditingController(
         text: (item['store_note'] ?? '').toString(),
@@ -68,15 +79,18 @@ class _AdditionalRequestDialogState extends State<AdditionalRequestDialog> {
     for (var item in items) {
       final id = item['id'].toString();
 
-      final qty = num.tryParse(qtyControllers[id]!.text) ?? 0;
       final note = noteControllers[id]!.text;
+
+      final qty = num.tryParse(qtyControllers[id]!.text.trim()) ?? 0;
+
+      final status = qty == 0 ? 'rejected' : 'done';
 
       await client
           .from('additional_requests')
           .update({
             'fulfilled_qty': qty,
             'store_note': note,
-            'status': 'done',
+            'status': status,
             'done_at': DateTime.now().toIso8601String(),
           })
           .eq('id', id);
@@ -90,6 +104,7 @@ class _AdditionalRequestDialogState extends State<AdditionalRequestDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
+      backgroundColor: Colors.grey.shade100,
       child: Container(
         width: 950,
         height: 620,
@@ -112,46 +127,84 @@ class _AdditionalRequestDialogState extends State<AdditionalRequestDialog> {
                 ),
               ],
             ),
-            const Divider(),
+
+            const Divider(color: AppColors.primaryColor),
+
             if (loading)
-              const Expanded(child: Center(child: CircularProgressIndicator()))
+              const Expanded(
+                child: Center(
+                  child: CircularProgressIndicator(
+                    color: AppColors.primaryColor,
+                  ),
+                ),
+              )
             else
               Expanded(
                 child: ListView(
                   children: [for (var item in items) _buildItem(item)],
                 ),
               ),
+
             const SizedBox(height: 10),
+
             if (approved)
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.green.shade100,
+                  color: items.first['status'] == 'rejected'
+                      ? Colors.red.shade100
+                      : Colors.green.shade100,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Icon(Icons.check_circle, color: Colors.green),
-                    SizedBox(width: 10),
+                    Icon(
+                      items.first['status'] == 'rejected'
+                          ? Icons.cancel
+                          : Icons.check_circle,
+                      color: items.first['status'] == 'rejected'
+                          ? Colors.red
+                          : Colors.green,
+                    ),
+                    const SizedBox(width: 10),
                     Text(
-                      "Request Approved",
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                      items.first['status'] == 'rejected'
+                          ? "Request Rejected"
+                          : "Request Approved",
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
               ),
+
             const SizedBox(height: 10),
+
             Align(
               alignment: Alignment.centerRight,
               child: approved
                   ? ElevatedButton(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text("Close"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryColor,
+                      ),
+                      child: const Text(
+                        "Close",
+                        style: TextStyle(color: Colors.white),
+                      ),
                     )
                   : ElevatedButton.icon(
                       onPressed: _approveAll,
-                      icon: const Icon(Icons.check),
-                      label: const Text("Approve Request"),
+                      icon: const Icon(Icons.check, color: AppColors.white),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryColor,
+                      ),
+                      label: const Text(
+                        "Approve Request",
+                        style: TextStyle(
+                          color: AppColors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
             ),
           ],
@@ -164,35 +217,131 @@ class _AdditionalRequestDialogState extends State<AdditionalRequestDialog> {
     final id = item['id'].toString();
 
     return Card(
+      color: Colors.white,
+      shadowColor: AppColors.primaryColor,
+      elevation: 3,
       margin: const EdgeInsets.symmetric(vertical: 8),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              item['item_name'] ?? '',
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
             Row(
               children: [
-                Text("Requested: ${item['request_qty']}"),
+                Text(
+                  "${item['item_code'] ?? ''}",
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey.shade800,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 30),
+                Text(
+                  item['item_name'] ?? '',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 15),
+
+            Row(
+              children: [
+                Text("Requested: "),
+                Text(
+                  item['inventory_qty'] != null
+                      ? "${item['inventory_qty']}"
+                      : "${item['request_qty']}",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.red,
+                    fontSize: 15,
+                  ),
+                ),
+
                 const SizedBox(width: 20),
+
                 SizedBox(
                   width: 120,
                   child: TextField(
                     controller: qtyControllers[id],
                     readOnly: approved,
-                    decoration: const InputDecoration(labelText: "Sent Qty"),
+                    textAlign: TextAlign.center,
+
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.secondaryColor,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: "Sent Qty",
+                      filled: true,
+                      fillColor: AppColors.backgroundWidget,
+                      labelStyle: TextStyle(color: AppColors.secondaryColor),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: AppColors.primaryColor),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: AppColors.primaryColor),
+                      ),
+                    ),
                   ),
                 ),
+
                 const SizedBox(width: 20),
+
                 Expanded(
                   child: TextField(
                     controller: noteControllers[id],
                     readOnly: approved,
-                    decoration: const InputDecoration(labelText: "Store Note"),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.secondaryColor,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: "Store Note",
+                      filled: true,
+                      fillColor: AppColors.backgroundWidget,
+                      labelStyle: TextStyle(color: AppColors.secondaryColor),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: AppColors.primaryColor),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: AppColors.primaryColor),
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(width: 12),
+
+                /// OUT OF STOCK BUTTON
+                ElevatedButton.icon(
+                  onPressed: approved
+                      ? null
+                      : () {
+                          qtyControllers[id]!.text = "0";
+
+                          noteControllers[id]!.text = "Out of Stock";
+
+                          setState(() {});
+                        },
+                  icon: const Icon(Icons.block),
+                  label: const Text("Out of Stock"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade600,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 18,
+                    ),
                   ),
                 ),
               ],

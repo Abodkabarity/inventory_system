@@ -11,7 +11,10 @@ abstract class StoreRepository {
     required String branch,
   });
 
-  Future<List<AdditionalRequestGroup>> fetchAdditionalRequests(String runDate);
-
+  Future<List<AdditionalRequestGroup>> fetchAdditionalRequests();
   Future<void> approveRequest({required String id, required num qty});
+  Future<List<AdditionalRequestGroup>> fetchAdditionalHistory({
+    required DateTime from,
+    required DateTime to,
+  });
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../core/theme/app_colors.dart';
 import '../bloc/store_bloc.dart';
 import '../bloc/store_event.dart';
 
@@ -18,125 +19,149 @@ class BranchGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Text(
-            "Branches Ordering Today",
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-        ),
-
-        Expanded(
-          child: GridView.builder(
-            padding: const EdgeInsets.all(16),
-
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 14,
-              crossAxisSpacing: 14,
-              childAspectRatio: 2.8,
+    return Container(
+      margin: const EdgeInsets.only(left: 10),
+      decoration: BoxDecoration(
+        color: AppColors.backgroundWidget,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Text(
+              "Branches Ordering Today",
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppColors.secondaryColor,
+              ),
             ),
+          ),
 
-            itemCount: branches.length,
+          Expanded(
+            child: GridView.builder(
+              padding: const EdgeInsets.all(16),
 
-            itemBuilder: (context, i) {
-              final branch = branches[i];
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                mainAxisSpacing: 14,
+                crossAxisSpacing: 14,
+                childAspectRatio: 2.8,
+              ),
 
-              final isSubmitted = submitted.contains(branch);
-              final isSelected = selectedBranch == branch;
+              itemCount: branches.length,
 
-              return GestureDetector(
-                onTap: () {
-                  context.read<StoreBloc>().add(SelectBranch(branch));
-                },
+              itemBuilder: (context, i) {
+                final branch = branches[i];
 
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 250),
+                final isSubmitted = submitted.contains(branch);
+                final isSelected = selectedBranch == branch;
 
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
-                  ),
+                return GestureDetector(
+                  onTap: () {
+                    context.read<StoreBloc>().add(SelectBranch(branch));
+                  },
 
-                  decoration: BoxDecoration(
-                    color: isSelected ? const Color(0xff1DB954) : Colors.white,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
 
-                    borderRadius: BorderRadius.circular(14),
-
-                    border: Border.all(
-                      color: isSelected ? Colors.green : Colors.grey.shade200,
-                      width: isSelected ? 2 : 1,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
                     ),
 
-                    boxShadow: [
-                      BoxShadow(
-                        blurRadius: 12,
-                        color: Colors.black.withOpacity(.06),
-                      ),
-                    ],
-                  ),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? AppColors.primaryColor
+                          : isSubmitted
+                          ? Colors.greenAccent.shade100
+                          : Colors.white,
 
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 16,
-                        backgroundColor: isSelected
-                            ? Colors.white
-                            : Colors.blue.shade50,
-                        child: Icon(
-                          isSubmitted ? Icons.check : Icons.store,
-                          size: 18,
-                          color: isSelected ? Colors.green : Colors.blue,
+                      borderRadius: BorderRadius.circular(14),
+
+                      border: Border.all(
+                        color: isSelected
+                            ? AppColors.primaryColor
+                            : Colors.grey.shade200,
+                        width: isSelected ? 2 : 1,
+                      ),
+
+                      boxShadow: [
+                        BoxShadow(
+                          blurRadius: 12,
+                          color: Colors.black.withValues(alpha: .06),
                         ),
-                      ),
+                      ],
+                    ),
 
-                      const SizedBox(width: 10),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 16,
+                          backgroundColor: isSelected
+                              ? Colors.white
+                              : Colors.blue.shade50,
+                          child: Icon(
+                            isSubmitted ? Icons.check : Icons.store,
+                            size: isSubmitted ? 25 : 18,
+                            color: isSelected
+                                ? AppColors.secondaryColor
+                                : isSubmitted
+                                ? Colors.green
+                                : AppColors.primaryColor,
+                          ),
+                        ),
 
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              branch,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                color: isSelected ? Colors.white : Colors.black,
+                        const SizedBox(width: 10),
+
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                branch,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : AppColors.secondaryColor,
+                                ),
                               ),
-                            ),
 
-                            const SizedBox(height: 4),
+                              const SizedBox(height: 4),
 
-                            Text(
-                              isSubmitted ? "Submitted" : "Not Submitted Yet",
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: isSelected
-                                    ? Colors.white70
-                                    : Colors.grey,
+                              Text(
+                                isSubmitted ? "Submitted" : "Not Submitted Yet",
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isSelected
+                                      ? Colors.white70
+                                      : Colors.grey,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
 
-                      if (isSubmitted)
-                        Icon(
-                          Icons.check_circle,
-                          color: isSelected ? Colors.white : Colors.green,
-                          size: 18,
-                        ),
-                    ],
+                        if (isSubmitted)
+                          Icon(
+                            Icons.check_circle,
+                            color: isSelected ? Colors.white : Colors.green,
+                            size: 25,
+                          ),
+                      ],
+                    ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
