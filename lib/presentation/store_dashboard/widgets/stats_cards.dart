@@ -91,7 +91,8 @@ class StatsCards extends StatelessWidget {
     required Color color,
   }) {
     return Container(
-      height: 130,
+      height: 100,
+      alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -99,7 +100,7 @@ class StatsCards extends StatelessWidget {
         boxShadow: [
           BoxShadow(
             blurRadius: 18,
-            color: Colors.black.withOpacity(.05),
+            color: Colors.black.withValues(alpha: .05),
             offset: const Offset(0, 8),
           ),
         ],
@@ -107,27 +108,26 @@ class StatsCards extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            height: 48,
-            width: 48,
             decoration: BoxDecoration(
-              color: color.withOpacity(.12),
+              color: color.withValues(alpha: .12),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(icon, color: color, size: 26),
           ),
 
-          const SizedBox(width: 16),
+          const SizedBox(width: 30),
 
           Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
                 title,
+                textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontSize: 13,
-                  color: Colors.black54,
-                  fontWeight: FontWeight.w500,
+                  fontSize: 15,
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
 
@@ -135,8 +135,10 @@ class StatsCards extends StatelessWidget {
 
               Text(
                 value,
+                textAlign: TextAlign.center,
+
                 style: const TextStyle(
-                  fontSize: 28,
+                  fontSize: 23,
                   fontWeight: FontWeight.bold,
                 ),
               ),

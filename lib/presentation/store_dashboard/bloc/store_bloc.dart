@@ -13,7 +13,7 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
     on<LoadStoreDashboard>(_onLoad);
 
     on<SelectBranch>(_onSelectBranch);
-
+    on<LoadAdditionalHistory>(_onLoadHistory);
     on<ApproveAdditionalRequest>(_onApproveAdditional);
   }
 
@@ -26,23 +26,35 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
   ) async {
     runDate = event.runDate;
 
-    emit(state.copyWith(isLoading: true));
+    /// loading فقط إذا لم يكن silent
+    if (!event.silent) {
+      emit(state.copyWith(isLoading: true));
+    }
 
     try {
-      /// BRANCHES ORDERING TODAY
+      /// =========================
+      /// FETCH DATA
+      /// =========================
+
       final branches = await repo.fetchAllBranches();
 
-      /// SUBMITTED BRANCHES
       final submitted = await repo.fetchSubmittedBranches(runDate);
 
-      /// ADDITIONAL REQUESTS
-      final additional = await repo.fetchAdditionalRequests(runDate);
+      final additional = await repo.fetchAdditionalRequests();
 
-      /// COUNT PENDING ADDITIONAL
-      final pending = additional.where((e) => e.done == false).length;
+      /// =========================
+      /// COUNTS
+      /// =========================
 
-      /// COUNT DONE ADDITIONAL
-      final done = additional.where((e) => e.done == true).length;
+      final pending = additional
+          .where((e) => e.status == 'sent_to_store')
+          .length;
+
+      final done = additional.where((e) => e.status == 'done').length;
+
+      /// =========================
+      /// EMIT STATE
+      /// =========================
 
       emit(
         state.copyWith(
@@ -50,17 +62,19 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
           submittedBranches: submitted,
           additionalRequests: additional,
 
-          /// KPI COUNTS
+          /// KPI
           submittedCount: submitted.length,
           additionalCount: additional.length,
           additionalPendingCount: pending,
           additionalDoneCount: done,
 
+          /// stop loading
           isLoading: false,
         ),
       );
     } catch (e) {
       emit(state.copyWith(isLoading: false));
+
       print("StoreBloc Load Error: $e");
     }
   }
@@ -72,12 +86,24 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
     SelectBranch event,
     Emitter<StoreState> emit,
   ) async {
-    emit(state.copyWith(selectedBranch: event.branch, isLoading: true));
+    final branch = event.branch;
+
+    if (state.selectedBranch == branch) return;
+
+    final bool isSubmitted = state.submittedBranches.contains(branch);
+
+    emit(
+      state.copyWith(selectedBranch: branch, items: [], isLoading: isSubmitted),
+    );
+
+    if (!isSubmitted) {
+      return;
+    }
 
     try {
       final items = await repo.fetchBranchItems(
         runDate: runDate,
-        branch: event.branch,
+        branch: branch,
       );
 
       emit(state.copyWith(items: items, isLoading: false));
@@ -97,10 +123,29 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
     try {
       await repo.approveRequest(id: event.requestId, qty: event.qty);
 
-      /// RELOAD DASHBOARD
-      add(LoadStoreDashboard(runDate));
+      /// reload dashboard بدون loading
+      add(LoadStoreDashboard(runDate, silent: true));
     } catch (e) {
       print("ApproveAdditional Error: $e");
+    }
+  }
+
+  /// ================================
+  /// LOAD HISTORY
+  /// ================================
+  Future<void> _onLoadHistory(
+    LoadAdditionalHistory event,
+    Emitter<StoreState> emit,
+  ) async {
+    try {
+      final history = await repo.fetchAdditionalHistory(
+        from: event.from,
+        to: event.to,
+      );
+
+      emit(state.copyWith(additionalHistory: history));
+    } catch (e) {
+      print("History load error: $e");
     }
   }
 }

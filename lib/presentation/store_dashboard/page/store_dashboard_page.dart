@@ -2,16 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/theme/app_colors.dart';
 import '../../../data/datasources/remote/store_remote_ds.dart';
 import '../../../data/repositories/store_repository_impl.dart';
 import '../../../domain/repositories/store_repository.dart';
 import '../bloc/store_bloc.dart';
 import '../bloc/store_event.dart';
 import '../bloc/store_state.dart';
-import '../widgets/additional_requests_panel.dart';
-import '../widgets/branch_grid.dart';
-import '../widgets/order_panel.dart';
-import '../widgets/stats_cards.dart';
+import '../widgets/store_dashboard_body.dart';
 
 class StoreDashboardPage extends StatelessWidget {
   final String runDate;
@@ -44,6 +42,8 @@ class StoreDashboardView extends StatefulWidget {
 class _StoreDashboardViewState extends State<StoreDashboardView> {
   RealtimeChannel? channel;
 
+  bool firstLoad = true;
+
   @override
   void initState() {
     super.initState();
@@ -51,42 +51,27 @@ class _StoreDashboardViewState extends State<StoreDashboardView> {
   }
 
   void _startRealtime() {
+    final client = Supabase.instance.client;
     final bloc = context.read<StoreBloc>();
 
-    channel = Supabase.instance.client
+    channel = client
         .channel('store-dashboard-live')
-        /// DAILY ORDER CHANGES
+        /// ORDER SUBMISSIONS
         .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
+          event: PostgresChangeEvent.all,
           schema: 'public',
-          table: 'daily_order',
-          callback: (payload) {
-            bloc.add(LoadStoreDashboard(widget.runDate));
-          },
-        )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.update,
-          schema: 'public',
-          table: 'daily_order',
-          callback: (payload) {
-            bloc.add(LoadStoreDashboard(widget.runDate));
+          table: 'order_submissions',
+          callback: (_) {
+            bloc.add(LoadStoreDashboard(widget.runDate, silent: true));
           },
         )
         /// ADDITIONAL REQUESTS
         .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
+          event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'additional_requests',
-          callback: (payload) {
-            bloc.add(LoadStoreDashboard(widget.runDate));
-          },
-        )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.update,
-          schema: 'public',
-          table: 'additional_requests',
-          callback: (payload) {
-            bloc.add(LoadStoreDashboard(widget.runDate));
+          callback: (_) {
+            bloc.add(LoadStoreDashboard(widget.runDate, silent: true));
           },
         )
         .subscribe();
@@ -97,7 +82,6 @@ class _StoreDashboardViewState extends State<StoreDashboardView> {
     if (channel != null) {
       Supabase.instance.client.removeChannel(channel!);
     }
-
     super.dispose();
   }
 
@@ -112,70 +96,23 @@ class _StoreDashboardViewState extends State<StoreDashboardView> {
               state.selectedBranch != null &&
               state.submittedBranches.contains(state.selectedBranch);
 
-          return Column(
-            children: [
-              const SizedBox(height: 20),
+          if (firstLoad && state.branches.isNotEmpty) {
+            firstLoad = false;
+          }
 
-              /// HEADER
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 24),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    "Store Dashboard",
-                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+          return Stack(
+            children: [
+              StoreDashboardBody(state: state, isSubmitted: isSubmitted),
+
+              if (firstLoad)
+                Container(
+                  color: Colors.black12,
+                  child: const Center(
+                    child: CircularProgressIndicator(
+                      color: AppColors.primaryColor,
+                    ),
                   ),
                 ),
-              ),
-
-              const SizedBox(height: 20),
-
-              /// KPI CARDS
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: StatsCards(
-                  totalOrdersToday: state.branches.length,
-                  submitted: state.submittedCount,
-                  additional: state.additionalCount,
-                  additionalPending: state.additionalPendingCount,
-                  additionalDone: state.additionalDoneCount,
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              /// MAIN LAYOUT
-              Expanded(
-                child: Row(
-                  children: [
-                    /// BRANCH GRID
-                    SizedBox(
-                      width: 600,
-                      child: BranchGrid(
-                        branches: state.branches,
-                        submitted: state.submittedBranches,
-                        selectedBranch: state.selectedBranch,
-                      ),
-                    ),
-
-                    /// ORDERS PANEL
-                    Expanded(
-                      child: OrdersPanel(
-                        items: state.items,
-                        branch: state.selectedBranch,
-                        isSubmitted: isSubmitted,
-                      ),
-                    ),
-
-                    /// ADDITIONAL REQUESTS
-                    Expanded(
-                      child: AdditionalPanel(
-                        requests: state.additionalRequests,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             ],
           );
         },

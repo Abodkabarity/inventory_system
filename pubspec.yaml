@@ -49,6 +49,8 @@ dependencies:
   uuid: ^4.5.3
   printing: ^5.14.2
   pdf: ^3.11.3
+  flutter_date_pickers: ^0.4.3
+  calendar_date_picker2: ^2.0.1
 
 dev_dependencies:
   flutter_test:

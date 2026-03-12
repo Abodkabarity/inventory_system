@@ -60,45 +60,111 @@ class StoreRemoteDs {
     required String runDate,
     required String branch,
   }) async {
-    print("runDate: $runDate");
-    print("branch: $branch");
-    final res = await client
-        .from('daily_order')
-        .select(
-          'item_code,item_name,barcode,supplier,store_item_classifications,category,final_reorder_qty_store_stock_gt_0',
-        )
-        .eq('branch', branch)
-        .eq('run_date', runDate);
+    int retry = 0;
 
-    final rows = List<Map<String, dynamic>>.from(res);
+    while (retry < 5) {
+      try {
+        final orderRes = await client
+            .from('daily_order')
+            .select(
+              'item_code,item_name,barcode,supplier,store_item_classifications,category,final_reorder_qty_store_stock_gt_0',
+            )
+            .eq('branch', branch)
+            .eq('run_date', runDate)
+            .neq('final_reorder_qty_store_stock_gt_0', 'NON FORMULARY')
+            .neq('final_reorder_qty_store_stock_gt_0', '')
+            .neq('final_reorder_qty_store_stock_gt_0', '0');
 
-    return rows.where((e) {
-      final qty = num.tryParse(
-        (e['final_reorder_qty_store_stock_gt_0'] ?? '0').toString(),
-      );
-      return qty != null && qty > 0;
-    }).toList();
+        final orderRows = List<Map<String, dynamic>>.from(orderRes);
+
+        final editsRes = await client
+            .from('order_edits')
+            .select('item_code,new_qty')
+            .eq('branch_name', branch)
+            .eq('run_date', runDate);
+
+        final edits = List<Map<String, dynamic>>.from(editsRes);
+
+        final Map<String, num> editsMap = {
+          for (var e in edits)
+            e['item_code'].toString():
+                num.tryParse(e['new_qty'].toString()) ?? 0,
+        };
+
+        final result = orderRows
+            .map((row) {
+              final itemCode = row['item_code'].toString();
+
+              num qty;
+
+              if (editsMap.containsKey(itemCode)) {
+                qty = editsMap[itemCode]!;
+              } else {
+                qty =
+                    num.tryParse(
+                      (row['final_reorder_qty_store_stock_gt_0'] ?? '0')
+                          .toString(),
+                    ) ??
+                    0;
+              }
+
+              return {...row, 'final_qty': qty};
+            })
+            .where((row) {
+              final qty = row['final_qty'];
+
+              return qty != null && qty > 0;
+            })
+            .toList();
+
+        return result;
+      } catch (e) {
+        if (e.toString().contains('statement timeout')) {
+          retry++;
+
+          print("Retry fetchBranchItems $retry");
+
+          await Future.delayed(const Duration(milliseconds: 500));
+
+          continue;
+        }
+
+        rethrow;
+      }
+    }
+
+    return [];
   }
 
-  /// ADDITIONAL REQUESTS
-  Future<List<Map<String, dynamic>>> fetchAdditionalRequestGroups({
-    required String runDate,
-  }) async {
-    final res = await client.rpc(
-      'get_additional_request_groups',
-      params: {'p_run_date': runDate},
-    );
+  /// ADDITIONAL REQUEST GROUPS (NO RUN DATE FILTER)
+  Future<List<Map<String, dynamic>>> fetchAdditionalRequestGroups() async {
+    final now = DateTime.now();
+
+    final startOfDay = DateTime(now.year, now.month, now.day);
+    final endOfDay = startOfDay.add(const Duration(days: 1));
+
+    final res = await client
+        .from('additional_requests')
+        .select('request_group_id, branch_name, created_at, status, done_at')
+        .or(
+          'status.eq.sent_to_store,'
+          'and(status.eq.done,done_at.gte.${startOfDay.toIso8601String()},done_at.lt.${endOfDay.toIso8601String()}),'
+          'and(status.eq.rejected,done_at.gte.${startOfDay.toIso8601String()},done_at.lt.${endOfDay.toIso8601String()})',
+        )
+        .order('created_at', ascending: false);
 
     return List<Map<String, dynamic>>.from(res);
   }
 
   /// APPROVE REQUEST
   Future<void> approveRequest({required String id, required num qty}) async {
+    final status = qty == 0 ? 'rejected' : 'done';
+
     await client
         .from('additional_requests')
         .update({
           'fulfilled_qty': qty,
-          'status': 'done',
+          'status': status,
           'done_at': DateTime.now().toIso8601String(),
         })
         .eq('id', id);
@@ -114,6 +180,21 @@ class StoreRemoteDs {
         .eq('branch_name', branch)
         .eq('status', 'sent_to_store')
         .eq('created_at', createdAt.toIso8601String());
+
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchAdditionalHistory({
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final res = await client
+        .from('additional_requests')
+        .select()
+        .gte('created_at', from.toIso8601String())
+        .lte('created_at', to.toIso8601String())
+        .inFilter('status', ['done', 'rejected'])
+        .order('created_at', ascending: false);
 
     return List<Map<String, dynamic>>.from(res);
   }

@@ -77,11 +77,7 @@ class StoreRepositoryImpl implements StoreRepository {
         classification: (e['store_item_classifications'] ?? '').toString(),
         category: (e['category'] ?? '').toString(),
 
-        quantity:
-            num.tryParse(
-              (e['final_reorder_qty_store_stock_gt_0'] ?? '0').toString(),
-            ) ??
-            0,
+        quantity: num.tryParse((e['final_qty'] ?? '0').toString()) ?? 0,
       );
     }).toList();
   }
@@ -90,16 +86,25 @@ class StoreRepositoryImpl implements StoreRepository {
   /// ADDITIONAL REQUESTS
   /// ================================
   @override
-  Future<List<AdditionalRequestGroup>> fetchAdditionalRequests(
-    String runDate,
-  ) async {
-    final rows = await remote.fetchAdditionalRequestGroups(runDate: runDate);
+  Future<List<AdditionalRequestGroup>> fetchAdditionalRequests() async {
+    final rows = await remote.fetchAdditionalRequestGroups();
 
-    return rows.map((e) {
-      final groupId = (e['request_group_id'] ?? '').toString();
+    final Map<String, List<Map<String, dynamic>>> grouped = {};
+
+    for (final row in rows) {
+      final groupId = (row['request_group_id'] ?? '').toString();
+
+      grouped.putIfAbsent(groupId, () => []);
+      grouped[groupId]!.add(row);
+    }
+
+    final List<AdditionalRequestGroup> result = [];
+
+    grouped.forEach((groupId, items) {
+      final first = items.first;
 
       DateTime created;
-      final createdRaw = e['created_at'];
+      final createdRaw = first['created_at'];
 
       if (createdRaw == null) {
         created = DateTime.now();
@@ -107,38 +112,33 @@ class StoreRepositoryImpl implements StoreRepository {
         created = DateTime.tryParse(createdRaw.toString()) ?? DateTime.now();
       }
 
-      final itemsRaw = e['items_count'];
-      int itemsCount;
+      /// تحديد الحالة
+      String status;
 
-      if (itemsRaw == null) {
-        itemsCount = 0;
-      } else if (itemsRaw is int) {
-        itemsCount = itemsRaw;
-      } else if (itemsRaw is double) {
-        itemsCount = itemsRaw.toInt();
+      if (items.every((e) => e['status'] == 'done')) {
+        status = 'done';
+      } else if (items.every((e) => e['status'] == 'rejected')) {
+        status = 'rejected';
       } else {
-        itemsCount = int.tryParse(itemsRaw.toString()) ?? 0;
+        status = 'sent_to_store';
       }
 
-      final doneRaw = e['done'];
-      bool done;
-
-      if (doneRaw == null) {
-        done = false;
-      } else if (doneRaw is bool) {
-        done = doneRaw;
-      } else {
-        done = doneRaw.toString() == 'true';
-      }
-
-      return AdditionalRequestGroup(
-        groupId: groupId,
-        branchName: (e['branch_name'] ?? '').toString(),
-        createdAt: created,
-        itemsCount: itemsCount,
-        done: done,
+      result.add(
+        AdditionalRequestGroup(
+          groupId: groupId,
+          branchName: (first['branch_name'] ?? '').toString(),
+          createdAt: created,
+          itemsCount: items.length,
+          status: status,
+          itemNames: '',
+          itemCodes: '',
+        ),
       );
-    }).toList();
+    });
+
+    result.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    return result;
   }
 
   /// ================================
@@ -147,5 +147,62 @@ class StoreRepositoryImpl implements StoreRepository {
   @override
   Future<void> approveRequest({required String id, required num qty}) {
     return remote.approveRequest(id: id, qty: qty);
+  }
+
+  @override
+  Future<List<AdditionalRequestGroup>> fetchAdditionalHistory({
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final rows = await remote.fetchAdditionalHistory(from: from, to: to);
+
+    final Map<String, List<Map<String, dynamic>>> grouped = {};
+
+    for (final row in rows) {
+      final groupId = row['request_group_id'].toString();
+
+      grouped.putIfAbsent(groupId, () => []);
+      grouped[groupId]!.add(row);
+    }
+
+    final result = <AdditionalRequestGroup>[];
+
+    grouped.forEach((groupId, items) {
+      final first = items.first;
+
+      final itemNames = items
+          .map((e) => (e['item_name'] ?? '').toString())
+          .join(', ');
+
+      final itemCodes = items
+          .map((e) => (e['item_code'] ?? '').toString())
+          .join(', ');
+
+      String status;
+
+      if (items.every((e) => e['status'] == 'done')) {
+        status = 'done';
+      } else if (items.every((e) => e['status'] == 'rejected')) {
+        status = 'rejected';
+      } else {
+        status = 'sent_to_store';
+      }
+
+      result.add(
+        AdditionalRequestGroup(
+          groupId: groupId,
+          branchName: first['branch_name'],
+          createdAt: DateTime.parse(first['created_at']),
+          itemsCount: items.length,
+          status: status,
+          itemNames: itemNames,
+          itemCodes: itemCodes,
+        ),
+      );
+    });
+
+    result.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    return result;
   }
 }
