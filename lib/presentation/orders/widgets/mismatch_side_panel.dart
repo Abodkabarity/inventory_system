@@ -287,7 +287,7 @@ class _AddFormState extends State<_AddForm> {
                       controller: code,
                       decoration: InputDecoration(
                         labelText: "Item Code",
-                        labelStyle: TextStyle(color: AppColors.primaryColor),
+                        labelStyle: TextStyle(color: AppColors.secondaryColor),
                         filled: true,
                         fillColor: AppColors.backgroundWidget,
                         border: OutlineInputBorder(
@@ -320,6 +320,8 @@ class _AddFormState extends State<_AddForm> {
                       controller: name,
                       decoration: InputDecoration(
                         labelText: "Item Name",
+                        labelStyle: TextStyle(color: AppColors.secondaryColor),
+
                         filled: true,
                         fillColor: AppColors.backgroundWidget,
                         border: OutlineInputBorder(
@@ -353,6 +355,8 @@ class _AddFormState extends State<_AddForm> {
                     controller: system,
                     decoration: InputDecoration(
                       labelText: "System Qty",
+                      labelStyle: TextStyle(color: AppColors.secondaryColor),
+
                       filled: true,
                       fillColor: AppColors.backgroundWidget,
                       border: OutlineInputBorder(
@@ -372,6 +376,8 @@ class _AddFormState extends State<_AddForm> {
                     controller: actual,
                     decoration: InputDecoration(
                       labelText: "Actual Qty",
+                      labelStyle: TextStyle(color: AppColors.secondaryColor),
+
                       filled: true,
                       fillColor: AppColors.backgroundWidget,
                       border: OutlineInputBorder(
