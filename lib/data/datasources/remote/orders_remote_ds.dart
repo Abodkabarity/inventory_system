@@ -533,7 +533,7 @@ done_at
         .from('max_adj')
         .select()
         .eq('branch_name', branch)
-        .order('update_date', ascending: false);
+        .order('created_at', ascending: false);
 
     return List<Map<String, dynamic>>.from(res);
   }

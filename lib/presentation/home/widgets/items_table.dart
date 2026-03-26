@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
@@ -198,11 +199,11 @@ class _ItemsTableState extends State<ItemsTable> {
   }
 
   double _defaultWidthFor(String key) {
-    double w = 150;
+    double w = 150.w;
 
-    if (key == 'branch') w = 170;
-    if (key == 'item_code') w = 150;
-    if (key == 'item_name') w = 420;
+    if (key == 'branch') w = 170.w;
+    if (key == 'item_code') w = 150.w;
+    if (key == 'item_name') w = 420.w;
 
     if (key == 'company') w = 240;
     if (key == 'supplier') w = 240;
@@ -267,9 +268,9 @@ class _ItemsTableState extends State<ItemsTable> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(
+                  borderSide:  BorderSide(
                     color: AppColors.secondaryColor,
-                    width: 1.4,
+                    width: 1.4.w,
                   ),
                 ),
               ),
@@ -352,7 +353,7 @@ class _ItemsTableState extends State<ItemsTable> {
                       return GridColumn(
                         columnName: key,
                         width: _colWidths[key] ?? _defaultWidthFor(key),
-                        minimumWidth: 110,
+                        minimumWidth: 110.w,
                         label: _HeaderCell(
                           title: _titleFor(key),
                           bg: group.headerBg,
@@ -519,7 +520,7 @@ class ItemsDataSource extends DataGridSource {
       builder: (_) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         child: Container(
-          width: 560,
+          width: 560.w,
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
             color: AppColors.white,
@@ -820,7 +821,7 @@ class _EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Container(
-        width: 420,
+        width: 420.w,
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
           color: AppColors.blueSoft,

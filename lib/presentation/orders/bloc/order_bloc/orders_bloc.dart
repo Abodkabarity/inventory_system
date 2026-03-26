@@ -75,6 +75,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     on<OrdersLoadMaxAdj>(_onLoadMaxAdj);
     on<OrdersAddMaxAdj>(_onAddMaxAdj);
     on<OrdersDeleteMaxAdj>(_onDeleteMaxAdj);
+    on<OrdersSearchMaxAdjList>(_onSearchMaxAdjList);
   }
 
   @override
@@ -1023,5 +1024,12 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     await repo.deleteMaxAdj(e.id);
 
     add(const OrdersLoadMaxAdj());
+  }
+
+  void _onSearchMaxAdjList(
+    OrdersSearchMaxAdjList e,
+    Emitter<OrdersState> emit,
+  ) {
+    emit(state.copyWith(maxAdjSearch: e.query));
   }
 }
