@@ -63,8 +63,17 @@ class InventoryRemoteDs {
   Future<List<Map<String, dynamic>>> fetchAdditionalRequests() async {
     final res = await client
         .from('additional_requests')
-        .select()
-        .order('created_at', ascending: false);
+        .select('''
+        id,
+        request_group_id,
+        run_date,
+        created_at,
+        branch_name,
+        item_code,
+        item_name,
+        status
+      ''')
+        .order('run_date', ascending: false);
 
     return List<Map<String, dynamic>>.from(res);
   }
@@ -158,5 +167,34 @@ class InventoryRemoteDs {
     }
 
     return counts;
+  }
+
+  Future<int> fetchAdditionalMonthByBranch(String branch) async {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, 1);
+
+    final res = await client
+        .from('additional_requests')
+        .select('id')
+        .eq('branch_name', branch)
+        .gte('created_at', start.toIso8601String());
+
+    return (res as List).length;
+  }
+
+  Future<int> fetchAdditionalTodayByBranchExact(String branch) async {
+    final now = DateTime.now();
+
+    final start = DateTime(now.year, now.month, now.day);
+    final end = start.add(const Duration(days: 1));
+
+    final res = await client
+        .from('additional_requests')
+        .select('id')
+        .eq('branch_name', branch)
+        .gte('created_at', start.toIso8601String())
+        .lt('created_at', end.toIso8601String());
+
+    return (res as List).length;
   }
 }

@@ -51,6 +51,7 @@ dependencies:
   pdf: ^3.11.3
   flutter_date_pickers: ^0.4.3
   calendar_date_picker2: ^2.0.1
+  stream_transform: ^2.1.1
 
 dev_dependencies:
   flutter_test:

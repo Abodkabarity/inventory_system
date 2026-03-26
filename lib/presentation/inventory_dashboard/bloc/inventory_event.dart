@@ -33,3 +33,21 @@ class ApproveInventoryRequest extends InventoryEvent {
   @override
   List<Object?> get props => [requestId, qty];
 }
+
+class LoadBranchAnalytics extends InventoryEvent {
+  final String branch;
+
+  LoadBranchAnalytics(this.branch);
+
+  @override
+  List<Object?> get props => [branch];
+}
+
+class LoadBranchAdditionalStats extends InventoryEvent {
+  final String branch;
+
+  LoadBranchAdditionalStats(this.branch);
+
+  @override
+  List<Object?> get props => [branch];
+}

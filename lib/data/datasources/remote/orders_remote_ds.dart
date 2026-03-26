@@ -14,7 +14,7 @@ class OrdersRemoteDs {
   Future<List<Map<String, dynamic>>> fetchOrdersAll({
     required String runDate,
     required String branchName,
-    int batchSize = 2000,
+    int batchSize = 1000,
     void Function(int loaded)? onProgress,
   }) async {
     final out = <Map<String, dynamic>>[];
@@ -402,5 +402,127 @@ done_at
     return s.contains('57014') ||
         s.contains('statement timeout') ||
         s.contains('canceling statement due to statement timeout');
+  }
+  // ==========================
+  // MISMATCH
+  // ==========================
+
+  Future<List<Map<String, dynamic>>> fetchMismatch({
+    required String branch,
+  }) async {
+    final res = await client
+        .from('stk_mismatch')
+        .select()
+        .eq('branch_name', branch)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<void> insertMismatch(Map<String, dynamic> data) async {
+    final branch = data['branch_name'];
+    final itemCode = data['item_code'];
+
+    final system = (data['system_stock'] ?? 0) as num;
+    final actual = (data['actual_stock'] ?? 0) as num;
+
+    final diff = actual - system;
+
+    final exists = await client
+        .from('stk_mismatch')
+        .select('id')
+        .eq('branch_name', branch)
+        .eq('item_code', itemCode)
+        .maybeSingle();
+
+    if (exists != null) {
+      throw Exception('Item already exists for this branch');
+    }
+
+    final payload = {
+      ...data,
+
+      'diff': diff,
+
+      'update_date': DateTime.now().toIso8601String().split('T')[0],
+      'created_at': DateTime.now().toIso8601String(),
+    };
+
+    await client.from('stk_mismatch').insert(payload);
+  }
+
+  Future<void> updateMismatch({
+    required String id,
+    required num system,
+    required num actual,
+    required Map old,
+  }) async {
+    await client.from('mismatch_log').insert({
+      'mismatch_id': id.toString(),
+      'branch_name': old['branch_name'],
+      'item_code': old['item_code'],
+      'item_name': old['item_name'],
+      'old_system_stock': old['system_stock'],
+      'old_actual_stock': old['actual_stock'],
+      'old_diff': old['diff'],
+
+      'action': 'UPDATE',
+
+      'changed_by': client.auth.currentUser?.id,
+
+      'changed_at': DateTime.now().toIso8601String(),
+
+      'note': 'Updated via mismatch panel',
+    });
+
+    final diff = actual - system;
+    await client
+        .from('stk_mismatch')
+        .update({'system_stock': system, 'actual_stock': actual, 'diff': diff})
+        .eq('id', id);
+  }
+
+  Future<void> deleteMismatch(String id) async {
+    final old = await client
+        .from('stk_mismatch')
+        .select()
+        .eq('id', id)
+        .single();
+
+    await client.from('mismatch_log').insert({
+      'mismatch_id': id.toString(),
+      'branch_name': old['branch_name'],
+      'item_code': old['item_code'],
+      'item_name': old['item_name'],
+      'old_system_stock': old['system_stock'],
+      'old_actual_stock': old['actual_stock'],
+      'old_diff': old['diff'],
+      'action': 'DELETE',
+      'changed_by': client.auth.currentUser?.id,
+      'changed_at': DateTime.now().toIso8601String(),
+    });
+
+    await client.from('stk_mismatch').delete().eq('id', id);
+  }
+
+  /// 🔥 SEARCH PRODUCTS
+
+  Future<List<Map<String, dynamic>>> searchItemsByCode(String query) async {
+    final res = await client
+        .from('v_item_filters_for_orders')
+        .select('item_code,item_name')
+        .ilike('item_code', '%$query%')
+        .limit(20);
+
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<List<Map<String, dynamic>>> searchItemsByName(String query) async {
+    final res = await client
+        .from('v_item_filters_for_orders')
+        .select('item_code,item_name')
+        .ilike('item_name', '%$query%')
+        .limit(20);
+
+    return List<Map<String, dynamic>>.from(res);
   }
 }

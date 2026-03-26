@@ -9,6 +9,7 @@ class OrdersToolbar extends StatefulWidget {
 
   final VoidCallback onOpenColumns;
   final VoidCallback onExport;
+  final VoidCallback addMismatch;
   final VoidCallback onClearAll;
 
   final Widget? statusChip;
@@ -25,6 +26,7 @@ class OrdersToolbar extends StatefulWidget {
     this.extraLeft,
     required this.actions,
     required this.onClearAll,
+    required this.addMismatch,
   });
 
   @override
@@ -259,6 +261,7 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
                     ),
                   ),
                 ),
+
                 const SizedBox(width: 6),
 
                 if (widget.statusChip != null) widget.statusChip!,
@@ -284,6 +287,52 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
                     ),
                     style: OutlinedButton.styleFrom(
                       backgroundColor: Colors.deepPurple,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                SizedBox(
+                  width: 200,
+                  child: FilledButton.icon(
+                    onPressed: widget.addMismatch,
+
+                    icon: const Icon(Icons.list, size: 18),
+                    label: const Text(
+                      'Add Mismatch',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.deepOrangeAccent,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                SizedBox(
+                  width: 200,
+                  child: FilledButton.icon(
+                    onPressed: widget.onExport,
+
+                    icon: const Icon(Icons.format_indent_increase, size: 18),
+                    label: const Text(
+                      'Add Max',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.yellow.shade800,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 14,
                         vertical: 12,

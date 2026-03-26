@@ -145,7 +145,9 @@ class StoreRemoteDs {
 
     final res = await client
         .from('additional_requests')
-        .select('request_group_id, branch_name, created_at, status, done_at')
+        .select(
+          'request_group_id, branch_name, created_at, status, done_at, inventory_qty',
+        )
         .or(
           'status.eq.sent_to_store,'
           'and(status.eq.done,done_at.gte.${startOfDay.toIso8601String()},done_at.lt.${endOfDay.toIso8601String()}),'

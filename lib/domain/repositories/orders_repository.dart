@@ -76,4 +76,20 @@ abstract class OrdersRepository {
     required String runDate,
     required String branchName,
   });
+  Future<List<Map<String, dynamic>>> fetchMismatch({required String branch});
+
+  Future<void> insertMismatch(Map<String, dynamic> data);
+
+  Future<void> updateMismatch({
+    required String id,
+    required num system,
+    required num actual,
+    required Map old,
+  });
+
+  Future<void> deleteMismatch(String id);
+
+  Future<List<Map<String, dynamic>>> searchItemsByCode(String query);
+
+  Future<List<Map<String, dynamic>>> searchItemsByName(String query);
 }

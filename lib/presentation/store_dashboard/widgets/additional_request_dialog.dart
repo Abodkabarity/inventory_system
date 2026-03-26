@@ -44,24 +44,32 @@ class _AdditionalRequestDialogState extends State<AdditionalRequestDialog> {
 
     items = List<Map<String, dynamic>>.from(res);
 
+    /// 🔥 الحل الصح:
+    /// نخفي فقط اللي inventory_qty = 0
+    items = items.where((e) {
+      final inv = e['inventory_qty'];
+
+      // إذا NULL → خليه يظهر
+      if (inv == null) return true;
+
+      // إذا 0 → لا تظهره
+      return inv > 0;
+    }).toList();
+
     if (items.isNotEmpty) {
       final status = items.first['status'] ?? '';
-
       approved = status == 'done' || status == 'rejected';
     }
 
     for (var item in items) {
       final id = item['id'].toString();
 
-      /// PRIORITY:
-      /// inventory_qty
-      /// fulfilled_qty
-      /// request_qty
       final inventoryQty = item['inventory_qty'];
       final fulfilledQty = item['fulfilled_qty'];
       final requestQty = item['request_qty'];
 
-      final qty = inventoryQty ?? fulfilledQty ?? requestQty;
+      /// 🔥 logic صحيح:
+      final qty = inventoryQty ?? fulfilledQty ?? requestQty ?? 0;
 
       qtyControllers[id] = TextEditingController(text: qty.toString());
 
@@ -88,10 +96,10 @@ class _AdditionalRequestDialogState extends State<AdditionalRequestDialog> {
       await client
           .from('additional_requests')
           .update({
+            'inventory_qty': qty,
             'fulfilled_qty': qty,
             'store_note': note,
             'status': status,
-            'done_at': DateTime.now().toIso8601String(),
           })
           .eq('id', id);
     }
@@ -253,9 +261,7 @@ class _AdditionalRequestDialogState extends State<AdditionalRequestDialog> {
               children: [
                 Text("Requested: "),
                 Text(
-                  item['inventory_qty'] != null
-                      ? "${item['inventory_qty']}"
-                      : "${item['request_qty']}",
+                  "${item['inventory_qty'] ?? item['request_qty'] ?? 0}",
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     color: Colors.red,

@@ -683,6 +683,10 @@ class _OrdersDataSource extends DataGridSource {
     if (key == 'branch_formulary') {
       final t = value.trim().toUpperCase();
       if (t == 'ESSENTIAL') return Colors.green;
+      if (t == 'TMA') return AppColors.secondaryColor;
+      if (t == 'SALES') return Colors.purple;
+      if (t == 'NEW ITEM') return Colors.deepOrange;
+
       if (t == 'NON') return Colors.red;
     }
 

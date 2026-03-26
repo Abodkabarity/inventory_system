@@ -2,6 +2,7 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:stream_transform/stream_transform.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../domain/entities/daily_order_row.dart';
@@ -34,7 +35,12 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     on<OrdersReorderColumns>(_onReorderColumns);
     on<OrdersResetColumnsToDefault>(_onResetColumnsToDefault);
     on<OrdersColumnResized>(_onColumnResized);
-
+    on<OrdersLoadMismatch>(_onLoadMismatch);
+    on<OrdersAddMismatch>(_onAddMismatch);
+    on<OrdersUpdateMismatch>(_onUpdateMismatch);
+    on<OrdersDeleteMismatch>(_onDeleteMismatch);
+    on<OrdersSearchMismatchItems>(_onSearchMismatch);
+    on<OrdersToggleMismatchEdit>(_onToggleMismatchEdit);
     // Filters
     on<OrdersCategoryChanged>(_onCategoryChanged);
     on<OrdersFormularyChanged>(_onFormularyChanged);
@@ -60,6 +66,12 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
 
     // NEW: tracking
     on<OrdersLoadAdditionalTracking>(_onLoadAdditionalTracking);
+    on<OrdersSearchMismatchList>(_onSearchMismatchList);
+    on<OrdersSearchMismatchItemsCode>(_onSearchByCode);
+    on<OrdersSearchMismatchItemsName>(_onSearchByName);
+    on<OrdersClearMismatchResult>((event, emit) {
+      emit(state.copyWith(showMismatchResult: false));
+    });
   }
 
   @override
@@ -824,5 +836,127 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     } catch (err) {
       emit(state.copyWith(status: OrdersStatus.failure, error: err.toString()));
     }
+  }
+
+  Future<void> _onLoadMismatch(
+    OrdersLoadMismatch e,
+    Emitter<OrdersState> emit,
+  ) async {
+    emit(state.copyWith(isMismatchLoading: true));
+
+    final data = await repo.fetchMismatch(branch: state.branchName);
+
+    emit(
+      state.copyWith(
+        status: OrdersStatus.ready,
+        mismatchItems: data,
+        isMismatchLoading: false,
+      ),
+    );
+  }
+
+  Future<void> _onAddMismatch(
+    OrdersAddMismatch e,
+    Emitter<OrdersState> emit,
+  ) async {
+    emit(state.copyWith(isMismatchLoading: true));
+
+    try {
+      final res = await repo.insertMismatch(e.data);
+
+      final newList = await repo.fetchMismatch(branch: state.branchName);
+
+      emit(
+        state.copyWith(
+          status: OrdersStatus.ready,
+          mismatchItems: newList,
+          error: null,
+          isMismatchLoading: false,
+
+          lastActionSuccess: true,
+          showMismatchResult: true,
+        ),
+      );
+    } catch (err) {
+      emit(
+        state.copyWith(
+          status: OrdersStatus.ready,
+          error: err.toString(),
+          lastActionSuccess: false,
+          showMismatchResult: true,
+        ),
+      );
+    }
+  }
+
+  Future<void> _onUpdateMismatch(
+    OrdersUpdateMismatch e,
+    Emitter<OrdersState> emit,
+  ) async {
+    emit(state.copyWith(isMismatchLoading: true));
+
+    await repo.updateMismatch(
+      id: e.id,
+      system: e.system,
+      actual: e.actual,
+      old: e.old,
+    );
+    emit(state.copyWith(isMismatchLoading: true));
+
+    add(const OrdersLoadMismatch());
+  }
+
+  Future<void> _onDeleteMismatch(
+    OrdersDeleteMismatch e,
+    Emitter<OrdersState> emit,
+  ) async {
+    emit(state.copyWith(isMismatchLoading: true));
+
+    await repo.deleteMismatch(e.id);
+    emit(state.copyWith(isMismatchLoading: true));
+
+    add(const OrdersLoadMismatch());
+  }
+
+  void _onToggleMismatchEdit(
+    OrdersToggleMismatchEdit e,
+    Emitter<OrdersState> emit,
+  ) {
+    emit(state.copyWith(editingMismatchId: e.id));
+  }
+
+  void _onSearchMismatchList(
+    OrdersSearchMismatchList e,
+    Emitter<OrdersState> emit,
+  ) {
+    emit(state.copyWith(mismatchSearch: e.query));
+  }
+
+  EventTransformer<T> debounce<T>() {
+    return (events, mapper) =>
+        events.debounce(const Duration(milliseconds: 300)).switchMap(mapper);
+  }
+
+  Future<void> _onSearchByCode(
+    OrdersSearchMismatchItemsCode e,
+    Emitter<OrdersState> emit,
+  ) async {
+    final res = await repo.searchItemsByCode(e.query);
+    emit(state.copyWith(mismatchSuggestions: res));
+  }
+
+  Future<void> _onSearchByName(
+    OrdersSearchMismatchItemsName e,
+    Emitter<OrdersState> emit,
+  ) async {
+    final res = await repo.searchItemsByName(e.query);
+    emit(state.copyWith(mismatchSuggestions: res));
+  }
+
+  Future<void> _onSearchMismatch(
+    OrdersSearchMismatchItems e,
+    Emitter<OrdersState> emit,
+  ) async {
+    emit(state.copyWith(mismatchSuggestions: []));
   }
 }

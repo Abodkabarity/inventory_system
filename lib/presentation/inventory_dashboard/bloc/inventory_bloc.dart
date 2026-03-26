@@ -13,8 +13,9 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     on<LoadInventoryDashboard>(_onLoad);
 
     on<SelectBranch>(_onSelectBranch);
-
+    on<LoadBranchAnalytics>(_onBranchAnalytics);
     on<ApproveInventoryRequest>(_onApproveInventory);
+    on<LoadBranchAdditionalStats>(_onBranchAdditionalStats);
   }
 
   /// ================================
@@ -129,6 +130,50 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       add(LoadInventoryDashboard(runDate, silent: true));
     } catch (e) {
       print("Inventory Approve Error: $e");
+    }
+  }
+
+  Future<void> _onBranchAnalytics(
+    LoadBranchAnalytics event,
+    Emitter<InventoryState> emit,
+  ) async {
+    try {
+      final edits = await repo.fetchBranchEdits(
+        runDate: runDate,
+        branch: event.branch,
+      );
+
+      emit(state.copyWith(selectedBranch: event.branch, edits: edits));
+    } catch (e) {
+      print("Branch Analytics Error: $e");
+    }
+  }
+
+  Future<void> _onBranchAdditionalStats(
+    LoadBranchAdditionalStats event,
+    Emitter<InventoryState> emit,
+  ) async {
+    try {
+      final month = await repo.fetchAdditionalMonthByBranch(event.branch);
+
+      final today = await repo.fetchAdditionalTodayByBranchExact(event.branch);
+
+      final monthMap = Map<String, int>.from(state.additionalMonthBranchCount);
+      final todayMap = Map<String, int>.from(
+        state.additionalTodayBranchExactCount,
+      );
+
+      monthMap[event.branch] = month;
+      todayMap[event.branch] = today;
+
+      emit(
+        state.copyWith(
+          additionalMonthBranchCount: monthMap,
+          additionalTodayBranchExactCount: todayMap,
+        ),
+      );
+    } catch (e) {
+      print("Branch Additional Stats Error: $e");
     }
   }
 }

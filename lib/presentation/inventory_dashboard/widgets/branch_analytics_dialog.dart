@@ -3,43 +3,80 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../bloc/inventory_bloc.dart';
+import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
 import 'additional_history_dialog.dart';
 
-class BranchAnalyticsDialog extends StatelessWidget {
+class BranchAnalyticsDialog extends StatefulWidget {
   final String branch;
 
   const BranchAnalyticsDialog({super.key, required this.branch});
 
   @override
+  State<BranchAnalyticsDialog> createState() => _BranchAnalyticsDialogState();
+}
+
+class _BranchAnalyticsDialogState extends State<BranchAnalyticsDialog> {
+  @override
+  void initState() {
+    super.initState();
+
+    /// load edits
+    context.read<InventoryBloc>().add(LoadBranchAnalytics(widget.branch));
+
+    /// load additional stats
+    context.read<InventoryBloc>().add(LoadBranchAdditionalStats(widget.branch));
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final screen = MediaQuery.of(context).size;
+
     return Dialog(
+      insetPadding: const EdgeInsets.all(20),
       backgroundColor: Colors.grey.shade100,
+
       child: Container(
-        width: 900,
-        height: 600,
-        padding: const EdgeInsets.all(20),
+        width: screen.width * 0.85,
+        height: screen.height * 0.85,
+        padding: const EdgeInsets.all(24),
 
         child: BlocBuilder<InventoryBloc, InventoryState>(
           builder: (context, state) {
-            final additionalToday =
-                state.additionalTodayBranchCount[branch] ?? 0;
+            /// ============================
+            /// ADDITIONAL
+            /// ============================
 
-            final additionalMonth = state.additionalMonthCount;
+            final additionalToday = state.additionalRequests
+                .where(
+                  (e) =>
+                      e.branchName == widget.branch &&
+                      DateUtils.isSameDay(e.createdAt, DateTime.now()),
+                )
+                .length;
 
-            final editsToday = state.editsCount[branch] ?? 0;
+            final additionalMonth =
+                state.additionalMonthBranchCount[widget.branch] ?? 0;
+
+            /// ============================
+            /// EDITS
+            /// ============================
+
+            final editsToday = state.editsCount[widget.branch] ?? 0;
 
             final editsMonth = state.edits.length;
 
             return Column(
               children: [
+                /// ============================
                 /// HEADER
+                /// ============================
                 Row(
                   children: [
                     Text(
-                      branch,
+                      widget.branch,
                       style: const TextStyle(
-                        fontSize: 22,
+                        fontSize: 26,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -53,27 +90,25 @@ class BranchAnalyticsDialog extends StatelessWidget {
                   ],
                 ),
 
-                const SizedBox(height: 20),
+                const SizedBox(height: 25),
 
+                /// ============================
                 /// KPI CARDS
+                /// ============================
                 Row(
                   children: [
                     _kpiCard(
                       title: "Additional Today",
                       value: additionalToday,
                       color: Colors.orange,
-                      onTap: () {
-                        _openHistory(context);
-                      },
+                      onTap: () => _openHistory(context),
                     ),
 
                     _kpiCard(
                       title: "Additional Month",
                       value: additionalMonth,
                       color: Colors.deepOrange,
-                      onTap: () {
-                        _openHistory(context);
-                      },
+                      onTap: () => _openHistory(context),
                     ),
 
                     _kpiCard(
@@ -92,48 +127,67 @@ class BranchAnalyticsDialog extends StatelessWidget {
                   ],
                 ),
 
-                const SizedBox(height: 25),
+                const SizedBox(height: 30),
 
-                /// EDITED PRODUCTS TODAY
+                /// ============================
+                /// TITLE
+                /// ============================
                 const Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
                     "Edited Products Today",
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                 ),
 
                 const SizedBox(height: 10),
 
+                /// ============================
+                /// EDITS LIST
+                /// ============================
                 Expanded(
-                  child: ListView.builder(
-                    itemCount: state.edits.length,
-                    itemBuilder: (context, i) {
-                      final item = state.edits[i];
-
-                      return Card(
-                        elevation: 3,
-                        child: ListTile(
-                          leading: const Icon(
-                            Icons.edit,
-                            color: AppColors.primaryColor,
+                  child: state.edits.isEmpty
+                      ? const Center(
+                          child: Text(
+                            "No edits today",
+                            style: TextStyle(fontSize: 16),
                           ),
+                        )
+                      : ListView.builder(
+                          itemCount: state.edits.length,
+                          itemBuilder: (context, i) {
+                            final item = state.edits[i];
 
-                          title: Text(item.itemName),
+                            return Card(
+                              elevation: 4,
+                              margin: const EdgeInsets.only(bottom: 10),
 
-                          subtitle: Text(item.itemCode),
+                              child: ListTile(
+                                leading: const Icon(
+                                  Icons.edit,
+                                  color: AppColors.primaryColor,
+                                ),
 
-                          trailing: Text(
-                            "${item.oldQty} → ${item.newQty}",
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green,
-                            ),
-                          ),
+                                title: Text(
+                                  item.itemName,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+
+                                subtitle: Text(item.itemCode),
+
+                                trailing: Text(
+                                  "${item.oldQty} → ${item.newQty}",
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green,
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
                         ),
-                      );
-                    },
-                  ),
                 ),
               ],
             );
@@ -142,6 +196,10 @@ class BranchAnalyticsDialog extends StatelessWidget {
       ),
     );
   }
+
+  /// ============================
+  /// KPI CARD
+  /// ============================
 
   Widget _kpiCard({
     required String title,
@@ -152,13 +210,14 @@ class BranchAnalyticsDialog extends StatelessWidget {
     return Expanded(
       child: GestureDetector(
         onTap: onTap,
+
         child: Container(
-          margin: const EdgeInsets.only(right: 10),
-          padding: const EdgeInsets.all(16),
+          margin: const EdgeInsets.only(right: 12),
+          padding: const EdgeInsets.all(18),
 
           decoration: BoxDecoration(
-            color: color.withOpacity(.1),
-            borderRadius: BorderRadius.circular(12),
+            color: color.withOpacity(.12),
+            borderRadius: BorderRadius.circular(14),
           ),
 
           child: Column(
@@ -166,7 +225,7 @@ class BranchAnalyticsDialog extends StatelessWidget {
               Text(
                 value.toString(),
                 style: TextStyle(
-                  fontSize: 26,
+                  fontSize: 30,
                   fontWeight: FontWeight.bold,
                   color: color,
                 ),
@@ -174,7 +233,11 @@ class BranchAnalyticsDialog extends StatelessWidget {
 
               const SizedBox(height: 6),
 
-              Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+              Text(
+                title,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+                textAlign: TextAlign.center,
+              ),
             ],
           ),
         ),
@@ -182,14 +245,19 @@ class BranchAnalyticsDialog extends StatelessWidget {
     );
   }
 
+  /// ============================
+  /// OPEN ADDITIONAL HISTORY
+  /// ============================
+
   void _openHistory(BuildContext context) {
     final bloc = context.read<InventoryBloc>();
 
     showDialog(
       context: context,
+
       builder: (_) => BlocProvider.value(
         value: bloc,
-        child: InventoryAdditionalHistoryDialog(branch: branch),
+        child: InventoryAdditionalHistoryDialog(branch: widget.branch),
       ),
     );
   }
