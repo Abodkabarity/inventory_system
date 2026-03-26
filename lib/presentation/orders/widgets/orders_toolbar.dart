@@ -1,5 +1,6 @@
 // orders_toolbar.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../../core/theme/app_colors.dart';
 
@@ -50,7 +51,7 @@ class OrdersToolbar extends StatefulWidget {
       padding: padding,
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(16.r),
         border: Border.all(color: border ?? Colors.transparent),
       ),
       child: child,
@@ -60,7 +61,7 @@ class OrdersToolbar extends StatefulWidget {
   static Widget badge({required int count, Color? bg, Color? fg}) {
     if (count <= 0) return const SizedBox.shrink();
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
       decoration: BoxDecoration(
         color: bg ?? const Color(0xFFEFF6FF),
         borderRadius: BorderRadius.circular(999),
@@ -201,7 +202,7 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(18.r),
           border: Border.all(color: cs.outlineVariant.withValues(alpha: .55)),
           boxShadow: [
             BoxShadow(
@@ -242,20 +243,20 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
                               ),
                         filled: true,
                         fillColor: AppColors.backgroundWidget,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 12,
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 14.w,
+                          vertical: 12.h,
                         ),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(14.r),
                           borderSide: BorderSide(color: cs.outlineVariant),
                         ),
                         enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(14.r),
                           borderSide: BorderSide(color: cs.outlineVariant),
                         ),
                         focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(14.r),
                           borderSide: BorderSide(color: cs.primary, width: 1.4),
                         ),
                       ),
@@ -273,7 +274,7 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
                 // Columns
                 // ==========================
                 SizedBox(
-                  width: 200,
+                  width: 175.w,
                   child: OutlinedButton.icon(
                     onPressed: widget.onOpenColumns,
                     icon: const Icon(
@@ -289,9 +290,9 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
                     ),
                     style: OutlinedButton.styleFrom(
                       backgroundColor: Colors.deepPurple,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 12,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 14.w,
+                        vertical: 12.h,
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
@@ -301,7 +302,7 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
                 ),
                 const SizedBox(width: 6),
                 SizedBox(
-                  width: 200,
+                  width: 175.w,
                   child: FilledButton.icon(
                     onPressed: widget.addMismatch,
 
@@ -312,9 +313,9 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
                     ),
                     style: FilledButton.styleFrom(
                       backgroundColor: Colors.deepOrangeAccent,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 12,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 14.w,
+                        vertical: 12.h,
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
@@ -324,7 +325,7 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
                 ),
                 const SizedBox(width: 6),
                 SizedBox(
-                  width: 200,
+                  width: 175.w,
                   child: FilledButton.icon(
                     onPressed: widget.addMax,
 
@@ -335,12 +336,12 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
                     ),
                     style: FilledButton.styleFrom(
                       backgroundColor: Colors.yellow.shade800,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 12,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 14.w,
+                        vertical: 12.h,
                       ),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(14.r),
                       ),
                     ),
                   ),
@@ -351,7 +352,7 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
                 // Export
                 // ==========================
                 SizedBox(
-                  width: 200,
+                  width: 175.w,
                   child: FilledButton.icon(
                     onPressed: widget.onExport,
 
@@ -362,12 +363,12 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
                     ),
                     style: FilledButton.styleFrom(
                       backgroundColor: Colors.blueGrey,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 12,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 14.w,
+                        vertical: 12.h,
                       ),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(14.r),
                       ),
                     ),
                   ),
@@ -378,7 +379,7 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
                 // Clear All Filters (reference style)
                 // ==========================
                 SizedBox(
-                  width: 200,
+                  width: 175.w,
                   child: ElevatedButton.icon(
                     onPressed: widget.onClearAll,
                     icon: const Icon(
@@ -397,7 +398,7 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
                       foregroundColor: AppColors.white,
                       elevation: 0,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(14.r),
                       ),
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                     ),

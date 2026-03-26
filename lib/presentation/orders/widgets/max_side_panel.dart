@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../bloc/order_bloc/orders_bloc.dart';
@@ -19,7 +20,9 @@ class _MaxSidePanelState extends State<MaxSidePanel> {
   @override
   void initState() {
     super.initState();
+    searchController.clear();
 
+    context.read<OrdersBloc>().add(const OrdersSearchMaxAdjList(''));
     context.read<OrdersBloc>().add(const OrdersLoadMaxAdj());
   }
 
@@ -33,21 +36,22 @@ class _MaxSidePanelState extends State<MaxSidePanel> {
         color: Colors.white,
         elevation: 20,
         child: SizedBox(
-          width: screenWidth * 0.5,
+          width: screenWidth * 0.5.w,
           child: Column(
             children: [
               /// HEADER
               BlocBuilder<OrdersBloc, OrdersState>(
                 builder: (context, state) {
-                  final count = state.maxAdjItems.length;
-
+                  final branchCount = state.maxAdjItems
+                      .where((e) => e['added_by'] == 'branch')
+                      .length;
                   return Container(
                     padding: const EdgeInsets.all(16),
                     color: AppColors.primaryColor,
                     child: Row(
                       children: [
                         Text(
-                          "Max Adjustment ($count / 15)",
+                          "Max Adjustment ($branchCount / 15)",
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 18,
@@ -68,11 +72,15 @@ class _MaxSidePanelState extends State<MaxSidePanel> {
 
               const _AddMaxForm(),
 
-              const Divider(),
+              const Divider(
+                color: AppColors.secondaryColor,
+                endIndent: 100,
+                indent: 100,
+              ),
 
               /// SEARCH
               Padding(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(5),
                 child: TextField(
                   controller: searchController,
                   decoration: InputDecoration(
@@ -80,10 +88,23 @@ class _MaxSidePanelState extends State<MaxSidePanel> {
                     prefixIcon: const Icon(Icons.search),
                     filled: true,
                     fillColor: AppColors.backgroundWidget,
+                    labelStyle: TextStyle(color: AppColors.secondaryColor),
                     border: OutlineInputBorder(
+                      borderSide: BorderSide(color: AppColors.primaryColor),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: AppColors.primaryColor),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: AppColors.primaryColor),
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
+                  onChanged: (v) {
+                    context.read<OrdersBloc>().add(OrdersSearchMaxAdjList(v));
+                  },
                 ),
               ),
 
@@ -93,20 +114,34 @@ class _MaxSidePanelState extends State<MaxSidePanel> {
                   builder: (context, state) {
                     final isLoading = state.isMaxAdjLoading;
 
+                    final query = state.maxAdjSearch.toLowerCase();
+
+                    final filtered = state.maxAdjItems.where((e) {
+                      final code = (e['item_code'] ?? '')
+                          .toString()
+                          .toLowerCase();
+                      final name = (e['item_name'] ?? '')
+                          .toString()
+                          .toLowerCase();
+
+                      return code.contains(query) || name.contains(query);
+                    }).toList();
+
                     return Stack(
                       children: [
                         ListView.builder(
-                          itemCount: state.maxAdjItems.length,
+                          itemCount: filtered.length,
                           itemBuilder: (_, i) {
-                            return _MaxRow(
-                              index: i,
-                              item: state.maxAdjItems[i],
-                            );
+                            return _MaxRow(index: i, item: filtered[i]);
                           },
                         ),
 
                         if (isLoading)
-                          const Center(child: CircularProgressIndicator()),
+                          const Center(
+                            child: CircularProgressIndicator(
+                              color: AppColors.primaryColor,
+                            ),
+                          ),
                       ],
                     );
                   },
@@ -128,149 +163,432 @@ class _AddMaxForm extends StatefulWidget {
 }
 
 class _AddMaxFormState extends State<_AddMaxForm> {
+  final _formKey = GlobalKey<FormState>();
+  bool submitted = false;
+
   final code = TextEditingController();
   final name = TextEditingController();
-
-  final demand = TextEditingController(); // 🔥 NEW
-  final maxQty = TextEditingController(); // 🔥 NEW (هو qty)
-
+  final demand = TextEditingController();
+  final maxQty = TextEditingController();
   final reason = TextEditingController();
+
+  final codeLink = LayerLink();
+  final nameLink = LayerLink();
+
+  final codeFocus = FocusNode();
+  final nameFocus = FocusNode();
+
+  OverlayEntry? overlayEntry;
+  String activeField = '';
 
   String type = "INCREASE";
 
   @override
+  void dispose() {
+    removeOverlay();
+    codeFocus.dispose();
+    nameFocus.dispose();
+    super.dispose();
+  }
+
+  void showOverlay(BuildContext context, OrdersState state, OrdersBloc bloc) {
+    removeOverlay();
+
+    final link = activeField == 'code' ? codeLink : nameLink;
+
+    overlayEntry = OverlayEntry(
+      builder: (context) {
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: () {
+                  removeOverlay();
+                  codeFocus.unfocus();
+                  nameFocus.unfocus();
+                },
+              ),
+            ),
+            Positioned(
+              width: 400.w,
+              child: CompositedTransformFollower(
+                link: link,
+                offset: const Offset(0, 55),
+                child: Material(
+                  elevation: 10,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(context).size.height * 0.4.h,
+                    ),
+                    child: ListView.builder(
+                      itemCount: state.mismatchSuggestions.length,
+                      itemBuilder: (_, i) {
+                        final e = state.mismatchSuggestions[i];
+
+                        return ListTile(
+                          title: Text(e['item_name']),
+                          subtitle: Text(e['item_code']),
+                          onTap: () {
+                            code.text = e['item_code'];
+                            name.text = e['item_name'];
+
+                            bloc.add(OrdersSearchMismatchItemsCode(''));
+
+                            removeOverlay();
+                            codeFocus.unfocus();
+                            nameFocus.unfocus();
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    Overlay.of(context).insert(overlayEntry!);
+  }
+
+  void removeOverlay() {
+    overlayEntry?.remove();
+    overlayEntry = null;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final state = context.watch<OrdersBloc>().state;
-    final isFull = state.maxAdjItems.length >= 15;
 
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        children: [
-          /// ITEM
-          Row(
+    final branchCount = state.maxAdjItems
+        .where((e) => e['added_by'] == 'branch')
+        .length;
+
+    final isFull = branchCount >= 15;
+
+    return BlocListener<OrdersBloc, OrdersState>(
+      listener: (context, state) {
+        if (state.mismatchSuggestions.isNotEmpty &&
+            (codeFocus.hasFocus || nameFocus.hasFocus)) {
+          showOverlay(context, state, context.read<OrdersBloc>());
+        } else {
+          removeOverlay();
+        }
+      },
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Form(
+          key: _formKey,
+          autovalidateMode: submitted
+              ? AutovalidateMode.always
+              : AutovalidateMode.disabled,
+          child: Column(
             children: [
-              Expanded(
-                child: TextField(
-                  controller: code,
-                  decoration: const InputDecoration(labelText: "Item Code"),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: name,
-                  decoration: const InputDecoration(labelText: "Item Name"),
-                ),
-              ),
-            ],
-          ),
+              /// ITEM WITH SEARCH 🔥
+              Row(
+                children: [
+                  Expanded(
+                    child: CompositedTransformTarget(
+                      link: codeLink,
+                      child: TextFormField(
+                        focusNode: codeFocus,
+                        controller: code,
+                        decoration: InputDecoration(
+                          labelText: "Item Code",
+                          labelStyle: TextStyle(
+                            color: AppColors.secondaryColor,
+                          ),
+                          filled: true,
+                          fillColor: AppColors.backgroundWidget,
+                          border: OutlineInputBorder(
+                            borderSide: BorderSide(
+                              color: AppColors.primaryColor,
+                            ),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderSide: BorderSide(
+                              color: AppColors.primaryColor,
+                            ),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderSide: BorderSide(
+                              color: AppColors.primaryColor,
+                            ),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        validator: (v) =>
+                            v == null || v.isEmpty ? "Required" : null,
+                        onChanged: (v) {
+                          activeField = 'code';
+                          context.read<OrdersBloc>().add(
+                            OrdersSearchMismatchItemsCode(v),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: CompositedTransformTarget(
+                      link: nameLink,
+                      child: TextFormField(
+                        focusNode: nameFocus,
+                        controller: name,
+                        decoration: InputDecoration(
+                          labelText: "Item Name",
+                          labelStyle: TextStyle(
+                            color: AppColors.secondaryColor,
+                          ),
+                          filled: true,
+                          fillColor: AppColors.backgroundWidget,
+                          border: OutlineInputBorder(
+                            borderSide: BorderSide(
+                              color: AppColors.primaryColor,
+                            ),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderSide: BorderSide(
+                              color: AppColors.primaryColor,
+                            ),
 
-          const SizedBox(height: 10),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderSide: BorderSide(
+                              color: AppColors.primaryColor,
+                            ),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        validator: (v) =>
+                            v == null || v.isEmpty ? "Required" : null,
+                        onChanged: (v) {
+                          activeField = 'name';
+                          context.read<OrdersBloc>().add(
+                            OrdersSearchMismatchItemsName(v),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
 
-          /// DEMAND + MAX
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: demand,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: "Current Demand (30d)",
+              SizedBox(height: 10.h),
+
+              /// DEMAND + MAX
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: demand,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: "Current Demand",
+                        labelStyle: TextStyle(color: AppColors.secondaryColor),
+                        filled: true,
+                        fillColor: AppColors.backgroundWidget,
+                        border: OutlineInputBorder(
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      validator: (v) {
+                        if (v == null || v.isEmpty) return "Required";
+                        if (num.tryParse(v) == null) return "Invalid number";
+                        return null;
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextFormField(
+                      controller: maxQty,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: "Max Adjustment",
+                        labelStyle: TextStyle(color: AppColors.secondaryColor),
+                        filled: true,
+                        fillColor: AppColors.backgroundWidget,
+                        border: OutlineInputBorder(
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      validator: (v) {
+                        if (v == null || v.isEmpty) return "Required";
+                        if (num.tryParse(v) == null) return "Invalid number";
+                        return null;
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      initialValue: type,
+                      dropdownColor: Colors.white,
+                      icon: Icon(
+                        Icons.keyboard_arrow_down,
+                        color: AppColors.secondaryColor,
+                      ),
+
+                      items: const [
+                        DropdownMenuItem(
+                          value: "INCREASE",
+                          child: Text("INCREASE"),
+                        ),
+                        DropdownMenuItem(
+                          value: "DECREASE",
+                          child: Text("DECREASE"),
+                        ),
+                      ],
+
+                      onChanged: (v) => setState(() => type = v!),
+
+                      decoration: InputDecoration(
+                        labelText: "Type",
+                        labelStyle: TextStyle(color: AppColors.secondaryColor),
+
+                        filled: true,
+                        fillColor: AppColors.backgroundWidget,
+
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 16,
+                        ),
+
+                        border: OutlineInputBorder(
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+
+                        enabledBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+
+                        focusedBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+
+                      validator: (v) =>
+                          v == null || v.isEmpty ? "Required" : null,
+                    ),
+                  ),
+                ],
+              ),
+
+              SizedBox(height: 10.h),
+
+              TextFormField(
+                controller: reason,
+                decoration: InputDecoration(
+                  labelText: "Reason",
+                  labelStyle: TextStyle(color: AppColors.secondaryColor),
+                  filled: true,
+                  fillColor: AppColors.backgroundWidget,
+                  border: OutlineInputBorder(
+                    borderSide: BorderSide(color: AppColors.primaryColor),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: AppColors.primaryColor),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: AppColors.primaryColor),
+                    borderRadius: BorderRadius.circular(14),
                   ),
                 ),
+                validator: (v) => v == null || v.isEmpty ? "Required" : null,
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: maxQty,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: "Max Adjustment (30d)",
-                  ),
+
+              SizedBox(height: 12.h),
+
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isFull
+                      ? Colors.grey
+                      : AppColors.primaryColor,
+                  minimumSize: const Size(300, 40),
+                ),
+                onPressed: isFull
+                    ? null
+                    : () {
+                        setState(() {
+                          submitted = true;
+                        });
+
+                        if (!_formKey.currentState!.validate()) {
+                          return;
+                        }
+
+                        final demandVal = num.tryParse(demand.text) ?? 0;
+                        final maxVal = num.tryParse(maxQty.text) ?? 0;
+
+                        context.read<OrdersBloc>().add(
+                          OrdersAddMaxAdj({
+                            'branch_name': context
+                                .read<OrdersBloc>()
+                                .state
+                                .branchName,
+                            'item_code': code.text,
+                            'item_name': name.text,
+                            'current_demand_30d': demandVal,
+                            'max_adjustment_30d': maxVal,
+                            'qty': maxVal,
+                            'adjustment_type': type,
+                            'reason': reason.text,
+                            'added_by': 'branch',
+                          }),
+                        );
+
+                        _formKey.currentState!.reset();
+
+                        code.clear();
+                        name.clear();
+                        demand.clear();
+                        maxQty.clear();
+                        reason.clear();
+
+                        setState(() {
+                          submitted = false;
+                        });
+                      },
+                child: Text(
+                  isFull ? "Limit Reached (15)" : "Add Max",
+                  style: const TextStyle(color: Colors.white),
                 ),
               ),
             ],
           ),
-
-          const SizedBox(height: 10),
-
-          /// TYPE
-          DropdownButtonFormField<String>(
-            value: type,
-            items: const [
-              DropdownMenuItem(value: "INCREASE", child: Text("INCREASE")),
-              DropdownMenuItem(value: "DECREASE", child: Text("DECREASE")),
-            ],
-            onChanged: (v) => setState(() => type = v!),
-          ),
-
-          const SizedBox(height: 10),
-
-          /// REASON
-          TextField(
-            controller: reason,
-            decoration: const InputDecoration(labelText: "Reason"),
-          ),
-
-          const SizedBox(height: 12),
-
-          /// ADD BUTTON
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: isFull ? Colors.grey : AppColors.primaryColor,
-              minimumSize: const Size(double.infinity, 45),
-            ),
-            onPressed: isFull
-                ? null
-                : () {
-                    final demandVal = num.tryParse(demand.text) ?? 0;
-
-                    final maxVal = num.tryParse(maxQty.text) ?? 0;
-
-                    if (code.text.isEmpty || name.text.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("Select item first")),
-                      );
-                      return;
-                    }
-
-                    /// 🔥 qty = max
-                    final qty = maxVal;
-
-                    context.read<OrdersBloc>().add(
-                      OrdersAddMaxAdj({
-                        'branch_name': context
-                            .read<OrdersBloc>()
-                            .state
-                            .branchName,
-
-                        'item_code': code.text,
-                        'item_name': name.text,
-
-                        'current_demand_30d': demandVal,
-                        'max_adjustment_30d': maxVal,
-
-                        'qty': qty, // 🔥 AUTO
-
-                        'adjustment_type': type,
-                        'reason': reason.text,
-                      }),
-                    );
-
-                    /// CLEAR
-                    code.clear();
-                    name.clear();
-                    demand.clear();
-                    maxQty.clear();
-                    reason.clear();
-                  },
-            child: Text(
-              isFull ? "Limit Reached (15)" : "Add Max",
-              style: const TextStyle(color: Colors.white),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -297,25 +615,33 @@ class _MaxRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final type = (item['adjustment_type'] ?? '').toString();
-
     final demand = item['current_demand_30d'];
     final maxAdj = item['max_adjustment_30d'];
+
+    final demandVal = (demand is num) ? demand : num.tryParse('$demand') ?? 0;
+    final maxVal = (maxAdj is num) ? maxAdj : num.tryParse('$maxAdj') ?? 0;
+
+    final type = maxVal < demandVal ? "DECREASE" : "INCREASE";
+
     final qty = item['qty'];
     final reason = (item['reason'] ?? '').toString();
 
     return Card(
       color: Colors.white,
       elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      shadowColor: AppColors.secondaryColor,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: AppColors.primaryColor),
+      ),
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         child: Row(
           children: [
             /// 🔢 INDEX
             SizedBox(
-              width: 35,
+              width: 35.w,
               child: Text(
                 "${index + 1}",
                 style: const TextStyle(
@@ -335,13 +661,13 @@ class _MaxRow extends StatelessWidget {
                     item['item_name'] ?? '',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
-                  const SizedBox(height: 4),
+                  SizedBox(height: 4.h),
                   Text(
                     item['item_code'] ?? '',
-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                    style: TextStyle(color: Colors.grey, fontSize: 12.sp),
                   ),
 
-                  const SizedBox(height: 8),
+                  SizedBox(height: 8.h),
 
                   /// 🔥 EXTRA DATA
                   Wrap(
@@ -355,13 +681,10 @@ class _MaxRow extends StatelessWidget {
                   ),
 
                   if (reason.isNotEmpty) ...[
-                    const SizedBox(height: 6),
+                    SizedBox(height: 6.h),
                     Text(
                       "Reason: $reason",
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.black87,
-                      ),
+                      style: TextStyle(fontSize: 12.sp, color: Colors.black87),
                     ),
                   ],
                 ],
@@ -378,7 +701,7 @@ class _MaxRow extends StatelessWidget {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: _getColor(type).withOpacity(0.15),
+                    color: _getColor(type).withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -390,7 +713,7 @@ class _MaxRow extends StatelessWidget {
                   ),
                 ),
 
-                const SizedBox(height: 10),
+                SizedBox(height: 10.h),
 
                 /// DELETE
                 IconButton(

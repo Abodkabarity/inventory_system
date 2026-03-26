@@ -97,6 +97,10 @@ class _MismatchSidePanelState extends State<MismatchSidePanel> {
                       borderRadius: BorderRadius.circular(14),
                       borderSide: BorderSide(color: AppColors.primaryColor),
                     ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: AppColors.primaryColor),
+                    ),
                   ),
                   onChanged: (v) {
                     context.read<OrdersBloc>().add(OrdersSearchMismatchList(v));
@@ -298,6 +302,10 @@ class _AddFormState extends State<_AddForm> {
                           borderRadius: BorderRadius.circular(14),
                           borderSide: BorderSide(color: AppColors.primaryColor),
                         ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                        ),
                       ),
                       onChanged: (v) {
                         activeField = 'code';
@@ -329,6 +337,10 @@ class _AddFormState extends State<_AddForm> {
                           borderSide: BorderSide(color: AppColors.primaryColor),
                         ),
                         focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                        ),
+                        enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
                           borderSide: BorderSide(color: AppColors.primaryColor),
                         ),
@@ -367,6 +379,10 @@ class _AddFormState extends State<_AddForm> {
                         borderRadius: BorderRadius.circular(14),
                         borderSide: BorderSide(color: AppColors.primaryColor),
                       ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: AppColors.primaryColor),
+                      ),
                     ),
                   ),
                 ),
@@ -385,6 +401,10 @@ class _AddFormState extends State<_AddForm> {
                         borderSide: BorderSide(color: AppColors.primaryColor),
                       ),
                       focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: AppColors.primaryColor),
+                      ),
+                      enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
                         borderSide: BorderSide(color: AppColors.primaryColor),
                       ),
@@ -427,7 +447,7 @@ class _AddFormState extends State<_AddForm> {
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   backgroundColor: AppColors.primaryColor,
-                  minimumSize: Size(300, 40),
+                  minimumSize: const Size(300, 40),
                 ),
                 onPressed: () {
                   final systemVal = num.tryParse(system.text) ?? 0;
@@ -647,7 +667,11 @@ class _Row extends StatelessWidget {
     return Card(
       color: Colors.white,
       elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shadowColor: AppColors.secondaryColor,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: AppColors.primaryColor),
+      ),
       margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),

@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../bloc/order_bloc/orders_bloc.dart';
@@ -15,7 +16,7 @@ class ColumnsPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Drawer(
-      width: 420,
+      width: 420.w,
       child: SafeArea(
         child: BlocBuilder<OrdersBloc, OrdersState>(
           buildWhen: (p, n) =>

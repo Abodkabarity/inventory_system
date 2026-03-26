@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../bloc/order_bloc/orders_bloc.dart';
@@ -107,7 +108,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
                         SizedBox(
-                          width: 320,
+                          width: 320.w,
                           child: _KpiCard(
                             title: 'Total Products',
                             value: statsAll.totalProducts.toString(),
@@ -116,7 +117,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                           ),
                         ),
                         SizedBox(
-                          width: 320,
+                          width: 320.w,
                           child: _KpiCard(
                             title: 'Items in Order',
                             value: statsAll.sumFinalReorder.round().toString(),
@@ -125,7 +126,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                           ),
                         ),
                         SizedBox(
-                          width: 320,
+                          width: 320.w,
                           child: _KpiCard(
                             title: 'Essential',
                             value: '${statsAll.essential}',
@@ -134,7 +135,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                           ),
                         ),
                         SizedBox(
-                          width: 320,
+                          width: 320.w,
                           child: _KpiCard(
                             title: 'Non',
                             value: '${statsAll.non}',
@@ -143,7 +144,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                           ),
                         ),
                         SizedBox(
-                          width: 320,
+                          width: 320.w,
                           child: _KpiCard(
                             title: 'Additional Orders',
                             value: '$sentAddCount',
@@ -215,7 +216,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                       : null,
                                 ),
                                 if (s.hasEdits && !s.isSubmitted)
-                                  SizedBox(width: 6),
+                                  SizedBox(width: 6.w),
                                 if (s.hasEdits && !s.isSubmitted)
                                   OrdersToolbar.actionButton(
                                     label: 'Review Changes (${s.editsCount})',
@@ -462,8 +463,8 @@ class _TopHeader extends StatelessWidget {
           child: Row(
             children: [
               Container(
-                width: 100,
-                height: 50,
+                width: 100.w,
+                height: 50.h,
                 decoration: BoxDecoration(
                   image: DecorationImage(
                     image: AssetImage("assets/images/logo1.png"),

@@ -1,3 +1,4 @@
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -102,7 +103,7 @@ class PrintService {
         : ['Qty', 'Item Name', 'Supplier'];
 
     return pw.Table(
-      border: pw.TableBorder.all(width: 0.5),
+      border: pw.TableBorder.all(width: 0.5.w),
 
       columnWidths: {
         0: const pw.FixedColumnWidth(50),

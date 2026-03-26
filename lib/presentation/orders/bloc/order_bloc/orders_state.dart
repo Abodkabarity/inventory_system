@@ -168,7 +168,7 @@ class OrdersState extends Equatable {
 
   final String runDate;
   final String branchName;
-
+  final String maxAdjSearch;
   final String search;
   // ==========================
   // MISMATCH
@@ -249,6 +249,7 @@ class OrdersState extends Equatable {
     required this.isMismatchLoading,
     required this.maxAdjItems,
     required this.isMaxAdjLoading,
+    required this.maxAdjSearch,
   });
 
   static const List<String> defaultVisibleInTable = [
@@ -370,6 +371,7 @@ class OrdersState extends Equatable {
       mismatchItems: const [],
       mismatchSuggestions: const [],
       editingMismatchId: null,
+      maxAdjSearch: '',
       isMismatchLoading: false,
       visibleColumns: defaultVisibleInTable.toSet(),
       columnOrder: defaultColumnOrder,
@@ -441,6 +443,7 @@ class OrdersState extends Equatable {
     Map<String, List<Map<String, dynamic>>>? sentAdditionalHistoryByItemCode,
     String? progressMessage,
     String? error,
+    String? maxAdjSearch,
     bool? showMismatchResult,
     Set<String>? visibleColumns,
     List<String>? columnOrder,
@@ -503,6 +506,7 @@ class OrdersState extends Equatable {
       isMismatchLoading: isMismatchLoading ?? this.isMismatchLoading,
       maxAdjItems: maxAdjItems ?? this.maxAdjItems,
       isMaxAdjLoading: isMaxAdjLoading ?? this.isMaxAdjLoading,
+      maxAdjSearch: maxAdjSearch ?? this.maxAdjSearch,
     );
   }
 
@@ -541,5 +545,6 @@ class OrdersState extends Equatable {
     isMismatchLoading,
     maxAdjItems,
     isMaxAdjLoading,
+    maxAdjSearch,
   ];
 }

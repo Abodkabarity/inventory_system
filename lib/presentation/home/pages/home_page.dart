@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/csv_exporter_web.dart';
@@ -604,9 +605,9 @@ class _Header extends StatelessWidget {
           ),
         ),
         SizedBox(
-          width: 360,
+          width: 360.w,
           child: TextField(
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               hintText: 'Search item / code / barcode',
               prefixIcon: Icon(Icons.search),
               filled: true,
@@ -627,7 +628,7 @@ class _Header extends StatelessWidget {
                 borderRadius: BorderRadius.all(Radius.circular(14)),
                 borderSide: BorderSide(
                   color: AppColors.secondaryColor,
-                  width: 1.4,
+                  width: 1.4.w,
                 ),
               ),
             ),
@@ -742,8 +743,8 @@ class _StatCard extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            width: 42,
-            height: 42,
+            width: 42.w,
+            height: 42.h,
             decoration: BoxDecoration(
               color: AppColors.blueSoft,
               borderRadius: BorderRadius.circular(14),
