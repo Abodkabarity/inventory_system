@@ -92,4 +92,13 @@ abstract class OrdersRepository {
   Future<List<Map<String, dynamic>>> searchItemsByCode(String query);
 
   Future<List<Map<String, dynamic>>> searchItemsByName(String query);
+  // ==========================
+  // MAX ADJUSTMENT
+  // ==========================
+
+  Future<List<Map<String, dynamic>>> fetchMaxAdj({required String branch});
+
+  Future<void> insertMaxAdj(Map<String, dynamic> data);
+
+  Future<void> deleteMaxAdj(String id);
 }

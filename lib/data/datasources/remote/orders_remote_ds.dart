@@ -525,4 +525,45 @@ done_at
 
     return List<Map<String, dynamic>>.from(res);
   }
+
+  Future<List<Map<String, dynamic>>> fetchMaxAdj({
+    required String branch,
+  }) async {
+    final res = await client
+        .from('max_adj')
+        .select()
+        .eq('branch_name', branch)
+        .order('update_date', ascending: false);
+
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<void> insertMaxAdj(Map<String, dynamic> data) async {
+    final branch = data['branch_name'];
+    final itemCode = data['item_code'];
+
+    final exists = await client
+        .from('max_adj')
+        .select('id')
+        .eq('branch_name', branch)
+        .eq('item_code', itemCode)
+        .maybeSingle();
+
+    if (exists != null) {
+      throw Exception('Item already exists for this branch');
+    }
+
+    final payload = {
+      ...data,
+
+      'update_date': DateTime.now().toIso8601String().split('T')[0],
+      'created_at': DateTime.now().toIso8601String(),
+    };
+
+    await client.from('max_adj').insert(payload);
+  }
+
+  Future<void> deleteMaxAdj(String id) async {
+    await client.from('max_adj').delete().eq('id', id);
+  }
 }

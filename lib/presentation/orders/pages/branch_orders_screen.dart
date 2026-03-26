@@ -274,6 +274,9 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                               addMismatch: () {
                                 BranchOrdersActions.openMismatchPanel(context);
                               },
+                              addMax: () {
+                                BranchOrdersActions.openMaxPanel(context);
+                              },
                             );
                           },
                         );

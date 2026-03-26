@@ -10,6 +10,7 @@ class OrdersToolbar extends StatefulWidget {
   final VoidCallback onOpenColumns;
   final VoidCallback onExport;
   final VoidCallback addMismatch;
+  final VoidCallback addMax;
   final VoidCallback onClearAll;
 
   final Widget? statusChip;
@@ -27,6 +28,7 @@ class OrdersToolbar extends StatefulWidget {
     required this.actions,
     required this.onClearAll,
     required this.addMismatch,
+    required this.addMax,
   });
 
   @override
@@ -324,7 +326,7 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
                 SizedBox(
                   width: 200,
                   child: FilledButton.icon(
-                    onPressed: widget.onExport,
+                    onPressed: widget.addMax,
 
                     icon: const Icon(Icons.format_indent_increase, size: 18),
                     label: const Text(

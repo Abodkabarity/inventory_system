@@ -196,7 +196,8 @@ class OrdersState extends Equatable {
   final bool numericFinalOnly;
   final bool? lastActionSuccess;
   final Map<String, FinalReorderEdit> finalEdits;
-
+  final List<Map<String, dynamic>> maxAdjItems;
+  final bool isMaxAdjLoading;
   // additional requests (local draft)
   final Map<String, AdditionalRequestEdit> additionalEdits;
 
@@ -246,6 +247,8 @@ class OrdersState extends Equatable {
     this.lastActionSuccess,
     this.showMismatchResult,
     required this.isMismatchLoading,
+    required this.maxAdjItems,
+    required this.isMaxAdjLoading,
   });
 
   static const List<String> defaultVisibleInTable = [
@@ -386,6 +389,8 @@ class OrdersState extends Equatable {
       selectedItemCode: null,
       additionalTrackingRows: const [],
       mismatchSearch: '',
+      maxAdjItems: const [],
+      isMaxAdjLoading: false,
     );
   }
 
@@ -457,6 +462,8 @@ class OrdersState extends Equatable {
     String? selectedItemCode,
     String? mismatchSearch,
     List<AdditionalRequestRow>? additionalTrackingRows,
+    List<Map<String, dynamic>>? maxAdjItems,
+    bool? isMaxAdjLoading,
   }) {
     return OrdersState(
       status: status ?? this.status,
@@ -494,6 +501,8 @@ class OrdersState extends Equatable {
       lastActionSuccess: lastActionSuccess ?? this.lastActionSuccess,
       showMismatchResult: showMismatchResult ?? this.showMismatchResult,
       isMismatchLoading: isMismatchLoading ?? this.isMismatchLoading,
+      maxAdjItems: maxAdjItems ?? this.maxAdjItems,
+      isMaxAdjLoading: isMaxAdjLoading ?? this.isMaxAdjLoading,
     );
   }
 
@@ -530,5 +539,7 @@ class OrdersState extends Equatable {
     lastActionSuccess,
     showMismatchResult,
     isMismatchLoading,
+    maxAdjItems,
+    isMaxAdjLoading,
   ];
 }
