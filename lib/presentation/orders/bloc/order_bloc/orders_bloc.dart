@@ -72,6 +72,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     on<OrdersClearMismatchResult>((event, emit) {
       emit(state.copyWith(showMismatchResult: false));
     });
+    on<OrdersLoadMaxAdj>(_onLoadMaxAdj);
+    on<OrdersAddMaxAdj>(_onAddMaxAdj);
+    on<OrdersDeleteMaxAdj>(_onDeleteMaxAdj);
   }
 
   @override
@@ -958,5 +961,67 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     Emitter<OrdersState> emit,
   ) async {
     emit(state.copyWith(mismatchSuggestions: []));
+  }
+
+  Future<void> _onLoadMaxAdj(
+    OrdersLoadMaxAdj e,
+    Emitter<OrdersState> emit,
+  ) async {
+    emit(state.copyWith(isMaxAdjLoading: true));
+
+    final data = await repo.fetchMaxAdj(branch: state.branchName);
+
+    emit(
+      state.copyWith(
+        status: OrdersStatus.ready,
+        maxAdjItems: data,
+        isMaxAdjLoading: false,
+      ),
+    );
+  }
+
+  Future<void> _onAddMaxAdj(
+    OrdersAddMaxAdj e,
+    Emitter<OrdersState> emit,
+  ) async {
+    emit(state.copyWith(isMaxAdjLoading: true));
+
+    try {
+      await repo.insertMaxAdj(e.data);
+
+      final newList = await repo.fetchMaxAdj(branch: state.branchName);
+
+      emit(
+        state.copyWith(
+          status: OrdersStatus.ready,
+          maxAdjItems: newList,
+          error: null,
+          isMaxAdjLoading: false,
+
+          lastActionSuccess: true,
+          showMismatchResult: true,
+        ),
+      );
+    } catch (err) {
+      emit(
+        state.copyWith(
+          status: OrdersStatus.ready,
+          error: err.toString(),
+          lastActionSuccess: false,
+          showMismatchResult: true,
+        ),
+      );
+    }
+  }
+
+  Future<void> _onDeleteMaxAdj(
+    OrdersDeleteMaxAdj e,
+    Emitter<OrdersState> emit,
+  ) async {
+    emit(state.copyWith(isMaxAdjLoading: true));
+
+    await repo.deleteMaxAdj(e.id);
+
+    add(const OrdersLoadMaxAdj());
   }
 }

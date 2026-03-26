@@ -269,3 +269,26 @@ class OrdersSearchMismatchItemsName extends OrdersEvent {
 }
 
 class OrdersClearMismatchResult extends OrdersEvent {}
+// ==========================
+// MAX ADJUSTMENT
+// ==========================
+
+class OrdersLoadMaxAdj extends OrdersEvent {
+  const OrdersLoadMaxAdj();
+}
+
+class OrdersAddMaxAdj extends OrdersEvent {
+  final Map<String, dynamic> data;
+  const OrdersAddMaxAdj(this.data);
+
+  @override
+  List<Object?> get props => [data];
+}
+
+class OrdersDeleteMaxAdj extends OrdersEvent {
+  final String id;
+  const OrdersDeleteMaxAdj(this.id);
+
+  @override
+  List<Object?> get props => [id];
+}

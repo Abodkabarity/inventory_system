@@ -201,4 +201,22 @@ class OrdersRepositoryImpl implements OrdersRepository {
   Future<List<Map<String, dynamic>>> searchItemsByName(String query) {
     return remote.searchItemsByName(query);
   }
+  // ==========================
+  // MAX ADJ
+  // ==========================
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchMaxAdj({required String branch}) {
+    return remote.fetchMaxAdj(branch: branch);
+  }
+
+  @override
+  Future<void> insertMaxAdj(Map<String, dynamic> data) {
+    return remote.insertMaxAdj(data);
+  }
+
+  @override
+  Future<void> deleteMaxAdj(String id) {
+    return remote.deleteMaxAdj(id);
+  }
 }
