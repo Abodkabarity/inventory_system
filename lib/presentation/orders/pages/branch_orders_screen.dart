@@ -271,6 +271,9 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                 );
                                 _grid.resetGridUi();
                               },
+                              addMismatch: () {
+                                BranchOrdersActions.openMismatchPanel(context);
+                              },
                             );
                           },
                         );

@@ -69,21 +69,17 @@ class StoreRepositoryImpl implements StoreRepository {
       return StoreOrderItem(
         itemCode: (e['item_code'] ?? '').toString(),
         itemName: (e['item_name'] ?? '').toString(),
-
-        /// FIXED BARCODE
         barcode: _formatBarcode(e['barcode']),
-
         supplier: (e['supplier'] ?? '').toString(),
         classification: (e['store_item_classifications'] ?? '').toString(),
         category: (e['category'] ?? '').toString(),
-
         quantity: num.tryParse((e['final_qty'] ?? '0').toString()) ?? 0,
       );
     }).toList();
   }
 
   /// ================================
-  /// ADDITIONAL REQUESTS
+  /// ADDITIONAL REQUESTS (FIXED COUNT)
   /// ================================
   @override
   Future<List<AdditionalRequestGroup>> fetchAdditionalRequests() async {
@@ -112,7 +108,13 @@ class StoreRepositoryImpl implements StoreRepository {
         created = DateTime.tryParse(createdRaw.toString()) ?? DateTime.now();
       }
 
-      /// تحديد الحالة
+      final validItems = items.where((e) {
+        final inv = e['inventory_qty'];
+
+        if (inv == null) return true;
+        return inv > 0;
+      }).toList();
+
       String status;
 
       if (items.every((e) => e['status'] == 'done')) {
@@ -128,7 +130,7 @@ class StoreRepositoryImpl implements StoreRepository {
           groupId: groupId,
           branchName: (first['branch_name'] ?? '').toString(),
           createdAt: created,
-          itemsCount: items.length,
+          itemsCount: validItems.length,
           status: status,
           itemNames: '',
           itemCodes: '',
@@ -149,6 +151,9 @@ class StoreRepositoryImpl implements StoreRepository {
     return remote.approveRequest(id: id, qty: qty);
   }
 
+  /// ================================
+  /// ADDITIONAL HISTORY (FIXED COUNT)
+  /// ================================
   @override
   Future<List<AdditionalRequestGroup>> fetchAdditionalHistory({
     required DateTime from,
@@ -178,6 +183,13 @@ class StoreRepositoryImpl implements StoreRepository {
           .map((e) => (e['item_code'] ?? '').toString())
           .join(', ');
 
+      final validItems = items.where((e) {
+        final inv = e['inventory_qty'];
+
+        if (inv == null) return true;
+        return inv > 0;
+      }).toList();
+
       String status;
 
       if (items.every((e) => e['status'] == 'done')) {
@@ -193,7 +205,7 @@ class StoreRepositoryImpl implements StoreRepository {
           groupId: groupId,
           branchName: first['branch_name'],
           createdAt: DateTime.parse(first['created_at']),
-          itemsCount: items.length,
+          itemsCount: validItems.length,
           status: status,
           itemNames: itemNames,
           itemCodes: itemCodes,

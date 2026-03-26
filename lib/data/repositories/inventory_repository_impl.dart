@@ -69,7 +69,10 @@ class InventoryRepositoryImpl implements InventoryRepository {
     for (final row in rows) {
       final groupId = (row['request_group_id'] ?? '').toString();
 
+      if (groupId.isEmpty) continue;
+
       grouped.putIfAbsent(groupId, () => []);
+
       grouped[groupId]!.add(row);
     }
 
@@ -78,17 +81,12 @@ class InventoryRepositoryImpl implements InventoryRepository {
     grouped.forEach((groupId, items) {
       final first = items.first;
 
-      DateTime created;
+      /// run_date هو الصحيح
+      DateTime created =
+          DateTime.tryParse(first['run_date'].toString()) ?? DateTime.now();
 
-      final createdRaw = first['created_at'];
-
-      if (createdRaw == null) {
-        created = DateTime.now();
-      } else {
-        created = DateTime.tryParse(createdRaw.toString()) ?? DateTime.now();
-      }
-
-      String status;
+      /// STATUS
+      String status = 'pending_inventory';
 
       if (items.every((e) => e['status'] == 'done')) {
         status = 'done';
@@ -96,9 +94,16 @@ class InventoryRepositoryImpl implements InventoryRepository {
         status = 'rejected';
       } else if (items.any((e) => e['status'] == 'sent_to_store')) {
         status = 'sent_to_store';
-      } else {
-        status = 'pending_inventory';
       }
+
+      /// ITEMS
+      final itemCodes = items
+          .map((e) => (e['item_code'] ?? '').toString())
+          .join(',');
+
+      final itemNames = items
+          .map((e) => (e['item_name'] ?? '').toString())
+          .join(',');
 
       result.add(
         AdditionalRequestGroup(
@@ -107,8 +112,8 @@ class InventoryRepositoryImpl implements InventoryRepository {
           createdAt: created,
           itemsCount: items.length,
           status: status,
-          itemNames: '',
-          itemCodes: '',
+          itemNames: itemNames,
+          itemCodes: itemCodes,
         ),
       );
     });
@@ -153,5 +158,15 @@ class InventoryRepositoryImpl implements InventoryRepository {
   @override
   Future<Map<String, int>> fetchAdditionalTodayByBranch(String runDate) async {
     return await remote.fetchAdditionalTodayByBranch(runDate);
+  }
+
+  @override
+  Future<int> fetchAdditionalMonthByBranch(String branch) {
+    return remote.fetchAdditionalMonthByBranch(branch);
+  }
+
+  @override
+  Future<int> fetchAdditionalTodayByBranchExact(String branch) {
+    return remote.fetchAdditionalTodayByBranchExact(branch);
   }
 }

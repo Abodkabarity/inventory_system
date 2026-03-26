@@ -193,3 +193,79 @@ class OrdersSubmitOrderPressed extends OrdersEvent {
 class OrdersLoadAdditionalTracking extends OrdersEvent {
   const OrdersLoadAdditionalTracking();
 }
+// ==========================
+// MISMATCH
+// ==========================
+
+class OrdersLoadMismatch extends OrdersEvent {
+  const OrdersLoadMismatch();
+}
+
+class OrdersAddMismatch extends OrdersEvent {
+  final Map<String, dynamic> data;
+  const OrdersAddMismatch(this.data);
+
+  @override
+  List<Object?> get props => [data];
+}
+
+class OrdersUpdateMismatch extends OrdersEvent {
+  final String id;
+  final num system;
+  final num actual;
+  final Map old;
+
+  const OrdersUpdateMismatch({
+    required this.id,
+    required this.system,
+    required this.actual,
+    required this.old,
+  });
+
+  @override
+  List<Object?> get props => [id, system, actual, old];
+}
+
+class OrdersDeleteMismatch extends OrdersEvent {
+  final String id;
+  const OrdersDeleteMismatch(this.id);
+
+  @override
+  List<Object?> get props => [id];
+}
+
+class OrdersSearchMismatchItems extends OrdersEvent {
+  final String query;
+  const OrdersSearchMismatchItems(this.query);
+
+  @override
+  List<Object?> get props => [query];
+}
+
+class OrdersToggleMismatchEdit extends OrdersEvent {
+  final String id;
+  const OrdersToggleMismatchEdit(this.id);
+
+  @override
+  List<Object?> get props => [id];
+}
+
+class OrdersSearchMismatchList extends OrdersEvent {
+  final String query;
+  const OrdersSearchMismatchList(this.query);
+
+  @override
+  List<Object?> get props => [query];
+}
+
+class OrdersSearchMismatchItemsCode extends OrdersEvent {
+  final String query;
+  const OrdersSearchMismatchItemsCode(this.query);
+}
+
+class OrdersSearchMismatchItemsName extends OrdersEvent {
+  final String query;
+  const OrdersSearchMismatchItemsName(this.query);
+}
+
+class OrdersClearMismatchResult extends OrdersEvent {}

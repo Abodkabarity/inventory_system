@@ -13,7 +13,7 @@ class OrdersRepositoryImpl implements OrdersRepository {
   Future<List<DailyOrderRow>> fetchOrdersAll({
     required String runDate,
     required String branchName,
-    int batchSize = 5000,
+    int batchSize = 2000,
     void Function(int loaded)? onProgress,
   }) async {
     final raw = await remote.fetchOrdersAll(
@@ -160,5 +160,45 @@ class OrdersRepositoryImpl implements OrdersRepository {
       runDate: runDate,
       branchName: branchName,
     );
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchMismatch({required String branch}) {
+    return remote.fetchMismatch(branch: branch);
+  }
+
+  @override
+  Future<void> insertMismatch(Map<String, dynamic> data) {
+    return remote.insertMismatch(data);
+  }
+
+  @override
+  Future<void> updateMismatch({
+    required String id,
+    required num system,
+    required num actual,
+    required Map old,
+  }) {
+    return remote.updateMismatch(
+      id: id,
+      system: system,
+      actual: actual,
+      old: old,
+    );
+  }
+
+  @override
+  Future<void> deleteMismatch(String id) {
+    return remote.deleteMismatch(id);
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> searchItemsByCode(String query) {
+    return remote.searchItemsByCode(query);
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> searchItemsByName(String query) {
+    return remote.searchItemsByName(query);
   }
 }

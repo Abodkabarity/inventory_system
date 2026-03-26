@@ -9,7 +9,8 @@ class InventoryState extends Equatable {
   final String? selectedBranch;
 
   final List<InventoryEditItem> edits;
-
+  final Map<String, int> additionalMonthBranchCount;
+  final Map<String, int> additionalTodayBranchExactCount;
   final List<AdditionalRequestGroup> additionalRequests;
 
   final int submittedCount;
@@ -47,6 +48,8 @@ class InventoryState extends Equatable {
     required this.isLoading,
     required this.editsCount,
     required this.additionalTodayBranchCount,
+    required this.additionalMonthBranchCount,
+    required this.additionalTodayBranchExactCount,
   });
 
   factory InventoryState.initial() {
@@ -55,6 +58,8 @@ class InventoryState extends Equatable {
       selectedBranch: null,
       edits: [],
       editsCount: {},
+      additionalMonthBranchCount: {},
+      additionalTodayBranchExactCount: {},
       additionalTodayBranchCount: {},
       additionalRequests: [],
       submittedCount: 0,
@@ -79,6 +84,8 @@ class InventoryState extends Equatable {
     int? additionalSentToStoreCount,
     int? additionalTodayCount,
     int? additionalMonthCount,
+    Map<String, int>? additionalMonthBranchCount,
+    Map<String, int>? additionalTodayBranchExactCount,
     Map<String, int>? editsCount,
     Map<String, int>? additionalTodayBranchCount,
     List<String>? submittedBranches,
@@ -102,6 +109,12 @@ class InventoryState extends Equatable {
       additionalTodayBranchCount:
           additionalTodayBranchCount ?? this.additionalTodayBranchCount,
       isLoading: isLoading ?? this.isLoading,
+      additionalMonthBranchCount:
+          additionalMonthBranchCount ?? this.additionalMonthBranchCount,
+
+      additionalTodayBranchExactCount:
+          additionalTodayBranchExactCount ??
+          this.additionalTodayBranchExactCount,
     );
   }
 
@@ -121,5 +134,7 @@ class InventoryState extends Equatable {
     editsCount,
     additionalTodayBranchCount,
     isLoading,
+    additionalMonthBranchCount,
+    additionalTodayBranchExactCount,
   ];
 }

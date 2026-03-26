@@ -8,6 +8,7 @@ import '../bloc/order_bloc/orders_state.dart';
 import '../final_reorder/widgets/final_reorder_side_panel.dart';
 import '../widgets/additional_request_side_panel.dart';
 import '../widgets/additional_requests_tracking_dialog.dart';
+import '../widgets/mismatch_side_panel.dart';
 import '../widgets/review_changes_dialog.dart';
 
 class BranchOrdersActions {
@@ -23,6 +24,27 @@ class BranchOrdersActions {
         value: bloc,
         child: const AdditionalTrackingDialog(),
       ),
+    );
+  }
+
+  static Future<void> openMismatchPanel(BuildContext context) async {
+    await showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Mismatch',
+      barrierColor: Colors.black.withOpacity(0.2),
+      pageBuilder: (_, __, ___) {
+        return Align(
+          alignment: Alignment.centerRight,
+          child: BlocProvider.value(
+            value: context.read<OrdersBloc>(),
+            child: const Material(
+              color: Colors.transparent,
+              child: MismatchSidePanel(),
+            ),
+          ),
+        );
+      },
     );
   }
 

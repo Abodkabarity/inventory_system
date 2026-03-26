@@ -170,15 +170,20 @@ class OrdersState extends Equatable {
   final String branchName;
 
   final String search;
-
+  // ==========================
+  // MISMATCH
+  // ==========================
+  final List<Map<String, dynamic>> mismatchItems;
+  final List<Map<String, dynamic>> mismatchSuggestions;
+  final String? editingMismatchId;
   final List<DailyOrderRow> rows;
   final List<DailyOrderRow> viewRows;
-
+  final String mismatchSearch;
   final int progress;
   final String? progressMessage;
 
   final String? error;
-
+  final bool isMismatchLoading;
   final Map<String, List<Map<String, dynamic>>> sentAdditionalHistoryByItemCode;
 
   final Set<String> visibleColumns;
@@ -189,7 +194,7 @@ class OrdersState extends Equatable {
   final String formularyFilter;
   final bool nonWithSales45Only;
   final bool numericFinalOnly;
-
+  final bool? lastActionSuccess;
   final Map<String, FinalReorderEdit> finalEdits;
 
   // additional requests (local draft)
@@ -205,7 +210,7 @@ class OrdersState extends Equatable {
   final String submissionStatus; // draft/submitted
 
   final String? selectedItemCode;
-
+  final bool? showMismatchResult;
   // tracking list (flat list of requests rows)
   final List<AdditionalRequestRow> additionalTrackingRows;
 
@@ -234,6 +239,13 @@ class OrdersState extends Equatable {
     this.selectedItemCode,
     this.progressMessage,
     this.error,
+    required this.mismatchItems,
+    required this.mismatchSuggestions,
+    this.editingMismatchId,
+    required this.mismatchSearch,
+    this.lastActionSuccess,
+    this.showMismatchResult,
+    required this.isMismatchLoading,
   });
 
   static const List<String> defaultVisibleInTable = [
@@ -352,6 +364,10 @@ class OrdersState extends Equatable {
       progress: 0,
       progressMessage: null,
       error: null,
+      mismatchItems: const [],
+      mismatchSuggestions: const [],
+      editingMismatchId: null,
+      isMismatchLoading: false,
       visibleColumns: defaultVisibleInTable.toSet(),
       columnOrder: defaultColumnOrder,
       columnWidths: defaultColumnWidths(allKeys),
@@ -359,6 +375,8 @@ class OrdersState extends Equatable {
       formularyFilter: 'ALL',
       nonWithSales45Only: false,
       numericFinalOnly: true,
+      lastActionSuccess: false,
+      showMismatchResult: false,
       finalEdits: const {},
       additionalEdits: const {},
       sentAdditionalHistoryByItemCode: const {},
@@ -367,6 +385,7 @@ class OrdersState extends Equatable {
       submissionStatus: 'draft',
       selectedItemCode: null,
       additionalTrackingRows: const [],
+      mismatchSearch: '',
     );
   }
 
@@ -417,6 +436,7 @@ class OrdersState extends Equatable {
     Map<String, List<Map<String, dynamic>>>? sentAdditionalHistoryByItemCode,
     String? progressMessage,
     String? error,
+    bool? showMismatchResult,
     Set<String>? visibleColumns,
     List<String>? columnOrder,
     Map<String, double>? columnWidths,
@@ -424,12 +444,18 @@ class OrdersState extends Equatable {
     String? formularyFilter,
     bool? nonWithSales45Only,
     bool? numericFinalOnly,
+    bool? isMismatchLoading,
+    bool? lastActionSuccess,
+    List<Map<String, dynamic>>? mismatchItems,
+    List<Map<String, dynamic>>? mismatchSuggestions,
+    String? editingMismatchId,
     Map<String, FinalReorderEdit>? finalEdits,
     Map<String, AdditionalRequestEdit>? additionalEdits,
     Map<String, num>? sentAdditionalQtyByItemCode,
     bool? additionalOnly,
     String? submissionStatus,
     String? selectedItemCode,
+    String? mismatchSearch,
     List<AdditionalRequestRow>? additionalTrackingRows,
   }) {
     return OrdersState(
@@ -461,6 +487,13 @@ class OrdersState extends Equatable {
           this.sentAdditionalHistoryByItemCode,
       additionalTrackingRows:
           additionalTrackingRows ?? this.additionalTrackingRows,
+      mismatchItems: mismatchItems ?? this.mismatchItems,
+      mismatchSuggestions: mismatchSuggestions ?? this.mismatchSuggestions,
+      editingMismatchId: editingMismatchId ?? this.editingMismatchId,
+      mismatchSearch: mismatchSearch ?? this.mismatchSearch,
+      lastActionSuccess: lastActionSuccess ?? this.lastActionSuccess,
+      showMismatchResult: showMismatchResult ?? this.showMismatchResult,
+      isMismatchLoading: isMismatchLoading ?? this.isMismatchLoading,
     );
   }
 
@@ -480,6 +513,9 @@ class OrdersState extends Equatable {
     columnWidths,
     categoryFilter,
     formularyFilter,
+    mismatchItems,
+    mismatchSuggestions,
+    editingMismatchId,
     nonWithSales45Only,
     numericFinalOnly,
     finalEdits,
@@ -490,5 +526,9 @@ class OrdersState extends Equatable {
     submissionStatus,
     selectedItemCode,
     additionalTrackingRows,
+    mismatchSearch,
+    lastActionSuccess,
+    showMismatchResult,
+    isMismatchLoading,
   ];
 }

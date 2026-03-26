@@ -49,7 +49,6 @@ class _InventoryAdditionalHistoryDialogState
       context: context,
       builder: (context) {
         return Dialog(
-          backgroundColor: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
@@ -79,27 +78,6 @@ class _InventoryAdditionalHistoryDialogState
 
                 const SizedBox(height: 10),
 
-                /// RANGE DISPLAY
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.date_range),
-                      const SizedBox(width: 10),
-                      Text(
-                        "${DateFormat("dd MMM yyyy").format(values.first!)}  →  ${DateFormat("dd MMM yyyy").format(values.last!)}",
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                /// CALENDAR
                 CalendarDatePicker2(
                   config: CalendarDatePicker2Config(
                     calendarType: CalendarDatePicker2Type.range,
@@ -114,16 +92,12 @@ class _InventoryAdditionalHistoryDialogState
 
                 const Divider(),
 
-                /// BUTTONS
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text(
-                        "Cancel",
-                        style: TextStyle(color: Colors.red),
-                      ),
+                      child: const Text("Cancel"),
                     ),
                     const SizedBox(width: 10),
                     ElevatedButton(
@@ -137,10 +111,7 @@ class _InventoryAdditionalHistoryDialogState
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primaryColor,
                       ),
-                      child: const Text(
-                        "Apply",
-                        style: TextStyle(color: AppColors.white),
-                      ),
+                      child: const Text("Apply"),
                     ),
                   ],
                 ),
@@ -165,7 +136,7 @@ class _InventoryAdditionalHistoryDialogState
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       backgroundColor: Colors.grey.shade100,
       child: Container(
-        width: 760,
+        width: 780,
         height: 520,
         padding: const EdgeInsets.all(22),
         child: Column(
@@ -212,7 +183,6 @@ class _InventoryAdditionalHistoryDialogState
                           const SizedBox(width: 10),
                           Text(
                             "${DateFormat('yyyy-MM-dd').format(from)} → ${DateFormat('yyyy-MM-dd').format(to)}",
-                            style: const TextStyle(fontSize: 13),
                           ),
                         ],
                       ),
@@ -227,10 +197,7 @@ class _InventoryAdditionalHistoryDialogState
                     controller: searchController,
                     decoration: InputDecoration(
                       hintText: "Search item / code",
-                      prefixIcon: const Icon(
-                        Icons.search,
-                        color: AppColors.primaryColor,
-                      ),
+                      prefixIcon: const Icon(Icons.search),
                       filled: true,
                       fillColor: AppColors.white,
                       border: OutlineInputBorder(
@@ -249,18 +216,23 @@ class _InventoryAdditionalHistoryDialogState
             Expanded(
               child: BlocBuilder<InventoryBloc, InventoryState>(
                 builder: (context, state) {
-                  var list = state.additionalRequests
-                      .where((e) => e.branchName == widget.branch)
-                      .toList();
+                  var list = state.additionalRequests.where((e) {
+                    if (e.branchName != widget.branch) return false;
 
-                  final query = searchController.text.toLowerCase();
+                    if (e.createdAt.isBefore(from)) return false;
 
-                  if (query.isNotEmpty) {
-                    list = list.where((e) {
-                      return e.itemNames.toLowerCase().contains(query) ||
-                          e.itemCodes.toLowerCase().contains(query);
-                    }).toList();
-                  }
+                    if (e.createdAt.isAfter(to)) return false;
+
+                    final q = searchController.text.toLowerCase();
+
+                    if (q.isNotEmpty &&
+                        !e.itemNames.toLowerCase().contains(q) &&
+                        !e.itemCodes.toLowerCase().contains(q)) {
+                      return false;
+                    }
+
+                    return true;
+                  }).toList();
 
                   if (list.isEmpty) {
                     return const Center(child: Text("No orders found"));
@@ -270,7 +242,19 @@ class _InventoryAdditionalHistoryDialogState
                     itemCount: list.length,
                     itemBuilder: (context, i) {
                       final r = list[i];
-                      return _historyCard(r);
+
+                      return GestureDetector(
+                        onTap: () {
+                          showDialog(
+                            context: context,
+                            builder: (_) => InventoryAdditionalRequestDialog(
+                              groupId: r.groupId,
+                              branch: widget.branch,
+                            ),
+                          );
+                        },
+                        child: _historyCard(r),
+                      );
                     },
                   );
                 },
@@ -282,57 +266,95 @@ class _InventoryAdditionalHistoryDialogState
     );
   }
 
+  /// CARD DESIGN
+
   Widget _historyCard(dynamic r) {
-    Color statusColor;
-    String statusText;
+    Color color;
+    String text;
 
     switch (r.status) {
+      case "pending_inventory":
+        color = Colors.orange;
+        text = "PENDING INVENTORY";
+        break;
+
       case "sent_to_store":
-        statusColor = Colors.green;
-        statusText = "SENT";
+        color = Colors.blue;
+        text = "SENT TO STORE";
+        break;
+
+      case "done":
+        color = Colors.green;
+        text = "DONE";
         break;
 
       case "rejected":
-        statusColor = Colors.red;
-        statusText = "REJECTED";
+        color = Colors.red;
+        text = "REJECTED";
         break;
 
       default:
-        statusColor = Colors.orange;
-        statusText = "PENDING";
+        color = Colors.grey;
+        text = r.status;
     }
 
-    return Card(
-      elevation: 3,
-      margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
-        title: Text(
-          r.itemNames,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        subtitle: Text(
-          "${r.itemCodes}\n${DateFormat("yyyy-MM-dd HH:mm").format(r.createdAt)}",
-        ),
-        trailing: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: statusColor,
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Text(
-            statusText,
-            style: const TextStyle(color: Colors.white, fontSize: 11),
-          ),
-        ),
-        onTap: () {
-          showDialog(
-            context: context,
-            builder: (_) => InventoryAdditionalRequestDialog(
-              groupId: r.groupId,
-              branch: widget.branch,
+    final itemsCount = r.itemCodes == null || r.itemCodes.isEmpty
+        ? r.itemsCount
+        : r.itemCodes.split(',').length;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade200,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.add_circle_outline),
+
+          const SizedBox(width: 12),
+
+          /// ORDER INFO
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "${r.branchName} Additional Order",
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                Text(DateFormat("yyyy-MM-dd HH:mm").format(r.createdAt)),
+              ],
             ),
-          );
-        },
+          ),
+
+          /// ITEMS COUNT
+          Text(
+            "$itemsCount items",
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+
+          const SizedBox(width: 12),
+
+          /// STATUS
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
