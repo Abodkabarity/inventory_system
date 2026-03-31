@@ -26,6 +26,10 @@ class ColumnsPanel extends StatelessWidget {
             final all = s.columnOrder;
             final visible = s.visibleColumns;
 
+            final filtered = all
+                .where((k) => k != 'additional_request')
+                .toList();
+
             return Column(
               children: [
                 _Header(
@@ -37,10 +41,11 @@ class ColumnsPanel extends StatelessWidget {
                   ),
                 ),
                 const Divider(height: 1),
+
                 Expanded(
                   child: ReorderableListView.builder(
                     padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
-                    itemCount: all.length,
+                    itemCount: filtered.length,
                     onReorder: (oldIndex, newIndex) {
                       context.read<OrdersBloc>().add(
                         OrdersReorderColumns(
@@ -50,7 +55,7 @@ class ColumnsPanel extends StatelessWidget {
                       );
                     },
                     itemBuilder: (context, index) {
-                      final key = all[index];
+                      final key = filtered[index];
 
                       final title =
                           OrdersTable.titles[key] ??

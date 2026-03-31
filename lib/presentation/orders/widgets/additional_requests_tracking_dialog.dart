@@ -1,6 +1,8 @@
+import 'package:calendar_date_picker2/calendar_date_picker2.dart';
 import 'package:daily_order/core/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../bloc/order_bloc/orders_bloc.dart';
 import '../bloc/order_bloc/orders_event.dart';
@@ -66,21 +68,36 @@ class _DialogBodyState extends State<_DialogBody> {
     return _TrackKey.unknown;
   }
 
-  bool _matchTab(AdditionalRequestRow r, TrackTab tab) {
+  bool _matchTab(AdditionalRequestRow r, TrackTab tab, DateTimeRange? range) {
     final k = _keyOfStatus(r.status);
+    final isPending = k == _TrackKey.pending;
 
     switch (tab) {
-      case TrackTab.all:
-        return true;
       case TrackTab.pending:
-        return k == _TrackKey.pending;
+        if (!isPending) return false;
+        break;
       case TrackTab.sent:
-        return k == _TrackKey.sent;
+        if (k != _TrackKey.sent) return false;
+        break;
       case TrackTab.done:
-        return k == _TrackKey.done;
+        if (k != _TrackKey.done) return false;
+        break;
       case TrackTab.rejected:
-        return k == _TrackKey.rejected;
+        if (k != _TrackKey.rejected) return false;
+        break;
+      case TrackTab.all:
+        break;
     }
+
+    if (!isPending && range != null) {
+      final d = r.createdAt;
+
+      if (d.isBefore(range.start) || d.isAfter(range.end)) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   bool _matchQuery(AdditionalRequestRow r, String qLower) {
@@ -117,6 +134,97 @@ class _DialogBodyState extends State<_DialogBody> {
     );
   }
 
+  DateTime? from;
+  DateTime? to;
+  Future<void> pickDateRange() async {
+    final cubit = context.read<TrackingFilterCubit>();
+
+    List<DateTime?> values = [from, to];
+
+    final result = await showDialog<List<DateTime?>>(
+      context: context,
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Container(
+            width: 480.w,
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  "Select Date Range",
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+
+                const SizedBox(height: 16),
+
+                CalendarDatePicker2(
+                  config: CalendarDatePicker2Config(
+                    calendarType: CalendarDatePicker2Type.range,
+                    selectedDayHighlightColor: AppColors.primaryColor,
+                    selectedRangeHighlightColor: AppColors.primaryColor,
+                  ),
+                  value: values,
+                  onValueChanged: (dates) {
+                    values = dates;
+                  },
+                ),
+
+                const SizedBox(height: 10),
+
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      child: const Text(
+                        "Cancel",
+                        style: TextStyle(color: AppColors.secondaryColor),
+                      ),
+                    ),
+                    SizedBox(width: 10,),
+                    ElevatedButton(
+                      onPressed: () {
+                        if (values.length >= 2 &&
+                            values.first != null &&
+                            values.last != null) {
+                          Navigator.pop(dialogContext, values);
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryColor,
+                      ),
+                      child: const Text(
+                        "Apply",
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (result == null) return;
+
+    final fromDate = result.first!;
+    final toDate = result.last!;
+
+    setState(() {
+      from = fromDate;
+      to = toDate;
+    });
+
+    cubit.setDateRange(DateTimeRange(start: fromDate, end: toDate));
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -125,7 +233,7 @@ class _DialogBodyState extends State<_DialogBody> {
       insetPadding: const EdgeInsets.all(18),
       backgroundColor: Colors.transparent,
       child: Container(
-        constraints: const BoxConstraints(maxWidth: 980, maxHeight: 760),
+        constraints: BoxConstraints(maxWidth: 1200.w, maxHeight: 850.h),
         decoration: BoxDecoration(
           color: cs.surface,
           borderRadius: BorderRadius.circular(18),
@@ -151,11 +259,12 @@ class _DialogBodyState extends State<_DialogBody> {
                 final qLower = fs.query.toLowerCase().trim();
 
                 final filtered = base
-                    .where((r) => _matchTab(r, fs.tab))
+                    .where((r) => _matchTab(r, fs.tab, fs.dateRange))
                     .where((r) => _matchQuery(r, qLower))
                     .toList();
 
                 return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _TrackHeader(
                       title: 'Additional Requests Tracking',
@@ -171,6 +280,7 @@ class _DialogBodyState extends State<_DialogBody> {
                       rejected: counts.rejected,
                       modified: s.trackingModifiedQty,
                     ),
+
                     const Divider(height: 1),
                     Padding(
                       padding: const EdgeInsets.all(14),
@@ -212,6 +322,40 @@ class _DialogBodyState extends State<_DialogBody> {
                                   ),
                                   borderRadius: BorderRadius.circular(14),
                                 ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          InkWell(
+                            onTap: pickDateRange,
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
+
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: const Color(0xFFE6E8F0),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.date_range, size: 18),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    from == null
+                                        ? "Select Date"
+                                        : "${from!.day}/${from!.month} - ${to!.day}/${to!.month}",
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),

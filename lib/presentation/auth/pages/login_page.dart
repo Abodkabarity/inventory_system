@@ -21,7 +21,7 @@ class _LoginPageState extends State<LoginPage> {
   final emailC = TextEditingController();
   final passC = TextEditingController();
 
-  bool _navigated = false; // ✅ يمنع تكرار go('/home')
+  bool _navigated = false;
 
   @override
   void dispose() {
@@ -94,7 +94,6 @@ class _LoginPageState extends State<LoginPage> {
                             onPressed: loading
                                 ? null
                                 : () {
-                                    // إذا بدك من الحقول:
                                     // final email = emailC.text.trim();
                                     // final pass = passC.text;
 

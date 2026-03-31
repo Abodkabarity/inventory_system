@@ -5,6 +5,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:stream_transform/stream_transform.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../../core/utils/excel_exporter.dart';
+import '../../../../core/utils/order_row_mapper.dart';
 import '../../../../domain/entities/daily_order_row.dart';
 import '../../../../domain/repositories/orders_repository.dart';
 import '../../../../domain/usecases/fetch_orders_all.dart';
@@ -76,6 +78,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     on<OrdersAddMaxAdj>(_onAddMaxAdj);
     on<OrdersDeleteMaxAdj>(_onDeleteMaxAdj);
     on<OrdersSearchMaxAdjList>(_onSearchMaxAdjList);
+    on<OrdersExportPressed>(_onExportPressed);
   }
 
   @override
@@ -204,11 +207,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
 
       // Show additional_request column ONLY if submitted
       final nextVisible = Set<String>.from(state.visibleColumns);
-      if (submissionStatus.trim().toLowerCase() == 'submitted') {
-        nextVisible.add('additional_request');
-      } else {
-        nextVisible.remove('additional_request');
-      }
+      nextVisible.add('additional_request');
 
       emit(
         state.copyWith(
@@ -241,13 +240,31 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       );
 
       final searched = _applySearch(baseRows, state.search);
+      final orderDays = await repo.fetchBranchOrderDays(
+        branchName: state.branchName,
+      );
 
+      final today = DateTime.parse(state.runDate).weekday;
+
+      const map = {
+        1: 'Monday',
+        2: 'Tuesday',
+        3: 'Wednesday',
+        4: 'Thursday',
+        5: 'Friday',
+        6: 'Saturday',
+        7: 'Sunday',
+      };
+
+      final todayName = map[today];
+
+      final isOrderDay = orderDays.contains(todayName);
       final view = _applyUiFilters(
         rows: searched,
         categoryFilter: state.categoryFilter,
         formularyFilter: state.formularyFilter,
         nonWithSales45Only: state.nonWithSales45Only,
-        numericFinalOnly: state.numericFinalOnly,
+        numericFinalOnly: state.isSubmitted ? false : state.numericFinalOnly,
         additionalOnly: state.additionalOnly,
         additionalEdits: state.additionalEdits,
         sentAdditionalQtyByItemCode: sentAdditional,
@@ -260,6 +277,8 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
           progressMessage: 'Done ${baseRows.length}/${baseRows.length}',
           rows: baseRows,
           viewRows: view,
+          isOrderDay: isOrderDay,
+
           error: null,
         ),
       );
@@ -277,7 +296,6 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
   ) async {
     try {
       final raw = await repo.fetchAdditionalRequestsTrackingForBranch(
-        runDate: state.runDate,
         branchName: state.branchName,
       );
       final rows = raw.map(AdditionalRequestRow.fromMap).toList();
@@ -329,6 +347,10 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     OrdersSetColumnVisible e,
     Emitter<OrdersState> emit,
   ) {
+    if (e.columnKey == 'additional_request' && !e.visible) {
+      return;
+    }
+
     final next = Set<String>.from(state.visibleColumns);
 
     if (e.visible) {
@@ -517,6 +539,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
 
     bool matchNumericFinalOnly(DailyOrderRow r) {
       if (!numericFinalOnly) return true;
+
       return _isStrictNumericFinalReorder(r.finalReorderQtyStoreStockGt0);
     }
 
@@ -768,6 +791,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     OrdersSubmitOrderPressed e,
     Emitter<OrdersState> emit,
   ) async {
+    if (!state.isOrderDay) return;
     final zone = e.zone.trim();
     if (zone.isEmpty) return;
     if (state.branchName.trim().isEmpty) return;
@@ -829,11 +853,25 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       final nextVisible = Set<String>.from(state.visibleColumns);
       nextVisible.add('additional_request');
 
+      // 🔥 4) IMPORTANT: turn OFF numeric filter + rebuild view
+      final view = _applyUiFilters(
+        rows: _applySearch(state.rows, state.search),
+        categoryFilter: state.categoryFilter,
+        formularyFilter: state.formularyFilter,
+        nonWithSales45Only: state.nonWithSales45Only,
+        numericFinalOnly: false,
+        additionalOnly: state.additionalOnly,
+        additionalEdits: state.additionalEdits,
+        sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
+      );
+
       emit(
         state.copyWith(
           status: OrdersStatus.ready,
           submissionStatus: 'submitted',
           visibleColumns: nextVisible,
+          numericFinalOnly: false,
+          viewRows: view,
           progressMessage: 'Submitted',
         ),
       );
@@ -866,8 +904,6 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     emit(state.copyWith(isMismatchLoading: true));
 
     try {
-      final res = await repo.insertMismatch(e.data);
-
       final newList = await repo.fetchMismatch(branch: state.branchName);
 
       emit(
@@ -1031,5 +1067,40 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     Emitter<OrdersState> emit,
   ) {
     emit(state.copyWith(maxAdjSearch: e.query));
+  }
+
+  Future<void> _onExportPressed(
+    OrdersExportPressed e,
+    Emitter<OrdersState> emit,
+  ) async {
+    emit(state.copyWith(isExporting: true));
+
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    try {
+      final columns = state.columnOrder
+          .where((c) => state.visibleColumns.contains(c))
+          .toList();
+
+      final rows = state.viewRows.map((r) {
+        final map = <String, dynamic>{};
+
+        for (final col in columns) {
+          map[col] = OrderRowMapper.getValue(
+            r,
+            col,
+            state.sentAdditionalQtyByItemCode,
+          );
+        }
+
+        return map;
+      }).toList();
+
+      await ExcelExporter.exportOrdersWeb(rows: rows, columns: columns);
+
+      emit(state.copyWith(isExporting: false));
+    } catch (e) {
+      emit(state.copyWith(isExporting: false));
+    }
   }
 }

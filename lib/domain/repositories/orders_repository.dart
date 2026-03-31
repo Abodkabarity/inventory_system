@@ -73,7 +73,7 @@ abstract class OrdersRepository {
 
   // tracking list (flat rows with status/fulfilled/store_note)
   Future<List<Map<String, dynamic>>> fetchAdditionalRequestsTrackingForBranch({
-    required String runDate,
+    String? runDate,
     required String branchName,
   });
   Future<List<Map<String, dynamic>>> fetchMismatch({required String branch});
@@ -101,4 +101,5 @@ abstract class OrdersRepository {
   Future<void> insertMaxAdj(Map<String, dynamic> data);
 
   Future<void> deleteMaxAdj(String id);
+  Future<List<String>> fetchBranchOrderDays({required String branchName});
 }

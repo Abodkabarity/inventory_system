@@ -153,7 +153,7 @@ class OrdersRepositoryImpl implements OrdersRepository {
 
   @override
   Future<List<Map<String, dynamic>>> fetchAdditionalRequestsTrackingForBranch({
-    required String runDate,
+    String? runDate,
     required String branchName,
   }) {
     return remote.fetchAdditionalRequestsTrackingForBranch(
@@ -218,5 +218,10 @@ class OrdersRepositoryImpl implements OrdersRepository {
   @override
   Future<void> deleteMaxAdj(String id) {
     return remote.deleteMaxAdj(id);
+  }
+
+  @override
+  Future<List<String>> fetchBranchOrderDays({required String branchName}) {
+    return remote.fetchBranchOrderDays(branchName: branchName);
   }
 }

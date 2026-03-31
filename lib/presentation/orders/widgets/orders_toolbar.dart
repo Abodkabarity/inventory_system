@@ -13,7 +13,7 @@ class OrdersToolbar extends StatefulWidget {
   final VoidCallback addMismatch;
   final VoidCallback addMax;
   final VoidCallback onClearAll;
-
+  final bool isOrderDay;
   final Widget? statusChip;
   final Widget? extraLeft;
   final List<Widget> actions;
@@ -30,6 +30,7 @@ class OrdersToolbar extends StatefulWidget {
     required this.onClearAll,
     required this.addMismatch,
     required this.addMax,
+    required this.isOrderDay,
   });
 
   @override
@@ -273,33 +274,34 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
                 // ==========================
                 // Columns
                 // ==========================
-                SizedBox(
-                  width: 175.w,
-                  child: OutlinedButton.icon(
-                    onPressed: widget.onOpenColumns,
-                    icon: const Icon(
-                      Icons.view_column_outlined,
-                      color: Colors.white,
-                    ),
-                    label: const Text(
-                      'Add Columns',
-                      style: TextStyle(
-                        color: AppColors.white,
-                        fontWeight: FontWeight.bold,
+                if (widget.isOrderDay)
+                  SizedBox(
+                    width: 175.w,
+                    child: OutlinedButton.icon(
+                      onPressed: widget.onOpenColumns,
+                      icon: const Icon(
+                        Icons.view_column_outlined,
+                        color: Colors.white,
                       ),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      backgroundColor: Colors.deepPurple,
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 14.w,
-                        vertical: 12.h,
+                      label: const Text(
+                        'Add Columns',
+                        style: TextStyle(
+                          color: AppColors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: Colors.deepPurple,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 14.w,
+                          vertical: 12.h,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                       ),
                     ),
                   ),
-                ),
                 const SizedBox(width: 6),
                 SizedBox(
                   width: 175.w,

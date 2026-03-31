@@ -54,7 +54,7 @@ class BranchOrdersActions {
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Max',
-      barrierColor: Colors.black.withOpacity(0.2),
+      barrierColor: Colors.black.withValues(alpha: 0.2),
       pageBuilder: (_, __, ___) {
         return Align(
           alignment: Alignment.centerRight,

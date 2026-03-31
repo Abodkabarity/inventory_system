@@ -340,7 +340,7 @@ store_item_classifications
   // NEW: Tracking list for branch
   // ==========================
   Future<List<Map<String, dynamic>>> fetchAdditionalRequestsTrackingForBranch({
-    required String runDate,
+    String? runDate,
     required String branchName,
   }) async {
     const cols = '''
@@ -358,12 +358,16 @@ done_at
 ''';
 
     final list = await _retryOnTimeout<List<Map<String, dynamic>>>(() async {
-      final res = await client
+      PostgrestFilterBuilder query = client
           .from('additional_requests')
           .select(cols)
-          .eq('run_date', runDate)
-          .eq('branch_name', branchName)
-          .order('created_at', ascending: false);
+          .eq('branch_name', branchName);
+
+      if (runDate != null) {
+        query = query.eq('run_date', runDate);
+      }
+
+      final res = await query.order('created_at', ascending: false);
 
       return (res as List).cast<Map<String, dynamic>>();
     });
@@ -565,5 +569,21 @@ done_at
 
   Future<void> deleteMaxAdj(String id) async {
     await client.from('max_adj').delete().eq('id', id);
+  }
+
+  Future<List<String>> fetchBranchOrderDays({
+    required String branchName,
+  }) async {
+    final res = await client
+        .from('branches')
+        .select('order_days')
+        .eq('branch_name', branchName)
+        .maybeSingle();
+
+    if (res == null) return [];
+
+    final list = res['order_days'] as List<dynamic>? ?? [];
+
+    return list.map((e) => e.toString()).toList();
   }
 }
