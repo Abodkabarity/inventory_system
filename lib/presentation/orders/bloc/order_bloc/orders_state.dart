@@ -209,12 +209,12 @@ class OrdersState extends Equatable {
 
   // submission status
   final String submissionStatus; // draft/submitted
-
+  final bool isExporting;
   final String? selectedItemCode;
   final bool? showMismatchResult;
   // tracking list (flat list of requests rows)
   final List<AdditionalRequestRow> additionalTrackingRows;
-
+  final bool isOrderDay;
   const OrdersState({
     required this.status,
     required this.runDate,
@@ -250,6 +250,8 @@ class OrdersState extends Equatable {
     required this.maxAdjItems,
     required this.isMaxAdjLoading,
     required this.maxAdjSearch,
+    required this.isExporting,
+    required this.isOrderDay,
   });
 
   static const List<String> defaultVisibleInTable = [
@@ -373,6 +375,7 @@ class OrdersState extends Equatable {
       editingMismatchId: null,
       maxAdjSearch: '',
       isMismatchLoading: false,
+      isExporting: false,
       visibleColumns: defaultVisibleInTable.toSet(),
       columnOrder: defaultColumnOrder,
       columnWidths: defaultColumnWidths(allKeys),
@@ -383,6 +386,7 @@ class OrdersState extends Equatable {
       lastActionSuccess: false,
       showMismatchResult: false,
       finalEdits: const {},
+      isOrderDay: true,
       additionalEdits: const {},
       sentAdditionalHistoryByItemCode: const {},
       sentAdditionalQtyByItemCode: const {},
@@ -454,6 +458,8 @@ class OrdersState extends Equatable {
     bool? numericFinalOnly,
     bool? isMismatchLoading,
     bool? lastActionSuccess,
+    bool? isExporting,
+    bool? isOrderDay,
     List<Map<String, dynamic>>? mismatchItems,
     List<Map<String, dynamic>>? mismatchSuggestions,
     String? editingMismatchId,
@@ -507,6 +513,8 @@ class OrdersState extends Equatable {
       maxAdjItems: maxAdjItems ?? this.maxAdjItems,
       isMaxAdjLoading: isMaxAdjLoading ?? this.isMaxAdjLoading,
       maxAdjSearch: maxAdjSearch ?? this.maxAdjSearch,
+      isExporting: isExporting ?? this.isExporting,
+      isOrderDay: isOrderDay ?? this.isOrderDay,
     );
   }
 
@@ -546,5 +554,7 @@ class OrdersState extends Equatable {
     maxAdjItems,
     isMaxAdjLoading,
     maxAdjSearch,
+    isExporting,
+    isOrderDay,
   ];
 }

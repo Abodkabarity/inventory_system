@@ -3,13 +3,13 @@ import '../bloc/order_bloc/orders_state.dart';
 
 class BranchStats {
   final int totalProducts;
-  final num sumFinalReorder;
+  final int finalReorderCount;
   final int essential;
   final int non;
 
   const BranchStats({
     required this.totalProducts,
-    required this.sumFinalReorder,
+    required this.finalReorderCount,
     required this.essential,
     required this.non,
   });
@@ -21,6 +21,7 @@ class BranchOrdersSelectors {
     final visible = s.visibleColumns;
 
     final out = <String>[];
+
     if (!out.contains('row_no')) out.add('row_no');
 
     for (final k in order) {
@@ -29,6 +30,16 @@ class BranchOrdersSelectors {
 
     if (!out.contains('item_code')) out.insert(1, 'item_code');
     if (!out.contains('item_name')) out.insert(2, 'item_name');
+
+    out.remove('additional_request');
+
+    final index = out.indexOf('final_reorder_qty_store_stock_gt_0');
+
+    if (index != -1) {
+      out.insert(index + 1, 'additional_request');
+    } else {
+      out.add('additional_request');
+    }
 
     return out;
   }
@@ -48,10 +59,14 @@ class BranchOrdersSelectors {
   static BranchStats calcStats(List<DailyOrderRow> rows) {
     int essential = 0;
     int non = 0;
-    num sumFinal = 0;
+    int finalReorderCount = 0;
 
     for (final row in rows) {
-      sumFinal += extractNumeric(row.finalReorderQtyStoreStockGt0);
+      final value = extractNumeric(row.finalReorderQtyStoreStockGt0);
+
+      if (value > 0) {
+        finalReorderCount++;
+      }
 
       final f = (row.branchFormulary ?? '').trim().toUpperCase();
       if (f == 'ESSENTIAL') essential++;
@@ -60,7 +75,7 @@ class BranchOrdersSelectors {
 
     return BranchStats(
       totalProducts: rows.length,
-      sumFinalReorder: sumFinal,
+      finalReorderCount: finalReorderCount,
       essential: essential,
       non: non,
     );

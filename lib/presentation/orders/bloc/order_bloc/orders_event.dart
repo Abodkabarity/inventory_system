@@ -292,8 +292,13 @@ class OrdersDeleteMaxAdj extends OrdersEvent {
   @override
   List<Object?> get props => [id];
 }
+
 class OrdersSearchMaxAdjList extends OrdersEvent {
   final String query;
 
   const OrdersSearchMaxAdjList(this.query);
+}
+
+class OrdersExportPressed extends OrdersEvent {
+  const OrdersExportPressed();
 }

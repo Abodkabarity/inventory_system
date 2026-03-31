@@ -38,320 +38,382 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
 
         final statsAll = BranchOrdersSelectors.calcStats(s.rows);
         final categories = BranchOrdersSelectors.extractCategories(s.rows);
-        final orderedColumns = BranchOrdersSelectors.orderedVisibleColumns(s);
-
+        final orderedColumns = s.isOrderDay
+            ? BranchOrdersSelectors.orderedVisibleColumns(s)
+            : [
+                'item_code',
+                'item_name',
+                'branch_stock',
+                'store_stock',
+                'additional_request',
+              ];
         final draftAddCount = s.additionalCount;
         final sentAddCount = s.sentAdditionalQtyByItemCode.length;
 
         return Scaffold(
           backgroundColor: const Color(0xFFF6F7FB),
           endDrawer: const ColumnsPanel(),
-          body: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  BlocBuilder<BranchZoneCubit, BranchZoneState>(
-                    builder: (context, zs) {
-                      return _TopHeader(
-                        title: s.branchName,
-                        subtitle: 'Orders • ${s.runDate}',
-                        right: Row(
-                          children: [
-                            _StatusChip(isSubmitted: s.isSubmitted),
-                            const SizedBox(width: 10),
-                            _ZoneChip(zone: zs.zone),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 14),
-
-                  if (s.isInitial)
-                    Expanded(
-                      child: Center(
-                        child: _GenerateCard(
-                          isBusy: isBusy,
-                          progress: s.progress,
-                          message: s.progressMessage,
-                          error: s.status == OrdersStatus.failure
-                              ? s.error
-                              : null,
-                          onGenerate: () => context.read<OrdersBloc>().add(
-                            const OrdersPressedGenerate(),
-                          ),
-                        ),
-                      ),
-                    )
-                  else ...[
-                    if (s.status == OrdersStatus.generating ||
-                        s.status == OrdersStatus.loading)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _ProgressStrip(
-                          progress: s.progress,
-                          message: s.progressMessage ?? 'Working...',
-                        ),
-                      ),
-                    if (s.status == OrdersStatus.failure && s.error != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Text(
-                          s.error!,
-                          style: const TextStyle(color: Colors.red),
-                        ),
-                      ),
-
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        SizedBox(
-                          width: 320.w,
-                          child: _KpiCard(
-                            title: 'Total Products',
-                            value: statsAll.totalProducts.toString(),
-                            subtitle: 'All APG Items',
-                            icon: Icons.list_alt_outlined,
-                          ),
-                        ),
-                        SizedBox(
-                          width: 320.w,
-                          child: _KpiCard(
-                            title: 'Items in Order',
-                            value: statsAll.sumFinalReorder.round().toString(),
-                            subtitle: '',
-                            icon: Icons.inventory_2_outlined,
-                          ),
-                        ),
-                        SizedBox(
-                          width: 320.w,
-                          child: _KpiCard(
-                            title: 'Essential',
-                            value: '${statsAll.essential}',
-                            subtitle: '',
-                            icon: Icons.star_border,
-                          ),
-                        ),
-                        SizedBox(
-                          width: 320.w,
-                          child: _KpiCard(
-                            title: 'Non',
-                            value: '${statsAll.non}',
-                            subtitle: '',
-                            icon: Icons.layers_outlined,
-                          ),
-                        ),
-                        SizedBox(
-                          width: 320.w,
-                          child: _KpiCard(
-                            title: 'Additional Orders',
-                            value: '$sentAddCount',
-                            subtitle:
-                                'Number of Sent additional requests (today)',
-                            icon: Icons.add_box_outlined,
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    _FiltersBar(
-                      categories: categories,
-                      selectedCategory: s.categoryFilter,
-                      selectedFormulary: s.formularyFilter,
-                      nonWithSales45Only: s.nonWithSales45Only,
-                      numericFinalOnly: s.numericFinalOnly,
-                      additionalOnly: s.additionalOnly,
-                      onCategoryChanged: (v) => context.read<OrdersBloc>().add(
-                        OrdersCategoryChanged(v),
-                      ),
-                      onFormularyChanged: (v) => context.read<OrdersBloc>().add(
-                        OrdersFormularyChanged(v),
-                      ),
-                      onNonWithSales45Changed: (v) => context
-                          .read<OrdersBloc>()
-                          .add(OrdersNonWithSales45Toggled(v)),
-                      onNumericFinalOnlyChanged: (v) => context
-                          .read<OrdersBloc>()
-                          .add(OrdersNumericFinalOnlyToggled(v)),
-                      onAdditionalOnlyChanged: (v) => context
-                          .read<OrdersBloc>()
-                          .add(OrdersAdditionalOnlyToggled(v)),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    BlocSelector<OrdersBloc, OrdersState, String>(
-                      selector: (s) => s.search,
-                      builder: (context, search) {
-                        return BlocBuilder<BranchZoneCubit, BranchZoneState>(
-                          builder: (context, zs) {
-                            final zoneReady =
-                                zs.zone != null && zs.zone!.trim().isNotEmpty;
-
-                            return OrdersToolbar(
-                              search: search,
-                              onSearchChanged: (v) => context
-                                  .read<OrdersBloc>()
-                                  .add(OrdersSearchChanged(v)),
-                              onOpenColumns: () =>
-                                  Scaffold.of(context).openEndDrawer(),
-                              onExport: () {},
-                              statusChip: null,
-                              actions: [
-                                OrdersToolbar.actionButton(
-                                  label: 'Additional Order Track',
-                                  icon: Icons.track_changes_outlined,
-                                  badgeCount: s.trackingPending,
-                                  color: AppColors.primaryColor,
-                                  tooltip: 'Track additional requests status',
-                                  onPressed: (s.isSubmitted && !isBusy)
-                                      ? () =>
-                                            BranchOrdersActions.openTrackingDialog(
-                                              context,
-                                            )
-                                      : null,
+          body: Stack(
+            children: [
+              SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      BlocBuilder<BranchZoneCubit, BranchZoneState>(
+                        builder: (context, zs) {
+                          return _TopHeader(
+                            title: s.branchName,
+                            subtitle: 'Orders • ${s.runDate}',
+                            right: Row(
+                              children: [
+                                _StatusChip(
+                                  isSubmitted: s.isSubmitted,
+                                  isOrderDay: s.isOrderDay,
                                 ),
-                                if (s.hasEdits && !s.isSubmitted)
-                                  SizedBox(width: 6.w),
-                                if (s.hasEdits && !s.isSubmitted)
-                                  OrdersToolbar.actionButton(
-                                    label: 'Review Changes (${s.editsCount})',
-                                    icon: Icons.fact_check_outlined,
-                                    color: AppColors.primaryColor,
-                                    onPressed: () =>
-                                        BranchOrdersActions.openReviewDialog(
-                                          context: context,
-                                          state: s,
-                                        ),
-                                  ),
-                                if (s.isSubmitted) SizedBox(width: 6),
-                                if (s.isSubmitted)
-                                  OrdersToolbar.actionButton(
-                                    label: 'Send Additional ($draftAddCount)',
-                                    icon: Icons.add_box_outlined,
-                                    badgeCount: draftAddCount,
-                                    color: AppColors.secondaryColor,
-                                    onPressed:
-                                        (!zoneReady ||
-                                            s.additionalEdits.isEmpty ||
-                                            isBusy)
-                                        ? null
-                                        : () {
-                                            context.read<OrdersBloc>().add(
-                                              OrdersSendAdditionalRequestsPressed(
-                                                zone: zs.zone!,
-                                              ),
-                                            );
-                                          },
-                                  ),
-                                if (!s.isSubmitted) SizedBox(width: 6),
-                                if (!s.isSubmitted)
-                                  OrdersToolbar.actionButton(
-                                    label: 'Submit',
-                                    icon: Icons.check_circle_outline,
-                                    color: AppColors.secondaryColor,
-                                    onPressed:
-                                        (!zoneReady || s.isSubmitted || isBusy)
-                                        ? null
-                                        : () {
-                                            context.read<OrdersBloc>().add(
-                                              OrdersSubmitOrderPressed(
-                                                zone: zs.zone!,
-                                              ),
-                                            );
-                                          },
-                                  ),
+                                const SizedBox(width: 10),
+                                _ZoneChip(zone: zs.zone),
                               ],
-                              onClearAll: () {
-                                context.read<OrdersBloc>().add(
-                                  const OrdersClearAllFilters(),
-                                );
-                                _grid.resetGridUi();
-                              },
-                              addMismatch: () {
-                                BranchOrdersActions.openMismatchPanel(context);
-                              },
-                              addMax: () {
-                                BranchOrdersActions.openMaxPanel(context);
-                              },
-                            );
-                          },
-                        );
-                      },
-                    ),
-
-                    const SizedBox(height: 10),
-
-                    Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: const Color(0xFFE6E8F0)),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.04),
-                              blurRadius: 18,
-                              offset: const Offset(0, 10),
                             ),
-                          ],
-                        ),
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const _TableTitle(),
-                            const SizedBox(height: 10),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 14),
 
-                            // ✅ BranchOrdersScreen change (only the OrdersTable constructor part)
-                            // IMPORTANT: add isSubmitted: s.isSubmitted
-                            Expanded(
-                              child: OrdersTable(
-                                rows: s.viewRows,
-                                isLoading: isBusy,
-                                orderedColumns: orderedColumns,
-                                columnWidths: s.columnWidths,
-                                finalEdits: s.finalEdits,
-                                onTapFinalReorder: (row) =>
-                                    BranchOrdersActions.openFinalSidePanel(
-                                      context: context,
-                                      state: s,
-                                      row: row,
-                                    ),
-                                additionalEdits: s.additionalEdits,
-                                sentAdditionalQtyByItemCode:
-                                    s.sentAdditionalQtyByItemCode,
-                                onTapAdditionalRequest: (row) =>
-                                    BranchOrdersActions.openAdditionalSidePanel(
-                                      context: context,
-                                      state: s,
-                                      row: row,
-                                    ),
-                                isSubmitted: s.isSubmitted, // ✅ NEW
-                                controller: _grid.controller,
-                                gridController: _grid,
-                                onColumnResized: (key, width) {
-                                  context.read<OrdersBloc>().add(
-                                    OrdersColumnResized(
-                                      columnKey: key,
-                                      width: width,
-                                    ),
-                                  );
-                                },
+                      if (s.isInitial)
+                        Expanded(
+                          child: Center(
+                            child: _GenerateCard(
+                              isBusy: isBusy,
+                              progress: s.progress,
+                              message: s.progressMessage,
+                              error: s.status == OrdersStatus.failure
+                                  ? s.error
+                                  : null,
+                              onGenerate: () => context.read<OrdersBloc>().add(
+                                const OrdersPressedGenerate(),
+                              ),
+                            ),
+                          ),
+                        )
+                      else ...[
+                        if (s.status == OrdersStatus.generating ||
+                            s.status == OrdersStatus.loading)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _ProgressStrip(
+                              progress: s.progress,
+                              message: s.progressMessage ?? 'Working...',
+                            ),
+                          ),
+                        if (s.status == OrdersStatus.failure && s.error != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Text(
+                              s.error!,
+                              style: const TextStyle(color: Colors.red),
+                            ),
+                          ),
+
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            SizedBox(
+                              width: 320.w,
+                              child: _KpiCard(
+                                title: 'Total Products',
+                                value: statsAll.totalProducts.toString(),
+                                subtitle: 'All APG Items',
+                                icon: Icons.list_alt_outlined,
+                              ),
+                            ),
+                            SizedBox(
+                              width: 320.w,
+                              child: _KpiCard(
+                                title: 'Items in Order',
+                                value: statsAll.finalReorderCount
+                                    .round()
+                                    .toString(),
+                                subtitle: '',
+                                icon: Icons.inventory_2_outlined,
+                              ),
+                            ),
+                            SizedBox(
+                              width: 320.w,
+                              child: _KpiCard(
+                                title: 'Essential',
+                                value: '${statsAll.essential}',
+                                subtitle: '',
+                                icon: Icons.star_border,
+                              ),
+                            ),
+                            SizedBox(
+                              width: 320.w,
+                              child: _KpiCard(
+                                title: 'Non',
+                                value: '${statsAll.non}',
+                                subtitle: '',
+                                icon: Icons.layers_outlined,
+                              ),
+                            ),
+                            SizedBox(
+                              width: 320.w,
+                              child: _KpiCard(
+                                title: 'Additional Orders',
+                                value: '$sentAddCount',
+                                subtitle:
+                                    'Number of Sent additional requests (today)',
+                                icon: Icons.add_box_outlined,
                               ),
                             ),
                           ],
                         ),
-                      ),
-                    ),
-                  ],
-                ],
+
+                        const SizedBox(height: 12),
+                        _FiltersBar(
+                          categories: categories,
+                          selectedCategory: s.categoryFilter,
+                          selectedFormulary: s.formularyFilter,
+                          nonWithSales45Only: s.nonWithSales45Only,
+                          numericFinalOnly: s.numericFinalOnly,
+                          additionalOnly: s.additionalOnly,
+                          onCategoryChanged: (v) => context
+                              .read<OrdersBloc>()
+                              .add(OrdersCategoryChanged(v)),
+                          onFormularyChanged: (v) => context
+                              .read<OrdersBloc>()
+                              .add(OrdersFormularyChanged(v)),
+                          onNonWithSales45Changed: (v) => context
+                              .read<OrdersBloc>()
+                              .add(OrdersNonWithSales45Toggled(v)),
+                          onNumericFinalOnlyChanged: (v) => context
+                              .read<OrdersBloc>()
+                              .add(OrdersNumericFinalOnlyToggled(v)),
+                          onAdditionalOnlyChanged: (v) => context
+                              .read<OrdersBloc>()
+                              .add(OrdersAdditionalOnlyToggled(v)),
+                          isSubmitted: s.isSubmitted,
+                        ),
+
+                        const SizedBox(height: 12),
+
+                        BlocSelector<OrdersBloc, OrdersState, String>(
+                          selector: (s) => s.search,
+                          builder: (context, search) {
+                            return BlocBuilder<
+                              BranchZoneCubit,
+                              BranchZoneState
+                            >(
+                              builder: (context, zs) {
+                                final zoneReady =
+                                    zs.zone != null &&
+                                    zs.zone!.trim().isNotEmpty;
+
+                                return OrdersToolbar(
+                                  search: search,
+                                  onSearchChanged: (v) => context
+                                      .read<OrdersBloc>()
+                                      .add(OrdersSearchChanged(v)),
+                                  onOpenColumns: () =>
+                                      Scaffold.of(context).openEndDrawer(),
+                                  onExport: () {
+                                    context.read<OrdersBloc>().add(
+                                      const OrdersExportPressed(),
+                                    );
+                                  },
+                                  statusChip: null,
+                                  actions: [
+                                    OrdersToolbar.actionButton(
+                                      label: 'Additional Order Track',
+                                      icon: Icons.track_changes_outlined,
+                                      badgeCount: s.trackingPending,
+                                      color: AppColors.primaryColor,
+                                      tooltip:
+                                          'Track additional requests status',
+                                      onPressed:
+                                          (s.isSubmitted && !isBusy ||
+                                              !s.isOrderDay)
+                                          ? () =>
+                                                BranchOrdersActions.openTrackingDialog(
+                                                  context,
+                                                )
+                                          : null,
+                                    ),
+                                    if (s.hasEdits && !s.isSubmitted)
+                                      SizedBox(width: 6.w),
+                                    if (s.hasEdits && !s.isSubmitted)
+                                      OrdersToolbar.actionButton(
+                                        label:
+                                            'Review Changes (${s.editsCount})',
+                                        icon: Icons.fact_check_outlined,
+                                        color: AppColors.primaryColor,
+                                        onPressed: () =>
+                                            BranchOrdersActions.openReviewDialog(
+                                              context: context,
+                                              state: s,
+                                            ),
+                                      ),
+                                    if (s.isSubmitted || !s.isOrderDay)
+                                      SizedBox(width: 6),
+                                    if (s.isSubmitted || !s.isOrderDay)
+                                      OrdersToolbar.actionButton(
+                                        label:
+                                            'Send Additional ($draftAddCount)',
+                                        icon: Icons.add_box_outlined,
+                                        badgeCount: draftAddCount,
+                                        color: AppColors.secondaryColor,
+                                        onPressed:
+                                            (!zoneReady ||
+                                                s.additionalEdits.isEmpty ||
+                                                isBusy)
+                                            ? null
+                                            : () {
+                                                context.read<OrdersBloc>().add(
+                                                  OrdersSendAdditionalRequestsPressed(
+                                                    zone: zs.zone!,
+                                                  ),
+                                                );
+                                              },
+                                      ),
+                                    if (!s.isSubmitted && s.isOrderDay)
+                                      SizedBox(width: 6),
+                                    if (!s.isSubmitted && s.isOrderDay)
+                                      OrdersToolbar.actionButton(
+                                        label: 'Submit',
+                                        icon: Icons.check_circle_outline,
+                                        color: AppColors.secondaryColor,
+                                        onPressed:
+                                            (!zoneReady ||
+                                                s.isSubmitted ||
+                                                isBusy ||
+                                                !s.isOrderDay)
+                                            ? null
+                                            : () {
+                                                context.read<OrdersBloc>().add(
+                                                  OrdersSubmitOrderPressed(
+                                                    zone: zs.zone!,
+                                                  ),
+                                                );
+                                              },
+                                      ),
+                                  ],
+                                  onClearAll: () {
+                                    context.read<OrdersBloc>().add(
+                                      const OrdersClearAllFilters(),
+                                    );
+                                    _grid.resetGridUi();
+                                  },
+                                  addMismatch: () {
+                                    BranchOrdersActions.openMismatchPanel(
+                                      context,
+                                    );
+                                  },
+                                  addMax: () {
+                                    BranchOrdersActions.openMaxPanel(context);
+                                  },
+                                  isOrderDay: s.isOrderDay,
+                                );
+                              },
+                            );
+                          },
+                        ),
+
+                        const SizedBox(height: 10),
+
+                        Expanded(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(
+                                color: const Color(0xFFE6E8F0),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.04),
+                                  blurRadius: 18,
+                                  offset: const Offset(0, 10),
+                                ),
+                              ],
+                            ),
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const _TableTitle(),
+                                const SizedBox(height: 10),
+
+                                // ✅ BranchOrdersScreen change (only the OrdersTable constructor part)
+                                // IMPORTANT: add isSubmitted: s.isSubmitted
+                                Expanded(
+                                  child: OrdersTable(
+                                    rows: s.viewRows,
+                                    isLoading: isBusy,
+                                    orderedColumns: orderedColumns,
+                                    columnWidths: s.columnWidths,
+                                    finalEdits: s.finalEdits,
+                                    onTapFinalReorder: (row) =>
+                                        BranchOrdersActions.openFinalSidePanel(
+                                          context: context,
+                                          state: s,
+                                          row: row,
+                                        ),
+                                    additionalEdits: s.additionalEdits,
+                                    sentAdditionalQtyByItemCode:
+                                        s.sentAdditionalQtyByItemCode,
+                                    onTapAdditionalRequest: (row) =>
+                                        BranchOrdersActions.openAdditionalSidePanel(
+                                          context: context,
+                                          state: s,
+                                          row: row,
+                                        ),
+                                    isSubmitted: s.isSubmitted, // ✅ NEW
+                                    controller: _grid.controller,
+                                    gridController: _grid,
+                                    onColumnResized: (key, width) {
+                                      context.read<OrdersBloc>().add(
+                                        OrdersColumnResized(
+                                          columnKey: key,
+                                          width: width,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ),
-            ),
+              if (s.isExporting)
+                Container(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(
+                          color: AppColors.primaryColor,
+                        ),
+                        SizedBox(height: 12),
+                        Text(
+                          "Exporting file...",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
           ),
         );
       },
@@ -361,14 +423,39 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
 
 class _StatusChip extends StatelessWidget {
   final bool isSubmitted;
-  const _StatusChip({required this.isSubmitted});
+  final bool isOrderDay;
+  const _StatusChip({required this.isSubmitted, required this.isOrderDay});
 
   @override
   Widget build(BuildContext context) {
-    final bg = isSubmitted ? const Color(0xFFECFDF3) : const Color(0xFFFFFBEB);
-    final br = isSubmitted ? const Color(0xFFABEFC6) : const Color(0xFFFDE68A);
-    final fg = isSubmitted ? const Color(0xFF027A48) : const Color(0xFF92400E);
-    final text = isSubmitted ? 'Submitted' : 'Draft';
+    Color bg;
+    Color br;
+    Color fg;
+    String text;
+    IconData icon;
+
+    if (!isOrderDay) {
+      // 🔴 No Order Today
+      bg = const Color(0xFFFFF1F2);
+      br = const Color(0xFFFDA4AF);
+      fg = const Color(0xFFB42318);
+      text = 'No Order Today';
+      icon = Icons.block;
+    } else if (isSubmitted) {
+      // ✅ Submitted
+      bg = const Color(0xFFECFDF3);
+      br = const Color(0xFFABEFC6);
+      fg = const Color(0xFF027A48);
+      text = 'Submitted';
+      icon = Icons.check_circle;
+    } else {
+      // 🟡 Draft
+      bg = const Color(0xFFFFFBEB);
+      br = const Color(0xFFFDE68A);
+      fg = const Color(0xFF92400E);
+      text = 'Draft';
+      icon = Icons.edit_outlined;
+    }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -420,29 +507,6 @@ class _ZoneChip extends StatelessWidget {
             style: const TextStyle(fontWeight: FontWeight.w900),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ReviewEditsButton extends StatelessWidget {
-  final int count;
-  final VoidCallback onPressed;
-
-  const _ReviewEditsButton({required this.count, required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: AppColors.primaryColor,
-      child: FilledButton.tonalIcon(
-        onPressed: onPressed,
-
-        icon: const Icon(Icons.fact_check_outlined, color: AppColors.white),
-        label: Text(
-          'Review Changes ($count)',
-          style: TextStyle(color: AppColors.white),
-        ),
       ),
     );
   }
@@ -763,20 +827,28 @@ class _FiltersBar extends StatelessWidget {
   final bool numericFinalOnly;
 
   final bool additionalOnly;
-  final ValueChanged<bool> onAdditionalOnlyChanged;
 
+  /// 🔥 NEW
+  final bool isSubmitted;
+
+  final ValueChanged<bool> onAdditionalOnlyChanged;
   final ValueChanged<String> onCategoryChanged;
   final ValueChanged<String> onFormularyChanged;
   final ValueChanged<bool> onNonWithSales45Changed;
   final ValueChanged<bool> onNumericFinalOnlyChanged;
 
   const _FiltersBar({
+    super.key,
     required this.categories,
     required this.selectedCategory,
     required this.selectedFormulary,
     required this.nonWithSales45Only,
     required this.numericFinalOnly,
     required this.additionalOnly,
+
+    /// 🔥 NEW
+    required this.isSubmitted,
+
     required this.onAdditionalOnlyChanged,
     required this.onCategoryChanged,
     required this.onFormularyChanged,
@@ -804,6 +876,7 @@ class _FiltersBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
+
           Expanded(
             child: _ModernDropdown(
               label: 'Formulary',
@@ -813,6 +886,7 @@ class _FiltersBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
+
           Expanded(
             child: _SwitchTile(
               title: 'NON + Sales (45d)',
@@ -822,15 +896,18 @@ class _FiltersBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
+
           Expanded(
             child: _SwitchTile(
               title: 'Items you Will Received',
               subtitle: 'Available Item in Order',
               value: numericFinalOnly,
+
               onChanged: onNumericFinalOnlyChanged,
             ),
           ),
           const SizedBox(width: 12),
+
           Expanded(
             child: _SwitchTile(
               title: 'Additional Only',
@@ -903,8 +980,7 @@ class _SwitchTile extends StatelessWidget {
   final String title;
   final String subtitle;
   final bool value;
-  final ValueChanged<bool> onChanged;
-
+  final ValueChanged<bool>? onChanged;
   const _SwitchTile({
     required this.title,
     required this.subtitle,
