@@ -200,4 +200,29 @@ class StoreRemoteDs {
 
     return List<Map<String, dynamic>>.from(res);
   }
+
+  Future<List<Map<String, dynamic>>> fetchAllSentToStore() async {
+    final res = await client
+        .from('additional_requests')
+        .select()
+        .eq('status', 'sent_to_store')
+        .or('store_status.is.null,store_status.eq.');
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<void> markAsProcessing(List<String> ids) async {
+    await client
+        .from('additional_requests')
+        .update({'store_status': 'processing'})
+        .inFilter('id', ids);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchProcessingRequests() async {
+    final res = await client
+        .from('additional_requests')
+        .select()
+        .eq('store_status', 'processing');
+
+    return List<Map<String, dynamic>>.from(res);
+  }
 }

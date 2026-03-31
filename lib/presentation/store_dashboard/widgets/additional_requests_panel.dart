@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../domain/entities/additional_request_group.dart';
 import '../bloc/store_bloc.dart';
+import '../bloc/store_event.dart';
 import 'additional_history_dialog.dart';
 import 'additional_request_tile.dart';
 
@@ -48,7 +49,7 @@ class _AdditionalPanelState extends State<AdditionalPanel> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Padding(
+                /* Padding(
                   padding: const EdgeInsets.only(left: 10),
                   child: const Text(
                     "Additional Requests",
@@ -59,6 +60,30 @@ class _AdditionalPanelState extends State<AdditionalPanel> {
                       color: AppColors.secondaryColor,
                     ),
                   ),
+                ),*/
+                ElevatedButton.icon(
+                  icon: Icon(Icons.print),
+                  label: Text("Print"),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+                  onPressed: () {
+                    context.read<StoreBloc>().add(CollectAndPrintAdditional());
+                  },
+                ),
+
+                const SizedBox(width: 10),
+
+                /// ✏️ CONFIRM
+                ElevatedButton.icon(
+                  icon: Icon(Icons.check),
+                  label: Text("Confirm"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                  ),
+                  onPressed: () {
+                    context.read<StoreBloc>().add(
+                      CollectAndOpenDialogAdditional(),
+                    );
+                  },
                 ),
 
                 /// HISTORY BUTTON

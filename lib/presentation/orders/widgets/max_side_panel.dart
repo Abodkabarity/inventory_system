@@ -124,7 +124,14 @@ class _MaxSidePanelState extends State<MaxSidePanel> {
                           .toString()
                           .toLowerCase();
 
-                      return code.contains(query) || name.contains(query);
+                      final matchSearch =
+                          code.contains(query) || name.contains(query);
+
+                      if (state.onlyBranchMaxAdj) {
+                        return matchSearch && e['added_by'] == 'branch';
+                      }
+
+                      return matchSearch;
                     }).toList();
 
                     return Stack(
@@ -233,6 +240,8 @@ class _AddMaxFormState extends State<_AddMaxForm> {
                             code.text = e['item_code'];
                             name.text = e['item_name'];
 
+                            bloc.add(OrdersFetchItemDemand(e['item_code']));
+                            print(state.selectedItemDemand);
                             bloc.add(OrdersSearchMismatchItemsCode(''));
 
                             removeOverlay();
@@ -270,6 +279,10 @@ class _AddMaxFormState extends State<_AddMaxForm> {
     final isFull = branchCount >= 15;
 
     return BlocListener<OrdersBloc, OrdersState>(
+      listenWhen: (prev, curr) =>
+          prev.mismatchSuggestions != curr.mismatchSuggestions ||
+          prev.selectedItemDemand != curr.selectedItemDemand,
+
       listener: (context, state) {
         if (state.mismatchSuggestions.isNotEmpty &&
             (codeFocus.hasFocus || nameFocus.hasFocus)) {
@@ -277,6 +290,8 @@ class _AddMaxFormState extends State<_AddMaxForm> {
         } else {
           removeOverlay();
         }
+
+        demand.text = state.selectedItemDemand.toString();
       },
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -389,6 +404,7 @@ class _AddMaxFormState extends State<_AddMaxForm> {
                   Expanded(
                     child: TextFormField(
                       controller: demand,
+                      readOnly: true,
                       keyboardType: TextInputType.number,
                       decoration: InputDecoration(
                         labelText: "Current Demand",
@@ -445,62 +461,6 @@ class _AddMaxFormState extends State<_AddMaxForm> {
                       },
                     ),
                   ),
-                  const SizedBox(width: 10),
-
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      initialValue: type,
-                      dropdownColor: Colors.white,
-                      icon: Icon(
-                        Icons.keyboard_arrow_down,
-                        color: AppColors.secondaryColor,
-                      ),
-
-                      items: const [
-                        DropdownMenuItem(
-                          value: "INCREASE",
-                          child: Text("INCREASE"),
-                        ),
-                        DropdownMenuItem(
-                          value: "DECREASE",
-                          child: Text("DECREASE"),
-                        ),
-                      ],
-
-                      onChanged: (v) => setState(() => type = v!),
-
-                      decoration: InputDecoration(
-                        labelText: "Type",
-                        labelStyle: TextStyle(color: AppColors.secondaryColor),
-
-                        filled: true,
-                        fillColor: AppColors.backgroundWidget,
-
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 16,
-                        ),
-
-                        border: OutlineInputBorder(
-                          borderSide: BorderSide(color: AppColors.primaryColor),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-
-                        enabledBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: AppColors.primaryColor),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-
-                        focusedBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: AppColors.primaryColor),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-
-                      validator: (v) =>
-                          v == null || v.isEmpty ? "Required" : null,
-                    ),
-                  ),
                 ],
               ),
 
@@ -531,60 +491,96 @@ class _AddMaxFormState extends State<_AddMaxForm> {
 
               SizedBox(height: 12.h),
 
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: isFull
-                      ? Colors.grey
-                      : AppColors.primaryColor,
-                  minimumSize: const Size(300, 40),
-                ),
-                onPressed: isFull
-                    ? null
-                    : () {
-                        setState(() {
-                          submitted = true;
-                        });
+              Row(
+                children: [
+                  Container(
+                    width: 175.w,
+                    height: 50.h,
+                    decoration: BoxDecoration(
+                      color: AppColors.backgroundWidget,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text("Added By You"),
+                        Switch(
+                          value: state.onlyBranchMaxAdj,
+                          activeThumbColor: AppColors.primaryColor,
+                          onChanged: (v) {
+                            context.read<OrdersBloc>().add(
+                              OrdersToggleBranchMaxAdj(v),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isFull
+                              ? Colors.grey
+                              : AppColors.primaryColor,
+                          minimumSize: const Size(300, 40),
+                        ),
+                        onPressed: isFull
+                            ? null
+                            : () {
+                                setState(() {
+                                  submitted = true;
+                                });
 
-                        if (!_formKey.currentState!.validate()) {
-                          return;
-                        }
+                                if (!_formKey.currentState!.validate()) {
+                                  return;
+                                }
 
-                        final demandVal = num.tryParse(demand.text) ?? 0;
-                        final maxVal = num.tryParse(maxQty.text) ?? 0;
+                                final demandVal =
+                                    num.tryParse(demand.text) ?? 0;
+                                final maxVal = num.tryParse(maxQty.text) ?? 0;
+                                final type = maxVal < demandVal
+                                    ? "DECREASE"
+                                    : "INCREASE";
+                                context.read<OrdersBloc>().add(
+                                  OrdersAddMaxAdj({
+                                    'branch_name': context
+                                        .read<OrdersBloc>()
+                                        .state
+                                        .branchName,
+                                    'item_code': code.text,
+                                    'item_name': name.text,
+                                    'current_demand_30d': demandVal,
+                                    'max_adjustment_30d': maxVal,
+                                    'qty': maxVal,
+                                    'adjustment_type': type,
+                                    'reason': reason.text,
+                                    'added_by': 'branch',
+                                  }),
+                                );
+                                context.read<OrdersBloc>().add(
+                                  const OrdersClearSelectedDemand(),
+                                );
+                                _formKey.currentState!.reset();
 
-                        context.read<OrdersBloc>().add(
-                          OrdersAddMaxAdj({
-                            'branch_name': context
-                                .read<OrdersBloc>()
-                                .state
-                                .branchName,
-                            'item_code': code.text,
-                            'item_name': name.text,
-                            'current_demand_30d': demandVal,
-                            'max_adjustment_30d': maxVal,
-                            'qty': maxVal,
-                            'adjustment_type': type,
-                            'reason': reason.text,
-                            'added_by': 'branch',
-                          }),
-                        );
+                                code.clear();
+                                name.clear();
+                                demand.clear();
+                                maxQty.clear();
+                                reason.clear();
 
-                        _formKey.currentState!.reset();
-
-                        code.clear();
-                        name.clear();
-                        demand.clear();
-                        maxQty.clear();
-                        reason.clear();
-
-                        setState(() {
-                          submitted = false;
-                        });
-                      },
-                child: Text(
-                  isFull ? "Limit Reached (15)" : "Add Max",
-                  style: const TextStyle(color: Colors.white),
-                ),
+                                setState(() {
+                                  submitted = false;
+                                });
+                              },
+                        child: Text(
+                          isFull ? "Limit Reached (15)" : "Add Max",
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

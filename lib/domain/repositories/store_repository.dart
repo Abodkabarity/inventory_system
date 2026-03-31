@@ -17,4 +17,8 @@ abstract class StoreRepository {
     required DateTime from,
     required DateTime to,
   });
+  Future<List<Map<String, dynamic>>> fetchAllSentToStore();
+
+  Future<void> markAsProcessing(List<String> ids);
+  Future<List<Map<String, dynamic>>> fetchProcessingRequests();
 }

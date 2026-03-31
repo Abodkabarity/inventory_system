@@ -48,3 +48,21 @@ class LoadAdditionalHistory extends StoreEvent {
   @override
   List<Object?> get props => [from, to];
 }
+
+class CollectAndPrintAdditional extends StoreEvent {}
+
+class CollectAdditionalAndPrint extends StoreEvent {}
+
+class CollectAndOpenDialogAdditional extends StoreEvent {}
+
+class ClearProcessingBatch extends StoreEvent {}
+
+class ClearPrintBatch extends StoreEvent {}
+
+class SearchProcessingItems extends StoreEvent {
+  final String query;
+
+  SearchProcessingItems({required this.query});
+  @override
+  List<Object?> get props => [query];
+}

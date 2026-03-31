@@ -586,4 +586,24 @@ done_at
 
     return list.map((e) => e.toString()).toList();
   }
+  Future<num> fetchItemDemand({
+    required String branch,
+    required String itemCode,
+  }) async {
+    final res = await client
+        .from('daily_order')
+        .select('demand_for_30_days')
+        .eq('branch', branch)
+        .eq('item_code', itemCode)
+        .order('run_date', ascending: false)
+        .limit(1)
+        .maybeSingle();
+
+    if (res == null) return 0;
+
+    final v = res['demand_for_30_days'];
+    if (v is num) return v;
+
+    return num.tryParse((v ?? '').toString()) ?? 0;
+  }
 }

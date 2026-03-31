@@ -224,4 +224,14 @@ class OrdersRepositoryImpl implements OrdersRepository {
   Future<List<String>> fetchBranchOrderDays({required String branchName}) {
     return remote.fetchBranchOrderDays(branchName: branchName);
   }
+  @override
+  Future<num> fetchItemDemand({
+    required String branch,
+    required String itemCode,
+  }) {
+    return remote.fetchItemDemand(
+      branch: branch,
+      itemCode: itemCode,
+    );
+  }
 }
