@@ -217,4 +217,19 @@ class StoreRepositoryImpl implements StoreRepository {
 
     return result;
   }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchAllSentToStore() {
+    return remote.fetchAllSentToStore();
+  }
+
+  @override
+  Future<void> markAsProcessing(List<String> ids) {
+    return remote.markAsProcessing(ids);
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchProcessingRequests() {
+    return remote.fetchProcessingRequests();
+  }
 }

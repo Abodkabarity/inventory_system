@@ -79,6 +79,20 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     on<OrdersDeleteMaxAdj>(_onDeleteMaxAdj);
     on<OrdersSearchMaxAdjList>(_onSearchMaxAdjList);
     on<OrdersExportPressed>(_onExportPressed);
+    on<OrdersClearSelectedDemand>((event, emit) {
+      emit(state.copyWith(selectedItemDemand: 0));
+    });
+    on<OrdersFetchItemDemand>((event, emit) async {
+      final demand = await repo.fetchItemDemand(
+        branch: state.branchName,
+        itemCode: event.itemCode,
+      );
+
+      emit(state.copyWith(selectedItemDemand: demand));
+    });
+    on<OrdersToggleBranchMaxAdj>((event, emit) {
+      emit(state.copyWith(onlyBranchMaxAdj: event.value));
+    });
   }
 
   @override

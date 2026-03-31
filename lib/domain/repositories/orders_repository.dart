@@ -102,4 +102,8 @@ abstract class OrdersRepository {
 
   Future<void> deleteMaxAdj(String id);
   Future<List<String>> fetchBranchOrderDays({required String branchName});
+  Future<num> fetchItemDemand({
+    required String branch,
+    required String itemCode,
+  });
 }

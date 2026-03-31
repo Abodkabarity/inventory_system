@@ -181,7 +181,7 @@ class OrdersState extends Equatable {
   final String mismatchSearch;
   final int progress;
   final String? progressMessage;
-
+  final bool onlyBranchMaxAdj;
   final String? error;
   final bool isMismatchLoading;
   final Map<String, List<Map<String, dynamic>>> sentAdditionalHistoryByItemCode;
@@ -200,7 +200,7 @@ class OrdersState extends Equatable {
   final bool isMaxAdjLoading;
   // additional requests (local draft)
   final Map<String, AdditionalRequestEdit> additionalEdits;
-
+  final num selectedItemDemand;
   // already sent additional requests (loaded from db) - per item_code sum
   final Map<String, num> sentAdditionalQtyByItemCode;
 
@@ -252,6 +252,8 @@ class OrdersState extends Equatable {
     required this.maxAdjSearch,
     required this.isExporting,
     required this.isOrderDay,
+    required this.selectedItemDemand,
+    required this.onlyBranchMaxAdj,
   });
 
   static const List<String> defaultVisibleInTable = [
@@ -376,6 +378,7 @@ class OrdersState extends Equatable {
       maxAdjSearch: '',
       isMismatchLoading: false,
       isExporting: false,
+      selectedItemDemand: 0,
       visibleColumns: defaultVisibleInTable.toSet(),
       columnOrder: defaultColumnOrder,
       columnWidths: defaultColumnWidths(allKeys),
@@ -397,6 +400,7 @@ class OrdersState extends Equatable {
       mismatchSearch: '',
       maxAdjItems: const [],
       isMaxAdjLoading: false,
+      onlyBranchMaxAdj: false,
     );
   }
 
@@ -447,6 +451,7 @@ class OrdersState extends Equatable {
     Map<String, List<Map<String, dynamic>>>? sentAdditionalHistoryByItemCode,
     String? progressMessage,
     String? error,
+    num? selectedItemDemand,
     String? maxAdjSearch,
     bool? showMismatchResult,
     Set<String>? visibleColumns,
@@ -460,6 +465,7 @@ class OrdersState extends Equatable {
     bool? lastActionSuccess,
     bool? isExporting,
     bool? isOrderDay,
+    bool? onlyBranchMaxAdj,
     List<Map<String, dynamic>>? mismatchItems,
     List<Map<String, dynamic>>? mismatchSuggestions,
     String? editingMismatchId,
@@ -515,6 +521,8 @@ class OrdersState extends Equatable {
       maxAdjSearch: maxAdjSearch ?? this.maxAdjSearch,
       isExporting: isExporting ?? this.isExporting,
       isOrderDay: isOrderDay ?? this.isOrderDay,
+      selectedItemDemand: selectedItemDemand ?? this.selectedItemDemand,
+      onlyBranchMaxAdj: onlyBranchMaxAdj ?? this.onlyBranchMaxAdj,
     );
   }
 
@@ -556,5 +564,7 @@ class OrdersState extends Equatable {
     maxAdjSearch,
     isExporting,
     isOrderDay,
+    selectedItemDemand,
+    onlyBranchMaxAdj,
   ];
 }

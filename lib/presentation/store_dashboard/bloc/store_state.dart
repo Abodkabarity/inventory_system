@@ -9,14 +9,17 @@ class StoreState extends Equatable {
   final String? selectedBranch;
 
   final List<StoreOrderItem> items;
+  final Map<String, List<Map<String, dynamic>>> processingBatch;
 
   /// CURRENT ADDITIONAL REQUESTS
   final List<AdditionalRequestGroup> additionalRequests;
+  final Map<String, List<Map<String, dynamic>>> printBatch;
 
   /// HISTORY RESULTS
   final List<AdditionalRequestGroup> additionalHistory;
   final bool isInitialLoading;
-
+  final Map<String, List<Map<String, dynamic>>> filteredProcessing;
+  final String searchQuery;
   final int submittedCount;
 
   final int additionalCount;
@@ -48,6 +51,10 @@ class StoreState extends Equatable {
     required this.toDate,
     required this.isLoading,
     required this.isInitialLoading,
+    required this.processingBatch,
+    required this.printBatch,
+    required this.filteredProcessing,
+    required this.searchQuery,
   });
 
   /// INITIAL STATE
@@ -60,6 +67,8 @@ class StoreState extends Equatable {
       additionalHistory: [],
       submittedCount: 0,
       additionalCount: 0,
+      filteredProcessing: {},
+      searchQuery: '',
       additionalPendingCount: 0,
       additionalDoneCount: 0,
       submittedBranches: [],
@@ -67,6 +76,8 @@ class StoreState extends Equatable {
       toDate: null,
       isLoading: false,
       isInitialLoading: false,
+      processingBatch: {},
+      printBatch: {},
     );
   }
 
@@ -87,6 +98,10 @@ class StoreState extends Equatable {
     DateTime? fromDate,
     DateTime? toDate,
     bool? isLoading,
+    Map<String, List<Map<String, dynamic>>>? filteredProcessing,
+    String? searchQuery,
+    Map<String, List<Map<String, dynamic>>>? printBatch,
+    Map<String, List<Map<String, dynamic>>>? processingBatch,
   }) {
     return StoreState(
       branches: branches ?? this.branches,
@@ -104,6 +119,10 @@ class StoreState extends Equatable {
       toDate: toDate ?? this.toDate,
       isLoading: isLoading ?? this.isLoading,
       isInitialLoading: isInitialLoading ?? this.isInitialLoading,
+      processingBatch: processingBatch ?? this.processingBatch,
+      printBatch: printBatch ?? this.printBatch,
+      filteredProcessing: filteredProcessing ?? this.filteredProcessing,
+      searchQuery: searchQuery ?? this.searchQuery,
     );
   }
 
@@ -123,5 +142,7 @@ class StoreState extends Equatable {
     toDate,
     isLoading,
     isInitialLoading,
+    processingBatch,
+    printBatch,
   ];
 }

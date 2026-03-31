@@ -302,3 +302,17 @@ class OrdersSearchMaxAdjList extends OrdersEvent {
 class OrdersExportPressed extends OrdersEvent {
   const OrdersExportPressed();
 }
+
+class OrdersFetchItemDemand extends OrdersEvent {
+  final String itemCode;
+  const OrdersFetchItemDemand(this.itemCode);
+}
+
+class OrdersToggleBranchMaxAdj extends OrdersEvent {
+  final bool value;
+  const OrdersToggleBranchMaxAdj(this.value);
+}
+
+class OrdersClearSelectedDemand extends OrdersEvent {
+  const OrdersClearSelectedDemand();
+}
