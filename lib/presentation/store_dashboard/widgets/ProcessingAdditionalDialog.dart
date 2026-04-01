@@ -21,13 +21,32 @@ class _ProcessingAdditionalDialogState
     extends State<ProcessingAdditionalDialog> {
   final client = Supabase.instance.client;
 
-  bool loading = false;
-
   final Map<String, TextEditingController> qtyControllers = {};
   final Map<String, TextEditingController> noteControllers = {};
   final TextEditingController searchController = TextEditingController();
 
+  final Map<String, bool> itemLoading = {};
+
+  bool printLoading = false;
+
+  String? successMessage;
+
   List<Map<String, dynamic>> allItems = [];
+
+  /// 🔥 GROUP FUNCTION
+  Map<String, List<Map<String, dynamic>>> groupByBranch(
+    List<Map<String, dynamic>> items,
+  ) {
+    final Map<String, List<Map<String, dynamic>>> grouped = {};
+
+    for (var item in items) {
+      final branch = item['branch_name'] ?? '';
+      grouped.putIfAbsent(branch, () => []);
+      grouped[branch]!.add(item);
+    }
+
+    return grouped;
+  }
 
   @override
   void initState() {
@@ -50,43 +69,68 @@ class _ProcessingAdditionalDialogState
     });
   }
 
-  /// 🔥 PRINT FOR ONE BRANCH
-  void _printBranch(String branch, List<Map<String, dynamic>> items) async {
-    final Map<String, List<Map<String, dynamic>>> single = {branch: items};
-    await PrintAdditionalService.printBatch(single);
-  }
+  /// 🔥 PRINT
+  Future<void> _printBranch(
+    String branch,
+    List<Map<String, dynamic>> items,
+  ) async {
+    setState(() => printLoading = true);
 
-  Future<void> _confirmItem(Map<String, dynamic> item) async {
-    final id = item['id'].toString();
-    final requestQty = item['request_qty'] ?? 0;
-
-    final qty = num.tryParse(qtyControllers[id]!.text.trim()) ?? 0;
-    final note = noteControllers[id]!.text;
-
-    String status;
-
-    if (qty == 0) {
-      status = 'rejected';
-    } else if (qty < requestQty) {
-      status = 'partial';
-    } else {
-      status = 'done';
+    try {
+      final Map<String, List<Map<String, dynamic>>> single = {branch: items};
+      await PrintAdditionalService.printBatch(single);
+    } catch (e) {
+      print("PRINT ERROR: $e");
     }
 
-    await client
-        .from('additional_requests')
-        .update({
-          'inventory_qty': qty,
-          'fulfilled_qty': qty,
-          'store_note': note,
-          'status': status,
-          'store_status': 'done',
-          'done_at': DateTime.now().toIso8601String(),
-        })
-        .eq('id', id);
+    setState(() => printLoading = false);
+  }
+
+  /// 🔥 CONFIRM
+  Future<void> _confirmItem(Map<String, dynamic> item) async {
+    final id = item['id'];
+    final key = id.toString();
 
     setState(() {
-      allItems.removeWhere((e) => e['id'].toString() == id);
+      itemLoading[key] = true;
+    });
+
+    try {
+      final qty = num.tryParse(qtyControllers[key]!.text.trim()) ?? 0;
+      final note = noteControllers[key]!.text;
+
+      final status = qty == 0 ? 'rejected' : 'done';
+
+      await client
+          .from('additional_requests')
+          .update({
+            'inventory_qty': qty,
+            'fulfilled_qty': qty,
+            'store_note': note,
+            'status': status, // ✅ FIX
+            'store_status': 'done',
+            'done_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', id)
+          .select();
+      context.read<StoreBloc>().add(RefreshProcessingList());
+      setState(() {
+        allItems.removeWhere((e) => e['id'] == id);
+        successMessage = "Confirmed successfully";
+      });
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          setState(() {
+            successMessage = null;
+          });
+        }
+      });
+    } catch (e) {
+      print("CONFIRM ERROR: $e");
+    }
+
+    setState(() {
+      itemLoading[key] = false;
     });
   }
 
@@ -94,6 +138,20 @@ class _ProcessingAdditionalDialogState
     final id = item['id'].toString();
     final requestQty = item['request_qty'] ?? 0;
 
+    final isLoading = itemLoading[id] == true;
+    if (!qtyControllers.containsKey(id)) {
+      final qty =
+          item['inventory_qty'] ??
+          item['fulfilled_qty'] ??
+          item['request_qty'] ??
+          0;
+
+      qtyControllers[id] = TextEditingController(text: qty.toString());
+
+      noteControllers[id] = TextEditingController(
+        text: (item['store_note'] ?? '').toString(),
+      );
+    }
     return Card(
       color: Colors.white,
       elevation: 3,
@@ -103,7 +161,6 @@ class _ProcessingAdditionalDialogState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            /// HEADER
             Row(
               children: [
                 Text(
@@ -123,9 +180,7 @@ class _ProcessingAdditionalDialogState
                 ),
               ],
             ),
-
             const SizedBox(height: 12),
-
             Row(
               children: [
                 const Text("Requested: "),
@@ -136,7 +191,6 @@ class _ProcessingAdditionalDialogState
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-
                 const SizedBox(width: 20),
 
                 /// QTY
@@ -177,24 +231,41 @@ class _ProcessingAdditionalDialogState
 
                 /// OUT
                 ElevatedButton(
-                  onPressed: () {
-                    qtyControllers[id]!.text = "0";
-                    noteControllers[id]!.text = "Out of Stock";
-                    setState(() {});
-                  },
+                  onPressed: isLoading
+                      ? null
+                      : () {
+                          qtyControllers[id]!.text = "0";
+                          noteControllers[id]!.text = "Out of Stock";
+                          setState(() {});
+                        },
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                  child: const Text("Out"),
+                  child: const Text(
+                    "Out Of Stock",
+                    style: TextStyle(color: Colors.white),
+                  ),
                 ),
 
                 const SizedBox(width: 10),
 
                 /// CONFIRM
                 ElevatedButton(
-                  onPressed: () => _confirmItem(item),
+                  onPressed: isLoading ? null : () => _confirmItem(item),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
                   ),
-                  child: const Text("Confirm"),
+                  child: isLoading
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          "Confirm",
+                          style: TextStyle(color: Colors.white),
+                        ),
                 ),
               ],
             ),
@@ -205,16 +276,11 @@ class _ProcessingAdditionalDialogState
   }
 
   Widget _buildBranch(String branch, List<Map<String, dynamic>> items) {
-    final branchItems = items
-        .where((e) => allItems.any((a) => a['id'] == e['id']))
-        .toList();
-
-    if (branchItems.isEmpty) return const SizedBox();
+    if (items.isEmpty) return const SizedBox();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        /// HEADER
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
           child: Row(
@@ -228,36 +294,48 @@ class _ProcessingAdditionalDialogState
                   color: AppColors.secondaryColor,
                 ),
               ),
-
               ElevatedButton.icon(
-                onPressed: () => _printBranch(branch, branchItems),
-                icon: const Icon(Icons.print, size: 18),
-                label: Text("Print $branch Additional"),
+                onPressed: printLoading
+                    ? null
+                    : () => _printBranch(branch, items),
+                icon: printLoading
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.print, size: 18, color: Colors.white),
+                label: Text(
+                  printLoading ? "Printing..." : "Print $branch Additional",
+                  style: TextStyle(color: Colors.white),
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primaryColor,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
                 ),
               ),
             ],
           ),
         ),
-
-        ...branchItems.map(_buildItem),
+        ...items.map(_buildItem),
       ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<StoreBloc>().state;
+    final list = context.select((StoreBloc bloc) => bloc.state.filteredList);
 
-    final dataToShow = state.filteredProcessing;
+    final grouped = groupByBranch(list);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      if (list.isEmpty && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+    });
 
     return Dialog(
       backgroundColor: Colors.grey.shade100,
@@ -267,9 +345,37 @@ class _ProcessingAdditionalDialogState
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            /// HEADER
-            Row(
-              children: const [
+            if (successMessage != null)
+              Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.green),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle, color: Colors.green),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        successMessage!,
+                        style: const TextStyle(
+                          color: Colors.green,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            const Row(
+              children: [
                 Text(
                   "Processing Additional Orders",
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -277,47 +383,46 @@ class _ProcessingAdditionalDialogState
               ],
             ),
 
-            /// 🔍 SEARCH
             Padding(
-              padding: const EdgeInsets.only(top: 10, bottom: 10),
+              padding: const EdgeInsets.symmetric(vertical: 10),
               child: TextField(
                 controller: searchController,
+                onChanged: (v) => context.read<StoreBloc>().add(
+                  SearchProcessingItems(query: v),
+                ),
                 decoration: InputDecoration(
                   hintText: "Search product...",
-                  prefixIcon: Icon(Icons.search),
+                  prefixIcon: const Icon(Icons.search),
                   filled: true,
-                  fillColor: Colors.white,
+                  fillColor: AppColors.backgroundWidget,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppColors.primaryColor),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppColors.primaryColor),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppColors.primaryColor),
                   ),
                 ),
-                onChanged: (value) {
-                  context.read<StoreBloc>().add(
-                    SearchProcessingItems(query: value),
-                  );
-                },
               ),
             ),
 
             const Divider(color: AppColors.primaryColor),
 
-            /// BODY
             Expanded(
-              child: dataToShow.isEmpty
-                  ? const Center(
-                      child: Text(
-                        "No results",
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    )
+              child: grouped.isEmpty
+                  ? const Center(child: Text("No results"))
                   : ListView(
-                      children: dataToShow.entries
+                      children: grouped.entries
                           .map((e) => _buildBranch(e.key, e.value))
                           .toList(),
                     ),
             ),
 
-            /// CLOSE
             Align(
               alignment: Alignment.centerRight,
               child: ElevatedButton(

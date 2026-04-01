@@ -14,6 +14,9 @@ class StoreState extends Equatable {
   /// CURRENT ADDITIONAL REQUESTS
   final List<AdditionalRequestGroup> additionalRequests;
   final Map<String, List<Map<String, dynamic>>> printBatch;
+  final Map<String, bool> confirmingItems;
+  final bool isPrinting;
+  final bool dialogOpened;
 
   /// HISTORY RESULTS
   final List<AdditionalRequestGroup> additionalHistory;
@@ -21,13 +24,15 @@ class StoreState extends Equatable {
   final Map<String, List<Map<String, dynamic>>> filteredProcessing;
   final String searchQuery;
   final int submittedCount;
-
+  final bool isOpeningDialog;
+  final bool isPrintingMain;
   final int additionalCount;
-
+  final List<Map<String, dynamic>> processingList;
+  final List<Map<String, dynamic>> filteredList;
   final int additionalPendingCount;
 
   final int additionalDoneCount;
-
+  final String? errorMessage;
   final List<String> submittedBranches;
 
   final DateTime? fromDate;
@@ -55,6 +60,14 @@ class StoreState extends Equatable {
     required this.printBatch,
     required this.filteredProcessing,
     required this.searchQuery,
+    required this.confirmingItems,
+    required this.isPrinting,
+    required this.isOpeningDialog,
+    required this.isPrintingMain,
+    this.errorMessage,
+    required this.processingList,
+    required this.filteredList,
+    required this.dialogOpened,
   });
 
   /// INITIAL STATE
@@ -66,14 +79,22 @@ class StoreState extends Equatable {
       additionalRequests: [],
       additionalHistory: [],
       submittedCount: 0,
+      isOpeningDialog: false,
+      isPrintingMain: false,
+      errorMessage: null,
       additionalCount: 0,
       filteredProcessing: {},
       searchQuery: '',
       additionalPendingCount: 0,
       additionalDoneCount: 0,
+      confirmingItems: {},
+      isPrinting: false,
+      dialogOpened: false,
       submittedBranches: [],
       fromDate: null,
       toDate: null,
+      processingList: [],
+      filteredList: [],
       isLoading: false,
       isInitialLoading: false,
       processingBatch: {},
@@ -98,10 +119,18 @@ class StoreState extends Equatable {
     DateTime? fromDate,
     DateTime? toDate,
     bool? isLoading,
+    bool? dialogOpened,
+    String? errorMessage,
     Map<String, List<Map<String, dynamic>>>? filteredProcessing,
     String? searchQuery,
     Map<String, List<Map<String, dynamic>>>? printBatch,
     Map<String, List<Map<String, dynamic>>>? processingBatch,
+    Map<String, bool>? confirmingItems,
+    bool? isOpeningDialog,
+    List<Map<String, dynamic>>? processingList,
+    List<Map<String, dynamic>>? filteredList,
+    bool? isPrintingMain,
+    bool? isPrinting,
   }) {
     return StoreState(
       branches: branches ?? this.branches,
@@ -123,6 +152,14 @@ class StoreState extends Equatable {
       printBatch: printBatch ?? this.printBatch,
       filteredProcessing: filteredProcessing ?? this.filteredProcessing,
       searchQuery: searchQuery ?? this.searchQuery,
+      isOpeningDialog: isOpeningDialog ?? this.isOpeningDialog,
+      isPrintingMain: isPrintingMain ?? this.isPrintingMain,
+      confirmingItems: confirmingItems ?? this.confirmingItems,
+      isPrinting: isPrinting ?? this.isPrinting,
+      processingList: processingList ?? this.processingList,
+      filteredList: filteredList ?? this.filteredList,
+      errorMessage: errorMessage,
+      dialogOpened: dialogOpened ?? this.dialogOpened,
     );
   }
 
@@ -144,5 +181,13 @@ class StoreState extends Equatable {
     isInitialLoading,
     processingBatch,
     printBatch,
+    confirmingItems,
+    isPrinting,
+    isOpeningDialog,
+    isPrintingMain,
+    errorMessage,
+    processingList,
+    filteredList,
+    dialogOpened,
   ];
 }

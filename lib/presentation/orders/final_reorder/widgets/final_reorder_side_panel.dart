@@ -171,6 +171,8 @@ class _FinalReorderSidePanelState extends State<FinalReorderSidePanel> {
                               label: 'Enter new quantity',
                               helperText: s.isLocked
                                   ? 'Quantity editing is disabled.'
+                                  : s.onlyDecrease
+                                  ? 'You can only decrease from ${s.oldQty}.'
                                   : 'Numbers only. Max allowed: ${s.capForThisBranch}.',
                               onChanged: (v) => context
                                   .read<FinalReorderBloc>()
@@ -183,6 +185,9 @@ class _FinalReorderSidePanelState extends State<FinalReorderSidePanel> {
                               ),
                               canInc: s.canIncrease,
                               canDec: s.canDecrease,
+                              maxAllowed: s.onlyDecrease
+                                  ? s.oldQty
+                                  : s.capForThisBranch,
                               // ✅ NEW
                             ),
 
@@ -202,7 +207,10 @@ class _FinalReorderSidePanelState extends State<FinalReorderSidePanel> {
                             ),*/
                             const SizedBox(height: 10),
 
-                            DiffChip(oldQty: s.oldQty, newQty: s.qty),
+                            DiffChip(
+                              oldQty: s.oldQty,
+                              newQty: int.tryParse(_qtyCtrl.text) ?? 0,
+                            ),
 
                             const SizedBox(height: 18),
 

@@ -141,7 +141,7 @@ class _StoreDashboardViewState extends State<StoreDashboardView> {
                 StoreDashboardBody(state: state, isSubmitted: isSubmitted),
 
                 /// 🔥 LOADING
-                if (state.isLoading)
+                if (state.isLoading && state.selectedBranch == null)
                   Container(
                     color: Colors.black12,
                     child: const Center(
