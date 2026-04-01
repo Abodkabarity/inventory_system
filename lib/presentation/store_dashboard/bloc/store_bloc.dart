@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../core/utils/print_additional_service.dart';
 import '../../../domain/repositories/store_repository.dart';
 import 'store_event.dart';
 import 'store_state.dart';
@@ -22,35 +23,25 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
 
     on<ClearProcessingBatch>(_onClearProcessing);
     on<ClearPrintBatch>(_onClearPrint);
-    on<SearchProcessingItems>((event, emit) {
+    on<ConfirmAdditionalItem>(_onConfirmItem);
+    on<PrintBranchAdditional>(_onPrintBranch);
+    on<OpenProcessingDialog>(_onOpenDialogWithLoading);
+    on<PrintAllAdditional>(_onPrintAllWithLoading);
+    on<RefreshProcessingList>(_onRefreshProcessingList);
+    on<SearchProcessingItems>((event, emit) async {
+      final res = await repo.fetchProcessingRequests();
+
       final query = event.query.toLowerCase();
 
-      if (query.isEmpty) {
-        emit(
-          state.copyWith(
-            filteredProcessing: state.processingBatch,
-            searchQuery: '',
-          ),
-        );
-        return;
-      }
+      final filtered = query.isEmpty
+          ? res
+          : res.where((item) {
+              final name = (item['item_name'] ?? '').toLowerCase();
+              final code = (item['item_code'] ?? '').toLowerCase();
+              return name.contains(query) || code.contains(query);
+            }).toList();
 
-      final Map<String, List<Map<String, dynamic>>> filtered = {};
-
-      state.processingBatch.forEach((branch, items) {
-        final matched = items.where((item) {
-          final name = (item['item_name'] ?? '').toString().toLowerCase();
-          return name.contains(query);
-        }).toList();
-
-        if (matched.isNotEmpty) {
-          filtered[branch] = matched;
-        }
-      });
-
-      emit(
-        state.copyWith(filteredProcessing: filtered, searchQuery: event.query),
-      );
+      emit(state.copyWith(processingList: res, filteredList: filtered));
     });
   }
 
@@ -191,12 +182,38 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
     CollectAndPrintAdditional event,
     Emitter<StoreState> emit,
   ) async {
+    emit(state.copyWith(isPrintingMain: true, errorMessage: null));
+
     try {
       final grouped = await _collect();
 
-      emit(state.copyWith(printBatch: grouped));
+      if (grouped.isEmpty) {
+        emit(
+          state.copyWith(
+            isPrintingMain: false,
+            errorMessage: "No pending additional requests",
+          ),
+        );
+        return;
+      }
+
+      await PrintAdditionalService.printBatch(grouped);
+      final res = await repo.fetchProcessingRequests();
+
+      emit(
+        state.copyWith(
+          isPrintingMain: false,
+          processingList: res,
+          filteredList: res,
+        ),
+      );
     } catch (e) {
-      print("Print Error: $e");
+      emit(
+        state.copyWith(
+          isPrintingMain: false,
+          errorMessage: "Something went wrong",
+        ),
+      );
     }
   }
 
@@ -241,5 +258,112 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
   /// ================================
   void _onClearPrint(ClearPrintBatch event, Emitter<StoreState> emit) {
     emit(state.copyWith(printBatch: {}));
+  }
+
+  Future<void> _onConfirmItem(
+    ConfirmAdditionalItem event,
+    Emitter<StoreState> emit,
+  ) async {
+    final item = event.item;
+    final id = item['id'].toString();
+
+    final updatedMap = Map<String, bool>.from(state.confirmingItems);
+    updatedMap[id] = true;
+
+    emit(state.copyWith(confirmingItems: updatedMap));
+
+    try {
+      final qty = item['qty'];
+
+      await repo.approveRequest(id: item['id'], qty: qty);
+
+      final updatedList = state.processingList
+          .where((e) => e['id'].toString() != id)
+          .toList();
+
+      emit(
+        state.copyWith(processingList: updatedList, filteredList: updatedList),
+      );
+    } catch (e) {
+      print("Confirm Error: $e");
+    } finally {
+      updatedMap[id] = false;
+      emit(state.copyWith(confirmingItems: updatedMap));
+    }
+  }
+
+  Future<void> _onPrintBranch(
+    PrintBranchAdditional event,
+    Emitter<StoreState> emit,
+  ) async {
+    emit(state.copyWith(isPrinting: true));
+
+    try {
+      await PrintAdditionalService.printBatch({event.branch: event.items});
+    } catch (e) {
+      print("Print Error: $e");
+    }
+
+    emit(state.copyWith(isPrinting: false));
+  }
+
+  Future<void> _onOpenDialogWithLoading(
+    OpenProcessingDialog event,
+    Emitter<StoreState> emit,
+  ) async {
+    emit(state.copyWith(isOpeningDialog: true));
+
+    try {
+      final res = await repo.fetchProcessingRequests();
+
+      final Map<String, List<Map<String, dynamic>>> grouped = {};
+
+      for (final item in res) {
+        final branch = item['branch_name'] ?? '';
+        grouped.putIfAbsent(branch, () => []);
+        grouped[branch]!.add(item);
+      }
+
+      emit(
+        state.copyWith(
+          processingList: res,
+          filteredList: res,
+          processingBatch: grouped,
+          isOpeningDialog: false,
+          dialogOpened: true,
+        ),
+      );
+    } catch (e) {
+      emit(state.copyWith(isOpeningDialog: false));
+    }
+  }
+
+  Future<void> _onPrintAllWithLoading(
+    PrintAllAdditional event,
+    Emitter<StoreState> emit,
+  ) async {
+    emit(state.copyWith(isPrintingMain: true));
+
+    try {
+      final grouped = await _collect();
+      await PrintAdditionalService.printBatch(grouped);
+    } catch (e) {
+      print("Print Error: $e");
+    }
+
+    emit(state.copyWith(isPrintingMain: false));
+  }
+
+  Future<void> _onRefreshProcessingList(
+    RefreshProcessingList event,
+    Emitter<StoreState> emit,
+  ) async {
+    try {
+      final res = await repo.fetchProcessingRequests();
+
+      emit(state.copyWith(processingList: res, filteredList: res));
+    } catch (e) {
+      print("Refresh Error: $e");
+    }
   }
 }

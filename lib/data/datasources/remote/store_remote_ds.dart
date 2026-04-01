@@ -146,7 +146,7 @@ class StoreRemoteDs {
     final res = await client
         .from('additional_requests')
         .select(
-          'request_group_id, branch_name, created_at, status, done_at, inventory_qty',
+          'request_group_id, branch_name, created_at, status, done_at, inventory_qty,store_status',
         )
         .or(
           'status.eq.sent_to_store,'

@@ -5,7 +5,7 @@ class AdditionalRequestGroup {
   final int itemsCount;
 
   final String status;
-
+  final String? storeStatus;
   final String itemNames;
   final String itemCodes;
 
@@ -17,5 +17,6 @@ class AdditionalRequestGroup {
     required this.status,
     required this.itemNames,
     required this.itemCodes,
+    this.storeStatus,
   });
 }

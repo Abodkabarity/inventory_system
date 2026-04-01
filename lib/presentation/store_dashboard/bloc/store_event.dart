@@ -66,3 +66,22 @@ class SearchProcessingItems extends StoreEvent {
   @override
   List<Object?> get props => [query];
 }
+
+class ConfirmAdditionalItem extends StoreEvent {
+  final Map<String, dynamic> item;
+
+  ConfirmAdditionalItem(this.item);
+}
+
+class PrintBranchAdditional extends StoreEvent {
+  final String branch;
+  final List<Map<String, dynamic>> items;
+
+  PrintBranchAdditional(this.branch, this.items);
+}
+
+class OpenProcessingDialog extends StoreEvent {}
+
+class PrintAllAdditional extends StoreEvent {}
+
+class RefreshProcessingList extends StoreEvent {}

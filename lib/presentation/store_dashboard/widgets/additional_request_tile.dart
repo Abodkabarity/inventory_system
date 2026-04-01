@@ -19,20 +19,25 @@ class AdditionalRequestTile extends StatelessWidget {
     Color statusColor;
     String statusText;
 
-    switch (request.status) {
-      case "done":
-        statusColor = Colors.green;
-        statusText = "DONE";
-        break;
+    if (request.storeStatus == 'processing') {
+      statusColor = AppColors.primaryColor;
+      statusText = "PROCESSING";
+    } else {
+      switch (request.status) {
+        case "done":
+          statusColor = Colors.green;
+          statusText = "DONE";
+          break;
 
-      case "rejected":
-        statusColor = Colors.red;
-        statusText = "REJECTED";
-        break;
+        case "rejected":
+          statusColor = Colors.red;
+          statusText = "REJECTED";
+          break;
 
-      default:
-        statusColor = Colors.orange;
-        statusText = "PENDING";
+        default:
+          statusColor = Colors.orange;
+          statusText = "PENDING";
+      }
     }
 
     return Card(

@@ -40,9 +40,9 @@ class PrintAdditionalService {
               border: pw.TableBorder.all(width: 0.5),
 
               columnWidths: {
-                0: const pw.FixedColumnWidth(40),
+                0: const pw.FixedColumnWidth(90),
                 1: const pw.FlexColumnWidth(),
-                2: const pw.FixedColumnWidth(80),
+                2: const pw.FixedColumnWidth(40),
               },
 
               children: [
@@ -50,9 +50,10 @@ class PrintAdditionalService {
                 pw.TableRow(
                   decoration: const pw.BoxDecoration(color: PdfColors.grey300),
                   children: [
-                    _cell("Qty", bold: true),
+                    _cell("Item Code", bold: true),
+
                     _cell("Item Name", bold: true),
-                    _cell("Code", bold: true),
+                    _cell("Qty", bold: true),
                   ],
                 ),
 
@@ -60,9 +61,9 @@ class PrintAdditionalService {
                 ...items.map((e) {
                   return pw.TableRow(
                     children: [
-                      _cell((e['request_qty'] ?? '').toString()),
-                      _cell(e['item_name'] ?? ''),
                       _cell(e['item_code'] ?? ''),
+                      _cell(e['item_name'] ?? ''),
+                      _cell((e['request_qty'] ?? '').toString()),
                     ],
                   );
                 }),
@@ -81,6 +82,7 @@ class PrintAdditionalService {
       padding: const pw.EdgeInsets.all(6),
       child: pw.Text(
         text,
+        textAlign: pw.TextAlign.center,
         style: pw.TextStyle(
           fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
         ),

@@ -255,6 +255,7 @@ class NumericField extends StatelessWidget {
   final VoidCallback onInc;
   final bool canInc;
   final bool canDec;
+  final int maxAllowed;
   const NumericField({
     super.key,
     required this.controller,
@@ -266,6 +267,7 @@ class NumericField extends StatelessWidget {
     required this.onInc,
     required this.canInc,
     required this.canDec,
+    required this.maxAllowed,
   });
 
   @override
@@ -279,7 +281,19 @@ class NumericField extends StatelessWidget {
       inputFormatters: [
         FilteringTextInputFormatter.digitsOnly,
         LengthLimitingTextInputFormatter(9),
+        TextInputFormatter.withFunction((oldValue, newValue) {
+          final val = int.tryParse(newValue.text);
+
+          if (val == null) return newValue;
+
+          if (val > maxAllowed) {
+            return oldValue;
+          }
+
+          return newValue;
+        }),
       ],
+
       style: TextStyle(
         fontWeight: FontWeight.bold,
         color: AppColors.secondaryColor,
@@ -311,13 +325,6 @@ class NumericField extends StatelessWidget {
           icon: Icon(
             Icons.remove_circle_outline,
             color: canDec ? AppColors.secondaryColor : Colors.grey,
-          ),
-        ),
-        suffixIcon: IconButton(
-          onPressed: canInc ? onInc : null,
-          icon: Icon(
-            Icons.add_circle_outline,
-            color: canInc ? AppColors.secondaryColor : Colors.grey,
           ),
         ),
       ),

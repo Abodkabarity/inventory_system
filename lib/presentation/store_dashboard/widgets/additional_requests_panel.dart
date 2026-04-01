@@ -5,6 +5,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../domain/entities/additional_request_group.dart';
 import '../bloc/store_bloc.dart';
 import '../bloc/store_event.dart';
+import '../bloc/store_state.dart';
+import 'ProcessingAdditionalDialog.dart';
 import 'additional_history_dialog.dart';
 import 'additional_request_tile.dart';
 
@@ -37,104 +39,269 @@ class _AdditionalPanelState extends State<AdditionalPanel> {
       return 0;
     });
 
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.backgroundWidget,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                /* Padding(
-                  padding: const EdgeInsets.only(left: 10),
-                  child: const Text(
-                    "Additional Requests",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.secondaryColor,
+    final state = context.watch<StoreBloc>().state;
+    final processingCount = state.additionalRequests
+        .where((e) => e.storeStatus == 'processing')
+        .length;
+    return MultiBlocListener(
+      listeners: [
+        /// 🔴 ERROR LISTENER
+        BlocListener<StoreBloc, StoreState>(
+          listenWhen: (prev, curr) =>
+              prev.errorMessage != curr.errorMessage &&
+              curr.errorMessage != null,
+          listener: (context, state) {
+            showDialog(
+              context: context,
+              builder: (_) => AlertDialog(
+                backgroundColor: Colors.white,
+                title: const Text("Notice"),
+                content: Text(
+                  state.errorMessage!,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text(
+                      "OK",
+                      style: TextStyle(color: AppColors.secondaryColor),
                     ),
                   ),
-                ),*/
-                ElevatedButton.icon(
-                  icon: Icon(Icons.print),
-                  label: Text("Print"),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-                  onPressed: () {
-                    context.read<StoreBloc>().add(CollectAndPrintAdditional());
-                  },
-                ),
+                ],
+              ),
+            );
+          },
+        ),
 
-                const SizedBox(width: 10),
+        BlocListener<StoreBloc, StoreState>(
+          listenWhen: (prev, curr) =>
+              prev.processingBatch != curr.processingBatch &&
+              curr.processingBatch.isNotEmpty,
+          listener: (context, state) {
+            if (Navigator.of(context).canPop()) return;
 
-                /// ✏️ CONFIRM
-                ElevatedButton.icon(
-                  icon: Icon(Icons.check),
-                  label: Text("Confirm"),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                  ),
-                  onPressed: () {
-                    context.read<StoreBloc>().add(
-                      CollectAndOpenDialogAdditional(),
-                    );
-                  },
-                ),
-
-                /// HISTORY BUTTON
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.history, color: AppColors.white),
-                  label: const Text(
-                    "Additional Order History",
-                    style: TextStyle(color: AppColors.white),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryColor,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
+            showDialog(
+              context: context,
+              builder: (_) => BlocProvider.value(
+                value: context.read<StoreBloc>(),
+                child: ProcessingAdditionalDialog(data: state.processingBatch),
+              ),
+            );
+          },
+        ),
+      ],
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.backgroundWidget,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: [
+                  ElevatedButton.icon(
+                    icon: state.isPrintingMain
+                        ? const SizedBox(
+                            height: 16,
+                            width: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.print, color: Colors.white),
+                    label: Text(
+                      state.isPrintingMain
+                          ? "Printing..."
+                          : "Print Pending Additional",
+                      style: TextStyle(color: Colors.white),
                     ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.secondaryColor,
                     ),
-                  ),
-                  onPressed: () {
-                    final bloc = context.read<StoreBloc>();
+                    onPressed: state.isPrintingMain
+                        ? null
+                        : () {
+                            final bloc = context.read<StoreBloc>();
 
-                    showDialog(
-                      context: context,
-                      builder: (dialogContext) {
-                        return BlocProvider.value(
-                          value: bloc,
-                          child: const AdditionalHistoryDialog(),
-                        );
-                      },
-                    );
-                  },
-                ),
-              ],
+                            final hasPending = bloc.state.additionalRequests
+                                .any((e) => e.status == 'sent_to_store');
+
+                            if (!hasPending) {
+                              showDialog(
+                                context: context,
+                                builder: (_) => AlertDialog(
+                                  title: const Text("Notice"),
+                                  content: const Text(
+                                    "No pending additional requests",
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(context),
+                                      child: const Text("OK"),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              return;
+                            }
+
+                            bloc.add(CollectAndPrintAdditional());
+                          },
+                  ),
+
+                  const SizedBox(width: 10),
+
+                  /// 🟢 CONFIRM
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      ElevatedButton.icon(
+                        icon: state.isOpeningDialog
+                            ? const SizedBox(
+                                height: 16,
+                                width: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.check, color: Colors.white),
+                        label: Text(
+                          state.isOpeningDialog
+                              ? "Loading..."
+                              : "Additional Confirm",
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                        ),
+                        onPressed: state.isOpeningDialog
+                            ? null
+                            : () {
+                                final bloc = context.read<StoreBloc>();
+
+                                final hasProcessing = bloc
+                                    .state
+                                    .additionalRequests
+                                    .any((e) => e.storeStatus == 'processing');
+
+                                if (!hasProcessing) {
+                                  showDialog(
+                                    context: context,
+                                    builder: (_) => AlertDialog(
+                                      backgroundColor: Colors.white,
+                                      title: const Text("Notice"),
+                                      content: const Text(
+                                        "Please print first",
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(context),
+                                          child: const Text(
+                                            "OK",
+                                            style: TextStyle(
+                                              color: AppColors.secondaryColor,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                bloc.add(OpenProcessingDialog());
+                              },
+                      ),
+
+                      /// 🔵 BADGE
+                      if (processingCount > 0)
+                        Positioned(
+                          right: -6,
+                          top: -6,
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                            ),
+                            constraints: const BoxConstraints(
+                              minWidth: 20,
+                              minHeight: 20,
+                            ),
+                            child: Text(
+                              "$processingCount",
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  Spacer(),
+
+                  /// 🟣 HISTORY
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.history, color: AppColors.white),
+                    label: const Text(
+                      "Additional Order History",
+                      style: TextStyle(color: AppColors.white),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primaryColor,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    onPressed: () {
+                      final bloc = context.read<StoreBloc>();
+
+                      showDialog(
+                        context: context,
+                        builder: (dialogContext) {
+                          return BlocProvider.value(
+                            value: bloc,
+                            child: const AdditionalHistoryDialog(),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
-          ),
 
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 25),
-            child: const Divider(color: AppColors.primaryColor),
-          ),
-
-          Expanded(
-            child: ListView.builder(
-              itemCount: list.length,
-              itemBuilder: (context, i) {
-                return AdditionalRequestTile(request: list[i]);
-              },
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 25),
+              child: const Divider(color: AppColors.primaryColor),
             ),
-          ),
-        ],
+
+            Expanded(
+              child: ListView.builder(
+                itemCount: list.length,
+                itemBuilder: (context, i) {
+                  return AdditionalRequestTile(request: list[i]);
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -39,7 +39,12 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
         final statsAll = BranchOrdersSelectors.calcStats(s.rows);
         final categories = BranchOrdersSelectors.extractCategories(s.rows);
         final orderedColumns = s.isOrderDay
-            ? BranchOrdersSelectors.orderedVisibleColumns(s)
+            ? [
+                ...BranchOrdersSelectors.orderedVisibleColumns(
+                  s,
+                ).where((c) => c != 'additional_request'),
+                if (s.isSubmitted) 'additional_request',
+              ]
             : [
                 'item_code',
                 'item_name',

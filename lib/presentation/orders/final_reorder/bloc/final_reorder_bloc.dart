@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../domain/entities/daily_order_row.dart';
@@ -54,9 +52,8 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         (row.branchFormulary ?? '').toString().trim().toUpperCase() == 'NON';
 
     final isLocked = storeStock <= 0;
-    final onlyDecrease = reorderQtyNum > oldSafe;
-
-    final initialQty = (initialQtyInput < 0 ? 0 : initialQtyInput);
+    final onlyDecrease = initialQtyInput > oldSafe;
+    final initialQty = initialQtyInput;
     final clampedQty = _clampQty(
       v: initialQty,
       isLocked: isLocked,
@@ -78,9 +75,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     );
   }
 
-  void _onStarted(FinalReorderStarted e, Emitter<FinalReorderState> emit) {
-    // لو بدك أي logging
-  }
+  void _onStarted(FinalReorderStarted e, Emitter<FinalReorderState> emit) {}
 
   void _onQtyTextChanged(
     FinalReorderQtyTextChanged e,
@@ -89,29 +84,43 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     final parsed = int.tryParse(e.text.trim()) ?? 0;
     final nextRaw = parsed.clamp(0, 1000000000);
 
-    final next = _clampQty(
-      v: nextRaw,
-      isLocked: state.isLocked,
-      oldSafe: state.oldQty,
-      storeStock: state.storeStock,
-      onlyDecrease: state.onlyDecrease,
-    );
+    int next;
+    FinalReorderDialogPayload? dialog;
 
-    if (next != nextRaw) {
-      emit(
-        state.copyWith(
-          dialog: _dialogForExceeded(
-            attempted: nextRaw,
-            cap: _capForThisBranch(
-              oldSafe: state.oldQty,
-              storeStock: state.storeStock,
-              onlyDecrease: state.onlyDecrease,
-            ),
-            onlyDecrease: state.onlyDecrease,
-            storeStock: state.storeStock,
-          ),
-        ),
+    if (state.onlyDecrease) {
+      if (nextRaw > state.oldQty) {
+        next = state.oldQty;
+
+        dialog = const FinalReorderDialogPayload(
+          title: 'Limited Stock',
+          body: 'You can only decrease this item.',
+        );
+      } else {
+        next = nextRaw;
+      }
+    } else {
+      final clamped = _clampQty(
+        v: nextRaw,
+        isLocked: state.isLocked,
+        oldSafe: state.oldQty,
+        storeStock: state.storeStock,
+        onlyDecrease: state.onlyDecrease,
       );
+
+      next = clamped;
+
+      if (clamped != nextRaw) {
+        dialog = _dialogForExceeded(
+          attempted: nextRaw,
+          cap: _capForThisBranch(
+            oldSafe: state.oldQty,
+            storeStock: state.storeStock,
+            onlyDecrease: state.onlyDecrease,
+          ),
+          onlyDecrease: state.onlyDecrease,
+          storeStock: state.storeStock,
+        );
+      }
     }
 
     emit(
@@ -124,7 +133,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         isNonFormulary: state.isNonFormulary,
         isLocked: state.isLocked,
         onlyDecrease: state.onlyDecrease,
-        dialog: state.dialog,
+        dialog: dialog,
       ),
     );
   }
@@ -260,8 +269,11 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     required int storeStock,
     required bool onlyDecrease,
   }) {
-    if (onlyDecrease) return oldSafe;
-    return math.max(oldSafe, storeStock);
+    if (onlyDecrease) {
+      return oldSafe;
+    }
+
+    return oldSafe;
   }
 
   static int _clampQty({
@@ -327,7 +339,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
       onlyDecrease: onlyDecrease,
     );
 
-    final canInc = !isLocked && qty < cap;
+    final canInc = !isLocked && !onlyDecrease && qty < cap;
     final canDec = !isLocked && qty > 0;
 
     final hasChange = qty != oldSafe;
