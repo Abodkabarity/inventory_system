@@ -1,5 +1,7 @@
 import 'package:equatable/equatable.dart';
 
+import '../../../domain/entities/inventory_page.dart';
+
 class InventoryEvent extends Equatable {
   @override
   List<Object?> get props => [];
@@ -50,4 +52,27 @@ class LoadBranchAdditionalStats extends InventoryEvent {
 
   @override
   List<Object?> get props => [branch];
+}
+
+class ChangeInventoryPage extends InventoryEvent {
+  final InventoryPageType page;
+
+  ChangeInventoryPage(this.page);
+}
+
+class LoadMismatch extends InventoryEvent {}
+
+class SearchMismatch extends InventoryEvent {
+  final String query;
+  SearchMismatch(this.query);
+}
+
+class FilterMismatchBranch extends InventoryEvent {
+  final String branch;
+  FilterMismatchBranch(this.branch);
+}
+
+class FilterMismatchDate extends InventoryEvent {
+  final String range;
+  FilterMismatchDate(this.range);
 }

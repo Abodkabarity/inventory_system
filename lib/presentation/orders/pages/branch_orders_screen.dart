@@ -39,12 +39,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
         final statsAll = BranchOrdersSelectors.calcStats(s.rows);
         final categories = BranchOrdersSelectors.extractCategories(s.rows);
         final orderedColumns = s.isOrderDay
-            ? [
-                ...BranchOrdersSelectors.orderedVisibleColumns(
-                  s,
-                ).where((c) => c != 'additional_request'),
-                if (s.isSubmitted) 'additional_request',
-              ]
+            ? BranchOrdersSelectors.orderedVisibleColumns(s)
             : [
                 'item_code',
                 'item_name',
@@ -87,7 +82,9 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                       const SizedBox(height: 14),
 
                       if (s.isInitial)
-                        Expanded(
+                        SizedBox(
+                          height: MediaQuery.of(context).size.height * 0.7.h,
+
                           child: Center(
                             child: _GenerateCard(
                               isBusy: isBusy,
@@ -125,7 +122,8 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
                             SizedBox(
-                              width: 320.w,
+                              width: 300.w,
+                              height: 75.h,
                               child: _KpiCard(
                                 title: 'Total Products',
                                 value: statsAll.totalProducts.toString(),
@@ -134,7 +132,8 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                               ),
                             ),
                             SizedBox(
-                              width: 320.w,
+                              width: 300.w,
+                              height: 75.h,
                               child: _KpiCard(
                                 title: 'Items in Order',
                                 value: statsAll.finalReorderCount
@@ -145,7 +144,8 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                               ),
                             ),
                             SizedBox(
-                              width: 320.w,
+                              width: 300.w,
+                              height: 75.h,
                               child: _KpiCard(
                                 title: 'Essential',
                                 value: '${statsAll.essential}',
@@ -154,7 +154,8 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                               ),
                             ),
                             SizedBox(
-                              width: 320.w,
+                              width: 300.w,
+                              height: 75.h,
                               child: _KpiCard(
                                 title: 'Non',
                                 value: '${statsAll.non}',
@@ -163,12 +164,13 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                               ),
                             ),
                             SizedBox(
-                              width: 320.w,
+                              width: 300.w,
+
+                              height: 75.h,
                               child: _KpiCard(
-                                title: 'Additional Orders',
+                                title: 'Additional Orders Today',
                                 value: '$sentAddCount',
-                                subtitle:
-                                    'Number of Sent additional requests (today)',
+                                subtitle: '',
                                 icon: Icons.add_box_outlined,
                               ),
                             ),
@@ -326,68 +328,67 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
 
                         const SizedBox(height: 10),
 
-                        Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(18),
-                              border: Border.all(
-                                color: const Color(0xFFE6E8F0),
+                        Container(
+                          constraints: BoxConstraints(
+                            minHeight: MediaQuery.of(context).size.height * 0.4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: const Color(0xFFE6E8F0)),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.04),
+                                blurRadius: 18,
+                                offset: const Offset(0, 10),
                               ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.04),
-                                  blurRadius: 18,
-                                  offset: const Offset(0, 10),
-                                ),
-                              ],
-                            ),
-                            padding: const EdgeInsets.all(14),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const _TableTitle(),
-                                const SizedBox(height: 10),
+                            ],
+                          ),
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const _TableTitle(),
+                              const SizedBox(height: 10),
 
-                                // ✅ BranchOrdersScreen change (only the OrdersTable constructor part)
-                                // IMPORTANT: add isSubmitted: s.isSubmitted
-                                Expanded(
-                                  child: OrdersTable(
-                                    rows: s.viewRows,
-                                    isLoading: isBusy,
-                                    orderedColumns: orderedColumns,
-                                    columnWidths: s.columnWidths,
-                                    finalEdits: s.finalEdits,
-                                    onTapFinalReorder: (row) =>
-                                        BranchOrdersActions.openFinalSidePanel(
-                                          context: context,
-                                          state: s,
-                                          row: row,
-                                        ),
-                                    additionalEdits: s.additionalEdits,
-                                    sentAdditionalQtyByItemCode:
-                                        s.sentAdditionalQtyByItemCode,
-                                    onTapAdditionalRequest: (row) =>
-                                        BranchOrdersActions.openAdditionalSidePanel(
-                                          context: context,
-                                          state: s,
-                                          row: row,
-                                        ),
-                                    isSubmitted: s.isSubmitted, // ✅ NEW
-                                    controller: _grid.controller,
-                                    gridController: _grid,
-                                    onColumnResized: (key, width) {
-                                      context.read<OrdersBloc>().add(
-                                        OrdersColumnResized(
-                                          columnKey: key,
-                                          width: width,
-                                        ),
-                                      );
-                                    },
-                                  ),
+                              SizedBox(
+                                height:
+                                    MediaQuery.of(context).size.height * 0.42.h,
+                                child: OrdersTable(
+                                  rows: s.viewRows,
+                                  isLoading: isBusy,
+                                  orderedColumns: orderedColumns,
+                                  columnWidths: s.columnWidths,
+                                  finalEdits: s.finalEdits,
+                                  onTapFinalReorder: (row) =>
+                                      BranchOrdersActions.openFinalSidePanel(
+                                        context: context,
+                                        state: s,
+                                        row: row,
+                                      ),
+                                  additionalEdits: s.additionalEdits,
+                                  sentAdditionalQtyByItemCode:
+                                      s.sentAdditionalQtyByItemCode,
+                                  onTapAdditionalRequest: (row) =>
+                                      BranchOrdersActions.openAdditionalSidePanel(
+                                        context: context,
+                                        state: s,
+                                        row: row,
+                                      ),
+                                  isSubmitted: s.isSubmitted,
+                                  controller: _grid.controller,
+                                  gridController: _grid,
+                                  onColumnResized: (key, width) {
+                                    context.read<OrdersBloc>().add(
+                                      OrdersColumnResized(
+                                        columnKey: key,
+                                        width: width,
+                                      ),
+                                    );
+                                  },
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -637,7 +638,7 @@ class _GenerateCard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           const Text(
-            'Generate Branch Order',
+            'Create Branch Order',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w900,
@@ -646,7 +647,7 @@ class _GenerateCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Press generate to build the order, then we will load all items for your branch.',
+            'Press create to build the order, then we will load all items for your branch.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
           ),
@@ -667,11 +668,11 @@ class _GenerateCard extends StatelessWidget {
             height: 46,
             child: FilledButton.icon(
               onPressed: isBusy ? null : onGenerate,
-              icon: const Icon(Icons.play_arrow_rounded),
+              icon: const Icon(Icons.create),
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.primaryColor,
               ),
-              label: const Text('Generate Order'),
+              label: const Text('Create Order'),
             ),
           ),
         ],
@@ -886,7 +887,14 @@ class _FiltersBar extends StatelessWidget {
             child: _ModernDropdown(
               label: 'Formulary',
               value: selectedFormulary,
-              items: const ['ALL', 'ESSENTIAL', 'NON'],
+              items: const [
+                'ALL',
+                'ESSENTIAL',
+                'NON',
+                "SALES",
+                "TMA",
+                "NEW ITEM",
+              ],
               onChanged: onFormularyChanged,
             ),
           ),

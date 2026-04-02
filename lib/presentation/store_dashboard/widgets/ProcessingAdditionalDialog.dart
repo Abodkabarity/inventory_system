@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/app_colors.dart';
@@ -30,6 +31,17 @@ class _ProcessingAdditionalDialogState
   bool printLoading = false;
 
   String? successMessage;
+  String selectedBranch = 'ALL';
+  List<String> getBranches(List<Map<String, dynamic>> items) {
+    final set = <String>{};
+
+    for (var item in items) {
+      final b = item['branch_name'];
+      if (b != null) set.add(b);
+    }
+
+    return ['ALL', ...set];
+  }
 
   List<Map<String, dynamic>> allItems = [];
 
@@ -205,6 +217,15 @@ class _ProcessingAdditionalDialogState
                       fillColor: AppColors.backgroundWidget,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: AppColors.primaryColor),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: AppColors.primaryColor),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: AppColors.primaryColor),
                       ),
                     ),
                   ),
@@ -222,6 +243,15 @@ class _ProcessingAdditionalDialogState
                       fillColor: AppColors.backgroundWidget,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: AppColors.primaryColor),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: AppColors.primaryColor),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: AppColors.primaryColor),
                       ),
                     ),
                   ),
@@ -328,11 +358,21 @@ class _ProcessingAdditionalDialogState
   Widget build(BuildContext context) {
     final list = context.select((StoreBloc bloc) => bloc.state.filteredList);
 
-    final grouped = groupByBranch(list);
+    List<Map<String, dynamic>> filteredByBranch = list;
+
+    if (selectedBranch != 'ALL') {
+      filteredByBranch = list
+          .where((e) => e['branch_name'] == selectedBranch)
+          .toList();
+    }
+
+    final grouped = groupByBranch(filteredByBranch);
+    final state = context.watch<StoreBloc>().state;
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
 
-      if (list.isEmpty && Navigator.of(context).canPop()) {
+      if (state.processingList.isEmpty && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }
     });
@@ -340,8 +380,8 @@ class _ProcessingAdditionalDialogState
     return Dialog(
       backgroundColor: Colors.grey.shade100,
       child: Container(
-        width: 1100,
-        height: 650,
+        width: 1100.w,
+        height: 1100.h,
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
@@ -383,32 +423,80 @@ class _ProcessingAdditionalDialogState
               ],
             ),
 
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: TextField(
-                controller: searchController,
-                onChanged: (v) => context.read<StoreBloc>().add(
-                  SearchProcessingItems(query: v),
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: TextField(
+                      controller: searchController,
+                      onChanged: (v) => context.read<StoreBloc>().add(
+                        SearchProcessingItems(query: v),
+                      ),
+                      decoration: InputDecoration(
+                        hintText: "Search product...",
+                        prefixIcon: const Icon(Icons.search),
+                        filled: true,
+                        fillColor: AppColors.backgroundWidget,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-                decoration: InputDecoration(
-                  hintText: "Search product...",
-                  prefixIcon: const Icon(Icons.search),
-                  filled: true,
-                  fillColor: AppColors.backgroundWidget,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppColors.primaryColor),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppColors.primaryColor),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppColors.primaryColor),
+                SizedBox(width: 10),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: selectedBranch,
+                    dropdownColor: Colors.white,
+                    decoration: InputDecoration(
+                      labelText: "Select Branch",
+                      labelStyle: TextStyle(color: AppColors.secondaryColor),
+                      filled: true,
+                      fillColor: AppColors.backgroundWidget,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: AppColors.primaryColor),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: AppColors.primaryColor),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: AppColors.primaryColor),
+                      ),
+                    ),
+                    items: getBranches(state.processingList)
+                        .map(
+                          (b) => DropdownMenuItem(
+                            value: b,
+                            child: Text(
+                              b,
+                              style: TextStyle(color: AppColors.secondaryColor),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        selectedBranch = value!;
+                      });
+                    },
                   ),
                 ),
-              ),
+              ],
             ),
 
             const Divider(color: AppColors.primaryColor),

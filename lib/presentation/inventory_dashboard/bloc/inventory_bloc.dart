@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../domain/entities/mismatch_item.dart';
 import '../../../domain/repositories/inventory_repository.dart';
 import 'inventory_event.dart';
 import 'inventory_state.dart';
@@ -16,6 +17,13 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     on<LoadBranchAnalytics>(_onBranchAnalytics);
     on<ApproveInventoryRequest>(_onApproveInventory);
     on<LoadBranchAdditionalStats>(_onBranchAdditionalStats);
+    on<ChangeInventoryPage>((event, emit) {
+      emit(state.copyWith(currentPage: event.page));
+    });
+
+    on<LoadMismatch>(_onLoadMismatch);
+    on<SearchMismatch>(_onSearchMismatch);
+    on<FilterMismatchBranch>(_onFilterMismatchBranch);
   }
 
   /// ================================
@@ -175,5 +183,66 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     } catch (e) {
       print("Branch Additional Stats Error: $e");
     }
+  }
+
+  Future<void> _onLoadMismatch(
+    LoadMismatch event,
+    Emitter<InventoryState> emit,
+  ) async {
+    final data = await repo.fetchMismatch();
+
+    emit(state.copyWith(mismatch: data, filteredMismatch: data));
+  }
+
+  void _onSearchMismatch(SearchMismatch event, Emitter<InventoryState> emit) {
+    final filtered = _applyMismatchFilters(
+      list: state.mismatch,
+      search: event.query,
+      branch: state.mismatchBranch,
+    );
+
+    emit(
+      state.copyWith(mismatchSearch: event.query, filteredMismatch: filtered),
+    );
+  }
+
+  void _onFilterMismatchBranch(
+    FilterMismatchBranch event,
+    Emitter<InventoryState> emit,
+  ) {
+    final filtered = _applyMismatchFilters(
+      list: state.mismatch,
+      search: state.mismatchSearch,
+      branch: event.branch,
+    );
+
+    emit(
+      state.copyWith(mismatchBranch: event.branch, filteredMismatch: filtered),
+    );
+  }
+
+  List<MismatchItem> _applyMismatchFilters({
+    required List<MismatchItem> list,
+    required String search,
+    required String branch,
+  }) {
+    var result = list;
+
+    /// search
+    if (search.isNotEmpty) {
+      final q = search.toLowerCase();
+
+      result = result.where((e) {
+        return e.itemName.toLowerCase().contains(q) ||
+            e.itemCode.toLowerCase().contains(q);
+      }).toList();
+    }
+
+    /// branch
+    if (branch != 'ALL') {
+      result = result.where((e) => e.branchName == branch).toList();
+    }
+
+    return result;
   }
 }

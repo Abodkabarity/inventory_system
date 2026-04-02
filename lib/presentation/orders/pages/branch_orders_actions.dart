@@ -171,7 +171,7 @@ class BranchOrdersActions {
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Additional Request',
-      barrierColor: Colors.black.withOpacity(0.18),
+      barrierColor: Colors.black.withValues(alpha: 0.18),
       pageBuilder: (_, __, ___) {
         return Align(
           alignment: Alignment.centerRight,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../core/theme/app_colors.dart';
@@ -365,6 +366,9 @@ class _AddFormState extends State<_AddForm> {
                 Expanded(
                   child: TextField(
                     controller: system,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[-0-9.,]')),
+                    ],
                     decoration: InputDecoration(
                       labelText: "System Qty",
                       labelStyle: TextStyle(color: AppColors.secondaryColor),
@@ -390,6 +394,9 @@ class _AddFormState extends State<_AddForm> {
                 Expanded(
                   child: TextField(
                     controller: actual,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[-0-9.,]')),
+                    ],
                     decoration: InputDecoration(
                       labelText: "Actual Qty",
                       labelStyle: TextStyle(color: AppColors.secondaryColor),

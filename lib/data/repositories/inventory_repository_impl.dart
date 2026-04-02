@@ -1,5 +1,6 @@
 import '../../domain/entities/additional_request_group.dart';
 import '../../domain/entities/inventory_edit_item.dart';
+import '../../domain/entities/mismatch_item.dart';
 import '../../domain/repositories/inventory_repository.dart';
 import '../datasources/remote/inventory_remote_ds.dart';
 
@@ -168,5 +169,42 @@ class InventoryRepositoryImpl implements InventoryRepository {
   @override
   Future<int> fetchAdditionalTodayByBranchExact(String branch) {
     return remote.fetchAdditionalTodayByBranchExact(branch);
+  }
+
+  @override
+  Future<List<MismatchItem>> fetchMismatch() async {
+    final rows = await remote.fetchMismatch();
+
+    final logs = await remote.client
+        .from('mismatch_log')
+        .select('branch_name,item_code');
+
+    final logSet = logs
+        .map((e) => "${e['branch_name']}_${e['item_code']}")
+        .toSet();
+
+    return rows.map((e) {
+      final key = "${e['branch_name']}_${e['item_code']}";
+
+      return MismatchItem(
+        branchName: e['branch_name'] ?? '',
+        itemCode: e['item_code'] ?? '',
+        itemName: e['item_name'] ?? '',
+        systemStock: e['system_stock'] ?? 0,
+        actualStock: e['actual_stock'] ?? 0,
+        diff: e['diff'] ?? 0,
+        updateDate:
+            DateTime.tryParse(e['update_date'].toString()) ?? DateTime.now(),
+        hasHistory: logSet.contains(key),
+      );
+    }).toList();
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchMismatchHistory(
+    String branch,
+    String itemCode,
+  ) {
+    return remote.fetchMismatchLog(branch, itemCode);
   }
 }

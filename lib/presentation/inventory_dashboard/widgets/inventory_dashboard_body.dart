@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../bloc/inventory_state.dart';
 import 'inventory_additional_panel.dart';
 import 'inventory_branch_grid.dart';
-import 'inventory_edits_panel.dart';
 import 'inventory_stats_cards.dart';
 
 class InventoryDashboardBody extends StatelessWidget {
@@ -83,17 +83,7 @@ class InventoryDashboardBody extends StatelessWidget {
                 ),
               ),
 
-              /// EDITS PANEL
-              Expanded(
-                child: InventoryEditsPanel(
-                  edits: state.edits,
-                  branch: state.selectedBranch,
-                  isSubmitted: isSubmitted,
-                  isLoading: state.isLoading,
-                ),
-              ),
-
-              /// ADDITIONAL REQUESTS
+SizedBox(width: 20.w,),              /// ADDITIONAL REQUESTS
               Expanded(
                 child: InventoryAdditionalPanel(
                   requests: state.additionalRequests,

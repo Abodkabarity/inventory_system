@@ -783,11 +783,11 @@ class _OrdersDataSource extends DataGridSource {
 
           final bg = hasDraft
               ? const Color(0xFFEEF2FF)
-              : (hasSent ? const Color(0xFFF3F4F6) : const Color(0xFFF9FAFB));
+              : (hasSent ? AppColors.primaryColor : const Color(0xFFF9FAFB));
 
           final fg = hasDraft
               ? const Color(0xFF3F2AA5)
-              : (hasSent ? const Color(0xFF111827) : const Color(0xFF111827));
+              : (hasSent ? Colors.white : const Color(0xFF111827));
 
           return Container(
             alignment: Alignment.center,
@@ -946,7 +946,7 @@ class _OrdersDataSource extends DataGridSource {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  'Auto: $oldQty',
+                  'Default: $oldQty',
                   style: const TextStyle(
                     fontSize: 11.5,
                     color: Color(0xFF6B7280),
