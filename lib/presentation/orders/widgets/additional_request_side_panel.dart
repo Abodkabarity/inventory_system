@@ -53,23 +53,32 @@ class AdditionalRequestSidePanel extends StatefulWidget {
 class _AdditionalRequestSidePanelState
     extends State<AdditionalRequestSidePanel> {
   late final TextEditingController _qty;
-  late final TextEditingController _reason;
-
+  String? _selectedReason;
   String? _error;
-
+  final List<String> reasons = [
+    'Availability',
+    'RX Demand',
+    'High Demand',
+    'For Shelf',
+    'Stand',
+    'RX',
+    'Customer Request',
+    'Urgent Customer Request',
+  ];
   @override
   void initState() {
     super.initState();
     _qty = TextEditingController(
       text: widget.initialQty == null ? '' : widget.initialQty.toString(),
     );
-    _reason = TextEditingController(text: widget.initialReason);
+    _selectedReason = widget.initialReason.isEmpty
+        ? null
+        : widget.initialReason;
   }
 
   @override
   void dispose() {
     _qty.dispose();
-    _reason.dispose();
     super.dispose();
   }
 
@@ -77,8 +86,7 @@ class _AdditionalRequestSidePanelState
     setState(() => _error = null);
 
     final qtyStr = _qty.text.trim();
-    final reason = _reason.text.trim();
-
+    final reason = _selectedReason ?? '';
     if (qtyStr.isEmpty) {
       setState(() => _error = 'Qty is required.');
       return;
@@ -197,9 +205,7 @@ class _AdditionalRequestSidePanelState
                 decimal: true,
                 signed: true,
               ),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[-0-9.,]')),
-              ],
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               decoration: InputDecoration(
                 hintText: 'Enter Your Additional Quantity',
                 filled: true,
@@ -211,26 +217,56 @@ class _AdditionalRequestSidePanelState
                   borderRadius: BorderRadius.circular(14),
                   borderSide: BorderSide(color: AppColors.primaryColor),
                 ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: AppColors.primaryColor),
+                ),
               ),
             ),
             const SizedBox(height: 12),
 
             _FieldLabel('Reason'),
-            TextField(
-              controller: _reason,
-              maxLines: 4,
+            DropdownButtonFormField<String>(
+              initialValue: _selectedReason,
+              items: reasons
+                  .map(
+                    (r) => DropdownMenuItem(
+                      value: r,
+                      child: Text(
+                        r,
+                        style: TextStyle(color: AppColors.secondaryColor),
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (v) {
+                setState(() {
+                  _selectedReason = v;
+                });
+              },
+              dropdownColor: AppColors.white,
               decoration: InputDecoration(
-                hintText: 'Write the reason...',
+                hintText: 'Select reason...',
                 filled: true,
                 fillColor: AppColors.backgroundWidget,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: AppColors.primaryColor),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: AppColors.primaryColor),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
                   borderSide: BorderSide(color: AppColors.primaryColor),
                 ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 14,
+                ),
               ),
+              icon: const Icon(Icons.keyboard_arrow_down),
             ),
 
             if (_error != null) ...[
@@ -263,6 +299,9 @@ class _AdditionalRequestSidePanelState
                   child: FilledButton.icon(
                     onPressed: _save,
                     icon: const Icon(Icons.save_outlined),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primaryColor,
+                    ),
                     label: const Text('Save Draft'),
                   ),
                 ),

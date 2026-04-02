@@ -2,6 +2,8 @@ import 'package:equatable/equatable.dart';
 
 import '../../../domain/entities/additional_request_group.dart';
 import '../../../domain/entities/inventory_edit_item.dart';
+import '../../../domain/entities/inventory_page.dart';
+import '../../../domain/entities/mismatch_item.dart';
 
 class InventoryState extends Equatable {
   final List<String> branches;
@@ -14,9 +16,14 @@ class InventoryState extends Equatable {
   final List<AdditionalRequestGroup> additionalRequests;
 
   final int submittedCount;
+  final List<MismatchItem> mismatch;
+  final List<MismatchItem> filteredMismatch;
 
+  final String mismatchSearch;
+  final String mismatchBranch;
+  final String mismatchDate;
   final int additionalCount;
-
+  final InventoryPageType currentPage;
   final int additionalPendingCount;
 
   final int additionalSentToStoreCount;
@@ -50,6 +57,12 @@ class InventoryState extends Equatable {
     required this.additionalTodayBranchCount,
     required this.additionalMonthBranchCount,
     required this.additionalTodayBranchExactCount,
+    required this.currentPage,
+    required this.mismatch,
+    required this.filteredMismatch,
+    required this.mismatchSearch,
+    required this.mismatchBranch,
+    required this.mismatchDate,
   });
 
   factory InventoryState.initial() {
@@ -68,8 +81,14 @@ class InventoryState extends Equatable {
       additionalSentToStoreCount: 0,
       additionalTodayCount: 0,
       additionalMonthCount: 0,
+      currentPage: InventoryPageType.dashboard,
       submittedBranches: [],
       isLoading: false,
+      mismatch: [],
+      filteredMismatch: [],
+      mismatchSearch: '',
+      mismatchBranch: 'ALL',
+      mismatchDate: 'today',
     );
   }
 
@@ -88,8 +107,14 @@ class InventoryState extends Equatable {
     Map<String, int>? additionalTodayBranchExactCount,
     Map<String, int>? editsCount,
     Map<String, int>? additionalTodayBranchCount,
+    InventoryPageType? currentPage,
     List<String>? submittedBranches,
     bool? isLoading,
+    List<MismatchItem>? mismatch,
+    List<MismatchItem>? filteredMismatch,
+    String? mismatchSearch,
+    String? mismatchBranch,
+    String? mismatchDate,
   }) {
     return InventoryState(
       branches: branches ?? this.branches,
@@ -115,6 +140,12 @@ class InventoryState extends Equatable {
       additionalTodayBranchExactCount:
           additionalTodayBranchExactCount ??
           this.additionalTodayBranchExactCount,
+      currentPage: currentPage ?? this.currentPage,
+      mismatch: mismatch ?? this.mismatch,
+      filteredMismatch: filteredMismatch ?? this.filteredMismatch,
+      mismatchSearch: mismatchSearch ?? this.mismatchSearch,
+      mismatchBranch: mismatchBranch ?? this.mismatchBranch,
+      mismatchDate: mismatchDate ?? this.mismatchDate,
     );
   }
 
@@ -135,6 +166,11 @@ class InventoryState extends Equatable {
     additionalTodayBranchCount,
     isLoading,
     additionalMonthBranchCount,
+    currentPage,
     additionalTodayBranchExactCount,
+    filteredMismatch,
+    mismatchSearch,
+    mismatchBranch,
+    mismatchDate,
   ];
 }

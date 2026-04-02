@@ -197,4 +197,27 @@ class InventoryRemoteDs {
 
     return (res as List).length;
   }
+
+  Future<List<Map<String, dynamic>>> fetchMismatch() async {
+    final res = await client
+        .from('stk_mismatch')
+        .select()
+        .order('update_date', ascending: false);
+
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchMismatchLog(
+    String branch,
+    String itemCode,
+  ) async {
+    final res = await client
+        .from('mismatch_log')
+        .select()
+        .eq('branch_name', branch)
+        .eq('item_code', itemCode)
+        .order('changed_at', ascending: false);
+
+    return List<Map<String, dynamic>>.from(res);
+  }
 }

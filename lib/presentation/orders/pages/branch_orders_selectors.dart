@@ -33,12 +33,14 @@ class BranchOrdersSelectors {
 
     out.remove('additional_request');
 
-    final index = out.indexOf('final_reorder_qty_store_stock_gt_0');
+    if (s.isSubmitted) {
+      final index = out.indexOf('final_reorder_qty_store_stock_gt_0');
 
-    if (index != -1) {
-      out.insert(index + 1, 'additional_request');
-    } else {
-      out.add('additional_request');
+      if (index != -1) {
+        out.insert(index + 1, 'additional_request');
+      } else {
+        out.add('additional_request');
+      }
     }
 
     return out;

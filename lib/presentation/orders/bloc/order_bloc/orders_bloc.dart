@@ -108,15 +108,22 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     OrdersPressedGenerate e,
     Emitter<OrdersState> emit,
   ) async {
+    final submissionStatus = await repo.fetchSubmissionStatus(
+      runDate: state.runDate,
+      branchName: state.branchName,
+    );
+
     emit(
       state.copyWith(
         status: OrdersStatus.generating,
         error: null,
         progress: 0,
+        numericFinalOnly: submissionStatus == 'submitted'
+            ? false
+            : state.numericFinalOnly,
         progressMessage: 'Generating order...',
       ),
     );
-
     _startSmoothProgress(emit);
 
     try {
@@ -131,6 +138,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         state.copyWith(
           status: OrdersStatus.loading,
           progress: 0,
+
           progressMessage: 'Starting load...',
         ),
       );
@@ -278,7 +286,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         categoryFilter: state.categoryFilter,
         formularyFilter: state.formularyFilter,
         nonWithSales45Only: state.nonWithSales45Only,
-        numericFinalOnly: state.isSubmitted ? false : state.numericFinalOnly,
+        numericFinalOnly: submissionStatus == 'submitted'
+            ? false
+            : state.numericFinalOnly,
         additionalOnly: state.additionalOnly,
         additionalEdits: state.additionalEdits,
         sentAdditionalQtyByItemCode: sentAdditional,
@@ -495,7 +505,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     const formulary = 'ALL';
     const nonSales = false;
     const search = '';
-    const numericFinalOnly = true;
+    const numericFinalOnly = false;
     const additionalOnly = false;
 
     final view = _applyUiFilters(

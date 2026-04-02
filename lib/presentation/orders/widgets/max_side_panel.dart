@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
@@ -436,6 +437,7 @@ class _AddMaxFormState extends State<_AddMaxForm> {
                     child: TextFormField(
                       controller: maxQty,
                       keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       decoration: InputDecoration(
                         labelText: "Max Adjustment",
                         labelStyle: TextStyle(color: AppColors.secondaryColor),

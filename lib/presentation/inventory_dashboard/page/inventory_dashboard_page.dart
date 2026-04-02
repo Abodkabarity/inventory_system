@@ -5,11 +5,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../data/datasources/remote/inventory_remote_ds.dart';
 import '../../../data/repositories/inventory_repository_impl.dart';
+import '../../../domain/entities/inventory_page.dart';
 import '../../../domain/repositories/inventory_repository.dart';
 import '../bloc/inventory_bloc.dart';
 import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
 import '../widgets/inventory_dashboard_body.dart';
+import '../widgets/inventory_drawer.dart';
+import 'mismatch_page.dart';
 
 class InventoryDashboardPage extends StatelessWidget {
   final String runDate;
@@ -100,7 +103,6 @@ class _InventoryDashboardViewState extends State<InventoryDashboardView> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xffF4F7FB),
-
       body: BlocBuilder<InventoryBloc, InventoryState>(
         builder: (context, state) {
           final bool isSubmitted =
@@ -113,7 +115,13 @@ class _InventoryDashboardViewState extends State<InventoryDashboardView> {
 
           return Stack(
             children: [
-              InventoryDashboardBody(state: state, isSubmitted: isSubmitted),
+              Row(
+                children: [
+                  const InventoryDrawer(),
+
+                  Expanded(child: _buildPage(state, isSubmitted)),
+                ],
+              ),
 
               if (firstLoad)
                 Container(
@@ -129,5 +137,27 @@ class _InventoryDashboardViewState extends State<InventoryDashboardView> {
         },
       ),
     );
+  }
+}
+
+Widget _buildPage(InventoryState state, bool isSubmitted) {
+  switch (state.currentPage) {
+    case InventoryPageType.dashboard:
+      return InventoryDashboardBody(state: state, isSubmitted: isSubmitted);
+
+    case InventoryPageType.mismatch:
+      return const MismatchPage();
+
+    case InventoryPageType.maxAdjustment:
+      return const Center(child: Text("Max Adjustment Report"));
+
+    case InventoryPageType.formulary:
+      return const Center(child: Text("Formulary Report"));
+
+    case InventoryPageType.assortment:
+      return const Center(child: Text("Assortment Report"));
+
+    case InventoryPageType.dailyOrder:
+      return const Center(child: Text("Daily Order Report"));
   }
 }

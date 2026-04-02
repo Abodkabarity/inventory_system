@@ -1,5 +1,6 @@
 import '../entities/additional_request_group.dart';
 import '../entities/inventory_edit_item.dart';
+import '../entities/mismatch_item.dart';
 
 abstract class InventoryRepository {
   Future<List<String>> fetchBranchesToday();
@@ -23,4 +24,9 @@ abstract class InventoryRepository {
   Future<int> fetchAdditionalMonthByBranch(String branch);
 
   Future<int> fetchAdditionalTodayByBranchExact(String branch);
+  Future<List<MismatchItem>> fetchMismatch();
+  Future<List<Map<String, dynamic>>> fetchMismatchHistory(
+    String branch,
+    String itemCode,
+  );
 }

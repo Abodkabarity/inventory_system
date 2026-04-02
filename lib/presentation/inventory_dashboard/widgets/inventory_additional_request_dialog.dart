@@ -26,7 +26,7 @@ class _InventoryAdditionalRequestDialogState
 
   bool loading = true;
 
-  String status = 'pending_inventory';
+  String status = 'pending';
 
   final Map<String, TextEditingController> qtyControllers = {};
   final Map<String, TextEditingController> noteControllers = {};
@@ -36,7 +36,7 @@ class _InventoryAdditionalRequestDialogState
 
   final Map<String, Map<String, dynamic>> itemDetails = {};
 
-  bool get isEditable => status == 'pending_inventory';
+  bool get isEditable => status == 'pending';
 
   @override
   void initState() {
