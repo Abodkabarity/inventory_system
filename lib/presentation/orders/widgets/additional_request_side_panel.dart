@@ -29,8 +29,7 @@ class AdditionalRequestSidePanel extends StatefulWidget {
   final VoidCallback onClose;
 
   // save draft (local)
-  final void Function(num requestQty, String reason) onSave;
-
+  final void Function(num qty, String reason, bool isUrgent) onSave;
   // remove draft
   final VoidCallback onRemove;
 
@@ -65,6 +64,7 @@ class _AdditionalRequestSidePanelState
     'Customer Request',
     'Urgent Customer Request',
   ];
+  bool isUrgent = false;
   @override
   void initState() {
     super.initState();
@@ -104,7 +104,7 @@ class _AdditionalRequestSidePanelState
     }
 
     // NO LIMITS / NO CONSTRAINTS
-    widget.onSave(q, reason);
+    widget.onSave(q, reason, isUrgent);
   }
 
   num _sumSent(List<SentAdditionalRequest> list) {
@@ -268,7 +268,28 @@ class _AdditionalRequestSidePanelState
               ),
               icon: const Icon(Icons.keyboard_arrow_down),
             ),
+            const SizedBox(height: 12),
 
+            Row(
+              children: [
+                Checkbox(
+                  value: isUrgent,
+                  activeColor: AppColors.primaryColor,
+
+                  onChanged: (v) {
+                    setState(() {
+                      isUrgent = v ?? false;
+                    });
+                  },
+                ),
+                Expanded(
+                  child: Text(
+                    "Urgent customer – We contacted logistics for delivery",
+                    style: TextStyle(fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
             if (_error != null) ...[
               const SizedBox(height: 10),
               Text(_error!, style: const TextStyle(color: Colors.red)),

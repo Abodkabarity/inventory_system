@@ -135,6 +135,7 @@ class StoreRepositoryImpl implements StoreRepository {
           itemNames: '',
           itemCodes: '',
           storeStatus: isProcessing ? 'processing' : null,
+          contactLogistic: '',
         ),
       );
     });
@@ -211,6 +212,7 @@ class StoreRepositoryImpl implements StoreRepository {
           itemNames: itemNames,
           itemCodes: itemCodes,
           storeStatus: isProcessing ? 'processing' : null,
+          contactLogistic: '',
         ),
       );
     });

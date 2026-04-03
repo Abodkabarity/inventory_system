@@ -101,40 +101,51 @@ class _InventoryDashboardViewState extends State<InventoryDashboardView> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xffF4F7FB),
-      body: BlocBuilder<InventoryBloc, InventoryState>(
-        builder: (context, state) {
-          final bool isSubmitted =
-              state.selectedBranch != null &&
-              state.submittedBranches.contains(state.selectedBranch);
+    return Theme(
+      data: Theme.of(context).copyWith(
+        textSelectionTheme: const TextSelectionThemeData(
+          selectionColor: AppColors.primaryColor,
+          selectionHandleColor: AppColors.primaryColor,
+          cursorColor: AppColors.primaryColor,
+        ),
+      ),
+      child: SelectionArea(
+        child: Scaffold(
+          backgroundColor: const Color(0xffF4F7FB),
+          body: BlocBuilder<InventoryBloc, InventoryState>(
+            builder: (context, state) {
+              final bool isSubmitted =
+                  state.selectedBranch != null &&
+                  state.submittedBranches.contains(state.selectedBranch);
 
-          if (firstLoad && state.branches.isNotEmpty) {
-            firstLoad = false;
-          }
+              if (firstLoad && state.branches.isNotEmpty) {
+                firstLoad = false;
+              }
 
-          return Stack(
-            children: [
-              Row(
+              return Stack(
                 children: [
-                  const InventoryDrawer(),
+                  Row(
+                    children: [
+                      const InventoryDrawer(),
 
-                  Expanded(child: _buildPage(state, isSubmitted)),
-                ],
-              ),
-
-              if (firstLoad)
-                Container(
-                  color: Colors.black12,
-                  child: const Center(
-                    child: CircularProgressIndicator(
-                      color: AppColors.primaryColor,
-                    ),
+                      Expanded(child: _buildPage(state, isSubmitted)),
+                    ],
                   ),
-                ),
-            ],
-          );
-        },
+
+                  if (firstLoad)
+                    Container(
+                      color: Colors.black12,
+                      child: const Center(
+                        child: CircularProgressIndicator(
+                          color: AppColors.primaryColor,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
       ),
     );
   }

@@ -8,28 +8,18 @@ import '../../../domain/entities/mismatch_item.dart';
 import '../bloc/inventory_bloc.dart';
 import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
+import '../widgets/mismatch_tracker_dialog.dart';
 
-class MismatchPage extends StatefulWidget {
+class MismatchPage extends StatelessWidget {
   const MismatchPage({super.key});
 
   @override
-  State<MismatchPage> createState() => _MismatchPageState();
-}
-
-class _MismatchPageState extends State<MismatchPage> {
-  final searchController = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    context.read<InventoryBloc>().add(LoadMismatch());
-  }
-
-  @override
   Widget build(BuildContext context) {
+    context.read<InventoryBloc>().add(StartMismatchRealtime());
     return BlocBuilder<InventoryBloc, InventoryState>(
       builder: (context, state) {
         final rows = state.filteredMismatch;
+        final widths = state.mismatchColumnWidths;
 
         return Padding(
           padding: const EdgeInsets.all(16),
@@ -37,7 +27,7 @@ class _MismatchPageState extends State<MismatchPage> {
             children: [
               _cards(state),
               const SizedBox(height: 16),
-              _filters(state),
+              _filters(context, state),
               const SizedBox(height: 16),
 
               Expanded(
@@ -45,32 +35,46 @@ class _MismatchPageState extends State<MismatchPage> {
                   borderRadius: BorderRadius.circular(14),
                   child: SfDataGridTheme(
                     data: SfDataGridThemeData(
-                      headerColor: const Color(0xFFF7F8FC),
-                      gridLineColor: AppColors.border.withOpacity(.8),
+                      headerColor: const Color(0xFF1E293B),
+                      gridLineColor: AppColors.border.withValues(alpha: .7),
                       selectionColor: const Color(0xFFEAF2FF),
                     ),
                     child: SfDataGrid(
                       source: _MismatchDataSource(rows, context),
 
                       allowFiltering: true,
-                      allowSorting: false,
                       allowColumnsResizing: true,
+                      allowSorting: false,
 
                       columnWidthMode: ColumnWidthMode.none,
 
                       gridLinesVisibility: GridLinesVisibility.both,
                       headerGridLinesVisibility: GridLinesVisibility.both,
 
-                      frozenColumnsCount: 0,
-
                       rowHeight: 52,
-                      headerRowHeight: 72,
+                      headerRowHeight: 65,
 
                       onColumnResizeUpdate: (details) {
+                        context.read<InventoryBloc>().add(
+                          UpdateMismatchColumnWidth(
+                            details.column.columnName,
+                            details.width,
+                          ),
+                        );
                         return true;
                       },
 
-                      columns: _columns(),
+                      columns: [
+                        _col("index", "#", widths),
+
+                        _col("branch", "BRANCH", widths),
+                        _col("code", "ITEM CODE", widths),
+                        _col("name", "ITEM NAME", widths),
+                        _col("system", "SYSTEM", widths),
+                        _col("actual", "ACTUAL", widths),
+                        _col("diff", "DIFF", widths),
+                        _col("history", "HISTORY", widths),
+                      ],
                     ),
                   ),
                 ),
@@ -84,13 +88,12 @@ class _MismatchPageState extends State<MismatchPage> {
 
   /// ================= CARDS =================
   Widget _cards(InventoryState state) {
-    final total = state.mismatch.length;
-    final diffSum = state.mismatch.fold<num>(0, (sum, e) => sum + e.diff);
-
+    final total = state.mismatchTotalCount;
+    final diffSum = state.mismatchDiffSum;
     return Row(
       children: [
-        _card("Today Changes", total),
-        _card("Month Changes", total),
+        _card("Today Mismatch", state.mismatchTodayCount),
+        _card("Month Mismatch", state.mismatchMonthCount),
         _card("Total Mismatch", total),
         _card("Total Diff", diffSum),
       ],
@@ -123,12 +126,11 @@ class _MismatchPageState extends State<MismatchPage> {
   }
 
   /// ================= FILTER =================
-  Widget _filters(InventoryState state) {
+  Widget _filters(BuildContext context, InventoryState state) {
     return Row(
       children: [
         Expanded(
           child: TextField(
-            controller: searchController,
             onChanged: (v) {
               context.read<InventoryBloc>().add(SearchMismatch(v));
             },
@@ -144,6 +146,46 @@ class _MismatchPageState extends State<MismatchPage> {
           ),
         ),
         const SizedBox(width: 10),
+        Stack(
+          children: [
+            ElevatedButton.icon(
+              icon: const Icon(Icons.track_changes),
+              label: const Text("Mismatch Tracker"),
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (_) => BlocProvider.value(
+                    value: context.read<InventoryBloc>(),
+                    child: const MismatchTrackerDialog(),
+                  ),
+                );
+              },
+            ),
+
+            /// 🔴 BADGE
+            if (state.mismatchTodayCount > 0)
+              Positioned(
+                right: 6,
+                top: 6,
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    state.mismatchTodayCount.toString(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        SizedBox(width: 10),
         DropdownButton<String>(
           value: state.mismatchBranch,
           items: [
@@ -158,31 +200,21 @@ class _MismatchPageState extends State<MismatchPage> {
     );
   }
 
-  /// ================= COLUMNS =================
-  List<GridColumn> _columns() {
-    return [
-      _col("branch", "BRANCH"),
-      _col("code", "ITEM CODE"),
-      _col("name", "ITEM NAME"),
-      _col("system", "SYSTEM"),
-      _col("actual", "ACTUAL"),
-      _col("diff", "DIFF"),
-      _col("history", "HISTORY"),
-    ];
-  }
-
-  GridColumn _col(String name, String title) {
+  GridColumn _col(String name, String title, Map<String, double> widths) {
     return GridColumn(
       columnName: name,
-      width: 160,
-      minimumWidth: 120,
+      allowFiltering: name != "history",
+      width: widths[name] ?? 140,
+      minimumWidth: 100,
       label: Container(
         alignment: Alignment.center,
         padding: const EdgeInsets.all(8),
         child: Text(
           title,
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+          style: const TextStyle(
+            fontWeight: FontWeight.w900,
+            color: Colors.white,
+          ),
         ),
       ),
     );
@@ -196,9 +228,12 @@ class _MismatchDataSource extends DataGridSource {
   _MismatchDataSource(this.data, this.context);
 
   @override
-  List<DataGridRow> get rows => data.map((e) {
+  List<DataGridRow> get rows => List.generate(data.length, (index) {
+    final e = data[index];
+
     return DataGridRow(
       cells: [
+        DataGridCell(columnName: 'index', value: index + 1),
         DataGridCell(columnName: 'branch', value: e.branchName),
         DataGridCell(columnName: 'code', value: e.itemCode),
         DataGridCell(columnName: 'name', value: e.itemName),
@@ -208,13 +243,12 @@ class _MismatchDataSource extends DataGridSource {
         DataGridCell(columnName: 'history', value: e),
       ],
     );
-  }).toList();
+  });
 
   @override
   DataGridRowAdapter buildRow(DataGridRow row) {
     return DataGridRowAdapter(
       cells: row.getCells().map((c) {
-        /// DIFF COLOR
         if (c.columnName == 'diff') {
           final val = num.tryParse(c.value.toString()) ?? 0;
 
@@ -230,13 +264,18 @@ class _MismatchDataSource extends DataGridSource {
           );
         }
 
-        /// HISTORY BUTTON
         if (c.columnName == 'history') {
           final item = c.value as MismatchItem;
 
-          if (!item.hasHistory) return const SizedBox();
+          if (!item.hasHistory) {
+            return const SizedBox();
+          }
 
           return ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+            ),
             onPressed: () async {
               final res = await context
                   .read<InventoryBloc>()
@@ -246,18 +285,28 @@ class _MismatchDataSource extends DataGridSource {
               showDialog(
                 context: context,
                 builder: (_) => AlertDialog(
-                  title: const Text("History"),
+                  title: const Text("History Log"),
                   content: SizedBox(
-                    width: 500,
+                    width: 600,
                     child: ListView(
-                      children: res
-                          .map(
-                            (e) => ListTile(
-                              title: Text(e['action']),
-                              subtitle: Text(e['changed_at']),
+                      children: res.map((e) {
+                        return Card(
+                          child: ListTile(
+                            title: Text(e['item_name'] ?? ''),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text("Action: ${e['action']}"),
+                                Text("Old System: ${e['old_system_stock']}"),
+                                Text("Old Actual: ${e['old_actual_stock']}"),
+                                Text("Diff: ${e['old_diff']}"),
+                                Text("Note: ${e['note'] ?? ''}"),
+                                Text("Time: ${e['changed_at']}"),
+                              ],
                             ),
-                          )
-                          .toList(),
+                          ),
+                        );
+                      }).toList(),
                     ),
                   ),
                 ),
@@ -267,11 +316,10 @@ class _MismatchDataSource extends DataGridSource {
           );
         }
 
-        /// NORMAL CELL
         return Container(
           alignment: Alignment.center,
           padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Text(c.value.toString(), overflow: TextOverflow.ellipsis),
+          child: Text(c.value.toString()),
         );
       }).toList(),
     );

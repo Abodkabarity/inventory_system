@@ -153,12 +153,13 @@ class OrdersApplyAdditionalRequest extends OrdersEvent {
   final String itemName;
   final num requestQty;
   final String reason;
-
+  final bool isUrgent;
   const OrdersApplyAdditionalRequest({
     required this.itemCode,
     required this.itemName,
     required this.requestQty,
     required this.reason,
+    required this.isUrgent,
   });
 
   @override

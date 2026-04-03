@@ -676,6 +676,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       itemName: name,
       requestQty: e.requestQty,
       reason: reason,
+      isUrgent: e.isUrgent,
     );
 
     final view = _applyUiFilters(
@@ -751,6 +752,8 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
           'request_qty': a.requestQty,
           'reason': a.reason,
           'status': 'pending',
+          'contact_logistic': a.isUrgent ? 'urgent' : null,
+
           'created_at': nowIso,
         };
       }).toList();
@@ -928,6 +931,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     emit(state.copyWith(isMismatchLoading: true));
 
     try {
+      // 🔥 أهم سطر (كان ناقص)
+      await repo.insertMismatch(e.data);
+
       final newList = await repo.fetchMismatch(branch: state.branchName);
 
       emit(
@@ -936,7 +942,6 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
           mismatchItems: newList,
           error: null,
           isMismatchLoading: false,
-
           lastActionSuccess: true,
           showMismatchResult: true,
         ),
@@ -948,6 +953,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
           error: err.toString(),
           lastActionSuccess: false,
           showMismatchResult: true,
+          isMismatchLoading: false,
         ),
       );
     }
@@ -974,12 +980,19 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     OrdersDeleteMismatch e,
     Emitter<OrdersState> emit,
   ) async {
+    if (state.isMismatchLoading) return;
+
     emit(state.copyWith(isMismatchLoading: true));
 
-    await repo.deleteMismatch(e.id);
-    emit(state.copyWith(isMismatchLoading: true));
+    try {
+      await repo.deleteMismatch(e.id);
 
-    add(const OrdersLoadMismatch());
+      add(const OrdersLoadMismatch());
+    } catch (err) {
+      emit(state.copyWith(error: err.toString()));
+    }
+
+    emit(state.copyWith(isMismatchLoading: false));
   }
 
   void _onToggleMismatchEdit(

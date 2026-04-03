@@ -64,16 +64,25 @@ class InventoryRemoteDs {
     final res = await client
         .from('additional_requests')
         .select('''
-        id,
-        request_group_id,
-        run_date,
-        created_at,
-        branch_name,
-        item_code,
-        item_name,
-        status
-      ''')
-        .order('run_date', ascending: false);
+      id,
+      request_group_id,
+      run_date,
+      created_at,
+      branch_name,
+      item_code,
+      item_name,
+      status,
+      request_qty,
+      contact_logistic,
+
+      daily_order:daily_order(
+        branch_stock,
+        store_stock,
+        qty_30_days_from_last_45d,
+        final_reorder_qty_store_stock_gt_0
+      )
+    ''')
+        .order('created_at', ascending: false);
 
     return List<Map<String, dynamic>>.from(res);
   }
@@ -217,6 +226,43 @@ class InventoryRemoteDs {
         .eq('branch_name', branch)
         .eq('item_code', itemCode)
         .order('changed_at', ascending: false);
+
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<int> fetchMismatchMonth() async {
+    final res = await client.rpc('count_mismatch_month');
+    return res as int;
+  }
+
+  Future<int> fetchMismatchToday() async {
+    final res = await client.rpc('count_mismatch_today');
+    return res as int;
+  }
+
+  Future<int> fetchMismatchTotal() async {
+    final res = await client.rpc('count_mismatch_total');
+    return res as int;
+  }
+
+  Future<num> fetchMismatchDiffSum() async {
+    final res = await client.rpc('sum_mismatch_diff');
+    return (res as num?) ?? 0;
+  }
+
+  Future<List<Map<String, dynamic>>> fetchMismatchTracker({
+    required DateTime from,
+    required DateTime to,
+    String? branch,
+  }) async {
+    final res = await client.rpc(
+      'get_mismatch_tracker',
+      params: {
+        'p_from': from.toIso8601String(),
+        'p_to': to.toIso8601String(),
+        'p_branch': branch,
+      },
+    );
 
     return List<Map<String, dynamic>>.from(res);
   }

@@ -76,3 +76,20 @@ class FilterMismatchDate extends InventoryEvent {
   final String range;
   FilterMismatchDate(this.range);
 }
+
+class UpdateMismatchColumnWidth extends InventoryEvent {
+  final String column;
+  final double width;
+
+  UpdateMismatchColumnWidth(this.column, this.width);
+}
+
+class LoadMismatchTracker extends InventoryEvent {
+  final DateTime from;
+  final DateTime to;
+  final String? branch;
+
+  LoadMismatchTracker({required this.from, required this.to, this.branch});
+}
+
+class StartMismatchRealtime extends InventoryEvent {}
