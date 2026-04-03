@@ -29,4 +29,13 @@ abstract class InventoryRepository {
     String branch,
     String itemCode,
   );
+  Future<int> fetchMismatchToday();
+  Future<int> fetchMismatchMonth();
+  Future<int> fetchMismatchTotal();
+  Future<num> fetchMismatchDiffSum();
+  Future<List<Map<String, dynamic>>> fetchMismatchTracker({
+    required DateTime from,
+    required DateTime to,
+    String? branch,
+  });
 }

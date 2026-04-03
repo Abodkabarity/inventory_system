@@ -180,13 +180,14 @@ class BranchOrdersActions {
             initialQty: draft?.requestQty,
             initialReason: draft?.reason ?? '',
             onClose: () => Navigator.of(context).pop(),
-            onSave: (qty, reason) {
+            onSave: (qty, reason, isUrgent) {
               context.read<OrdersBloc>().add(
                 OrdersApplyAdditionalRequest(
                   itemCode: itemCode,
                   itemName: row.itemName,
                   requestQty: qty,
                   reason: reason,
+                  isUrgent: isUrgent,
                 ),
               );
               Navigator.of(context).pop();

@@ -7,7 +7,13 @@ class AdditionalRequestGroup {
   final String status;
   final String? storeStatus;
   final String itemNames;
+  final String contactLogistic;
+  final num? requestQty;
   final String itemCodes;
+  final num? branchStock;
+  final num? storeStock;
+  final num? sales;
+  final num? finalReorder;
 
   AdditionalRequestGroup({
     required this.groupId,
@@ -18,5 +24,11 @@ class AdditionalRequestGroup {
     required this.itemNames,
     required this.itemCodes,
     this.storeStatus,
+    required this.contactLogistic,
+    this.requestQty,
+    this.branchStock,
+    this.storeStock,
+    this.sales,
+    this.finalReorder,
   });
 }

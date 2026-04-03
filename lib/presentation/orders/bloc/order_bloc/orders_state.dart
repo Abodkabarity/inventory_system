@@ -29,16 +29,18 @@ class AdditionalRequestEdit extends Equatable {
   final String itemName;
   final num requestQty;
   final String reason;
+  final bool isUrgent;
 
   const AdditionalRequestEdit({
     required this.itemCode,
     required this.itemName,
     required this.requestQty,
     required this.reason,
+    required this.isUrgent,
   });
 
   @override
-  List<Object?> get props => [itemCode, itemName, requestQty, reason];
+  List<Object?> get props => [itemCode, itemName, requestQty, reason, isUrgent];
 }
 
 // Tracking row (flat list) for additional requests

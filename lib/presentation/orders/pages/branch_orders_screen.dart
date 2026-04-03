@@ -330,7 +330,8 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
 
                         Container(
                           constraints: BoxConstraints(
-                            minHeight: MediaQuery.of(context).size.height * 0.4,
+                            minHeight:
+                                MediaQuery.of(context).size.height * 0.4.h,
                           ),
                           decoration: BoxDecoration(
                             color: Colors.white,
@@ -352,8 +353,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                               const SizedBox(height: 10),
 
                               SizedBox(
-                                height:
-                                    MediaQuery.of(context).size.height * 0.42.h,
+                                height: 400.h,
                                 child: OrdersTable(
                                   rows: s.viewRows,
                                   isLoading: isBusy,

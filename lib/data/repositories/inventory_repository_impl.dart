@@ -65,63 +65,20 @@ class InventoryRepositoryImpl implements InventoryRepository {
   Future<List<AdditionalRequestGroup>> fetchAdditionalRequests() async {
     final rows = await remote.fetchAdditionalRequests();
 
-    final Map<String, List<Map<String, dynamic>>> grouped = {};
-
-    for (final row in rows) {
-      final groupId = (row['request_group_id'] ?? '').toString();
-
-      if (groupId.isEmpty) continue;
-
-      grouped.putIfAbsent(groupId, () => []);
-
-      grouped[groupId]!.add(row);
-    }
-
-    final List<AdditionalRequestGroup> result = [];
-
-    grouped.forEach((groupId, items) {
-      final first = items.first;
-
-      /// run_date هو الصحيح
-      DateTime created =
-          DateTime.tryParse(first['run_date'].toString()) ?? DateTime.now();
-
-      /// STATUS
-      String status = 'pending_inventory';
-
-      if (items.every((e) => e['status'] == 'done')) {
-        status = 'done';
-      } else if (items.every((e) => e['status'] == 'rejected')) {
-        status = 'rejected';
-      } else if (items.any((e) => e['status'] == 'sent_to_store')) {
-        status = 'sent_to_store';
-      }
-
-      /// ITEMS
-      final itemCodes = items
-          .map((e) => (e['item_code'] ?? '').toString())
-          .join(',');
-
-      final itemNames = items
-          .map((e) => (e['item_name'] ?? '').toString())
-          .join(',');
-
-      result.add(
-        AdditionalRequestGroup(
-          groupId: groupId,
-          branchName: (first['branch_name'] ?? '').toString(),
-          createdAt: created,
-          itemsCount: items.length,
-          status: status,
-          itemNames: itemNames,
-          itemCodes: itemCodes,
-        ),
+    return rows.map((e) {
+      return AdditionalRequestGroup(
+        groupId: (e['id'] ?? '').toString(),
+        branchName: (e['branch_name'] ?? '').toString(),
+        createdAt:
+            DateTime.tryParse(e['created_at'].toString()) ?? DateTime.now(),
+        itemsCount: 1,
+        status: (e['status'] ?? 'pending').toString(),
+        itemNames: (e['item_name'] ?? '').toString(),
+        itemCodes: (e['item_code'] ?? '').toString(),
+        contactLogistic: (e['contact_logistic'] ?? '').toString(),
+        requestQty: e["request_qty"] ?? 0,
       );
-    });
-
-    result.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-    return result;
+    }).toList();
   }
 
   /// ================================
@@ -206,5 +163,34 @@ class InventoryRepositoryImpl implements InventoryRepository {
     String itemCode,
   ) {
     return remote.fetchMismatchLog(branch, itemCode);
+  }
+
+  @override
+  Future<int> fetchMismatchToday() {
+    return remote.fetchMismatchToday();
+  }
+
+  @override
+  Future<int> fetchMismatchMonth() {
+    return remote.fetchMismatchMonth();
+  }
+
+  @override
+  Future<int> fetchMismatchTotal() {
+    return remote.fetchMismatchTotal();
+  }
+
+  @override
+  Future<num> fetchMismatchDiffSum() {
+    return remote.fetchMismatchDiffSum();
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchMismatchTracker({
+    required DateTime from,
+    required DateTime to,
+    String? branch,
+  }) {
+    return remote.fetchMismatchTracker(from: from, to: to, branch: branch);
   }
 }

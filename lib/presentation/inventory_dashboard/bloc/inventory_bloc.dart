@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../domain/entities/mismatch_item.dart';
 import '../../../domain/repositories/inventory_repository.dart';
@@ -9,21 +10,41 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   final InventoryRepository repo;
 
   String runDate = '';
-
+  late final RealtimeChannel mismatchChannel;
   InventoryBloc(this.repo) : super(InventoryState.initial()) {
+    /// ✅ أول شي عرفي كل events
     on<LoadInventoryDashboard>(_onLoad);
-
     on<SelectBranch>(_onSelectBranch);
     on<LoadBranchAnalytics>(_onBranchAnalytics);
     on<ApproveInventoryRequest>(_onApproveInventory);
     on<LoadBranchAdditionalStats>(_onBranchAdditionalStats);
+
     on<ChangeInventoryPage>((event, emit) {
       emit(state.copyWith(currentPage: event.page));
     });
 
+    on<LoadMismatchTracker>(_onLoadMismatchTracker);
     on<LoadMismatch>(_onLoadMismatch);
     on<SearchMismatch>(_onSearchMismatch);
     on<FilterMismatchBranch>(_onFilterMismatchBranch);
+    on<UpdateMismatchColumnWidth>(_onUpdateMismatchColumnWidth);
+
+    /// ✅ هذا مهم
+    on<StartMismatchRealtime>((event, emit) {
+      mismatchChannel = Supabase.instance.client
+          .channel('mismatch_live_bloc')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'mismatch_log',
+            callback: (payload) {
+              add(LoadInventoryDashboard(runDate, silent: true));
+            },
+          )
+          .subscribe();
+    });
+
+    add(StartMismatchRealtime());
   }
 
   /// ================================
@@ -46,10 +67,11 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
       final additional = await repo.fetchAdditionalRequests();
 
-      final todayCount = await repo.fetchAdditionalToday();
-
-      final monthCount = await repo.fetchAdditionalMonth();
-
+      final mismatchToday = await repo.fetchMismatchToday();
+      final mismatchMonth = await repo.fetchMismatchMonth();
+      final mismatchTotal = await repo.fetchMismatchTotal();
+      final mismatchDiff = await repo.fetchMismatchDiffSum();
+      final mismatchData = await repo.fetchMismatch();
       final editsCount = await repo.fetchBranchEditsCount(runDate);
 
       /// NEW
@@ -72,13 +94,16 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           additionalRequests: additional,
           editsCount: editsCount,
           additionalTodayBranchCount: additionalBranchToday,
-
+          mismatchTotalCount: mismatchTotal,
           submittedCount: submitted.length,
           additionalCount: additional.length,
           additionalPendingCount: pending,
           additionalSentToStoreCount: sentToStore,
-          additionalTodayCount: todayCount,
-          additionalMonthCount: monthCount,
+          mismatchTodayCount: mismatchToday,
+          mismatchMonthCount: mismatchMonth,
+          mismatch: mismatchData,
+          mismatchDiffSum: mismatchDiff,
+          filteredMismatch: mismatchData,
           isLoading: false,
         ),
       );
@@ -244,5 +269,39 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     }
 
     return result;
+  }
+
+  void _onUpdateMismatchColumnWidth(
+    UpdateMismatchColumnWidth event,
+    Emitter<InventoryState> emit,
+  ) {
+    final updated = Map<String, double>.from(state.mismatchColumnWidths);
+
+    updated[event.column] = event.width;
+
+    emit(state.copyWith(mismatchColumnWidths: updated));
+  }
+
+  Future<void> _onLoadMismatchTracker(
+    LoadMismatchTracker event,
+    Emitter<InventoryState> emit,
+  ) async {
+    try {
+      final data = await repo.fetchMismatchTracker(
+        from: event.from,
+        to: event.to,
+        branch: event.branch,
+      );
+
+      emit(state.copyWith(mismatchTracker: data));
+    } catch (e) {
+      print("Mismatch Tracker Error: $e");
+    }
+  }
+
+  @override
+  Future<void> close() {
+    Supabase.instance.client.removeChannel(mismatchChannel);
+    return super.close();
   }
 }
