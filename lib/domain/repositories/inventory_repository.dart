@@ -38,4 +38,6 @@ abstract class InventoryRepository {
     required DateTime to,
     String? branch,
   });
+  Future<void> approveAllInventory(List<Map<String, dynamic>> items);
+  Future<void> storeApprove(List<Map<String, dynamic>> items);
 }

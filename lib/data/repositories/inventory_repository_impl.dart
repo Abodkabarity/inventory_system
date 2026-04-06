@@ -64,19 +64,32 @@ class InventoryRepositoryImpl implements InventoryRepository {
   @override
   Future<List<AdditionalRequestGroup>> fetchAdditionalRequests() async {
     final rows = await remote.fetchAdditionalRequests();
-
+    final counts = await remote.fetchTodayCounts();
     return rows.map((e) {
+      final d = e['daily_order'];
+      final key = "${e['item_code']}_${e['branch_name']}";
       return AdditionalRequestGroup(
         groupId: (e['id'] ?? '').toString(),
         branchName: (e['branch_name'] ?? '').toString(),
         createdAt:
             DateTime.tryParse(e['created_at'].toString()) ?? DateTime.now(),
+
         itemsCount: 1,
         status: (e['status'] ?? 'pending').toString(),
         itemNames: (e['item_name'] ?? '').toString(),
         itemCodes: (e['item_code'] ?? '').toString(),
         contactLogistic: (e['contact_logistic'] ?? '').toString(),
         requestQty: e["request_qty"] ?? 0,
+
+        branchStock: d?['branch_stock'] ?? 0,
+        storeStock: d?['store_stock'] ?? 0,
+        sales: d?['qty_30_days_from_last_45d'] ?? 0,
+        finalReorder: d?['final_reorder_qty_store_stock_gt_0'] ?? "",
+        itemStatus: d?['item_purchase_type'] ?? "",
+        todayCount: counts[key] ?? 0,
+        fulfilledQty: e['fulfilled_qty'] ?? 0,
+        storeNote: e['store_note'] ?? '',
+        inventoryQty: e['inventory_qty'] ?? 0,
       );
     }).toList();
   }
@@ -192,5 +205,15 @@ class InventoryRepositoryImpl implements InventoryRepository {
     String? branch,
   }) {
     return remote.fetchMismatchTracker(from: from, to: to, branch: branch);
+  }
+
+  @override
+  Future<void> approveAllInventory(List<Map<String, dynamic>> items) {
+    return remote.approveAllInventory(items);
+  }
+
+  @override
+  Future<void> storeApprove(List<Map<String, dynamic>> items) {
+    return remote.storeApprove(items);
   }
 }

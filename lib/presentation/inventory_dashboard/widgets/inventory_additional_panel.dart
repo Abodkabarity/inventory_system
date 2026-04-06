@@ -1,9 +1,13 @@
 import 'package:daily_order/core/theme/app_colors.dart';
+import 'package:daily_order/presentation/inventory_dashboard/bloc/inventory_state.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:intl/intl.dart';
 
 import '../../../domain/entities/additional_request_group.dart';
+import '../bloc/inventory_bloc.dart';
+import '../bloc/inventory_event.dart';
 
 class InventoryAdditionalPanel extends StatefulWidget {
   final List<AdditionalRequestGroup> requests;
@@ -18,6 +22,61 @@ class InventoryAdditionalPanel extends StatefulWidget {
 class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
   final Map<String, TextEditingController> qtyControllers = {};
   final Map<String, TextEditingController> noteControllers = {};
+  final Map<String, TextEditingController> storeQtyControllers = {};
+  final Map<String, TextEditingController> storeNoteControllers = {};
+  final Map<String, bool> loadingMap = {};
+  Future<void> _confirmAll(BuildContext context) async {
+    final List<Map<String, dynamic>> bulk = [];
+
+    for (var e in widget.requests) {
+      if (e.status != 'pending') continue;
+
+      final id = e.groupId;
+
+      final qty =
+          int.tryParse(qtyControllers[id]?.text ?? e.requestQty.toString()) ??
+          0;
+
+      final note = noteControllers[id]?.text ?? '';
+
+      bulk.add({'id': id, 'qty': qty, 'note': note});
+    }
+
+    if (bulk.isEmpty) return;
+
+    final bloc = context.read<InventoryBloc>();
+
+    try {
+      bloc.emit(bloc.state.copyWith(isBulkLoading: true));
+
+      await bloc.repo.approveAllInventory(bulk);
+
+      final additional = await bloc.repo.fetchAdditionalRequests();
+
+      bloc.emit(
+        bloc.state.copyWith(
+          additionalRequests: additional,
+          isBulkLoading: false,
+        ),
+      );
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("All requests approved successfully ✅"),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      bloc.emit(bloc.state.copyWith(isBulkLoading: false));
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Failed to approve requests ❌"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,6 +110,7 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
 
       return latestB.compareTo(latestA);
     });
+
     return Container(
       decoration: BoxDecoration(
         color: AppColors.backgroundWidget,
@@ -75,9 +135,30 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
                     ),
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.refresh),
-                  onPressed: () => setState(() {}),
+                BlocBuilder<InventoryBloc, InventoryState>(
+                  builder: (context, state) {
+                    return ElevatedButton(
+                      onPressed: state.isBulkLoading
+                          ? null
+                          : () => _confirmAll(context),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryColor,
+                      ),
+                      child: state.isBulkLoading
+                          ? SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text(
+                              "Confirm All Additional",
+                              style: TextStyle(color: Colors.white),
+                            ),
+                    );
+                  },
                 ),
               ],
             ),
@@ -101,12 +182,15 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
     );
   }
 
-  /// 🔥 ترتيب دقيق جداً
   int _statusPriority(AdditionalRequestGroup e) {
-    if (e.contactLogistic == 'urgent') return 0;
-    if (e.status == 'pending') return 1;
+    if (e.status == 'pending_inventory' || e.status == 'pending') {
+      if (e.contactLogistic == 'urgent') return 0;
+      return 1;
+    }
+
     if (e.status == 'sent_to_store') return 2;
     if (e.status == 'done') return 3;
+
     return 4;
   }
 
@@ -148,9 +232,22 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
             children: group.map((e) {
               final id = e.groupId;
 
+              storeQtyControllers.putIfAbsent(
+                id,
+                () => TextEditingController(
+                  text: (e.fulfilledQty ?? 0).toString(),
+                ),
+              );
+
+              storeNoteControllers.putIfAbsent(
+                id,
+                () => TextEditingController(text: e.storeNote ?? ''),
+              );
               qtyControllers.putIfAbsent(
                 id,
-                () => TextEditingController(text: "0"),
+                () => TextEditingController(
+                  text: (e.inventoryQty ?? e.requestQty).toString(),
+                ),
               );
 
               noteControllers.putIfAbsent(id, () => TextEditingController());
@@ -235,6 +332,117 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
                             ),
                           ),
                         ],
+                        if (e.status == "sent_to_store" ||
+                            e.status == "done") ...[
+                          SizedBox(
+                            width: 150.w,
+                            child: TextField(
+                              controller: qtyControllers[id],
+                              readOnly: true,
+                              textAlign: TextAlign.center,
+                              decoration: InputDecoration(
+                                labelText: "Inventory Confirm",
+                                labelStyle: TextStyle(
+                                  color: AppColors.secondaryColor,
+                                ),
+                                filled: true,
+                                fillColor: AppColors.backgroundWidget,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide(
+                                    color: AppColors.primaryColor,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide(
+                                    color: AppColors.primaryColor,
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide(
+                                    color: AppColors.primaryColor,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          SizedBox(width: 10.w),
+
+                          SizedBox(
+                            width: 150.w,
+                            child: TextField(
+                              controller: storeQtyControllers[id],
+                              readOnly: true,
+                              textAlign: TextAlign.center,
+                              decoration: InputDecoration(
+                                labelText: "Store Supply",
+                                labelStyle: TextStyle(
+                                  color: AppColors.secondaryColor,
+                                ),
+
+                                filled: true,
+                                fillColor: AppColors.backgroundWidget,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide(
+                                    color: AppColors.primaryColor,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide(
+                                    color: AppColors.primaryColor,
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide(
+                                    color: AppColors.primaryColor,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          SizedBox(width: 10.w),
+
+                          SizedBox(
+                            width: 250.w,
+                            child: TextField(
+                              controller: storeNoteControllers[id],
+                              readOnly: true,
+                              decoration: InputDecoration(
+                                labelText: "Store Note",
+                                labelStyle: TextStyle(
+                                  color: AppColors.secondaryColor,
+                                ),
+
+                                filled: true,
+                                fillColor: AppColors.backgroundWidget,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide(
+                                    color: AppColors.primaryColor,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide(
+                                    color: AppColors.primaryColor,
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide(
+                                    color: AppColors.primaryColor,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                         const SizedBox(width: 10),
 
                         if (e.contactLogistic == 'urgent')
@@ -275,33 +483,6 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
                             ),
                           ),
                         ),
-                        if (e.status == "pending") ...[
-                          const SizedBox(width: 5),
-
-                          ElevatedButton(
-                            onPressed: () {},
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
-                            ),
-                            child: const Text(
-                              "Reject",
-                              style: TextStyle(color: Colors.white),
-                            ),
-                          ),
-
-                          const SizedBox(width: 5),
-
-                          ElevatedButton(
-                            onPressed: () {},
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.green,
-                            ),
-                            child: const Text(
-                              "Approve",
-                              style: TextStyle(color: Colors.white),
-                            ),
-                          ),
-                        ],
                       ],
                     ),
 
@@ -310,18 +491,71 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
                     Container(
                       padding: const EdgeInsets.symmetric(
                         vertical: 8,
-                        horizontal: 10,
+                        horizontal: 1,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade50,
+                        color: AppColors.backgroundWidget,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          _infoBox("Branch", e.branchStock),
-                          _infoBox("Store", e.storeStock),
+                          _infoBox("Branch Stock", e.branchStock),
+                          _infoBox("Store Stock", e.storeStock),
                           _infoBox("Sales", e.sales),
-                          _infoBox("Final", e.finalReorder),
+                          _infoBox("Final Reorder", e.finalReorder),
+                          _infoBox("Today Req", e.todayCount),
+                          _infoBox("Item Status", e.itemStatus),
+                          Spacer(),
+                          if (e.status == "pending") ...[
+                            SizedBox(width: 5.w),
+
+                            BlocListener<InventoryBloc, InventoryState>(
+                              listener: (context, state) {
+                                setState(() {
+                                  loadingMap.clear();
+                                });
+                              },
+                              child: ElevatedButton(
+                                onPressed: loadingMap[id] == true
+                                    ? null
+                                    : () async {
+                                        setState(() {
+                                          loadingMap[id] = true;
+                                        });
+
+                                        final qty =
+                                            int.tryParse(
+                                              qtyControllers[id]?.text ?? '0',
+                                            ) ??
+                                            0;
+
+                                        context.read<InventoryBloc>().add(
+                                          ApproveInventoryRequest(
+                                            requestId: e.groupId,
+                                            qty: qty,
+                                          ),
+                                        );
+                                      },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green,
+                                ),
+                                child: loadingMap[id] == true
+                                    ? SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Text(
+                                        "Approve",
+                                        style: TextStyle(color: Colors.white),
+                                      ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -353,11 +587,16 @@ Widget _infoBox(String title, dynamic value) {
   return Expanded(
     child: Column(
       children: [
-        Text(title, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+        Text(
+          title,
+          style: const TextStyle(fontSize: 10, color: Colors.grey),
+          textAlign: TextAlign.center,
+        ),
         const SizedBox(height: 3),
         Text(
           value.toString(),
           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          textAlign: TextAlign.center,
         ),
       ],
     ),

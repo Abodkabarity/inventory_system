@@ -8,11 +8,10 @@ import 'inventory_state.dart';
 
 class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   final InventoryRepository repo;
-
+  late final RealtimeChannel additionalChannel;
   String runDate = '';
   late final RealtimeChannel mismatchChannel;
   InventoryBloc(this.repo) : super(InventoryState.initial()) {
-    /// ✅ أول شي عرفي كل events
     on<LoadInventoryDashboard>(_onLoad);
     on<SelectBranch>(_onSelectBranch);
     on<LoadBranchAnalytics>(_onBranchAnalytics);
@@ -28,8 +27,22 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     on<SearchMismatch>(_onSearchMismatch);
     on<FilterMismatchBranch>(_onFilterMismatchBranch);
     on<UpdateMismatchColumnWidth>(_onUpdateMismatchColumnWidth);
+    on<StoreApproveRequests>(_onStoreApprove);
+    on<ApproveAllInventoryRequests>(_onApproveAllInventory);
+    on<StartAdditionalRealtime>((event, emit) {
+      additionalChannel = Supabase.instance.client
+          .channel('additional_live')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.update,
+            schema: 'public',
+            table: 'additional_requests',
+            callback: (payload) {
+              add(LoadInventoryDashboard(runDate, silent: true));
+            },
+          )
+          .subscribe();
+    });
 
-    /// ✅ هذا مهم
     on<StartMismatchRealtime>((event, emit) {
       mismatchChannel = Supabase.instance.client
           .channel('mismatch_live_bloc')
@@ -45,6 +58,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     });
 
     add(StartMismatchRealtime());
+    add(StartAdditionalRealtime());
   }
 
   /// ================================
@@ -303,5 +317,55 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   Future<void> close() {
     Supabase.instance.client.removeChannel(mismatchChannel);
     return super.close();
+  }
+
+  Future<void> _onApproveAllInventory(
+    ApproveAllInventoryRequests event,
+    Emitter<InventoryState> emit,
+  ) async {
+    try {
+      emit(state.copyWith(isBulkLoading: true));
+
+      await repo.approveAllInventory(event.items);
+
+      final additional = await repo.fetchAdditionalRequests();
+
+      emit(
+        state.copyWith(
+          additionalRequests: additional,
+          isBulkLoading: false,
+          bulkSuccess: true,
+          bulkMessage: "All requests approved successfully ✅",
+        ),
+      );
+    } catch (e) {
+      emit(
+        state.copyWith(
+          isBulkLoading: false,
+          bulkSuccess: false,
+          bulkMessage: "Failed to approve requests ❌",
+        ),
+      );
+    }
+  }
+
+  Future<void> _onStoreApprove(
+    StoreApproveRequests event,
+    Emitter<InventoryState> emit,
+  ) async {
+    try {
+      emit(state.copyWith(isBulkLoading: true));
+
+      await repo.storeApprove(event.items);
+
+      final additional = await repo.fetchAdditionalRequests();
+
+      emit(
+        state.copyWith(additionalRequests: additional, isBulkLoading: false),
+      );
+    } catch (e) {
+      emit(state.copyWith(isBulkLoading: false));
+      print("Store Approve Error: $e");
+    }
   }
 }

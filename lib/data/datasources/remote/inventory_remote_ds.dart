@@ -73,13 +73,18 @@ class InventoryRemoteDs {
       item_name,
       status,
       request_qty,
+      fulfilled_qty,
+store_note,
+inventory_qty,
+inventory_note,
       contact_logistic,
 
       daily_order:daily_order(
         branch_stock,
         store_stock,
         qty_30_days_from_last_45d,
-        final_reorder_qty_store_stock_gt_0
+        final_reorder_qty_store_stock_gt_0,
+        item_purchase_type
       )
     ''')
         .order('created_at', ascending: false);
@@ -265,5 +270,33 @@ class InventoryRemoteDs {
     );
 
     return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<Map<String, int>> fetchTodayCounts() async {
+    final now = DateTime.now().toLocal();
+    final start = now.subtract(const Duration(hours: 24));
+
+    final res = await client
+        .from('additional_requests')
+        .select('item_code, branch_name')
+        .gte('created_at', start.toIso8601String());
+    final rows = List<Map<String, dynamic>>.from(res);
+
+    final Map<String, int> counts = {};
+
+    for (var r in rows) {
+      final key = "${r['item_code']}_${r['branch_name']}";
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+
+    return counts;
+  }
+
+  Future<void> approveAllInventory(List<Map<String, dynamic>> items) async {
+    await client.rpc('approve_all_inventory', params: {'p_items': items});
+  }
+
+  Future<void> storeApprove(List<Map<String, dynamic>> items) async {
+    await client.rpc('store_approve_requests', params: {'p_items': items});
   }
 }

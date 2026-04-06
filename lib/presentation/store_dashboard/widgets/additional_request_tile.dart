@@ -40,8 +40,10 @@ class AdditionalRequestTile extends StatelessWidget {
       }
     }
 
+    final isUrgent =
+        request.contactLogistic == 'urgent' && request.status != 'done';
     return Card(
-      color: AppColors.white,
+      color: isUrgent ? Colors.red.shade50 : AppColors.white,
       margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
       child: ListTile(
         title: Text(
@@ -55,15 +57,38 @@ class AdditionalRequestTile extends StatelessWidget {
           _formatDate(request.createdAt),
           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
         ),
+
+        /// 🔴🔥 TRAILING (UPDATED)
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            /// ITEMS COUNT
             Text(
               "${request.itemsCount} items",
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(width: 10),
 
+            /// 🔴 URGENT BADGE
+            if (isUrgent)
+              Container(
+                margin: const EdgeInsets.only(right: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  "URGENT",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+
+            /// 🟢 STATUS BADGE
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
@@ -77,10 +102,12 @@ class AdditionalRequestTile extends StatelessWidget {
             ),
           ],
         ),
+
         leading: Icon(
           Icons.add_circle_outline_rounded,
           color: AppColors.secondaryColor,
         ),
+
         onTap: () {
           showDialog(
             context: context,

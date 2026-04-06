@@ -8,31 +8,65 @@ class PrintAdditionalService {
   ) async {
     final pdf = pw.Document();
 
-    for (final entry in batch.entries) {
+    /// 🔴 SORT: urgent first
+    final sortedEntries = batch.entries.toList()
+      ..sort((a, b) {
+        final aUrgent = a.value.any((e) => e['contact_logistic'] == 'urgent');
+        final bUrgent = b.value.any((e) => e['contact_logistic'] == 'urgent');
+
+        if (aUrgent && !bUrgent) return -1;
+        if (!aUrgent && bUrgent) return 1;
+
+        return 0;
+      });
+
+    for (final entry in sortedEntries) {
       final branch = entry.key;
       final items = entry.value;
+
+      /// 🔴 Detect urgent for this page
+      final isUrgent = items.any((e) => e['contact_logistic'] == 'urgent');
 
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
           margin: const pw.EdgeInsets.all(20),
 
-          /// HEADER
+          /// 🔴 HEADER
           header: (context) => pw.Row(
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
-              pw.Text(
-                branch,
-                style: pw.TextStyle(
-                  fontSize: 18,
-                  fontWeight: pw.FontWeight.bold,
-                ),
+              /// LEFT SIDE (branch + urgent label)
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    branch,
+                    style: pw.TextStyle(
+                      fontSize: 18,
+                      fontWeight: pw.FontWeight.bold,
+                      color: isUrgent ? PdfColors.red : PdfColors.black,
+                    ),
+                  ),
+
+                  if (isUrgent)
+                    pw.Text(
+                      "URGENT",
+                      style: pw.TextStyle(
+                        color: PdfColors.red,
+                        fontSize: 12,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                ],
               ),
+
+              /// RIGHT SIDE (date)
               pw.Text(DateTime.now().toString().substring(0, 10)),
             ],
           ),
 
-          /// CONTENT
+          /// 🔴 CONTENT
           build: (context) => [
             pw.SizedBox(height: 10),
 
@@ -51,15 +85,19 @@ class PrintAdditionalService {
                   decoration: const pw.BoxDecoration(color: PdfColors.grey300),
                   children: [
                     _cell("Item Code", bold: true),
-
                     _cell("Item Name", bold: true),
                     _cell("Qty", bold: true),
                   ],
                 ),
 
-                /// ROWS
+                /// 🔴 ROWS
                 ...items.map((e) {
+                  final isItemUrgent = e['contact_logistic'] == 'urgent';
+
                   return pw.TableRow(
+                    decoration: isItemUrgent
+                        ? pw.BoxDecoration(color: PdfColors.red50)
+                        : null,
                     children: [
                       _cell(e['item_code'] ?? ''),
                       _cell(e['item_name'] ?? ''),
