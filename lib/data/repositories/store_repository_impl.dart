@@ -124,6 +124,7 @@ class StoreRepositoryImpl implements StoreRepository {
       } else {
         status = 'sent_to_store';
       }
+      final isUrgent = items.any((e) => e['contact_logistic'] == 'urgent');
       final isProcessing = items.any((e) => e['store_status'] == 'processing');
       result.add(
         AdditionalRequestGroup(
@@ -135,7 +136,7 @@ class StoreRepositoryImpl implements StoreRepository {
           itemNames: '',
           itemCodes: '',
           storeStatus: isProcessing ? 'processing' : null,
-          contactLogistic: '',
+          contactLogistic: isUrgent ? 'urgent' : '',
         ),
       );
     });
@@ -212,7 +213,7 @@ class StoreRepositoryImpl implements StoreRepository {
           itemNames: itemNames,
           itemCodes: itemCodes,
           storeStatus: isProcessing ? 'processing' : null,
-          contactLogistic: '',
+          contactLogistic: (first['contact_logistic'] ?? '').toString(),
         ),
       );
     });

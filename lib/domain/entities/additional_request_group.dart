@@ -13,7 +13,12 @@ class AdditionalRequestGroup {
   final num? branchStock;
   final num? storeStock;
   final num? sales;
-  final num? finalReorder;
+  final String? finalReorder;
+  final String? itemStatus;
+  final int? todayCount;
+  final int? inventoryQty;
+  final num? fulfilledQty;
+  final String? storeNote;
 
   AdditionalRequestGroup({
     required this.groupId,
@@ -30,5 +35,10 @@ class AdditionalRequestGroup {
     this.storeStock,
     this.sales,
     this.finalReorder,
+    this.itemStatus,
+    this.todayCount,
+    this.fulfilledQty,
+    this.storeNote,
+    this.inventoryQty,
   });
 }

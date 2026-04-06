@@ -93,3 +93,19 @@ class LoadMismatchTracker extends InventoryEvent {
 }
 
 class StartMismatchRealtime extends InventoryEvent {}
+
+class ApproveAllInventoryRequests extends InventoryEvent {
+  final List<Map<String, dynamic>> items;
+
+  ApproveAllInventoryRequests(this.items);
+}
+
+class StoreApproveRequests extends InventoryEvent {
+  final List<Map<String, dynamic>> items;
+
+  StoreApproveRequests(this.items);
+}
+
+class StartAdditionalRealtime extends InventoryEvent {
+  StartAdditionalRealtime();
+}

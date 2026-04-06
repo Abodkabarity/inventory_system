@@ -24,19 +24,26 @@ class _AdditionalPanelState extends State<AdditionalPanel> {
   Widget build(BuildContext context) {
     List<AdditionalRequestGroup> list = [...widget.requests];
 
-    /// SORT
     list.sort((a, b) {
-      if (a.status == b.status) {
-        return b.createdAt.compareTo(a.createdAt);
-      }
+      final aUrgent = a.contactLogistic == 'urgent' && a.status != 'done';
+      final bUrgent = b.contactLogistic == 'urgent' && b.status != 'done';
 
-      if (a.status == "sent_to_store") return -1;
-      if (b.status == "sent_to_store") return 1;
+      if (aUrgent && !bUrgent) return -1;
+      if (!aUrgent && bUrgent) return 1;
 
-      if (a.status == "rejected") return -1;
-      if (b.status == "rejected") return 1;
+      if (a.storeStatus == 'processing' && b.storeStatus != 'processing')
+        return -1;
+      if (b.storeStatus == 'processing' && a.storeStatus != 'processing')
+        return 1;
 
-      return 0;
+      if (a.status == "sent_to_store" && b.status != "sent_to_store") return -1;
+      if (b.status == "sent_to_store" && a.status != "sent_to_store") return 1;
+
+      /// 🔴 rejected next
+      if (a.status == "rejected" && b.status != "rejected") return -1;
+      if (b.status == "rejected" && a.status != "rejected") return 1;
+
+      return b.createdAt.compareTo(a.createdAt);
     });
 
     final state = context.watch<StoreBloc>().state;

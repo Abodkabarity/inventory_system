@@ -38,9 +38,10 @@ class InventoryState extends Equatable {
   final Map<String, int> editsCount;
 
   final Map<String, int> additionalTodayBranchCount;
-
+  final bool isBulkLoading;
   final List<String> submittedBranches;
-
+  final String? bulkMessage;
+  final bool? bulkSuccess;
   final bool isLoading;
 
   const InventoryState({
@@ -74,6 +75,9 @@ class InventoryState extends Equatable {
     required this.mismatchTracker,
     required this.trackerSearch,
     required this.trackerBranch,
+    required this.isBulkLoading,
+    this.bulkMessage,
+    this.bulkSuccess,
   });
 
   factory InventoryState.initial() {
@@ -95,7 +99,10 @@ class InventoryState extends Equatable {
       currentPage: InventoryPageType.dashboard,
       submittedBranches: [],
       isLoading: false,
+      isBulkLoading: false,
       mismatch: [],
+      bulkMessage: null,
+      bulkSuccess: null,
       filteredMismatch: [],
       mismatchSearch: '',
       mismatchBranch: 'ALL',
@@ -129,10 +136,13 @@ class InventoryState extends Equatable {
     int? additionalPendingCount,
     int? additionalSentToStoreCount,
     int? additionalTodayCount,
+    bool? isBulkLoading,
     int? additionalMonthCount,
     List<Map<String, dynamic>>? mismatchTracker,
     String? trackerSearch,
     String? trackerBranch,
+    String? bulkMessage,
+    bool? bulkSuccess,
     Map<String, int>? additionalMonthBranchCount,
     Map<String, int>? additionalTodayBranchExactCount,
     Map<String, int>? editsCount,
@@ -177,6 +187,7 @@ class InventoryState extends Equatable {
           this.additionalTodayBranchExactCount,
       currentPage: currentPage ?? this.currentPage,
       mismatch: mismatch ?? this.mismatch,
+      isBulkLoading: isBulkLoading ?? this.isBulkLoading,
       filteredMismatch: filteredMismatch ?? this.filteredMismatch,
       mismatchSearch: mismatchSearch ?? this.mismatchSearch,
       mismatchBranch: mismatchBranch ?? this.mismatchBranch,
@@ -189,6 +200,8 @@ class InventoryState extends Equatable {
       mismatchTracker: mismatchTracker ?? this.mismatchTracker,
       trackerSearch: trackerSearch ?? this.trackerSearch,
       trackerBranch: trackerBranch ?? this.trackerBranch,
+      bulkMessage: bulkMessage,
+      bulkSuccess: bulkSuccess,
     );
   }
 
@@ -221,5 +234,8 @@ class InventoryState extends Equatable {
     trackerBranch,
     trackerSearch,
     mismatchTracker,
+    bulkMessage,
+    bulkSuccess,
+    isBulkLoading,
   ];
 }
