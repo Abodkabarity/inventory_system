@@ -164,6 +164,9 @@ class _ProcessingAdditionalDialogState
         text: (item['store_note'] ?? '').toString(),
       );
     }
+    final isUrgent =
+        (item['contact_logistic'] ?? '').toString().trim().toLowerCase() ==
+        'urgent';
     return Card(
       color: Colors.white,
       elevation: 3,
@@ -183,7 +186,32 @@ class _ProcessingAdditionalDialogState
                     color: Colors.grey.shade700,
                   ),
                 ),
+
+                const SizedBox(width: 10),
+
+                /// 🔥 URGENT BADGE
+                if (isUrgent)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text(
+                      "URGENT",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+
                 const SizedBox(width: 20),
+
                 Expanded(
                   child: Text(
                     item['item_name'] ?? '',
@@ -349,6 +377,7 @@ class _ProcessingAdditionalDialogState
             ],
           ),
         ),
+
         ...items.map(_buildItem),
       ],
     );
@@ -366,7 +395,23 @@ class _ProcessingAdditionalDialogState
           .toList();
     }
 
-    final grouped = groupByBranch(filteredByBranch);
+    final sortedGlobal = [...filteredByBranch];
+
+    sortedGlobal.sort((a, b) {
+      final aUrgent =
+          (a['contact_logistic'] ?? '').toString().trim().toLowerCase() ==
+          'urgent';
+      final bUrgent =
+          (b['contact_logistic'] ?? '').toString().trim().toLowerCase() ==
+          'urgent';
+
+      if (aUrgent && !bUrgent) return -1;
+      if (!aUrgent && bUrgent) return 1;
+
+      return 0;
+    });
+
+    final grouped = groupByBranch(sortedGlobal);
     final state = context.watch<StoreBloc>().state;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {

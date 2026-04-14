@@ -34,6 +34,7 @@ pack_size, concentration, product_type_form, retail_price, vat,
 is_upp,
 item_minimum_order_unit,
 barcode,
+total_reorder_today,
 store_item_classifications
 ''';
 
@@ -570,5 +571,101 @@ done_at
     if (v is num) return v;
 
     return num.tryParse((v ?? '').toString()) ?? 0;
+  }
+
+  /// ==========================
+  /// MAX ADJ UPSERT FROM FINAL REORDER
+  /// ==========================
+  Future<void> upsertMaxAdjFromFinalReorder({
+    required String branchName,
+    required String itemCode,
+    required String itemName,
+    required num oldQty,
+    required num newQty,
+    required num currentDemand,
+    required String reason,
+  }) async {
+    final now = DateTime.now().toIso8601String();
+
+    /// calculate real decrease amount
+    final adjustment = (oldQty - newQty);
+
+    /// do nothing if no decrease
+    if (adjustment <= 0) return;
+
+    /// check if record already exists
+    final existing = await client
+        .from('max_adj')
+        .select()
+        .eq('branch_name', branchName)
+        .eq('item_code', itemCode)
+        .maybeSingle();
+
+    if (existing != null) {
+      /// ==========================
+      /// 1) move old record to log
+      /// ==========================
+      await client.from('max_adj_log').insert({
+        'branch_name': existing['branch_name'],
+        'item_code': existing['item_code'],
+        'item_name': existing['item_name'],
+
+        'current_demand_30d': existing['current_demand_30d'],
+        'max_adjustment_30d': existing['max_adjustment_30d'],
+        'qty': existing['qty'],
+        'update_date': existing['update_date'],
+        'adjustment_type': existing['adjustment_type'],
+        'reason': existing['reason'],
+        'added_by': existing['added_by'],
+
+        /// audit fields
+        'action_type': 'update_by_branch',
+        'moved_at': now,
+        'original_id': existing['id'],
+      });
+
+      /// ==========================
+      /// 2) update main table
+      /// ==========================
+      await client
+          .from('max_adj')
+          .update({
+            /// correct columns
+            'current_demand_30d': currentDemand,
+            'max_adjustment_30d': adjustment,
+            'qty': adjustment,
+
+            'adjustment_type': 'DECREASE',
+            'reason': reason,
+            'added_by': 'branch',
+
+            'update_date': now.split('T')[0],
+            'created_at': now,
+          })
+          .eq('branch_name', branchName)
+          .eq('item_code', itemCode);
+    } else {
+      /// ==========================
+      /// 3) insert new record
+      /// ==========================
+      await client.from('max_adj').insert({
+        'branch_name': branchName,
+        'item_code': itemCode,
+        'item_name': itemName,
+
+        /// correct columns
+        'current_demand_30d': currentDemand,
+        'max_adjustment_30d': adjustment,
+
+        'adjustment_type': 'DECREASE',
+        'qty': adjustment,
+
+        'reason': reason,
+        'added_by': 'branch',
+
+        'update_date': now.split('T')[0],
+        'created_at': now,
+      });
+    }
   }
 }

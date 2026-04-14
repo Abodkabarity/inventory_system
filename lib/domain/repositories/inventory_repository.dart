@@ -40,4 +40,5 @@ abstract class InventoryRepository {
   });
   Future<void> approveAllInventory(List<Map<String, dynamic>> items);
   Future<void> storeApprove(List<Map<String, dynamic>> items);
+  Future<List<Map<String, dynamic>>> fetchAllOrders(String runDate);
 }

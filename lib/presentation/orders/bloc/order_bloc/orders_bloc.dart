@@ -832,16 +832,20 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     );
 
     try {
-      // 1) Save final edits into order_edits first
+      final now = DateTime.now().toIso8601String();
+
+      /// ✅ MOVE THIS HERE (outside IF)
+      final rowsByCode = <String, DailyOrderRow>{};
+      for (final r in state.rows) {
+        rowsByCode[r.itemCode] = r;
+      }
+
+      // ==========================
+      // 1) Save final edits
+      // ==========================
       if (state.finalEdits.isNotEmpty) {
-        final now = DateTime.now().toIso8601String();
-
-        final rowsByCode = <String, DailyOrderRow>{};
-        for (final r in state.rows) {
-          rowsByCode[r.itemCode] = r;
-        }
-
         final editsPayload = <Map<String, dynamic>>[];
+
         for (final edit in state.finalEdits.values) {
           final row = rowsByCode[edit.itemCode];
           final itemName = row?.itemName ?? '';
@@ -868,7 +872,34 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         );
       }
 
-      // 2) Mark submission as submitted
+      // ==========================
+      // 🔥 2) APPLY MAX ADJ (AFTER SAVE)
+      // ==========================
+      for (final edit in state.finalEdits.values) {
+        if (edit.newQty < edit.oldQty) {
+          final row = rowsByCode[edit.itemCode];
+          if (row == null) continue;
+
+          final demand = await repo.fetchItemDemand(
+            branch: state.branchName,
+            itemCode: edit.itemCode,
+          );
+
+          await repo.upsertMaxAdjFromFinalReorder(
+            branchName: state.branchName,
+            itemCode: edit.itemCode,
+            itemName: row.itemName,
+            oldQty: edit.oldQty,
+            newQty: edit.newQty,
+            currentDemand: demand,
+            reason: edit.reason,
+          );
+        }
+      }
+
+      // ==========================
+      // 3) Submit status
+      // ==========================
       await repo.upsertSubmission(
         runDate: state.runDate,
         zone: zone,
@@ -876,11 +907,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         status: 'submitted',
       );
 
-      // 3) Show additional_request column after submit
       final nextVisible = Set<String>.from(state.visibleColumns);
       nextVisible.add('additional_request');
 
-      // 🔥 4) IMPORTANT: turn OFF numeric filter + rebuild view
       final view = _applyUiFilters(
         rows: _applySearch(state.rows, state.search),
         categoryFilter: state.categoryFilter,

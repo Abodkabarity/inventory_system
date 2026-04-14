@@ -109,3 +109,27 @@ class StoreApproveRequests extends InventoryEvent {
 class StartAdditionalRealtime extends InventoryEvent {
   StartAdditionalRealtime();
 }
+
+class LoadInventoryOrders extends InventoryEvent {
+  final String runDate;
+
+  LoadInventoryOrders(this.runDate);
+}
+
+class InventorySetColumnVisible extends InventoryEvent {
+  final String columnKey;
+  final bool visible;
+
+  InventorySetColumnVisible({required this.columnKey, required this.visible});
+}
+
+class InventoryReorderColumns extends InventoryEvent {
+  final int oldIndex;
+  final int newIndex;
+
+  InventoryReorderColumns({required this.oldIndex, required this.newIndex});
+}
+
+class InventoryResetColumns extends InventoryEvent {
+  InventoryResetColumns();
+}

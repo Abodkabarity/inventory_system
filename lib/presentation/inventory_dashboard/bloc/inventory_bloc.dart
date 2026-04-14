@@ -1,8 +1,10 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../domain/entities/daily_order_row.dart';
 import '../../../domain/entities/mismatch_item.dart';
 import '../../../domain/repositories/inventory_repository.dart';
+import '../../orders/widgets/orders_table.dart';
 import 'inventory_event.dart';
 import 'inventory_state.dart';
 
@@ -42,7 +44,43 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           )
           .subscribe();
     });
+    on<InventorySetColumnVisible>((event, emit) {
+      final updated = List<String>.from(state.visibleColumns);
 
+      if (event.visible) {
+        updated.add(event.columnKey);
+      } else {
+        updated.remove(event.columnKey);
+      }
+
+      emit(state.copyWith(visibleColumns: updated));
+    });
+    on<InventoryReorderColumns>((event, emit) {
+      final list = List<String>.from(state.columnOrder);
+
+      final item = list.removeAt(event.oldIndex);
+      list.insert(event.newIndex, item);
+
+      emit(state.copyWith(columnOrder: list));
+    });
+    on<InventoryResetColumns>((event, emit) {
+      emit(
+        state.copyWith(
+          visibleColumns: OrdersTable.allColumns.toList(),
+          columnOrder: OrdersTable.allColumns.toList(),
+        ),
+      );
+    });
+    on<LoadInventoryOrders>((event, emit) async {
+      emit(state.copyWith(isOrdersLoading: true));
+
+      final rows = await repo.fetchAllOrders(event.runDate);
+      final mapped = rows.map((e) {
+        return DailyOrderRow.fromMap(e);
+      }).toList();
+
+      emit(state.copyWith(allOrders: mapped, isOrdersLoading: false));
+    });
     on<StartMismatchRealtime>((event, emit) {
       mismatchChannel = Supabase.instance.client
           .channel('mismatch_live_bloc')
