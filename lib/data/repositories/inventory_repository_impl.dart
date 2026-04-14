@@ -216,4 +216,9 @@ class InventoryRepositoryImpl implements InventoryRepository {
   Future<void> storeApprove(List<Map<String, dynamic>> items) {
     return remote.storeApprove(items);
   }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchAllOrders(String runDate) {
+    return remote.fetchOrdersAllInventory(runDate: runDate);
+  }
 }

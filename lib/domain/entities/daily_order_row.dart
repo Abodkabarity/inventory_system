@@ -9,7 +9,7 @@ class DailyOrderRow {
   final num mismatchStock;
   final num storeStock;
   final num pendingStockReceived;
-
+  final int? totalReorderToday;
   final bool? isLimitedStock;
 
   final num extraQtyMoreThanMonth;
@@ -130,6 +130,7 @@ class DailyOrderRow {
     this.totalSoldQtyCashLast90,
     this.totalSoldQtyOnlineLast90,
     this.totalSoldQtyInsuranceLast90,
+    this.totalReorderToday,
   });
 
   DailyOrderRow copyWith({
@@ -249,6 +250,93 @@ class DailyOrderRow {
           totalSoldQtyOnlineLast90 ?? this.totalSoldQtyOnlineLast90,
       totalSoldQtyInsuranceLast90:
           totalSoldQtyInsuranceLast90 ?? this.totalSoldQtyInsuranceLast90,
+    );
+  }
+
+  factory DailyOrderRow.fromMap(Map<String, dynamic> map) {
+    num parseNum(dynamic v) => num.tryParse((v ?? '0').toString()) ?? 0;
+
+    String str(dynamic v) => (v ?? '').toString();
+
+    return DailyOrderRow(
+      /// 🔹 BASIC
+      branch: str(map['branch']),
+      itemCode: str(map['item_code']),
+      itemName: str(map['item_name']),
+
+      /// 🔹 STOCK
+      branchStock: parseNum(map['branch_stock']),
+      mismatchStock: parseNum(map['mismatch_stock']),
+      storeStock: parseNum(map['store_stock']),
+      pendingStockReceived: parseNum(map['pending_stock_received']),
+
+      /// 🔹 DEMAND
+      extraQtyMoreThanMonth: parseNum(map['extra_qty_more_than_month']),
+      maxAdjustment30d: parseNum(map['max_adjustment_30d']),
+      demandFor30Days: parseNum(map['demand_for_30_days']),
+
+      /// 🔹 REORDER
+      finalReorderQtyStoreStockGt0: str(
+        map['final_reorder_qty_store_stock_gt_0'],
+      ),
+      qty30DaysFromLast45d: parseNum(map['qty_30_days_from_last_45d']),
+      reorderQtyNum: parseNum(map['reorder_qty_num']),
+
+      /// 🔹 EXTRA
+      totalReorderAllBranches: 0,
+
+      /// 🔹 META
+      branchFormulary: str(map['branch_formulary']),
+      assortmentQtyBaseStock: str(map['assortment_qty_base_stock']),
+      assortmentBy: str(map['assortment_by']),
+      itemPurchaseType: str(map['item_purchase_type']),
+      salesOrientation: str(map['sales_orientation']),
+      category: str(map['category']),
+      subCategory: str(map['sub_category']),
+
+      /// 🔹 BOOL
+      isUpp: map['is_upp'] == true,
+
+      /// 🔹 UNIT + BARCODE
+      minOrderUnit: str(map['item_minimum_order_unit']),
+      barcode: str(map['barcode']),
+
+      /// 🔹 LIMITS
+      reorderPointMin: parseNum(map['reorder_point_min']),
+      reorderMax: parseNum(map['reorder_max']),
+      reorderQty: parseNum(map['reorder_qty']),
+
+      /// 🔹 DATES
+      dateOfLastQtyReceivedInBranch: str(
+        map['date_of_last_qty_received_in_branch'],
+      ),
+
+      /// 🔹 REASON
+      reason: str(map['reason']),
+
+      /// 🔹 TMA
+      tmaQty: parseNum(map['tma_qty']),
+      tmaStart: str(map['tma_start']),
+      tmaEnd: str(map['tma_end']),
+
+      /// 🔹 MEDICAL
+      indication: str(map['indication']),
+      activeIngredient: str(map['active_ingredient']),
+
+      /// 🔹 PRODUCT
+      packSize: str(map['pack_size']),
+      concentration: str(map['concentration']),
+      productTypeForm: str(map['product_type_form']),
+
+      /// 🔹 PRICE
+      retailPrice: parseNum(map['retail_price']),
+      vat: parseNum(map['vat']),
+
+      /// 🔹 CLASSIFICATION
+      storeItemClassifications: str(map['store_item_classifications']),
+
+      /// 🔹 GOODS RECEIVED
+      goodsReceivedLast7Days: map['goods_received_last_7_days'] == true,
     );
   }
 }

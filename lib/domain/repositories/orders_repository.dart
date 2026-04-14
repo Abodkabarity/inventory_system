@@ -106,4 +106,13 @@ abstract class OrdersRepository {
     required String branch,
     required String itemCode,
   });
+  Future<void> upsertMaxAdjFromFinalReorder({
+    required String branchName,
+    required String itemCode,
+    required String itemName,
+    required num oldQty,
+    required num newQty,
+    required num currentDemand,
+    required String reason,
+  });
 }

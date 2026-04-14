@@ -12,6 +12,7 @@ import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
 import '../widgets/inventory_dashboard_body.dart';
 import '../widgets/inventory_drawer.dart';
+import 'inventory_daily_order_page.dart';
 import 'mismatch_page.dart';
 
 class InventoryDashboardPage extends StatelessWidget {
@@ -128,7 +129,9 @@ class _InventoryDashboardViewState extends State<InventoryDashboardView> {
                     children: [
                       const InventoryDrawer(),
 
-                      Expanded(child: _buildPage(state, isSubmitted)),
+                      Expanded(
+                        child: _buildPage(state, isSubmitted, widget.runDate),
+                      ),
                     ],
                   ),
 
@@ -151,7 +154,7 @@ class _InventoryDashboardViewState extends State<InventoryDashboardView> {
   }
 }
 
-Widget _buildPage(InventoryState state, bool isSubmitted) {
+Widget _buildPage(InventoryState state, bool isSubmitted, String runDate) {
   switch (state.currentPage) {
     case InventoryPageType.dashboard:
       return InventoryDashboardBody(state: state, isSubmitted: isSubmitted);
@@ -169,6 +172,6 @@ Widget _buildPage(InventoryState state, bool isSubmitted) {
       return const Center(child: Text("Assortment Report"));
 
     case InventoryPageType.dailyOrder:
-      return const Center(child: Text("Daily Order Report"));
+      return InventoryDailyOrderPage(runDate: runDate);
   }
 }

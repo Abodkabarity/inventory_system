@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 
 import '../../../domain/entities/additional_request_group.dart';
+import '../../../domain/entities/daily_order_row.dart';
 import '../../../domain/entities/inventory_edit_item.dart';
 import '../../../domain/entities/inventory_page.dart';
 import '../../../domain/entities/mismatch_item.dart';
@@ -21,6 +22,8 @@ class InventoryState extends Equatable {
   final int mismatchTodayCount;
   final int mismatchMonthCount;
   final String mismatchSearch;
+  final List<DailyOrderRow> allOrders;
+  final bool isOrdersLoading;
   final String mismatchBranch;
   final String mismatchDate;
   final int additionalCount;
@@ -30,7 +33,8 @@ class InventoryState extends Equatable {
   final int additionalSentToStoreCount;
   final int mismatchTotalCount;
   final int additionalTodayCount;
-
+  final List<String> visibleColumns;
+  final List<String> columnOrder;
   final int additionalMonthCount;
   final List<Map<String, dynamic>> mismatchTracker;
   final String trackerSearch;
@@ -78,6 +82,10 @@ class InventoryState extends Equatable {
     required this.isBulkLoading,
     this.bulkMessage,
     this.bulkSuccess,
+    required this.allOrders,
+    required this.isOrdersLoading,
+    required this.visibleColumns,
+    required this.columnOrder,
   });
 
   factory InventoryState.initial() {
@@ -111,6 +119,8 @@ class InventoryState extends Equatable {
       mismatchDiffSum: 0,
       mismatchDate: 'today',
       mismatchTotalCount: 0,
+      allOrders: [],
+      isOrdersLoading: false,
       mismatchTracker: [],
       trackerSearch: '',
       trackerBranch: 'ALL',
@@ -123,6 +133,8 @@ class InventoryState extends Equatable {
         'diff': 120,
         'history': 140,
       },
+      visibleColumns: [],
+      columnOrder: [],
     );
   }
 
@@ -142,6 +154,10 @@ class InventoryState extends Equatable {
     String? trackerSearch,
     String? trackerBranch,
     String? bulkMessage,
+    List<String>? visibleColumns,
+    List<String>? columnOrder,
+    List<DailyOrderRow>? allOrders,
+    bool? isOrdersLoading,
     bool? bulkSuccess,
     Map<String, int>? additionalMonthBranchCount,
     Map<String, int>? additionalTodayBranchExactCount,
@@ -202,6 +218,10 @@ class InventoryState extends Equatable {
       trackerBranch: trackerBranch ?? this.trackerBranch,
       bulkMessage: bulkMessage,
       bulkSuccess: bulkSuccess,
+      allOrders: allOrders ?? this.allOrders,
+      isOrdersLoading: isOrdersLoading ?? this.isOrdersLoading,
+      visibleColumns: visibleColumns ?? this.visibleColumns,
+      columnOrder: columnOrder ?? this.columnOrder,
     );
   }
 
@@ -237,5 +257,9 @@ class InventoryState extends Equatable {
     bulkMessage,
     bulkSuccess,
     isBulkLoading,
+    allOrders,
+    isOrdersLoading,
+    columnOrder,
+    visibleColumns,
   ];
 }

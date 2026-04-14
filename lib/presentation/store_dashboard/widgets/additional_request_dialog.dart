@@ -233,7 +233,10 @@ class _AdditionalRequestDialogState extends State<AdditionalRequestDialog> {
 
   Widget _buildItem(Map<String, dynamic> item) {
     final id = item['id'].toString();
-
+    final isUrgent = item['contact_logistic'] == 'urgent';
+    for (var e in items) {
+      print("ITEM => ${e['item_name']} | ${e['contact_logistic']}");
+    }
     return Card(
       color: Colors.white,
       shadowColor: AppColors.primaryColor,
@@ -254,12 +257,39 @@ class _AdditionalRequestDialogState extends State<AdditionalRequestDialog> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                const SizedBox(width: 30),
-                Text(
-                  item['item_name'] ?? '',
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
+
+                const SizedBox(width: 10),
+
+                /// 🔥 URGENT BADGE
+                if (isUrgent)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text(
+                      "URGENT",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+
+                const SizedBox(width: 20),
+
+                Expanded(
+                  child: Text(
+                    item['item_name'] ?? '',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],

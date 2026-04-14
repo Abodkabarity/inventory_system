@@ -327,6 +327,13 @@ class NumericField extends StatelessWidget {
             color: canDec ? AppColors.secondaryColor : Colors.grey,
           ),
         ),
+        suffixIcon: IconButton(
+          onPressed: canInc ? onInc : null,
+          icon: Icon(
+            Icons.add_circle_outline,
+            color: canInc ? AppColors.secondaryColor : Colors.grey,
+          ),
+        ),
       ),
     );
   }
