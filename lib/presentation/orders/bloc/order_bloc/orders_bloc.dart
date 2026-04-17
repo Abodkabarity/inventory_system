@@ -79,6 +79,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     on<OrdersDeleteMaxAdj>(_onDeleteMaxAdj);
     on<OrdersSearchMaxAdjList>(_onSearchMaxAdjList);
     on<OrdersExportPressed>(_onExportPressed);
+    on<OrdersShowCreate>((event, emit) {
+      emit(state.copyWith(showCreate: true, status: OrdersStatus.ready));
+    });
     on<OrdersClearSelectedDemand>((event, emit) {
       emit(state.copyWith(selectedItemDemand: 0));
     });
@@ -169,24 +172,67 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
   // Load
   // ==========================
   Future<void> _onLoadAll(OrdersLoadAll e, Emitter<OrdersState> emit) async {
-    emit(
-      state.copyWith(
-        status: OrdersStatus.loading,
-        error: null,
-        progress: 0,
-        progressMessage: 'Loading items...',
-      ),
-    );
+    print('🚀 _onLoadAll START');
 
     try {
-      // 1) Load base rows
+      // ==========================
+      // 🔥 STEP 1: CHECK IF EXISTS
+      // ==========================
+      print('🔍 Checking if order exists...');
+
+      final exists = await repo.checkIfOrderExists(
+        runDate: state.runDate,
+        branchName: state.branchName,
+      );
+
+      print('📦 Exists: $exists');
+
+      if (!exists) {
+        print('❌ No order exists → SHOW CREATE SCREEN');
+
+        emit(
+          state.copyWith(
+            status: OrdersStatus.idle,
+            rows: [],
+            viewRows: [],
+            progress: 0,
+            progressMessage: null,
+            error: null,
+          ),
+        );
+
+        return;
+      } else {
+        print('✅ Data already exists → skip generate');
+      }
+
+      // ==========================
+      // 🔥 STEP 2: START LOADING
+      // ==========================
+      emit(
+        state.copyWith(
+          status: OrdersStatus.loading,
+          error: null,
+          progress: 0,
+          progressMessage: 'Loading items...',
+        ),
+      );
+
+      print('📥 Loading full data...');
+
+      // ==========================
+      // STEP 3: LOAD DATA
+      // ==========================
       final baseRows = await fetchOrdersAll(
         runDate: state.runDate,
         branchName: state.branchName,
         batchSize: 5000,
         onProgress: (loaded) {
+          print('⏳ Loading progress: $loaded');
+
           const total = 15000;
           final p = ((loaded / total) * 90).clamp(0, 90).round();
+
           emit(
             state.copyWith(
               status: OrdersStatus.loading,
@@ -197,26 +243,27 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         },
       );
 
-      // 2) Load submission status + sent additional requests map
-      emit(
-        state.copyWith(
-          status: OrdersStatus.loading,
-          progress: 91,
-          progressMessage: 'Syncing status...',
-        ),
-      );
+      print('✅ Loaded rows: ${baseRows.length}');
+
+      // ==========================
+      // STEP 4: STATUS
+      // ==========================
+      print('🔄 Fetching submission status...');
 
       final submissionStatus = await repo.fetchSubmissionStatus(
         runDate: state.runDate,
         branchName: state.branchName,
       );
 
+      print('📊 Submission status: $submissionStatus');
+
       final sentHistory = await repo.fetchAdditionalRequestsHistoryForBranch(
         runDate: state.runDate,
         branchName: state.branchName,
       );
 
-      // build qty summary map (sum per item_code)
+      print('📦 Additional history count: ${sentHistory.length}');
+
       final sentAdditional = <String, num>{};
       sentHistory.forEach((code, rows) {
         num total = 0;
@@ -227,7 +274,6 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         sentAdditional[code] = total;
       });
 
-      // Show additional_request column ONLY if submitted
       final nextVisible = Set<String>.from(state.visibleColumns);
       nextVisible.add('additional_request');
 
@@ -243,14 +289,21 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         ),
       );
 
-      // 3) Load tracking list (flat requests with status)
+      // ==========================
+      // STEP 5: TRACKING
+      // ==========================
+      print('📡 Loading tracking data...');
+
       final trackingRaw = await repo.fetchAdditionalRequestsTrackingForBranch(
         runDate: state.runDate,
         branchName: state.branchName,
       );
+
       final trackingRows = trackingRaw
           .map(AdditionalRequestRow.fromMap)
           .toList();
+
+      print('📡 Tracking rows: ${trackingRows.length}');
 
       emit(
         state.copyWith(
@@ -261,12 +314,28 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         ),
       );
 
+      // ==========================
+      // STEP 6: FILTERS
+      // ==========================
+      print('🧠 Applying filters...');
+
       final searched = _applySearch(baseRows, state.search);
+
       final orderDays = await repo.fetchBranchOrderDays(
         branchName: state.branchName,
       );
+      final now = DateTime.now().toLocal();
 
-      final today = DateTime.parse(state.runDate).weekday;
+      final cutoff = DateTime(
+        now.year,
+        now.month,
+        now.day,
+        21, // 9 PM
+      );
+
+      final businessDay = now.isBefore(cutoff)
+          ? now
+          : now.add(const Duration(days: 1));
 
       const map = {
         1: 'Monday',
@@ -278,9 +347,11 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         7: 'Sunday',
       };
 
-      final todayName = map[today];
+      final todayName = map[businessDay.weekday];
 
       final isOrderDay = orderDays.contains(todayName);
+
+      print('📆 Business Day: $todayName | isOrderDay: $isOrderDay');
       final view = _applyUiFilters(
         rows: searched,
         categoryFilter: state.categoryFilter,
@@ -294,12 +365,20 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         sentAdditionalQtyByItemCode: sentAdditional,
       );
 
+      print('🎯 View rows: ${view.length}');
+
+      // ==========================
+      // FINAL
+      // ==========================
+      print('🏁 DONE');
+
       emit(
         state.copyWith(
           status: OrdersStatus.ready,
           progress: 100,
           progressMessage: 'Done ${baseRows.length}/${baseRows.length}',
           rows: baseRows,
+          showCreate: false,
           viewRows: view,
           isOrderDay: isOrderDay,
 
@@ -307,6 +386,8 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         ),
       );
     } catch (err) {
+      print('❌ ERROR: $err');
+
       emit(state.copyWith(status: OrdersStatus.failure, error: err.toString()));
     }
   }

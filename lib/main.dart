@@ -27,6 +27,8 @@ Future<void> main() async {
   await Supabase.initialize(
     url: SupabaseConfig.supabaseUrl,
     anonKey: SupabaseConfig.anonKey,
+
+    authOptions: const FlutterAuthClientOptions(autoRefreshToken: true),
   );
   final user = Supabase.instance.client.auth.currentUser;
   print('AUTH USER (startup): ${user?.id}');

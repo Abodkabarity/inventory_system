@@ -317,3 +317,5 @@ class OrdersToggleBranchMaxAdj extends OrdersEvent {
 class OrdersClearSelectedDemand extends OrdersEvent {
   const OrdersClearSelectedDemand();
 }
+
+class OrdersShowCreate extends OrdersEvent {}

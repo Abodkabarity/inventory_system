@@ -187,7 +187,7 @@ class OrdersState extends Equatable {
   final String? error;
   final bool isMismatchLoading;
   final Map<String, List<Map<String, dynamic>>> sentAdditionalHistoryByItemCode;
-
+  final bool showCreate;
   final Set<String> visibleColumns;
   final List<String> columnOrder;
   final Map<String, double> columnWidths;
@@ -256,6 +256,7 @@ class OrdersState extends Equatable {
     required this.isOrderDay,
     required this.selectedItemDemand,
     required this.onlyBranchMaxAdj,
+    required this.showCreate,
   });
 
   static const List<String> defaultVisibleInTable = [
@@ -387,6 +388,7 @@ class OrdersState extends Equatable {
       categoryFilter: 'ALL',
       formularyFilter: 'ALL',
       nonWithSales45Only: false,
+      showCreate: true,
       numericFinalOnly: true,
       lastActionSuccess: false,
       showMismatchResult: false,
@@ -468,6 +470,7 @@ class OrdersState extends Equatable {
     bool? isExporting,
     bool? isOrderDay,
     bool? onlyBranchMaxAdj,
+    bool? showCreate,
     List<Map<String, dynamic>>? mismatchItems,
     List<Map<String, dynamic>>? mismatchSuggestions,
     String? editingMismatchId,
@@ -525,6 +528,7 @@ class OrdersState extends Equatable {
       isOrderDay: isOrderDay ?? this.isOrderDay,
       selectedItemDemand: selectedItemDemand ?? this.selectedItemDemand,
       onlyBranchMaxAdj: onlyBranchMaxAdj ?? this.onlyBranchMaxAdj,
+      showCreate: showCreate ?? this.showCreate,
     );
   }
 
@@ -568,5 +572,6 @@ class OrdersState extends Equatable {
     isOrderDay,
     selectedItemDemand,
     onlyBranchMaxAdj,
+    showCreate,
   ];
 }

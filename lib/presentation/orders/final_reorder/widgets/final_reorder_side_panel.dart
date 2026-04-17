@@ -132,24 +132,28 @@ class _FinalReorderSidePanelState extends State<FinalReorderSidePanel> {
                                 type: AlertType.blocked,
                                 title: 'Editing Disabled',
                                 body:
-                                    'Store stock is 0, so editing final reorder is disabled for this item.',
+                                    'Store stock is 0 or NON-Formulary, so editing final reorder is disabled for this item.',
                               ),
-
                             if (!s.isLocked && s.isNonFormulary)
                               const AlertCard(
                                 type: AlertType.info,
                                 title: 'NON Formulary',
-                                body:
-                                    'This item is NON-formulary. Please send it to the Zone Manager to convert it to ESSENTIAL to ensure refill when the product is sold.',
+                                body: 'This item is NON-formulary',
                               ),
-
+                            if (!s.isLocked && s.hasTma)
+                              const AlertCard(
+                                type: AlertType.warning,
+                                title: 'TMA Item',
+                                body:
+                                    'This item has TMA. You can only increase quantity.',
+                              ),
                             if (!s.isLocked && s.isLimitedStockLive)
                               AlertCard(
                                 type: AlertType.warning,
                                 title: 'Limited Stock',
                                 body: s.onlyDecrease
-                                    ? 'Reorder quantity is higher than the allowed auto quantity for this branch, so you cannot increase this item. You can only decrease.'
-                                    : 'Limited stock detected. You may not be able to increase this item. You can decrease if needed.',
+                                    ? 'Limited stock detected. You may not be able to increase this item'
+                                    : 'Limited stock detected. You may not be able to increase this item',
                               ),
 
                             const SizedBox(height: 14),

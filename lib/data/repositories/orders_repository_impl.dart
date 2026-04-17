@@ -253,4 +253,23 @@ class OrdersRepositoryImpl implements OrdersRepository {
       reason: reason,
     );
   }
+
+  @override
+  Future<bool> checkIfOrderExists({
+    required String runDate,
+    required String branchName,
+  }) async {
+    print('🔍 CHECK USING RUN DATE: $runDate');
+
+    final res = await remote.client
+        .from('daily_order')
+        .select('item_code')
+        .eq('branch', branchName)
+        .eq('run_date', runDate)
+        .limit(1);
+
+    print('📦 EXISTS RESULT: ${res.length}');
+
+    return res.isNotEmpty;
+  }
 }

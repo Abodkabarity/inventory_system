@@ -81,7 +81,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                       ),
                       const SizedBox(height: 14),
 
-                      if (s.isInitial)
+                      if (s.showCreate && s.submissionStatus != 'submitted')
                         SizedBox(
                           height: MediaQuery.of(context).size.height * 0.7.h,
 

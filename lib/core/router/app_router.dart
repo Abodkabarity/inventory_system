@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../presentation/app/bloc/app_bloc.dart';
 import '../../presentation/app/bloc/app_state.dart';
@@ -9,37 +10,41 @@ import '../../role_gate_page.dart';
 class AppRouter {
   static GoRouter createRouter() {
     return GoRouter(
-      initialLocation: '/login',
+      // 🔥 أهم تعديل
+      initialLocation: '/',
+
       redirect: (context, state) {
         final app = context.read<AppBloc>().state;
         final path = state.uri.path;
 
-        final isAuth = app.status == AppStatus.authenticated;
-        final isUnauth = app.status == AppStatus.unauthenticated;
+        final session = Supabase.instance.client.auth.currentSession;
+
         final isLogin = path == '/login';
 
-        // While app is still initializing, do not redirect.
-        if (app.status == AppStatus.initial) {
+        print('ROUTER SESSION: $session');
+        print('APP STATUS: ${app.status}');
+
+        // ⏳ أثناء التحميل لا تعمل redirect
+        if (app.status == AppStatus.initial ||
+            app.status == AppStatus.loading) {
           return null;
         }
 
-        // Not logged in -> always go to login.
-        if (isUnauth) {
+        if (session == null) {
           return isLogin ? null : '/login';
         }
 
-        // Logged in -> prevent staying on login.
-        if (isAuth && isLogin) {
+        if (isLogin) {
           return '/';
         }
 
         return null;
       },
+
       routes: [
         GoRoute(path: '/login', builder: (_, __) => const LoginPage()),
-        GoRoute(path: '/', builder: (_, __) => const RoleGatePage()),
 
-        GoRoute(path: '/home', redirect: (_, __) => '/'),
+        GoRoute(path: '/', builder: (_, __) => const RoleGatePage()),
       ],
     );
   }

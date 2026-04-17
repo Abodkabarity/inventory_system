@@ -26,7 +26,7 @@ class FinalReorderState extends Equatable {
 
   final bool canIncrease;
   final bool canDecrease;
-
+  final bool hasTma;
   final bool hasChange;
   final bool reasonOk;
   final bool canSave;
@@ -54,6 +54,7 @@ class FinalReorderState extends Equatable {
     required this.isLimitedStockLive,
     required this.dialog,
     required this.totalReorderToday,
+    required this.hasTma,
   });
 
   FinalReorderState copyWith({
@@ -68,6 +69,7 @@ class FinalReorderState extends Equatable {
     int? capForThisBranch,
     bool? canIncrease,
     bool? canDecrease,
+    bool? hasTma,
     bool? hasChange,
     bool? reasonOk,
     int? totalReorderToday,
@@ -94,6 +96,7 @@ class FinalReorderState extends Equatable {
       isLimitedStockLive: isLimitedStockLive ?? this.isLimitedStockLive,
       dialog: clearDialog ? null : (dialog ?? this.dialog),
       totalReorderToday: totalReorderToday ?? this.totalReorderToday,
+      hasTma: hasTma ?? this.hasTma,
     );
   }
 
@@ -116,5 +119,6 @@ class FinalReorderState extends Equatable {
     isLimitedStockLive,
     dialog,
     totalReorderToday,
+    hasTma,
   ];
 }
