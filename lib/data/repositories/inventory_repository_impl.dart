@@ -221,4 +221,9 @@ class InventoryRepositoryImpl implements InventoryRepository {
   Future<List<Map<String, dynamic>>> fetchAllOrders(String runDate) {
     return remote.fetchOrdersAllInventory(runDate: runDate);
   }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchBranchAllChanges(String branch) {
+    return remote.fetchBranchAllChanges(branch: branch);
+  }
 }

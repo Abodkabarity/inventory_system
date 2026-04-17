@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:intl/intl.dart';
 
-import '../../../core/theme/app_colors.dart';
 import '../bloc/inventory_bloc.dart';
 import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
@@ -21,10 +21,7 @@ class _BranchAnalyticsDialogState extends State<BranchAnalyticsDialog> {
   void initState() {
     super.initState();
 
-    /// load edits
-    context.read<InventoryBloc>().add(LoadBranchAnalytics(widget.branch));
-
-    /// load additional stats
+    context.read<InventoryBloc>().add(LoadBranchAllChanges(widget.branch));
     context.read<InventoryBloc>().add(LoadBranchAdditionalStats(widget.branch));
   }
 
@@ -35,42 +32,19 @@ class _BranchAnalyticsDialogState extends State<BranchAnalyticsDialog> {
     return Dialog(
       insetPadding: const EdgeInsets.all(20),
       backgroundColor: Colors.grey.shade100,
-
       child: Container(
         width: screen.width * 0.85,
-        height: screen.height * 0.85,
+        height: screen.height * 0.9,
         padding: const EdgeInsets.all(24),
 
         child: BlocBuilder<InventoryBloc, InventoryState>(
           builder: (context, state) {
-            /// ============================
-            /// ADDITIONAL
-            /// ============================
-
-            final additionalToday = state.additionalRequests
-                .where(
-                  (e) =>
-                      e.branchName == widget.branch &&
-                      DateUtils.isSameDay(e.createdAt, DateTime.now()),
-                )
-                .length;
-
             final additionalMonth =
                 state.additionalMonthBranchCount[widget.branch] ?? 0;
 
-            /// ============================
-            /// EDITS
-            /// ============================
-
-            final editsToday = state.editsCount[widget.branch] ?? 0;
-
-            final editsMonth = state.edits.length;
-
             return Column(
               children: [
-                /// ============================
                 /// HEADER
-                /// ============================
                 Row(
                   children: [
                     Text(
@@ -80,9 +54,7 @@ class _BranchAnalyticsDialogState extends State<BranchAnalyticsDialog> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-
                     const Spacer(),
-
                     IconButton(
                       icon: const Icon(Icons.close),
                       onPressed: () => Navigator.pop(context),
@@ -90,102 +62,49 @@ class _BranchAnalyticsDialogState extends State<BranchAnalyticsDialog> {
                   ],
                 ),
 
-                const SizedBox(height: 25),
+                const SizedBox(height: 20),
 
-                /// ============================
-                /// KPI CARDS
-                /// ============================
+                /// KPI
                 Row(
                   children: [
                     _kpiCard(
-                      title: "Additional Today",
-                      value: additionalToday,
-                      color: Colors.orange,
-                      onTap: () => _openHistory(context),
-                    ),
-
-                    _kpiCard(
-                      title: "Additional Month",
-                      value: additionalMonth,
-                      color: Colors.deepOrange,
-                      onTap: () => _openHistory(context),
-                    ),
-
-                    _kpiCard(
-                      title: "Edited Today",
-                      value: editsToday,
+                      title: "Changes",
+                      value: state.allChanges.length,
                       color: Colors.blue,
                       onTap: () {},
                     ),
-
                     _kpiCard(
-                      title: "Edited Month",
-                      value: editsMonth,
-                      color: Colors.green,
-                      onTap: () {},
+                      title: "Additional Month",
+                      value: additionalMonth,
+                      color: Colors.orange,
+                      onTap: () => _openHistory(context),
                     ),
                   ],
                 ),
 
-                const SizedBox(height: 30),
+                const SizedBox(height: 20),
 
-                /// ============================
                 /// TITLE
-                /// ============================
                 const Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    "Edited Products Today",
+                    "Branch Activity Timeline",
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                 ),
 
                 const SizedBox(height: 10),
 
-                /// ============================
-                /// EDITS LIST
-                /// ============================
+                /// LIST
                 Expanded(
-                  child: state.edits.isEmpty
-                      ? const Center(
-                          child: Text(
-                            "No edits today",
-                            style: TextStyle(fontSize: 16),
-                          ),
-                        )
+                  child: state.allChanges.isEmpty
+                      ? const Center(child: Text("No activity"))
                       : ListView.builder(
-                          itemCount: state.edits.length,
+                          itemCount: state.allChanges.length,
                           itemBuilder: (context, i) {
-                            final item = state.edits[i];
+                            final item = state.allChanges[i];
 
-                            return Card(
-                              elevation: 4,
-                              margin: const EdgeInsets.only(bottom: 10),
-
-                              child: ListTile(
-                                leading: const Icon(
-                                  Icons.edit,
-                                  color: AppColors.primaryColor,
-                                ),
-
-                                title: Text(
-                                  item.itemName,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-
-                                subtitle: Text(item.itemCode),
-
-                                trailing: Text(
-                                  "${item.oldQty} → ${item.newQty}",
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.green,
-                                  ),
-                                ),
-                              ),
-                            );
+                            return _timelineItem(item);
                           },
                         ),
                 ),
@@ -193,6 +112,177 @@ class _BranchAnalyticsDialogState extends State<BranchAnalyticsDialog> {
             );
           },
         ),
+      ),
+    );
+  }
+
+  /// ============================
+  /// TIMELINE ITEM (🔥 احترافي)
+  /// ============================
+
+  Widget _timelineItem(Map<String, dynamic> item) {
+    final source = item['source'] ?? '';
+    final time = DateTime.tryParse(item['created_at'] ?? '') ?? DateTime.now();
+
+    IconData icon;
+    Color color;
+    String title;
+
+    switch (source) {
+      case 'order_edit':
+        icon = Icons.edit;
+        color = Colors.blue;
+        title = "Order Edited";
+        break;
+
+      case 'mismatch':
+        icon = Icons.warning_amber_rounded;
+        color = Colors.red;
+        title = "Stock Mismatch";
+        break;
+
+      case 'max_adj':
+        icon = Icons.tune;
+        color = Colors.orange;
+        title = "Max Adjustment";
+        break;
+
+      default:
+        icon = Icons.info;
+        color = Colors.grey;
+        title = "Activity";
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        /// LINE + ICON
+        Column(
+          children: [
+            Container(width: 3, height: 10, color: Colors.grey.shade300),
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: color.withOpacity(.15),
+              child: Icon(icon, size: 18, color: color),
+            ),
+            Container(width: 3, height: 70, color: Colors.grey.shade300),
+          ],
+        ),
+
+        const SizedBox(width: 12),
+
+        /// CONTENT
+        Expanded(
+          child: Card(
+            elevation: 3,
+            margin: const EdgeInsets.only(bottom: 15),
+
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  /// HEADER
+                  Row(
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: color,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        DateFormat('hh:mm a').format(time),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  /// ITEM NAME
+                  Text(
+                    item['item_name'] ?? '',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+
+                  const SizedBox(height: 4),
+
+                  Text(
+                    item['item_code'] ?? '',
+                    style: const TextStyle(color: Colors.grey),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  /// VALUES
+                  Row(
+                    children: [
+                      _valueBox("Old", item['old_value'], Colors.red),
+                      const SizedBox(width: 10),
+                      const Icon(Icons.arrow_forward),
+                      const SizedBox(width: 10),
+                      _valueBox("New", item['new_value'], Colors.green),
+                    ],
+                  ),
+
+                  /// REASON
+                  if ((item['note'] ?? '').toString().isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.notes, size: 16),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              item['note'],
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// ============================
+  /// VALUE BOX
+  /// ============================
+
+  Widget _valueBox(String label, dynamic value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: [
+          Text(label, style: const TextStyle(fontSize: 11)),
+          Text(
+            value?.toString() ?? '',
+            style: TextStyle(fontWeight: FontWeight.bold, color: color),
+          ),
+        ],
       ),
     );
   }
@@ -210,16 +300,13 @@ class _BranchAnalyticsDialogState extends State<BranchAnalyticsDialog> {
     return Expanded(
       child: GestureDetector(
         onTap: onTap,
-
         child: Container(
           margin: const EdgeInsets.only(right: 12),
           padding: const EdgeInsets.all(18),
-
           decoration: BoxDecoration(
             color: color.withOpacity(.12),
             borderRadius: BorderRadius.circular(14),
           ),
-
           child: Column(
             children: [
               Text(
@@ -230,9 +317,7 @@ class _BranchAnalyticsDialogState extends State<BranchAnalyticsDialog> {
                   color: color,
                 ),
               ),
-
               const SizedBox(height: 6),
-
               Text(
                 title,
                 style: const TextStyle(fontWeight: FontWeight.w600),
@@ -254,7 +339,6 @@ class _BranchAnalyticsDialogState extends State<BranchAnalyticsDialog> {
 
     showDialog(
       context: context,
-
       builder: (_) => BlocProvider.value(
         value: bloc,
         child: InventoryAdditionalHistoryDialog(branch: widget.branch),

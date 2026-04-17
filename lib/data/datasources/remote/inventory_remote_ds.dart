@@ -331,4 +331,29 @@ store_item_classifications
 
     return List<Map<String, dynamic>>.from(res);
   }
+
+  Future<List<Map<String, dynamic>>> fetchBranchAllChanges({
+    required String branch,
+  }) async {
+    final now = DateTime.now();
+
+    final today9pm = DateTime(now.year, now.month, now.day, 21);
+
+    final end = now.isBefore(today9pm)
+        ? today9pm
+        : today9pm.add(const Duration(days: 1));
+
+    final start = end.subtract(const Duration(days: 1));
+
+    final res = await client.rpc(
+      'get_branch_all_changes',
+      params: {
+        'p_branch': branch,
+        'p_from': start.toIso8601String(),
+        'p_to': end.toIso8601String(),
+      },
+    );
+
+    return List<Map<String, dynamic>>.from(res);
+  }
 }

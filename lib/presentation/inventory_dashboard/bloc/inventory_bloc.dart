@@ -44,6 +44,10 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           )
           .subscribe();
     });
+    on<LoadBranchAllChanges>((event, emit) async {
+      final data = await repo.fetchBranchAllChanges(event.branch);
+      emit(state.copyWith(allChanges: data));
+    });
     on<InventorySetColumnVisible>((event, emit) {
       final updated = List<String>.from(state.visibleColumns);
 
