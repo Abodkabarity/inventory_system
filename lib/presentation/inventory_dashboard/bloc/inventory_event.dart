@@ -133,3 +133,8 @@ class InventoryReorderColumns extends InventoryEvent {
 class InventoryResetColumns extends InventoryEvent {
   InventoryResetColumns();
 }
+
+class LoadBranchAllChanges extends InventoryEvent {
+  final String branch;
+  LoadBranchAllChanges(this.branch);
+}

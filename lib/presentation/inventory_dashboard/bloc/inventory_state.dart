@@ -37,6 +37,7 @@ class InventoryState extends Equatable {
   final List<String> columnOrder;
   final int additionalMonthCount;
   final List<Map<String, dynamic>> mismatchTracker;
+  final List<Map<String, dynamic>> allChanges;
   final String trackerSearch;
   final String trackerBranch;
   final Map<String, int> editsCount;
@@ -86,6 +87,7 @@ class InventoryState extends Equatable {
     required this.isOrdersLoading,
     required this.visibleColumns,
     required this.columnOrder,
+    required this.allChanges,
   });
 
   factory InventoryState.initial() {
@@ -97,6 +99,7 @@ class InventoryState extends Equatable {
       additionalMonthBranchCount: {},
       additionalTodayBranchExactCount: {},
       additionalTodayBranchCount: {},
+
       additionalRequests: [],
       submittedCount: 0,
       additionalCount: 0,
@@ -135,6 +138,7 @@ class InventoryState extends Equatable {
       },
       visibleColumns: [],
       columnOrder: [],
+      allChanges: [],
     );
   }
 
@@ -159,6 +163,7 @@ class InventoryState extends Equatable {
     List<DailyOrderRow>? allOrders,
     bool? isOrdersLoading,
     bool? bulkSuccess,
+    List<Map<String, dynamic>>? allChanges,
     Map<String, int>? additionalMonthBranchCount,
     Map<String, int>? additionalTodayBranchExactCount,
     Map<String, int>? editsCount,
@@ -222,6 +227,7 @@ class InventoryState extends Equatable {
       isOrdersLoading: isOrdersLoading ?? this.isOrdersLoading,
       visibleColumns: visibleColumns ?? this.visibleColumns,
       columnOrder: columnOrder ?? this.columnOrder,
+      allChanges: allChanges ?? this.allChanges,
     );
   }
 
@@ -261,5 +267,6 @@ class InventoryState extends Equatable {
     isOrdersLoading,
     columnOrder,
     visibleColumns,
+    allChanges,
   ];
 }
