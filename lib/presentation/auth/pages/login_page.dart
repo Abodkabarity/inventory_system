@@ -51,7 +51,7 @@ class _LoginPageState extends State<LoginPage> {
 
                       context.read<AppBloc>().add(const AppStarted());
 
-                      context.go('/home');
+                      context.go('/');
                     }
                   },
                   builder: (context, state) {

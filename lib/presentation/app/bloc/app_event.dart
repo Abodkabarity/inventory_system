@@ -9,3 +9,7 @@ sealed class AppEvent extends Equatable {
 class AppStarted extends AppEvent {
   const AppStarted();
 }
+
+class AppLoggedOut extends AppEvent {
+  const AppLoggedOut();
+}

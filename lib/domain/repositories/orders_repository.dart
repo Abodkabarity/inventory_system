@@ -115,4 +115,8 @@ abstract class OrdersRepository {
     required num currentDemand,
     required String reason,
   });
+  Future<bool> checkIfOrderExists({
+    required String runDate,
+    required String branchName,
+  });
 }

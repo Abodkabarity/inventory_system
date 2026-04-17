@@ -48,13 +48,13 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     final storeStock = _toInt(row.storeStock);
     final reorderQtyNum = _toInt(row.reorderQtyNum);
     final totalReorderToday = _toInt(row.totalReorderToday);
-    print("====== FINAL REORDER DEBUG ======");
-    print("STORE STOCK: $storeStock");
-    print("REORDER QTY: $reorderQtyNum");
-    print("TOTAL TODAY: $totalReorderToday");
-    print("=================================");
+
     final isNonFormulary =
         (row.branchFormulary ?? '').toString().trim().toUpperCase() == 'NON';
+
+    final hasTma =
+        (row.tmaQty ?? '').toString().trim().isNotEmpty &&
+        (row.tmaQty ?? '0') != '0';
 
     final isLocked = storeStock <= 0;
 
@@ -79,6 +79,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
       reorderQtyNum: reorderQtyNum,
       totalReorderToday: totalReorderToday,
       isNonFormulary: isNonFormulary,
+      hasTma: hasTma,
       isLocked: isLocked,
       onlyDecrease: onlyDecrease,
       dialog: null,
@@ -91,8 +92,34 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     FinalReorderQtyTextChanged e,
     Emitter<FinalReorderState> emit,
   ) {
+    // 🔥 NON → منع كامل
+    if (state.isNonFormulary) {
+      emit(
+        state.copyWith(
+          dialog: const FinalReorderDialogPayload(
+            title: 'NON Item',
+            body: 'This item is NON formulary and cannot be edited.',
+          ),
+        ),
+      );
+      return;
+    }
+
     final parsed = int.tryParse(e.text.trim()) ?? 0;
     final nextRaw = parsed.clamp(0, 1000000000);
+
+    // 🔥 TMA → ممنوع decrease
+    if (state.hasTma && nextRaw < state.oldQty) {
+      emit(
+        state.copyWith(
+          dialog: const FinalReorderDialogPayload(
+            title: 'TMA Restriction',
+            body: 'You cannot decrease quantity for TMA items.',
+          ),
+        ),
+      );
+      return;
+    }
 
     int next;
     FinalReorderDialogPayload? dialog;
@@ -147,6 +174,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         reorderQtyNum: state.reorderQtyNum,
         totalReorderToday: state.totalReorderToday,
         isNonFormulary: state.isNonFormulary,
+        hasTma: state.hasTma,
         isLocked: state.isLocked,
         onlyDecrease: state.onlyDecrease,
         dialog: dialog,
@@ -155,20 +183,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
   }
 
   void _onInc(FinalReorderIncPressed e, Emitter<FinalReorderState> emit) {
-    final isNoAdd = state.reorderQtyNum > state.oldQty;
-
-    if (isNoAdd) {
-      emit(
-        state.copyWith(
-          dialog: const FinalReorderDialogPayload(
-            title: 'Limited Stock',
-            body:
-                'Limited stock — you can only decrease this item. Adding is not allowed.',
-          ),
-        ),
-      );
-      return;
-    }
+    if (state.isNonFormulary) return;
 
     final cap = _capForThisBranch(
       oldSafe: state.oldQty,
@@ -202,6 +217,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         reorderQtyNum: state.reorderQtyNum,
         totalReorderToday: state.totalReorderToday,
         isNonFormulary: state.isNonFormulary,
+        hasTma: state.hasTma,
         isLocked: state.isLocked,
         onlyDecrease: state.onlyDecrease,
         dialog: state.dialog,
@@ -211,6 +227,20 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
 
   void _onDec(FinalReorderDecPressed e, Emitter<FinalReorderState> emit) {
     if (state.isLocked) return;
+
+    // 🔥 TMA → ممنوع decrease
+    if (state.hasTma) {
+      emit(
+        state.copyWith(
+          dialog: const FinalReorderDialogPayload(
+            title: 'TMA Restriction',
+            body: 'You can only increase quantity for this item.',
+          ),
+        ),
+      );
+      return;
+    }
+
     final attempted = state.qty - 1;
     final next = attempted < 0 ? 0 : attempted;
 
@@ -223,6 +253,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         reorderQtyNum: state.reorderQtyNum,
         totalReorderToday: state.totalReorderToday,
         isNonFormulary: state.isNonFormulary,
+        hasTma: state.hasTma,
         isLocked: state.isLocked,
         onlyDecrease: state.onlyDecrease,
         dialog: state.dialog,
@@ -243,6 +274,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         reorderQtyNum: state.reorderQtyNum,
         totalReorderToday: state.totalReorderToday,
         isNonFormulary: state.isNonFormulary,
+        hasTma: state.hasTma,
         isLocked: state.isLocked,
         onlyDecrease: state.onlyDecrease,
         dialog: state.dialog,
@@ -265,6 +297,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         reorderQtyNum: state.reorderQtyNum,
         totalReorderToday: state.totalReorderToday,
         isNonFormulary: state.isNonFormulary,
+        hasTma: state.hasTma,
         isLocked: state.isLocked,
         onlyDecrease: state.onlyDecrease,
         dialog: state.dialog,
@@ -285,6 +318,87 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     Emitter<FinalReorderState> emit,
   ) {
     emit(state.copyWith(clearDialog: true));
+  }
+
+  // =========================
+  // RECOMPUTE
+  // =========================
+
+  static FinalReorderState _recompute({
+    required int qty,
+    required String reason,
+    required int oldSafe,
+    required int storeStock,
+    required int reorderQtyNum,
+    required int totalReorderToday,
+    required bool isNonFormulary,
+    required bool hasTma,
+    required bool isLocked,
+    required bool onlyDecrease,
+    required FinalReorderDialogPayload? dialog,
+  }) {
+    final cap = _capForThisBranch(
+      oldSafe: oldSafe,
+      storeStock: storeStock,
+      reorderQtyNum: reorderQtyNum,
+      totalReorderToday: totalReorderToday,
+    );
+
+    // 🔥 NON → lock كامل
+    if (isNonFormulary) {
+      return FinalReorderState(
+        qty: oldSafe,
+        reason: reason,
+        oldQty: oldSafe,
+        storeStock: storeStock,
+        reorderQtyNum: reorderQtyNum,
+        totalReorderToday: totalReorderToday,
+        isNonFormulary: true,
+        hasTma: hasTma,
+        isLocked: true,
+        onlyDecrease: onlyDecrease,
+        capForThisBranch: oldSafe,
+        canIncrease: false,
+        canDecrease: false,
+        hasChange: false,
+        reasonOk: true,
+        canSave: false,
+        isLimitedStockLive: false,
+        dialog: dialog,
+      );
+    }
+
+    final canInc = !isLocked && qty < cap;
+    final canDec = !isLocked && qty > 0 && !hasTma;
+
+    final hasChange = qty != oldSafe;
+    final reasonOk = reason.trim().isNotEmpty;
+
+    final canSave = !isLocked && hasChange && reasonOk && qty <= cap;
+
+    final isLimitedStockLive =
+        !isLocked && (reorderQtyNum > oldSafe || qty > cap);
+
+    return FinalReorderState(
+      qty: qty,
+      reason: reason,
+      oldQty: oldSafe,
+      storeStock: storeStock,
+      reorderQtyNum: reorderQtyNum,
+      totalReorderToday: totalReorderToday,
+      isNonFormulary: isNonFormulary,
+      hasTma: hasTma,
+      isLocked: isLocked,
+      onlyDecrease: onlyDecrease,
+      capForThisBranch: cap,
+      canIncrease: canInc,
+      canDecrease: canDec,
+      hasChange: hasChange,
+      reasonOk: reasonOk,
+      canSave: canSave,
+      isLimitedStockLive: isLimitedStockLive,
+      dialog: dialog,
+    );
   }
 
   // =========================
@@ -311,7 +425,6 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     }
 
     final availableStock = (storeStock - totalReorderToday).clamp(0, 999999999);
-
     final extra = (availableStock * 0.2).floor();
 
     return oldSafe + extra;
@@ -365,57 +478,6 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     return FinalReorderDialogPayload(
       title: 'Exceeded Limit',
       body: 'Max allowed based on available stock is $cap.',
-    );
-  }
-
-  static FinalReorderState _recompute({
-    required int qty,
-    required String reason,
-    required int oldSafe,
-    required int storeStock,
-    required int reorderQtyNum,
-    required int totalReorderToday,
-    required bool isNonFormulary,
-    required bool isLocked,
-    required bool onlyDecrease,
-    required FinalReorderDialogPayload? dialog,
-  }) {
-    final cap = _capForThisBranch(
-      oldSafe: oldSafe,
-      storeStock: storeStock,
-      reorderQtyNum: reorderQtyNum,
-      totalReorderToday: totalReorderToday,
-    );
-
-    final canInc = !isLocked && !(reorderQtyNum > oldSafe) && qty < cap;
-    final canDec = !isLocked && qty > 0;
-
-    final hasChange = qty != oldSafe;
-    final reasonOk = reason.trim().isNotEmpty;
-
-    final canSave = !isLocked && hasChange && reasonOk && qty <= cap;
-
-    final isLimitedStockLive =
-        !isLocked && (reorderQtyNum > oldSafe || qty > cap);
-
-    return FinalReorderState(
-      qty: qty,
-      reason: reason,
-      oldQty: oldSafe,
-      storeStock: storeStock,
-      reorderQtyNum: reorderQtyNum,
-      totalReorderToday: totalReorderToday,
-      isNonFormulary: isNonFormulary,
-      isLocked: isLocked,
-      onlyDecrease: onlyDecrease,
-      capForThisBranch: cap,
-      canIncrease: canInc,
-      canDecrease: canDec,
-      hasChange: hasChange,
-      reasonOk: reasonOk,
-      canSave: canSave,
-      isLimitedStockLive: isLimitedStockLive,
-      dialog: dialog,
     );
   }
 }

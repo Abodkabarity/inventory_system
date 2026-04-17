@@ -92,7 +92,7 @@ class OrderRowMapper {
         return r.assortmentEnd ?? '';
 
       case 'tma_qty':
-        return r.tmaQty ?? '';
+        return r.tmaQty ?? 0;
 
       case 'tma_start':
         return r.tmaStart ?? '';

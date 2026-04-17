@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../bloc/order_bloc/orders_bloc.dart';
 import '../bloc/order_bloc/orders_bloc_factory.dart';
+import '../bloc/order_bloc/orders_event.dart';
 import '../widgets/branch_zone_cubit.dart';
 import 'branch_orders_screen.dart';
 
@@ -22,10 +23,9 @@ class BranchOrdersPage extends StatelessWidget {
     return MultiBlocProvider(
       providers: [
         BlocProvider<OrdersBloc>(
-          create: (_) => OrdersBlocFactory.create(
-            runDate: runDate,
-            branchName: branchName,
-          ),
+          create: (_) =>
+              OrdersBlocFactory.create(runDate: runDate, branchName: branchName)
+                ..add(const OrdersLoadAll()),
         ),
         BlocProvider<BranchZoneCubit>(
           create: (_) => BranchZoneCubit(

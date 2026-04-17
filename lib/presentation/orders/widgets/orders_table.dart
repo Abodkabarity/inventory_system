@@ -615,7 +615,7 @@ class _OrdersDataSource extends DataGridSource {
         return r.assortmentEnd ?? '';
 
       case 'tma_qty':
-        return r.tmaQty ?? '';
+        return r.tmaQty ?? 0;
       case 'tma_start':
         return r.tmaStart ?? '';
       case 'tma_end':
