@@ -138,3 +138,31 @@ class LoadBranchAllChanges extends InventoryEvent {
   final String branch;
   LoadBranchAllChanges(this.branch);
 }
+
+class LoadMaxAdjustment extends InventoryEvent {}
+
+class SearchMaxAdjustment extends InventoryEvent {
+  final String query;
+  SearchMaxAdjustment(this.query);
+}
+
+class LoadMaxAdjustmentHistory extends InventoryEvent {
+  final String itemCode;
+  final String branch;
+
+  LoadMaxAdjustmentHistory(this.itemCode, this.branch);
+}
+
+class ExportMaxAdjCurrent extends InventoryEvent {}
+
+class ExportMaxAdjWithHistory extends InventoryEvent {}
+
+class ImportMaxAdjExcel extends InventoryEvent {
+  final bool forceApply;
+
+  ImportMaxAdjExcel({required this.forceApply});
+}
+
+class ExportMaxAdjTemplate extends InventoryEvent {}
+
+class ResetImportState extends InventoryEvent {}

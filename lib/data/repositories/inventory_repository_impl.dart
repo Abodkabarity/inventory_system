@@ -226,4 +226,105 @@ class InventoryRepositoryImpl implements InventoryRepository {
   Future<List<Map<String, dynamic>>> fetchBranchAllChanges(String branch) {
     return remote.fetchBranchAllChanges(branch: branch);
   }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchMaxAdjustment() async {
+    final res = await remote.client
+        .from('max_adj')
+        .select()
+        .order('update_date', ascending: false);
+
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchMaxAdjustmentHistory(
+    String itemCode,
+    String branch,
+  ) async {
+    final current = await remote.client
+        .from('max_adj')
+        .select()
+        .eq('item_code', itemCode)
+        .eq('branch_name', branch);
+
+    final log = await remote.client
+        .from('max_adj_log')
+        .select()
+        .eq('item_code', itemCode)
+        .eq('branch_name', branch);
+
+    return [
+      ...current.map((e) => {...e, 'action': 'current'}),
+      ...log.map((e) => {...e, 'action': 'log'}),
+    ];
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchMaxAdjExport() async {
+    final res = await remote.client.from('max_adj').select();
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchMaxAdjLogExport() async {
+    final res = await remote.client.from('max_adj_log').select();
+    print(res);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  @override
+  @override
+  Future<bool> importMaxAdjRow({
+    required Map<String, dynamic> data,
+    required bool forceApply,
+  }) async {
+    try {
+      final itemCode = (data['item_code'] ?? '').toString().trim();
+      final branch = (data['branch_name'] ?? '').toString().trim();
+
+      final existing = await remote.client
+          .from('max_adj')
+          .select()
+          .eq('item_code', itemCode)
+          .eq('branch_name', branch);
+
+      if (existing.isNotEmpty) {
+        if (!forceApply) {
+          return false;
+        }
+
+        await remote.client
+            .from('max_adj')
+            .delete()
+            .eq('item_code', itemCode)
+            .eq('branch_name', branch);
+      }
+
+      await remote.client.from('max_adj').insert({
+        ...data,
+        'item_code': itemCode,
+        'branch_name': branch,
+      });
+
+      return true;
+    } catch (e) {
+      print("ImportMaxAdjRow ERROR: $e");
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> checkIfExists({
+    required String itemCode,
+    required String branch,
+  }) async {
+    final res = await remote.client
+        .from('max_adj')
+        .select()
+        .eq('item_code', itemCode)
+        .eq('branch_name', branch);
+
+    return res.isNotEmpty;
+  }
 }
