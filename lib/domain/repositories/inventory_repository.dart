@@ -42,4 +42,19 @@ abstract class InventoryRepository {
   Future<void> storeApprove(List<Map<String, dynamic>> items);
   Future<List<Map<String, dynamic>>> fetchAllOrders(String runDate);
   Future<List<Map<String, dynamic>>> fetchBranchAllChanges(String branch);
+  Future<List<Map<String, dynamic>>> fetchMaxAdjustment();
+  Future<List<Map<String, dynamic>>> fetchMaxAdjustmentHistory(
+    String itemCode,
+    String branch,
+  );
+  Future<List<Map<String, dynamic>>> fetchMaxAdjExport();
+  Future<List<Map<String, dynamic>>> fetchMaxAdjLogExport();
+  Future<bool> importMaxAdjRow({
+    required Map<String, dynamic> data,
+    required bool forceApply,
+  });
+  Future<bool> checkIfExists({
+    required String itemCode,
+    required String branch,
+  });
 }

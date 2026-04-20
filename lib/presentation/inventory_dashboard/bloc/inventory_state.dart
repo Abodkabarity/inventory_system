@@ -17,11 +17,17 @@ class InventoryState extends Equatable {
   final List<AdditionalRequestGroup> additionalRequests;
   final Map<String, double> mismatchColumnWidths;
   final int submittedCount;
+  final bool isHistoryLoading;
   final List<MismatchItem> mismatch;
   final List<MismatchItem> filteredMismatch;
   final int mismatchTodayCount;
   final int mismatchMonthCount;
   final String mismatchSearch;
+  final bool isImporting;
+  final double importProgress;
+  final String? importMessage;
+  final bool importSuccess;
+
   final List<DailyOrderRow> allOrders;
   final bool isOrdersLoading;
   final String mismatchBranch;
@@ -35,6 +41,10 @@ class InventoryState extends Equatable {
   final int additionalTodayCount;
   final List<String> visibleColumns;
   final List<String> columnOrder;
+  final List<Map<String, dynamic>> maxAdjustment;
+  final List<Map<String, dynamic>> filteredMaxAdjustment;
+  final String maxAdjSearch;
+  final List<Map<String, dynamic>> maxAdjHistory;
   final int additionalMonthCount;
   final List<Map<String, dynamic>> mismatchTracker;
   final List<Map<String, dynamic>> allChanges;
@@ -88,6 +98,15 @@ class InventoryState extends Equatable {
     required this.visibleColumns,
     required this.columnOrder,
     required this.allChanges,
+    required this.maxAdjustment,
+    required this.filteredMaxAdjustment,
+    required this.maxAdjSearch,
+    required this.maxAdjHistory,
+    required this.isImporting,
+    required this.importProgress,
+    this.importMessage,
+    required this.importSuccess,
+    required this.isHistoryLoading,
   });
 
   factory InventoryState.initial() {
@@ -107,6 +126,7 @@ class InventoryState extends Equatable {
       additionalSentToStoreCount: 0,
       additionalTodayCount: 0,
       additionalMonthCount: 0,
+      isHistoryLoading: false,
       currentPage: InventoryPageType.dashboard,
       submittedBranches: [],
       isLoading: false,
@@ -116,6 +136,10 @@ class InventoryState extends Equatable {
       bulkSuccess: null,
       filteredMismatch: [],
       mismatchSearch: '',
+      isImporting: false,
+      importProgress: 0,
+      importMessage: "",
+      importSuccess: false,
       mismatchBranch: 'ALL',
       mismatchTodayCount: 0,
       mismatchMonthCount: 0,
@@ -126,6 +150,10 @@ class InventoryState extends Equatable {
       isOrdersLoading: false,
       mismatchTracker: [],
       trackerSearch: '',
+      maxAdjustment: [],
+      filteredMaxAdjustment: [],
+      maxAdjSearch: '',
+      maxAdjHistory: [],
       trackerBranch: 'ALL',
       mismatchColumnWidths: {
         'branch': 160,
@@ -153,6 +181,10 @@ class InventoryState extends Equatable {
     int? additionalSentToStoreCount,
     int? additionalTodayCount,
     bool? isBulkLoading,
+    bool? isImporting,
+    double? importProgress,
+    String? importMessage,
+    bool? importSuccess,
     int? additionalMonthCount,
     List<Map<String, dynamic>>? mismatchTracker,
     String? trackerSearch,
@@ -162,7 +194,12 @@ class InventoryState extends Equatable {
     List<String>? columnOrder,
     List<DailyOrderRow>? allOrders,
     bool? isOrdersLoading,
+    bool? isHistoryLoading,
     bool? bulkSuccess,
+    List<Map<String, dynamic>>? maxAdjustment,
+    List<Map<String, dynamic>>? filteredMaxAdjustment,
+    String? maxAdjSearch,
+    List<Map<String, dynamic>>? maxAdjHistory,
     List<Map<String, dynamic>>? allChanges,
     Map<String, int>? additionalMonthBranchCount,
     Map<String, int>? additionalTodayBranchExactCount,
@@ -200,6 +237,7 @@ class InventoryState extends Equatable {
       additionalTodayBranchCount:
           additionalTodayBranchCount ?? this.additionalTodayBranchCount,
       isLoading: isLoading ?? this.isLoading,
+      isHistoryLoading: isHistoryLoading ?? this.isHistoryLoading,
       additionalMonthBranchCount:
           additionalMonthBranchCount ?? this.additionalMonthBranchCount,
       mismatchDiffSum: mismatchDiffSum ?? this.mismatchDiffSum,
@@ -228,6 +266,15 @@ class InventoryState extends Equatable {
       visibleColumns: visibleColumns ?? this.visibleColumns,
       columnOrder: columnOrder ?? this.columnOrder,
       allChanges: allChanges ?? this.allChanges,
+      maxAdjustment: maxAdjustment ?? this.maxAdjustment,
+      filteredMaxAdjustment:
+          filteredMaxAdjustment ?? this.filteredMaxAdjustment,
+      maxAdjSearch: maxAdjSearch ?? this.maxAdjSearch,
+      maxAdjHistory: maxAdjHistory ?? this.maxAdjHistory,
+      isImporting: isImporting ?? this.isImporting,
+      importProgress: importProgress ?? this.importProgress,
+      importMessage: importMessage,
+      importSuccess: importSuccess ?? this.importSuccess,
     );
   }
 
@@ -268,5 +315,14 @@ class InventoryState extends Equatable {
     columnOrder,
     visibleColumns,
     allChanges,
+    filteredMaxAdjustment,
+    maxAdjHistory,
+    maxAdjSearch,
+    maxAdjustment,
+    isImporting,
+    importProgress,
+    importMessage,
+    importSuccess,
+    isHistoryLoading,
   ];
 }

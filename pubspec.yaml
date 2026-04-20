@@ -53,6 +53,9 @@ dependencies:
   flutter_screenutil: ^5.9.3
   syncfusion_flutter_core: ^33.1.46
   syncfusion_flutter_xlsio: ^33.1.46
+  csv: 5.0.2
+  file_picker: ^8.0.0
+
 
 
 

@@ -13,6 +13,7 @@ import '../bloc/inventory_state.dart';
 import '../widgets/inventory_dashboard_body.dart';
 import '../widgets/inventory_drawer.dart';
 import 'inventory_daily_order_page.dart';
+import 'max_adjustment_page.dart';
 import 'mismatch_page.dart';
 
 class InventoryDashboardPage extends StatelessWidget {
@@ -163,7 +164,7 @@ Widget _buildPage(InventoryState state, bool isSubmitted, String runDate) {
       return const MismatchPage();
 
     case InventoryPageType.maxAdjustment:
-      return const Center(child: Text("Max Adjustment Report"));
+      return const MaxAdjustmentPage();
 
     case InventoryPageType.formulary:
       return const Center(child: Text("Formulary Report"));
