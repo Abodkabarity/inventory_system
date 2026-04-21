@@ -18,16 +18,30 @@ class InventoryState extends Equatable {
   final Map<String, double> mismatchColumnWidths;
   final int submittedCount;
   final bool isHistoryLoading;
+  final bool isMismatchRealtimeStarted;
+  final List<Map<String, dynamic>> formulary;
+  final List<Map<String, dynamic>> filteredFormulary;
+  final String formularySearch;
+  final List<Map<String, dynamic>> formularyHistory;
   final List<MismatchItem> mismatch;
   final List<MismatchItem> filteredMismatch;
   final int mismatchTodayCount;
   final int mismatchMonthCount;
+  final List<Map<String, dynamic>> tma;
+  final List<Map<String, dynamic>> filteredTma;
+  final String tmaSearch;
+  final List<Map<String, dynamic>> tmaHistory;
   final String mismatchSearch;
   final bool isImporting;
   final double importProgress;
+  final bool isExporting;
+  final String? exportMessage;
   final String? importMessage;
   final bool importSuccess;
-
+  final List<Map<String, dynamic>> assortment;
+  final List<Map<String, dynamic>> filteredAssortment;
+  final String assortmentSearch;
+  final List<Map<String, dynamic>> assortmentHistory;
   final List<DailyOrderRow> allOrders;
   final bool isOrdersLoading;
   final String mismatchBranch;
@@ -107,6 +121,21 @@ class InventoryState extends Equatable {
     this.importMessage,
     required this.importSuccess,
     required this.isHistoryLoading,
+    required this.assortment,
+    required this.filteredAssortment,
+    required this.assortmentSearch,
+    required this.assortmentHistory,
+    required this.isExporting,
+    this.exportMessage,
+    required this.tma,
+    required this.filteredTma,
+    required this.tmaSearch,
+    required this.tmaHistory,
+    required this.formulary,
+    required this.filteredFormulary,
+    required this.formularySearch,
+    required this.formularyHistory,
+    required this.isMismatchRealtimeStarted,
   });
 
   factory InventoryState.initial() {
@@ -118,7 +147,10 @@ class InventoryState extends Equatable {
       additionalMonthBranchCount: {},
       additionalTodayBranchExactCount: {},
       additionalTodayBranchCount: {},
-
+      formulary: [],
+      filteredFormulary: [],
+      formularySearch: '',
+      formularyHistory: [],
       additionalRequests: [],
       submittedCount: 0,
       additionalCount: 0,
@@ -126,6 +158,7 @@ class InventoryState extends Equatable {
       additionalSentToStoreCount: 0,
       additionalTodayCount: 0,
       additionalMonthCount: 0,
+      isMismatchRealtimeStarted: false,
       isHistoryLoading: false,
       currentPage: InventoryPageType.dashboard,
       submittedBranches: [],
@@ -144,6 +177,8 @@ class InventoryState extends Equatable {
       mismatchTodayCount: 0,
       mismatchMonthCount: 0,
       mismatchDiffSum: 0,
+      isExporting: false,
+      exportMessage: null,
       mismatchDate: 'today',
       mismatchTotalCount: 0,
       allOrders: [],
@@ -153,6 +188,10 @@ class InventoryState extends Equatable {
       maxAdjustment: [],
       filteredMaxAdjustment: [],
       maxAdjSearch: '',
+      tma: [],
+      filteredTma: [],
+      tmaSearch: '',
+      tmaHistory: [],
       maxAdjHistory: [],
       trackerBranch: 'ALL',
       mismatchColumnWidths: {
@@ -167,6 +206,10 @@ class InventoryState extends Equatable {
       visibleColumns: [],
       columnOrder: [],
       allChanges: [],
+      assortment: [],
+      filteredAssortment: [],
+      assortmentSearch: '',
+      assortmentHistory: [],
     );
   }
 
@@ -182,6 +225,8 @@ class InventoryState extends Equatable {
     int? additionalTodayCount,
     bool? isBulkLoading,
     bool? isImporting,
+    bool? isExporting,
+    String? exportMessage,
     double? importProgress,
     String? importMessage,
     bool? importSuccess,
@@ -189,11 +234,16 @@ class InventoryState extends Equatable {
     List<Map<String, dynamic>>? mismatchTracker,
     String? trackerSearch,
     String? trackerBranch,
+    bool? isMismatchRealtimeStarted,
     String? bulkMessage,
     List<String>? visibleColumns,
     List<String>? columnOrder,
     List<DailyOrderRow>? allOrders,
     bool? isOrdersLoading,
+    List<Map<String, dynamic>>? formulary,
+    List<Map<String, dynamic>>? filteredFormulary,
+    String? formularySearch,
+    List<Map<String, dynamic>>? formularyHistory,
     bool? isHistoryLoading,
     bool? bulkSuccess,
     List<Map<String, dynamic>>? maxAdjustment,
@@ -208,6 +258,10 @@ class InventoryState extends Equatable {
     InventoryPageType? currentPage,
     List<String>? submittedBranches,
     bool? isLoading,
+    List<Map<String, dynamic>>? tma,
+    List<Map<String, dynamic>>? filteredTma,
+    String? tmaSearch,
+    List<Map<String, dynamic>>? tmaHistory,
     num? mismatchDiffSum,
     List<MismatchItem>? mismatch,
     List<MismatchItem>? filteredMismatch,
@@ -218,6 +272,10 @@ class InventoryState extends Equatable {
     int? mismatchTodayCount,
     int? mismatchMonthCount,
     Map<String, double>? mismatchColumnWidths,
+    List<Map<String, dynamic>>? assortment,
+    List<Map<String, dynamic>>? filteredAssortment,
+    String? assortmentSearch,
+    List<Map<String, dynamic>>? assortmentHistory,
   }) {
     return InventoryState(
       branches: branches ?? this.branches,
@@ -271,10 +329,26 @@ class InventoryState extends Equatable {
           filteredMaxAdjustment ?? this.filteredMaxAdjustment,
       maxAdjSearch: maxAdjSearch ?? this.maxAdjSearch,
       maxAdjHistory: maxAdjHistory ?? this.maxAdjHistory,
+      isExporting: isExporting ?? this.isExporting,
+      exportMessage: exportMessage,
       isImporting: isImporting ?? this.isImporting,
       importProgress: importProgress ?? this.importProgress,
       importMessage: importMessage,
       importSuccess: importSuccess ?? this.importSuccess,
+      assortment: assortment ?? this.assortment,
+      filteredAssortment: filteredAssortment ?? this.filteredAssortment,
+      assortmentSearch: assortmentSearch ?? this.assortmentSearch,
+      assortmentHistory: assortmentHistory ?? this.assortmentHistory,
+      tma: tma ?? this.tma,
+      filteredTma: filteredTma ?? this.filteredTma,
+      tmaSearch: tmaSearch ?? this.tmaSearch,
+      tmaHistory: tmaHistory ?? this.tmaHistory,
+      formulary: formulary ?? this.formulary,
+      filteredFormulary: filteredFormulary ?? this.filteredFormulary,
+      formularySearch: formularySearch ?? this.formularySearch,
+      formularyHistory: formularyHistory ?? this.formularyHistory,
+      isMismatchRealtimeStarted:
+          isMismatchRealtimeStarted ?? this.isMismatchRealtimeStarted,
     );
   }
 
@@ -283,6 +357,10 @@ class InventoryState extends Equatable {
     branches,
     selectedBranch,
     edits,
+    filteredFormulary,
+    formulary,
+    formularySearch,
+    formularyHistory,
     additionalRequests,
     submittedCount,
     additionalCount,
@@ -324,5 +402,12 @@ class InventoryState extends Equatable {
     importMessage,
     importSuccess,
     isHistoryLoading,
+    assortment,
+    filteredAssortment,
+    assortmentSearch,
+    assortmentHistory,
+    isExporting,
+    exportMessage,
+    isMismatchRealtimeStarted,
   ];
 }

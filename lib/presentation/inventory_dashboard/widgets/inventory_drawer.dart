@@ -75,6 +75,13 @@ class InventoryDrawer extends StatelessWidget {
                 InventoryPageType.dailyOrder,
                 state,
               ),
+              _item(
+                context,
+                "TMA",
+                Icons.shopping_cart,
+                InventoryPageType.tma,
+                state,
+              ),
             ],
           ),
         );

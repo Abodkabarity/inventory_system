@@ -58,6 +58,8 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage> {
                       },
                       decoration: InputDecoration(
                         hintText: "Search item...",
+                        filled: true,
+                        fillColor: AppColors.backgroundWidget,
                         prefixIcon: const Icon(Icons.search),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
@@ -86,7 +88,9 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage> {
                         barrierDismissible: false,
                         builder: (_) => BlocProvider.value(
                           value: bloc,
-                          child: const ImportProgressDialog(),
+                          child: const ImportProgressDialog(
+                            type: ImportType.maxAdj,
+                          ),
                         ),
                       );
                     },
@@ -142,6 +146,18 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage> {
   /// TABLE
   /// ===============================
   Widget _buildTable(InventoryState state) {
+    if (state.isLoading) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(color: AppColors.primaryColor),
+            SizedBox(height: 10),
+            Text("Loading data..."),
+          ],
+        ),
+      );
+    }
     final data = state.filteredMaxAdjustment;
 
     final source = MaxAdjDataSource(
@@ -174,7 +190,7 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage> {
 
         child: SfDataGridTheme(
           data: SfDataGridThemeData(
-            headerColor: const Color(0xffF1F5F9),
+            headerColor: AppColors.backgroundWidget,
             gridLineColor: Colors.grey.shade300,
           ),
 
@@ -197,12 +213,13 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage> {
             headerGridLinesVisibility: GridLinesVisibility.both,
 
             columns: [
+              _col('index', '#', width: 70.w, center: true),
               _col('branch', 'Branch', width: 150.w),
               _col('code', 'Item Code', width: 140.w),
               _col('name', 'Item Name', width: 300.w),
               _col('demand', 'Demand', width: 120.w, center: true),
               _col('max', 'Max Adj', width: 120.w, center: true),
-              _col('type', 'Type', width: 150.w, center: true),
+              _col('type', 'Type', width: 130.w, center: true),
               _col('qty', 'Qty', width: 100.w, center: true),
               _col('added_by', 'Added By', width: 130.w, center: true),
               _col('date', 'Date', width: 110.w, center: true),

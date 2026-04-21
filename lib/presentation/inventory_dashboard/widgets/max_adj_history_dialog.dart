@@ -13,10 +13,11 @@ class MaxAdjHistoryDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Dialog(
+      backgroundColor: Colors.white,
       child: BlocBuilder<InventoryBloc, InventoryState>(
         builder: (context, state) {
           return Container(
-            width: 1500.w,
+            width: 1600.w,
             height: 500.h,
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -43,14 +44,14 @@ class MaxAdjHistoryDialog extends StatelessWidget {
                           headerRowHeight: 50,
                           rowHeight: 45,
                           columns: [
-                            _col('branch', 'Branch'),
-                            _col('code', 'Item Code'),
+                            _col('branch', 'Branch', center: true),
+                            _col('code', 'Item Code', center: true),
                             _col('name', 'Item Name'),
                             _col('demand', 'Demand', center: true),
                             _col('max', 'Max Adj', center: true),
                             _col('type', 'Type', center: true),
                             _col('qty', 'Qty', center: true),
-                            _col('reason', 'Reason'),
+                            _col('reason', 'Reason', center: true),
                             _col('date', 'Date', center: true),
                             _col('status', 'Status', center: true),
                           ],
@@ -63,7 +64,10 @@ class MaxAdjHistoryDialog extends StatelessWidget {
                   alignment: Alignment.centerRight,
                   child: TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text("Close"),
+                    child: const Text(
+                      "Close",
+                      style: TextStyle(color: Colors.red),
+                    ),
                   ),
                 ),
               ],
@@ -107,7 +111,7 @@ class _HistoryDataSource extends DataGridSource {
           ),
           DataGridCell(
             columnName: 'status',
-            value: e['action'] ?? e['action_type'] ?? 'current',
+            value: e['action'] ?? e['action_type'] ?? 'Current',
           ),
         ],
       );
@@ -136,7 +140,7 @@ class _HistoryDataSource extends DataGridSource {
         if (cell.columnName == 'status') {
           return Center(
             child: Text(
-              cell.value.toString(),
+              cell.value.toString().toUpperCase(),
               style: TextStyle(
                 color: cell.value == 'log' ? Colors.orange : Colors.blue,
               ),

@@ -232,8 +232,7 @@ class InventoryRepositoryImpl implements InventoryRepository {
     final res = await remote.client
         .from('max_adj')
         .select()
-        .order('update_date', ascending: false);
-
+        .order('created_at', ascending: false);
     return List<Map<String, dynamic>>.from(res);
   }
 
@@ -262,15 +261,64 @@ class InventoryRepositoryImpl implements InventoryRepository {
 
   @override
   Future<List<Map<String, dynamic>>> fetchMaxAdjExport() async {
-    final res = await remote.client.from('max_adj').select();
-    return List<Map<String, dynamic>>.from(res);
+    final List<Map<String, dynamic>> all = [];
+
+    int from = 0;
+    const int batch = 5000;
+
+    while (true) {
+      final res = await remote.client
+          .from('max_adj')
+          .select()
+          .range(from, from + batch - 1);
+
+      final data = List<Map<String, dynamic>>.from(res);
+
+      print("max_adj batch: ${data.length}");
+
+      if (data.isEmpty) break;
+
+      all.addAll(data);
+
+      if (data.length < batch) break;
+
+      from += batch;
+    }
+
+    print("TOTAL max_adj: ${all.length}");
+
+    return all;
   }
 
   @override
   Future<List<Map<String, dynamic>>> fetchMaxAdjLogExport() async {
-    final res = await remote.client.from('max_adj_log').select();
-    print(res);
-    return List<Map<String, dynamic>>.from(res);
+    final List<Map<String, dynamic>> all = [];
+
+    int from = 0;
+    const int batch = 5000;
+
+    while (true) {
+      final res = await remote.client
+          .from('max_adj_log')
+          .select()
+          .range(from, from + batch - 1);
+
+      final data = List<Map<String, dynamic>>.from(res);
+
+      print("max_adj_log batch: ${data.length}");
+
+      if (data.isEmpty) break;
+
+      all.addAll(data);
+
+      if (data.length < batch) break;
+
+      from += batch;
+    }
+
+    print("TOTAL max_adj_log: ${all.length}");
+
+    return all;
   }
 
   @override
@@ -326,5 +374,470 @@ class InventoryRepositoryImpl implements InventoryRepository {
         .eq('branch_name', branch);
 
     return res.isNotEmpty;
+  }
+
+  @override
+  Future<Map<String, dynamic>> getMaxAdj({
+    required String itemCode,
+    required String branch,
+  }) async {
+    final res = await remote.client
+        .from('max_adj')
+        .select()
+        .eq('item_code', itemCode)
+        .eq('branch_name', branch)
+        .maybeSingle();
+
+    return res ?? {};
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchAssortment() async {
+    final res = await remote.client
+        .from('assortment')
+        .select()
+        .order('created_at', ascending: false);
+
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchAssortmentHistory(
+    String itemCode,
+    String branch,
+  ) async {
+    final current = await remote.client
+        .from('assortment')
+        .select()
+        .eq('item_code', itemCode)
+        .eq('branch_name', branch);
+
+    final log = await remote.client
+        .from('assortment_log')
+        .select()
+        .eq('item_code', itemCode)
+        .eq('branch_name', branch);
+
+    return [
+      ...current.map((e) => {...e, 'action': 'current'}),
+      ...log,
+    ];
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchAssortmentExport() async {
+    final List<Map<String, dynamic>> all = [];
+
+    int from = 0;
+    const int batch = 5000;
+
+    while (true) {
+      final res = await remote.client
+          .from('assortment')
+          .select()
+          .range(from, from + batch - 1);
+
+      final data = List<Map<String, dynamic>>.from(res);
+
+      print("assortment batch: ${data.length}");
+
+      if (data.isEmpty) break;
+
+      all.addAll(data);
+
+      if (data.length < batch) break;
+
+      from += batch;
+    }
+
+    print("TOTAL assortment: ${all.length}");
+
+    return all;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchAssortmentLogExport() async {
+    final List<Map<String, dynamic>> all = [];
+
+    int from = 0;
+    const int batch = 5000;
+
+    while (true) {
+      final res = await remote.client
+          .from('assortment_log')
+          .select()
+          .range(from, from + batch - 1);
+
+      final data = List<Map<String, dynamic>>.from(res);
+
+      if (data.isEmpty) break;
+
+      all.addAll(data);
+
+      if (data.length < batch) break;
+
+      from += batch;
+    }
+
+    print("TOTAL LOG: ${all.length}");
+
+    return all;
+  }
+
+  @override
+  Future<bool> importAssortmentRow({
+    required Map<String, dynamic> data,
+    required bool forceApply,
+  }) async {
+    try {
+      final itemCode = (data['item_code'] ?? '').toString().trim();
+      final branch = (data['branch_name'] ?? '').toString().trim();
+
+      final existing = await remote.client
+          .from('assortment')
+          .select()
+          .eq('item_code', itemCode)
+          .eq('branch_name', branch);
+
+      if (existing.isNotEmpty) {
+        if (!forceApply) {
+          return false;
+        }
+
+        await remote.client
+            .from('assortment')
+            .delete()
+            .eq('item_code', itemCode)
+            .eq('branch_name', branch);
+      }
+
+      await remote.client.from('assortment').insert({
+        ...data,
+        'item_code': itemCode,
+        'branch_name': branch,
+      });
+
+      return true;
+    } catch (e) {
+      print("ImportAssortment ERROR: $e");
+      return false;
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchTma() async {
+    final res = await remote.client
+        .from('tma')
+        .select()
+        .order('created_at', ascending: false);
+
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchTmaHistory(
+    String itemCode,
+    String branch,
+  ) async {
+    final current = await remote.client
+        .from('tma')
+        .select()
+        .eq('item_code', itemCode)
+        .eq('branch_name', branch);
+
+    final log = await remote.client
+        .from('tma_log')
+        .select()
+        .eq('item_code', itemCode)
+        .eq('branch_name', branch);
+
+    return [
+      ...current.map((e) => {...e, 'action': 'current'}),
+      ...log,
+    ];
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchTmaExport() async {
+    final List<Map<String, dynamic>> all = [];
+
+    int from = 0;
+    const int batch = 5000;
+
+    while (true) {
+      final res = await remote.client
+          .from('tma')
+          .select()
+          .range(from, from + batch - 1);
+
+      final data = List<Map<String, dynamic>>.from(res);
+
+      print("tma batch: ${data.length}");
+
+      if (data.isEmpty) break;
+
+      all.addAll(data);
+
+      if (data.length < batch) break;
+
+      from += batch;
+    }
+
+    print("TOTAL tma: ${all.length}");
+
+    return all;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchTmaLogExport() async {
+    final List<Map<String, dynamic>> all = [];
+
+    int from = 0;
+    const int batch = 5000;
+
+    while (true) {
+      final res = await remote.client
+          .from('tma_log')
+          .select()
+          .range(from, from + batch - 1);
+
+      final data = List<Map<String, dynamic>>.from(res);
+
+      if (data.isEmpty) break;
+
+      all.addAll(data);
+
+      if (data.length < batch) break;
+
+      from += batch;
+    }
+
+    print("TOTAL tma_log: ${all.length}");
+
+    return all;
+  }
+
+  @override
+  Future<bool> importTmaRow({
+    required Map<String, dynamic> data,
+    required bool forceApply,
+  }) async {
+    try {
+      final itemCode = (data['item_code'] ?? '').toString().trim();
+      final branch = (data['branch_name'] ?? '').toString().trim();
+
+      final existing = await remote.client
+          .from('tma')
+          .select()
+          .eq('item_code', itemCode)
+          .eq('branch_name', branch);
+
+      if (existing.isNotEmpty) {
+        if (!forceApply) {
+          return false;
+        }
+
+        await remote.client
+            .from('tma')
+            .delete()
+            .eq('item_code', itemCode)
+            .eq('branch_name', branch);
+      }
+
+      await remote.client.from('tma').insert({
+        ...data,
+        'item_code': itemCode,
+        'branch_name': branch,
+      });
+
+      return true;
+    } catch (e) {
+      print("ImportTma ERROR: $e");
+      return false;
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchFormulary() async {
+    final client = remote.client;
+
+    const int batchSize = 10000;
+    int from = 0;
+    int to = batchSize - 1;
+
+    List<Map<String, dynamic>> allData = [];
+
+    while (true) {
+      final res = await client
+          .from('branch_formulary')
+          .select()
+          .order('revised_date', ascending: false)
+          .range(from, to);
+
+      final batch = List<Map<String, dynamic>>.from(res);
+
+      allData.addAll(batch);
+
+      print("Fetched: ${allData.length}");
+
+      if (batch.length < batchSize) break;
+
+      from += batchSize;
+      to += batchSize;
+    }
+
+    print("Total Loaded: ${allData.length}");
+
+    return allData;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchFormularyHistory(
+    String itemCode,
+    String branch,
+  ) async {
+    final current = await remote.client
+        .from('branch_formulary')
+        .select()
+        .eq('item_code', itemCode)
+        .eq('branch_name', branch);
+
+    final log = await remote.client
+        .from('branch_formulary_log')
+        .select()
+        .eq('item_code', itemCode)
+        .eq('branch_name', branch);
+
+    return [
+      ...current.map((e) => {...e, 'action': 'current'}),
+      ...log,
+    ];
+  }
+
+  @override
+  Future<String> fetchFormularyExportCsv() async {
+    final res = await remote.client.rpc('export_formulary_csv');
+
+    return res as String;
+  }
+
+  @override
+  Future<String> fetchFormularyLogExportCsv() async {
+    final res = await remote.client.rpc('export_formulary_log_csv');
+    return res as String;
+  }
+
+  @override
+  Future<bool> importFormularyRow({
+    required Map<String, dynamic> data,
+    required bool forceApply,
+  }) async {
+    try {
+      final itemCode = (data['item_code'] ?? '').toString().trim();
+      final branch = (data['branch_name'] ?? '').toString().trim();
+
+      final existing = await remote.client
+          .from('branch_formulary')
+          .select()
+          .eq('item_code', itemCode)
+          .eq('branch_name', branch);
+
+      if (existing.isNotEmpty) {
+        if (!forceApply) return false;
+
+        await remote.client
+            .from('branch_formulary')
+            .delete()
+            .eq('item_code', itemCode)
+            .eq('branch_name', branch);
+      }
+
+      await remote.client.from('branch_formulary').insert({
+        ...data,
+        'item_code': itemCode,
+        'branch_name': branch,
+      });
+
+      return true;
+    } catch (e) {
+      print("ImportFormulary ERROR: $e");
+      return false;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> fetchMismatchStats(String branch) async {
+    final res = await remote.client.rpc(
+      'get_mismatch_stats',
+      params: {'p_branch': branch},
+    );
+
+    if (res == null || res.isEmpty) {
+      return {'total': 0, 'diff_sum': 0};
+    }
+
+    return res.first;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchMismatchExport({
+    Function(double progress)? onProgress,
+  }) async {
+    final List<Map<String, dynamic>> all = [];
+
+    int from = 0;
+    const int batch = 5000;
+
+    while (true) {
+      final res = await remote.client
+          .from('stk_mismatch')
+          .select()
+          .range(from, from + batch - 1);
+
+      final data = List<Map<String, dynamic>>.from(res);
+
+      if (data.isEmpty) break;
+
+      all.addAll(data);
+
+      /// 🔥 progress
+      final percent = all.length / 20000;
+      onProgress?.call(percent.clamp(0, 1));
+
+      if (data.length < batch) break;
+
+      from += batch;
+
+      await Future.delayed(const Duration(milliseconds: 1)); // يمنع freeze
+    }
+
+    return all;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchMismatchLogExport() async {
+    final List<Map<String, dynamic>> all = [];
+
+    int from = 0;
+    const int batch = 5000;
+
+    while (true) {
+      final res = await remote.client
+          .from('mismatch_log')
+          .select()
+          .range(from, from + batch - 1);
+
+      final data = List<Map<String, dynamic>>.from(res);
+
+      if (data.isEmpty) break;
+
+      all.addAll(data);
+
+      if (data.length < batch) break;
+
+      from += batch;
+    }
+
+    return all;
   }
 }

@@ -57,4 +57,52 @@ abstract class InventoryRepository {
     required String itemCode,
     required String branch,
   });
+  Future<Map<String, dynamic>> getMaxAdj({
+    required String itemCode,
+    required String branch,
+  });
+  Future<List<Map<String, dynamic>>> fetchAssortment();
+
+  Future<List<Map<String, dynamic>>> fetchAssortmentHistory(
+    String itemCode,
+    String branch,
+  );
+  Future<List<Map<String, dynamic>>> fetchAssortmentExport();
+  Future<List<Map<String, dynamic>>> fetchAssortmentLogExport();
+  Future<bool> importAssortmentRow({
+    required Map<String, dynamic> data,
+    required bool forceApply,
+  });
+  Future<List<Map<String, dynamic>>> fetchTma();
+
+  Future<List<Map<String, dynamic>>> fetchTmaHistory(
+    String itemCode,
+    String branch,
+  );
+
+  Future<List<Map<String, dynamic>>> fetchTmaExport();
+  Future<List<Map<String, dynamic>>> fetchTmaLogExport();
+
+  Future<bool> importTmaRow({
+    required Map<String, dynamic> data,
+    required bool forceApply,
+  });
+  Future<List<Map<String, dynamic>>> fetchFormulary();
+
+  Future<List<Map<String, dynamic>>> fetchFormularyHistory(
+    String itemCode,
+    String branch,
+  );
+
+  Future<String> fetchFormularyExportCsv();
+  Future<String> fetchFormularyLogExportCsv();
+  Future<bool> importFormularyRow({
+    required Map<String, dynamic> data,
+    required bool forceApply,
+  });
+  Future<Map<String, dynamic>> fetchMismatchStats(String branch);
+  Future<List<Map<String, dynamic>>> fetchMismatchExport({
+    Function(double progress)? onProgress,
+  });
+  Future<List<Map<String, dynamic>>> fetchMismatchLogExport();
 }
