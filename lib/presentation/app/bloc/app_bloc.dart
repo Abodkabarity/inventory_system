@@ -20,9 +20,6 @@ class AppBloc extends Bloc<AppEvent, AppState> {
       final event = data.event;
       final session = data.session;
 
-      print('AUTH EVENT: $event');
-      print('SESSION: $session');
-
       if (event == AuthChangeEvent.initialSession) return;
 
       if (session != null) {
@@ -63,8 +60,6 @@ class AppBloc extends Bloc<AppEvent, AppState> {
       emit(state.copyWith(status: AppStatus.loading));
 
       final session = Supabase.instance.client.auth.currentSession;
-
-      print('SESSION: $session');
 
       if (session == null) {
         emit(

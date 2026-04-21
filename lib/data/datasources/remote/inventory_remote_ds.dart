@@ -213,12 +213,30 @@ inventory_note,
   }
 
   Future<List<Map<String, dynamic>>> fetchMismatch() async {
-    final res = await client
-        .from('stk_mismatch')
-        .select()
-        .order('update_date', ascending: false);
+    List<Map<String, dynamic>> all = [];
 
-    return List<Map<String, dynamic>>.from(res);
+    int from = 0;
+    const int limit = 10000;
+
+    while (true) {
+      final res = await client
+          .from('stk_mismatch')
+          .select()
+          .order('update_date', ascending: false)
+          .range(from, from + limit - 1);
+
+      final data = List<Map<String, dynamic>>.from(res);
+
+      if (data.isEmpty) break;
+
+      all.addAll(data);
+
+      if (data.length < limit) break;
+
+      from += limit;
+    }
+
+    return all;
   }
 
   Future<List<Map<String, dynamic>>> fetchMismatchLog(
@@ -305,7 +323,7 @@ inventory_note,
     int batchSize = 1000,
   }) async {
     const cols = '''
-run_date, branch, item_code, item_name,
+run_date, branch, item_code, item_name  ,
 goods_received_last_7_days,
 branch_stock, mismatch_stock, store_stock, pending_stock_received,
 extra_qty_more_than_month, max_adjustment_30d, demand_for_30_days,

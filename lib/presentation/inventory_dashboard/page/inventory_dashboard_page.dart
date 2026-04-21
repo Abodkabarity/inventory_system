@@ -1,3 +1,4 @@
+import 'package:daily_order/presentation/inventory_dashboard/page/tma_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -12,6 +13,8 @@ import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
 import '../widgets/inventory_dashboard_body.dart';
 import '../widgets/inventory_drawer.dart';
+import 'assortment_page.dart';
+import 'formulary_page.dart';
 import 'inventory_daily_order_page.dart';
 import 'max_adjustment_page.dart';
 import 'mismatch_page.dart';
@@ -167,10 +170,12 @@ Widget _buildPage(InventoryState state, bool isSubmitted, String runDate) {
       return const MaxAdjustmentPage();
 
     case InventoryPageType.formulary:
-      return const Center(child: Text("Formulary Report"));
+      return const FormularyPage();
 
     case InventoryPageType.assortment:
-      return const Center(child: Text("Assortment Report"));
+      return const AssortmentPage();
+    case InventoryPageType.tma:
+      return const TmaPage();
 
     case InventoryPageType.dailyOrder:
       return InventoryDailyOrderPage(runDate: runDate);

@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
 
-class MaxAdjExcelExporter {
+class AssortmentExcelExporter {
   static Future<void> export({
     required List<Map<String, dynamic>> rows,
     required bool includeHistory,
@@ -14,7 +14,7 @@ class MaxAdjExcelExporter {
     /// =========================
     /// 🔥 DETECT MODE
     /// =========================
-    final isCompare = rows.isNotEmpty && rows.first.containsKey('old_max_adj');
+    final isCompare = rows.isNotEmpty && rows.first.containsKey('old_qty');
 
     /// =========================
     /// HEADERS
@@ -25,40 +25,26 @@ class MaxAdjExcelExporter {
             'item_code',
             'item_name',
 
-            /// 🔵 OLD
-            'old_current_demand',
-            'old_max_adj',
-            'old_adjustment_type',
+            /// 🔴 OLD
+            'old_qty',
             'old_reason',
-            'old_update_date',
-            'old_added_by',
-            'old_end_date',
 
             /// 🟢 NEW
-            'new_current_demand',
-            'new_max_adj',
-            'new_adjustment_type',
+            'new_qty',
             'new_reason',
-            'new_update_date',
-            'new_added_by',
-            'new_end_date',
           ]
         : [
             'branch_name',
             'item_code',
             'item_name',
-            'current_demand_30d',
-            'max_adjustment_30d',
-            'adjustment_type',
-            'reason',
-            'update_date',
-            'qty',
-            'added_by',
-            'end_date',
+            'assortment_qty',
+            'assortment_by',
+            'assortment_start',
+            'assortment_end',
           ];
 
     if (!isCompare && includeHistory) {
-      headers.addAll(['created_at', 'action_type', 'moved_at']);
+      headers.addAll(['created_at', 'action', 'moved_at']);
     }
 
     /// =========================
@@ -69,37 +55,22 @@ class MaxAdjExcelExporter {
       'item_code': 'Item Code',
       'item_name': 'Item Name',
 
-      /// NORMAL
-      'current_demand_30d': 'Demand',
-      'max_adjustment_30d': 'Max Adjustment',
-      'adjustment_type': 'Type',
-      'reason': 'Reason',
-      'update_date': 'Update Date',
-      'qty': 'Qty',
-      'added_by': 'Added By',
-      'end_date': 'End Date',
+      'assortment_qty': 'Qty',
+      'assortment_by': 'Added By',
+      'assortment_start': 'Start',
+      'assortment_end': 'End',
 
       /// OLD
-      'old_current_demand': 'Old Demand',
-      'old_max_adj': 'Old Max',
-      'old_adjustment_type': 'Old Type',
+      'old_qty': 'Old Qty',
       'old_reason': 'Old Reason',
-      'old_update_date': 'Old Update Date',
-      'old_added_by': 'Old Added By',
-      'old_end_date': 'Old End Date',
 
       /// NEW
-      'new_current_demand': 'New Demand',
-      'new_max_adj': 'New Max',
-      'new_adjustment_type': 'New Type',
+      'new_qty': 'New Qty',
       'new_reason': 'New Reason',
-      'new_update_date': 'New Update Date',
-      'new_added_by': 'New Added By',
-      'new_end_date': 'New End Date',
 
       /// HISTORY
       'created_at': 'Created At',
-      'action_type': 'Action Type',
+      'action': 'Action',
       'moved_at': 'Moved At',
     };
 
@@ -139,14 +110,12 @@ class MaxAdjExcelExporter {
 
         cell.cellStyle.hAlign = xlsio.HAlignType.center;
 
-        /// =========================
-        /// 🎨 COLORING (COMPARE MODE)
-        /// =========================
+        /// 🎨 COLORING
         if (isCompare) {
           if (key.startsWith('old_')) {
-            cell.cellStyle.backColor = '#F8D7DA'; // 🔴 OLD
+            cell.cellStyle.backColor = '#F8D7DA'; // 🔴
           } else if (key.startsWith('new_')) {
-            cell.cellStyle.backColor = '#D4EDDA'; // 🟢 NEW
+            cell.cellStyle.backColor = '#D4EDDA'; // 🟢
           }
         }
       }
@@ -162,20 +131,16 @@ class MaxAdjExcelExporter {
     final url = html.Url.createObjectUrlFromBlob(blob);
 
     html.AnchorElement(href: url)
-      ..setAttribute("download", "max_adjustment.xlsx")
+      ..setAttribute("download", "assortment.xlsx")
       ..click();
 
     html.Url.revokeObjectUrl(url);
   }
 
-  /// =========================
-  /// COLUMN WIDTH
-  /// =========================
   static double _getColumnWidth(String key) {
     if (key.contains('name')) return 35;
     if (key.contains('code')) return 25;
     if (key.contains('reason')) return 40;
-    if (key.contains('date')) return 25;
     return 20;
   }
 }

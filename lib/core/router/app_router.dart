@@ -21,10 +21,6 @@ class AppRouter {
 
         final isLogin = path == '/login';
 
-        print('ROUTER SESSION: $session');
-        print('APP STATUS: ${app.status}');
-
-        // ⏳ أثناء التحميل لا تعمل redirect
         if (app.status == AppStatus.initial ||
             app.status == AppStatus.loading) {
           return null;

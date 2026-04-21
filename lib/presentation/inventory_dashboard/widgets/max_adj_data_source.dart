@@ -10,9 +10,14 @@ class MaxAdjDataSource extends DataGridSource {
     required List<Map<String, dynamic>> data,
     required this.onHistory,
   }) {
-    _rows = data.map<DataGridRow>((e) {
+    _rows = data.asMap().entries.map<DataGridRow>((entry) {
+      final index = entry.key;
+      final e = entry.value;
+
       return DataGridRow(
         cells: [
+          DataGridCell(columnName: 'index', value: index + 1),
+
           DataGridCell(columnName: 'branch', value: e['branch_name']),
           DataGridCell(columnName: 'code', value: e['item_code']),
           DataGridCell(columnName: 'name', value: e['item_name']),
@@ -33,13 +38,13 @@ class MaxAdjDataSource extends DataGridSource {
 
   @override
   DataGridRowAdapter buildRow(DataGridRow row) {
-    final type = row.getCells()[5].value;
+    final type = row.getCells()[6].value;
 
     return DataGridRowAdapter(
       color: Colors.white,
       cells: row.getCells().map<Widget>((cell) {
-        /// 🔹 تحديد الأعمدة الرقمية
         final isCenterColumn = [
+          'index',
           'demand',
           'max',
           'qty',
@@ -48,7 +53,6 @@ class MaxAdjDataSource extends DataGridSource {
           'date',
         ].contains(cell.columnName);
 
-        /// 🔹 زر History
         if (cell.columnName == 'action') {
           final data = cell.value;
 
@@ -60,7 +64,7 @@ class MaxAdjDataSource extends DataGridSource {
           );
         }
 
-        /// 🔹 Type ملون
+        /// 🔹 Type coloring
         if (cell.columnName == 'type') {
           return Center(
             child: Text(

@@ -166,3 +166,110 @@ class ImportMaxAdjExcel extends InventoryEvent {
 class ExportMaxAdjTemplate extends InventoryEvent {}
 
 class ResetImportState extends InventoryEvent {}
+
+class StartMaxAdjRealtime extends InventoryEvent {}
+
+class LoadAssortment extends InventoryEvent {
+  final bool silent;
+  LoadAssortment({this.silent = false});
+}
+
+class SearchAssortment extends InventoryEvent {
+  final String query;
+  SearchAssortment(this.query);
+}
+
+class LoadAssortmentHistory extends InventoryEvent {
+  final String itemCode;
+  final String branch;
+
+  LoadAssortmentHistory(this.itemCode, this.branch);
+}
+
+class ExportAssortmentCurrent extends InventoryEvent {}
+
+class ExportAssortmentWithHistory extends InventoryEvent {}
+
+class ImportAssortmentExcel extends InventoryEvent {
+  final bool forceApply;
+
+  ImportAssortmentExcel({required this.forceApply});
+}
+
+class ExportAssortmentTemplate extends InventoryEvent {}
+
+class StartAssortmentRealtime extends InventoryEvent {}
+
+class LoadTma extends InventoryEvent {
+  final bool silent;
+  LoadTma({this.silent = false});
+}
+
+class SearchTma extends InventoryEvent {
+  final String query;
+  SearchTma(this.query);
+}
+
+class LoadTmaHistory extends InventoryEvent {
+  final String itemCode;
+  final String branch;
+
+  LoadTmaHistory(this.itemCode, this.branch);
+}
+
+class StartTmaRealtime extends InventoryEvent {}
+
+class ExportTmaCurrent extends InventoryEvent {}
+
+class ExportTmaWithHistory extends InventoryEvent {}
+
+class ExportTmaTemplate extends InventoryEvent {}
+
+class ImportTmaExcel extends InventoryEvent {
+  final bool forceApply;
+  ImportTmaExcel({required this.forceApply});
+}
+
+class LoadFormulary extends InventoryEvent {
+  final bool silent;
+  LoadFormulary({this.silent = false});
+}
+
+class SearchFormulary extends InventoryEvent {
+  final String query;
+  SearchFormulary(this.query);
+}
+
+class LoadFormularyHistory extends InventoryEvent {
+  final String itemCode;
+  final String branch;
+
+  LoadFormularyHistory(this.itemCode, this.branch);
+}
+
+class ExportFormularyCurrent extends InventoryEvent {}
+
+class ExportFormularyWithHistory extends InventoryEvent {}
+
+class ExportFormularyTemplate extends InventoryEvent {}
+
+class StartFormularyRealtime extends InventoryEvent {}
+
+class ImportFormularyExcel extends InventoryEvent {
+  final bool forceApply;
+  ImportFormularyExcel({required this.forceApply});
+}
+
+class LoadMismatchStats extends InventoryEvent {
+  final String branch;
+  LoadMismatchStats(this.branch);
+}
+
+class ExportMismatchCurrent extends InventoryEvent {}
+
+class ExportMismatchWithHistory extends InventoryEvent {}
+
+class UpdateExportProgress extends InventoryEvent {
+  final double progress;
+  UpdateExportProgress(this.progress);
+}

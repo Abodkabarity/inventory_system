@@ -5,4 +5,5 @@ enum InventoryPageType {
   formulary,
   assortment,
   dailyOrder,
+  tma,
 }
