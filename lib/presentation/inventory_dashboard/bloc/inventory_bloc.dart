@@ -84,7 +84,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
         final data = await repo.fetchMismatchExport(
           onProgress: (p) {
-            add(UpdateExportProgress(p)); // 👈 NEW EVENT
+            add(UpdateExportProgress(p));
           },
         );
 

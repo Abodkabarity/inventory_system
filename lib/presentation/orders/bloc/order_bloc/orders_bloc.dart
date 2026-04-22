@@ -821,8 +821,13 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
 
       const uuid = Uuid();
       final requestGroupId = uuid.v4();
-
+      final rowsByCode = <String, DailyOrderRow>{};
+      for (final r in state.rows) {
+        rowsByCode[r.itemCode] = r;
+      }
       final payload = state.additionalEdits.values.map((a) {
+        final row = rowsByCode[a.itemCode];
+
         return <String, dynamic>{
           'request_group_id': requestGroupId,
           'run_date': state.runDate,
@@ -834,11 +839,16 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
           'reason': a.reason,
           'status': 'pending',
           'contact_logistic': a.isUrgent ? 'urgent' : null,
-
           'created_at': nowIso,
+
+          'branch_stock': row?.branchStock,
+          'store_stock': row?.storeStock,
+          'sales_45d': row?.qty30DaysFromLast45d,
+          'final_reorder_qty': row?.finalReorderQtyStoreStockGt0,
+          'item_purchase_type': row?.itemPurchaseType,
+          'max_type': null,
         };
       }).toList();
-
       await repo.insertAdditionalRequests(
         runDate: state.runDate,
         zone: zone,

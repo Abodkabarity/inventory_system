@@ -245,9 +245,7 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
               );
               qtyControllers.putIfAbsent(
                 id,
-                () => TextEditingController(
-                  text: (e.inventoryQty ?? e.requestQty).toString(),
-                ),
+                () => TextEditingController(text: e.requestQty.toString()),
               );
 
               noteControllers.putIfAbsent(id, () => TextEditingController());
@@ -310,6 +308,21 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
                                 fillColor: AppColors.backgroundWidget,
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide(
+                                    color: AppColors.primaryColor,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide(
+                                    color: AppColors.primaryColor,
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide(
+                                    color: AppColors.primaryColor,
+                                  ),
                                 ),
                               ),
                             ),
@@ -327,6 +340,21 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
                                 fillColor: AppColors.backgroundWidget,
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide(
+                                    color: AppColors.primaryColor,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide(
+                                    color: AppColors.primaryColor,
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide(
+                                    color: AppColors.primaryColor,
+                                  ),
                                 ),
                               ),
                             ),
