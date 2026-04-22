@@ -64,29 +64,28 @@ class InventoryRemoteDs {
     final res = await client
         .from('additional_requests')
         .select('''
-      id,
-      request_group_id,
-      run_date,
-      created_at,
-      branch_name,
-      item_code,
-      item_name,
-      status,
-      request_qty,
-      fulfilled_qty,
-store_note,
-inventory_qty,
-inventory_note,
-      contact_logistic,
+        id,
+        request_group_id,
+        run_date,
+        created_at,
+        branch_name,
+        item_code,
+        item_name,
+        status,
+        request_qty,
+        fulfilled_qty,
+        store_note,
+        inventory_qty,
+        inventory_note,
+        contact_logistic,
 
-      daily_order:daily_order(
         branch_stock,
         store_stock,
-        qty_30_days_from_last_45d,
-        final_reorder_qty_store_stock_gt_0,
-        item_purchase_type
-      )
-    ''')
+        sales_45d,
+        final_reorder_qty,
+        item_purchase_type,
+        max_type
+      ''')
         .order('created_at', ascending: false);
 
     return List<Map<String, dynamic>>.from(res);
@@ -335,6 +334,7 @@ tma_qty, tma_start, tma_end,
 item_purchase_type, sales_orientation, category, sub_category, company, supplier, indication, active_ingredient,
 pack_size, concentration, product_type_form, retail_price, vat,
 is_upp,
+max_type,
 item_minimum_order_unit,
 barcode,
 store_item_classifications

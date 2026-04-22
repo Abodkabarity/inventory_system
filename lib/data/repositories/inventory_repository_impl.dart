@@ -66,7 +66,6 @@ class InventoryRepositoryImpl implements InventoryRepository {
     final rows = await remote.fetchAdditionalRequests();
     final counts = await remote.fetchTodayCounts();
     return rows.map((e) {
-      final d = e['daily_order'];
       final key = "${e['item_code']}_${e['branch_name']}";
       return AdditionalRequestGroup(
         groupId: (e['id'] ?? '').toString(),
@@ -81,11 +80,11 @@ class InventoryRepositoryImpl implements InventoryRepository {
         contactLogistic: (e['contact_logistic'] ?? '').toString(),
         requestQty: e["request_qty"] ?? 0,
 
-        branchStock: d?['branch_stock'] ?? 0,
-        storeStock: d?['store_stock'] ?? 0,
-        sales: d?['qty_30_days_from_last_45d'] ?? 0,
-        finalReorder: d?['final_reorder_qty_store_stock_gt_0'] ?? "",
-        itemStatus: d?['item_purchase_type'] ?? "",
+        branchStock: e['branch_stock'] ?? 0,
+        storeStock: e['store_stock'] ?? 0,
+        sales: e['sales_45d'] ?? 0,
+        finalReorder: e['final_reorder_qty'] ?? "",
+        itemStatus: e['item_purchase_type'] ?? "",
         todayCount: counts[key] ?? 0,
         fulfilledQty: e['fulfilled_qty'] ?? 0,
         storeNote: e['store_note'] ?? '',
