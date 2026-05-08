@@ -272,4 +272,73 @@ class OrdersRepositoryImpl implements OrdersRepository {
 
     return res.isNotEmpty;
   }
+
+  @override
+  Future<void> upsertFinalReorderDraft({
+    required String runDate,
+    required String branchName,
+    required String itemCode,
+    required String itemName,
+    required int oldQty,
+    required int newQty,
+    required String reason,
+  }) {
+    return remote.upsertFinalReorderDraft(
+      runDate: runDate,
+      branchName: branchName,
+      itemCode: itemCode,
+      itemName: itemName,
+      oldQty: oldQty,
+      newQty: newQty,
+      reason: reason,
+    );
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchFinalReorderDrafts({
+    required String runDate,
+    required String branchName,
+  }) {
+    return remote.fetchFinalReorderDrafts(
+      runDate: runDate,
+      branchName: branchName,
+    );
+  }
+
+  @override
+  Future<void> upsertAdditionalRequestDraft({
+    required String runDate,
+    required String branchName,
+    required String itemCode,
+    required String itemName,
+    required num requestQty,
+    required String reason,
+    required bool isUrgent,
+  }) {
+    return remote.upsertAdditionalRequestDraft(
+      runDate: runDate,
+      branchName: branchName,
+      itemCode: itemCode,
+      itemName: itemName,
+      requestQty: requestQty,
+      reason: reason,
+      isUrgent: isUrgent,
+    );
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchAdditionalRequestDrafts({
+    required String runDate,
+    required String branchName,
+  }) {
+    return remote.fetchAdditionalRequestDrafts(
+      runDate: runDate,
+      branchName: branchName,
+    );
+  }
+
+  @override
+  Future<void> deleteAdditionalRequestDraft({required String id}) {
+    return remote.deleteAdditionalRequestDraft(id: id);
+  }
 }

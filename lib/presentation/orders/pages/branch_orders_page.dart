@@ -34,7 +34,7 @@ class BranchOrdersPage extends StatelessWidget {
           ),
         ),
       ],
-      child: const BranchOrdersScreen(),
+      child: SelectionArea(child: const BranchOrdersScreen()),
     );
   }
 }

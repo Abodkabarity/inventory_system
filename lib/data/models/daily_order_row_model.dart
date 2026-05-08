@@ -155,7 +155,7 @@ class DailyOrderRowModel extends DailyOrderRow {
       retailPrice: _nn(m['retail_price']),
       vat: _nn(m['vat']),
       storeItemClassifications: _sn(m['store_item_classifications']),
-      goodsReceivedLast7Days: _b(m['goods_received_last_7_days']),
+      goodsReceivedLast7Days: _sn(m['goods_received_last_7_days']),
       totalSoldQtyCashLast90: _nn(m['total_sold_qty_cash_last_90']),
       totalSoldQtyOnlineLast90: _nn(m['total_sold_qty_online_last_90']),
       totalSoldQtyInsuranceLast90: _nn(m['total_sold_qty_insurance_last_90']),

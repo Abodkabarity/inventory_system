@@ -100,28 +100,42 @@ class BranchOrdersActions {
     required OrdersState state,
     required DailyOrderRow row,
   }) async {
-    final oldQty = _extractNumeric(row.finalReorderQtyStoreStockGt0).round();
+    final oldQty = num.tryParse(row.reorderQtyNum.toString())?.toInt() ?? 0;
 
     final edit = state.finalEdits[row.itemCode];
     final initialQty = edit?.newQty ?? oldQty;
+    final compareQty = edit?.newQty ?? oldQty;
     final initialReason = edit?.reason ?? '';
 
     await showGeneralDialog(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Edit Final Reorder',
-      barrierColor: Colors.black.withOpacity(0.18),
+      barrierColor: Colors.black.withValues(alpha: 0.18),
       pageBuilder: (_, __, ___) {
         return Align(
           alignment: Alignment.centerRight,
           child: FinalReorderSidePanel(
             row: row,
             oldQty: oldQty,
+            compareQty: compareQty,
             initialQty: initialQty,
             initialReason: initialReason,
             onClose: () => Navigator.of(context).pop(),
-            onSave: (newQty, reason) {
-              context.read<OrdersBloc>().add(
+            onSave: (newQty, reason) async {
+              final bloc = context.read<OrdersBloc>();
+
+              await bloc.repo.upsertFinalReorderDraft(
+                runDate: state.runDate,
+                branchName: state.branchName,
+                itemCode: row.itemCode,
+                itemName: row.itemName,
+                oldQty: oldQty,
+                newQty: newQty,
+                reason: reason,
+              );
+
+              bloc.add(
                 OrdersApplyFinalEdit(
                   itemCode: row.itemCode,
                   oldQty: oldQty,
@@ -129,6 +143,7 @@ class BranchOrdersActions {
                   reason: reason,
                 ),
               );
+
               Navigator.of(context).pop();
             },
             onReset: () {
@@ -179,9 +194,25 @@ class BranchOrdersActions {
             row: row,
             initialQty: draft?.requestQty,
             initialReason: draft?.reason ?? '',
+            initialIsUrgent:
+                state.additionalEdits[row.itemCode]?.isUrgent ?? false,
             onClose: () => Navigator.of(context).pop(),
-            onSave: (qty, reason, isUrgent) {
-              context.read<OrdersBloc>().add(
+            onSave: (qty, reason, isUrgent) async {
+              final bloc = context.read<OrdersBloc>();
+
+              // 🔥 SAVE ONLINE DRAFT
+              await bloc.repo.upsertAdditionalRequestDraft(
+                runDate: state.runDate,
+                branchName: state.branchName,
+                itemCode: row.itemCode,
+                itemName: row.itemName,
+                requestQty: qty,
+                reason: reason,
+                isUrgent: isUrgent,
+              );
+
+              // 🔥 SAVE LOCAL STATE
+              bloc.add(
                 OrdersApplyAdditionalRequest(
                   itemCode: itemCode,
                   itemName: row.itemName,
@@ -190,12 +221,20 @@ class BranchOrdersActions {
                   isUrgent: isUrgent,
                 ),
               );
+
               Navigator.of(context).pop();
             },
-            onRemove: () {
-              context.read<OrdersBloc>().add(
-                OrdersRemoveAdditionalRequest(itemCode),
-              );
+            onRemove: () async {
+              final bloc = context.read<OrdersBloc>();
+
+              final draft = state.additionalEdits[itemCode];
+
+              if (draft != null) {
+                await bloc.repo.deleteAdditionalRequestDraft(id: draft.id);
+              }
+
+              bloc.add(OrdersRemoveAdditionalRequest(itemCode));
+
               Navigator.of(context).pop();
             },
             sentHistory: sentHistory,

@@ -273,3 +273,20 @@ class UpdateExportProgress extends InventoryEvent {
   final double progress;
   UpdateExportProgress(this.progress);
 }
+
+class ExportInventoryOrders extends InventoryEvent {
+  final String runDate;
+  final List<String> visibleColumns;
+
+  ExportInventoryOrders({required this.runDate, required this.visibleColumns});
+}
+
+class UpdateExportDailyProgress extends InventoryEvent {
+  final double progress;
+  final String message;
+
+  UpdateExportDailyProgress({required this.progress, required this.message});
+
+  @override
+  List<Object> get props => [progress, message];
+}

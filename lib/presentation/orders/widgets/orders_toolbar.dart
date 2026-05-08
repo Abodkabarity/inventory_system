@@ -250,15 +250,18 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
                         ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14.r),
-                          borderSide: BorderSide(color: cs.outlineVariant),
+                          borderSide: BorderSide(color: AppColors.primaryColor),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14.r),
-                          borderSide: BorderSide(color: cs.outlineVariant),
+                          borderSide: BorderSide(color: AppColors.primaryColor),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14.r),
-                          borderSide: BorderSide(color: cs.primary, width: 1.4),
+                          borderSide: BorderSide(
+                            color: AppColors.primaryColor,
+                            width: 1.4,
+                          ),
                         ),
                       ),
                       onChanged: widget.onSearchChanged,

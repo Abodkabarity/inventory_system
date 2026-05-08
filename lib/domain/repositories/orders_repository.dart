@@ -119,4 +119,33 @@ abstract class OrdersRepository {
     required String runDate,
     required String branchName,
   });
+  Future<void> upsertFinalReorderDraft({
+    required String runDate,
+    required String branchName,
+    required String itemCode,
+    required String itemName,
+    required int oldQty,
+    required int newQty,
+    required String reason,
+  });
+
+  Future<List<Map<String, dynamic>>> fetchFinalReorderDrafts({
+    required String runDate,
+    required String branchName,
+  });
+  Future<void> upsertAdditionalRequestDraft({
+    required String runDate,
+    required String branchName,
+    required String itemCode,
+    required String itemName,
+    required num requestQty,
+    required String reason,
+    required bool isUrgent,
+  });
+
+  Future<List<Map<String, dynamic>>> fetchAdditionalRequestDrafts({
+    required String runDate,
+    required String branchName,
+  });
+  Future<void> deleteAdditionalRequestDraft({required String id});
 }

@@ -319,10 +319,9 @@ class InventoryRemoteDs {
 
   Future<List<Map<String, dynamic>>> fetchOrdersAllInventory({
     required String runDate,
-    int batchSize = 1000,
   }) async {
     const cols = '''
-run_date, branch, item_code, item_name  ,
+run_date, branch, item_code, item_name,
 goods_received_last_7_days,
 branch_stock, mismatch_stock, store_stock, pending_stock_received,
 extra_qty_more_than_month, max_adjustment_30d, demand_for_30_days,
@@ -340,14 +339,45 @@ barcode,
 store_item_classifications
 ''';
 
+    List<Map<String, dynamic>> allData = [];
+
+    /*String? lastItemCode;
+    const batchSize = 20000;
+
+    while (true) {
+      var query = client
+          .from('daily_order')
+          .select(cols)
+          .eq('run_date', runDate);
+
+      if (lastItemCode != null) {
+        query = query.filter('item_code', 'gt', lastItemCode);
+      }
+
+      final res = await query
+          .order('item_code', ascending: true)
+          .limit(batchSize);
+
+      final batch = List<Map<String, dynamic>>.from(res);
+
+      if (batch.isEmpty) break;
+
+      allData.addAll(batch);
+
+      lastItemCode = batch.last['item_code'].toString();
+
+      print("Loaded ${allData.length}");
+
+      if (batch.length < batchSize) break;
+    }*/
     final res = await client
         .from('daily_order')
         .select(cols)
         .eq('run_date', runDate)
-        .order('item_code', ascending: true)
-        .limit(batchSize);
+        .limit(50000);
 
     return List<Map<String, dynamic>>.from(res);
+    return allData;
   }
 
   Future<List<Map<String, dynamic>>> fetchBranchAllChanges({

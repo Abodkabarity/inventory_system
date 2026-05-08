@@ -47,11 +47,18 @@ class ColumnsPanel extends StatelessWidget {
                     padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
                     itemCount: filtered.length,
                     onReorder: (oldIndex, newIndex) {
+                      if (newIndex > oldIndex) {
+                        newIndex -= 1;
+                      }
+
+                      final updated = List<String>.from(filtered);
+
+                      final item = updated.removeAt(oldIndex);
+
+                      updated.insert(newIndex, item);
+
                       context.read<OrdersBloc>().add(
-                        OrdersReorderColumns(
-                          oldIndex: oldIndex,
-                          newIndex: newIndex,
-                        ),
+                        OrdersReorderColumns(columns: updated),
                       );
                     },
                     itemBuilder: (context, index) {

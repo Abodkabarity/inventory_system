@@ -35,7 +35,6 @@ class _InventoryDailyOrderPageState extends State<InventoryDailyOrderPage> {
   Widget build(BuildContext context) {
     return BlocBuilder<InventoryBloc, InventoryState>(
       builder: (context, state) {
-        /// 🔍 FILTERED DATA
         final filteredRows = state.allOrders.where((e) {
           final q = searchQuery.toLowerCase();
 
@@ -44,7 +43,6 @@ class _InventoryDailyOrderPageState extends State<InventoryDailyOrderPage> {
               e.branch.toLowerCase().contains(q);
         }).toList();
 
-        /// 🧠 حل مشكلة اختفاء الجدول
         final columns = state.columnOrder.isEmpty
             ? OrdersTable.allColumns
             : state.columnOrder;
@@ -59,78 +57,148 @@ class _InventoryDailyOrderPageState extends State<InventoryDailyOrderPage> {
 
         return Padding(
           padding: const EdgeInsets.all(16),
-          child: Column(
+          child: Stack(
             children: [
-              /// 🔥 SEARCH + COLUMNS BUTTON
-              Row(
+              Column(
                 children: [
-                  /// 🔍 SEARCH
-                  Expanded(
-                    child: TextField(
-                      controller: searchController,
-                      decoration: InputDecoration(
-                        hintText: "Search item / code / branch...",
-                        prefixIcon: const Icon(Icons.search),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
+                  /// 🔥 SEARCH + COLUMNS BUTTON
+                  Row(
+                    children: [
+                      /// 🔍 SEARCH
+                      Expanded(
+                        child: TextField(
+                          controller: searchController,
+                          decoration: InputDecoration(
+                            hintText: "Search item / code / branch...",
+                            prefixIcon: const Icon(Icons.search),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onChanged: (v) {
+                            setState(() {
+                              searchQuery = v;
+                            });
+                          },
                         ),
                       ),
-                      onChanged: (v) {
-                        setState(() {
-                          searchQuery = v;
-                        });
-                      },
-                    ),
-                  ),
 
-                  const SizedBox(width: 10),
-
-                  /// 🧩 COLUMNS BUTTON
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      showModalBottomSheet(
-                        context: context,
-                        builder: (bottomSheetContext) {
-                          final bloc = context.read<InventoryBloc>();
-
-                          return BlocProvider.value(
-                            value: bloc,
-                            child: const InventoryColumnsPanel(),
+                      const SizedBox(width: 10),
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          context.read<InventoryBloc>().add(
+                            ExportInventoryOrders(
+                              runDate: widget.runDate,
+                              visibleColumns: finalColumns,
+                            ),
                           );
                         },
-                      );
-                    },
-                    icon: const Icon(Icons.view_column),
-                    label: const Text("Columns"),
+                        icon: const Icon(Icons.download),
+                        label: const Text("Export"),
+                      ),
+                      const SizedBox(width: 10),
+
+                      /// 🧩 COLUMNS BUTTON
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          showModalBottomSheet(
+                            context: context,
+                            builder: (bottomSheetContext) {
+                              final bloc = context.read<InventoryBloc>();
+
+                              return BlocProvider.value(
+                                value: bloc,
+                                child: const InventoryColumnsPanel(),
+                              );
+                            },
+                          );
+                        },
+                        icon: const Icon(Icons.view_column),
+                        label: const Text("Columns"),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  /// 📊 TABLE
+                  Expanded(
+                    child: OrdersTable(
+                      rows: filteredRows,
+                      isLoading: state.isOrdersLoading,
+
+                      orderedColumns: finalColumns,
+
+                      columnWidths: {},
+
+                      finalEdits: {},
+                      additionalEdits: {},
+                      sentAdditionalQtyByItemCode: {},
+
+                      onTapFinalReorder: (_) {},
+                      onTapAdditionalRequest: (_) {},
+
+                      isSubmitted: true,
+
+                      gridController: controller,
+                      onColumnResized: (_, __) {},
+                    ),
                   ),
                 ],
               ),
+              if (state.isExporting)
+                Positioned.fill(
+                  child: Container(
+                    color: Colors.black.withOpacity(0.25),
+                    child: Center(
+                      child: Container(
+                        width: 320,
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 70,
+                              height: 70,
+                              child: Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  CircularProgressIndicator(
+                                    strokeWidth: 6,
+                                    value: state.importProgress,
+                                  ),
 
-              const SizedBox(height: 12),
+                                  Text(
+                                    "${(state.importProgress * 100).toStringAsFixed(0)}%",
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
 
-              /// 📊 TABLE
-              Expanded(
-                child: OrdersTable(
-                  rows: filteredRows,
-                  isLoading: state.isOrdersLoading,
+                            const SizedBox(height: 20),
 
-                  orderedColumns: finalColumns,
-
-                  columnWidths: {},
-
-                  finalEdits: {},
-                  additionalEdits: {},
-                  sentAdditionalQtyByItemCode: {},
-
-                  onTapFinalReorder: (_) {},
-                  onTapAdditionalRequest: (_) {},
-
-                  isSubmitted: true,
-
-                  gridController: controller,
-                  onColumnResized: (_, __) {},
+                            Text(
+                              state.exportMessage ?? '',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
             ],
           ),
         );

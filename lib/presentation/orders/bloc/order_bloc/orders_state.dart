@@ -25,6 +25,8 @@ class FinalReorderEdit extends Equatable {
 }
 
 class AdditionalRequestEdit extends Equatable {
+  final String id;
+
   final String itemCode;
   final String itemName;
   final num requestQty;
@@ -37,10 +39,18 @@ class AdditionalRequestEdit extends Equatable {
     required this.requestQty,
     required this.reason,
     required this.isUrgent,
+    required this.id,
   });
 
   @override
-  List<Object?> get props => [itemCode, itemName, requestQty, reason, isUrgent];
+  List<Object?> get props => [
+    itemCode,
+    itemName,
+    requestQty,
+    reason,
+    isUrgent,
+    id,
+  ];
 }
 
 // Tracking row (flat list) for additional requests
@@ -191,7 +201,7 @@ class OrdersState extends Equatable {
   final Set<String> visibleColumns;
   final List<String> columnOrder;
   final Map<String, double> columnWidths;
-
+  final bool isRemovingFilters;
   final String categoryFilter;
   final String formularyFilter;
   final bool nonWithSales45Only;
@@ -257,6 +267,7 @@ class OrdersState extends Equatable {
     required this.selectedItemDemand,
     required this.onlyBranchMaxAdj,
     required this.showCreate,
+    required this.isRemovingFilters,
   });
 
   static const List<String> defaultVisibleInTable = [
@@ -389,7 +400,8 @@ class OrdersState extends Equatable {
       formularyFilter: 'ALL',
       nonWithSales45Only: false,
       showCreate: true,
-      numericFinalOnly: true,
+      isRemovingFilters: false,
+      numericFinalOnly: false,
       lastActionSuccess: false,
       showMismatchResult: false,
       finalEdits: const {},
@@ -458,6 +470,7 @@ class OrdersState extends Equatable {
     num? selectedItemDemand,
     String? maxAdjSearch,
     bool? showMismatchResult,
+    bool? isRemovingFilters,
     Set<String>? visibleColumns,
     List<String>? columnOrder,
     Map<String, double>? columnWidths,
@@ -517,6 +530,7 @@ class OrdersState extends Equatable {
       mismatchItems: mismatchItems ?? this.mismatchItems,
       mismatchSuggestions: mismatchSuggestions ?? this.mismatchSuggestions,
       editingMismatchId: editingMismatchId ?? this.editingMismatchId,
+      isRemovingFilters: isRemovingFilters ?? this.isRemovingFilters,
       mismatchSearch: mismatchSearch ?? this.mismatchSearch,
       lastActionSuccess: lastActionSuccess ?? this.lastActionSuccess,
       showMismatchResult: showMismatchResult ?? this.showMismatchResult,
@@ -558,6 +572,7 @@ class OrdersState extends Equatable {
     additionalEdits,
     sentAdditionalQtyByItemCode,
     additionalOnly,
+    isRemovingFilters,
     submissionStatus,
     selectedItemCode,
     additionalTrackingRows,

@@ -8,10 +8,10 @@ class PrintAdditionalService {
   ) async {
     final pdf = pw.Document();
 
-    /// 🔴 SORT: urgent first
     final sortedEntries = batch.entries.toList()
       ..sort((a, b) {
         final aUrgent = a.value.any((e) => e['contact_logistic'] == 'urgent');
+
         final bUrgent = b.value.any((e) => e['contact_logistic'] == 'urgent');
 
         if (aUrgent && !bUrgent) return -1;
@@ -20,97 +20,92 @@ class PrintAdditionalService {
         return 0;
       });
 
-    for (final entry in sortedEntries) {
-      final branch = entry.key;
-      final items = entry.value;
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(20),
 
-      /// 🔴 Detect urgent for this page
-      final isUrgent = items.any((e) => e['contact_logistic'] == 'urgent');
+        build: (context) {
+          return [
+            ...sortedEntries.expand((entry) {
+              final branch = entry.key;
+              final items = entry.value;
 
-      pdf.addPage(
-        pw.MultiPage(
-          pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(20),
+              final isUrgent = items.any(
+                (e) => e['contact_logistic'] == 'urgent',
+              );
 
-          /// 🔴 HEADER
-          header: (context) => pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-            children: [
-              /// LEFT SIDE (branch + urgent label)
-              pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Text(
-                    branch,
-                    style: pw.TextStyle(
-                      fontSize: 18,
-                      fontWeight: pw.FontWeight.bold,
-                      color: isUrgent ? PdfColors.red : PdfColors.black,
-                    ),
-                  ),
-
-                  if (isUrgent)
-                    pw.Text(
-                      "URGENT",
-                      style: pw.TextStyle(
-                        color: PdfColors.red,
-                        fontSize: 12,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                    ),
-                ],
-              ),
-
-              /// RIGHT SIDE (date)
-              pw.Text(DateTime.now().toString().substring(0, 10)),
-            ],
-          ),
-
-          /// 🔴 CONTENT
-          build: (context) => [
-            pw.SizedBox(height: 10),
-
-            pw.Table(
-              border: pw.TableBorder.all(width: 0.5),
-
-              columnWidths: {
-                0: const pw.FixedColumnWidth(90),
-                1: const pw.FlexColumnWidth(),
-                2: const pw.FixedColumnWidth(40),
-              },
-
-              children: [
-                /// HEADER
-                pw.TableRow(
-                  decoration: const pw.BoxDecoration(color: PdfColors.grey300),
+              return [
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    _cell("Item Code", bold: true),
-                    _cell("Item Name", bold: true),
-                    _cell("Qty", bold: true),
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          branch,
+                          style: pw.TextStyle(
+                            fontSize: 18,
+                            fontWeight: pw.FontWeight.bold,
+                            color: isUrgent ? PdfColors.red : PdfColors.black,
+                          ),
+                        ),
+
+                        if (isUrgent)
+                          pw.Text(
+                            "URGENT",
+                            style: pw.TextStyle(
+                              color: PdfColors.red,
+                              fontSize: 12,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                      ],
+                    ),
+
+                    pw.Text(DateTime.now().toString().substring(0, 10)),
                   ],
                 ),
 
-                /// 🔴 ROWS
-                ...items.map((e) {
-                  final isItemUrgent = e['contact_logistic'] == 'urgent';
+                pw.SizedBox(height: 8),
 
-                  return pw.TableRow(
-                    decoration: isItemUrgent
-                        ? pw.BoxDecoration(color: PdfColors.red50)
-                        : null,
-                    children: [
-                      _cell(e['item_code'] ?? ''),
-                      _cell(e['item_name'] ?? ''),
-                      _cell((e['request_qty'] ?? '').toString()),
-                    ],
-                  );
-                }),
-              ],
-            ),
-          ],
-        ),
-      );
-    }
+                pw.TableHelper.fromTextArray(
+                  border: pw.TableBorder.all(width: 0.5),
+
+                  headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+
+                  headerDecoration: const pw.BoxDecoration(
+                    color: PdfColors.grey300,
+                  ),
+
+                  cellAlignment: pw.Alignment.center,
+
+                  columnWidths: {
+                    0: const pw.FixedColumnWidth(90),
+                    1: const pw.FlexColumnWidth(),
+                    2: const pw.FixedColumnWidth(40),
+                  },
+
+                  headers: ["Item Code", "Item Name", "Qty"],
+
+                  data: items.map((e) {
+                    return [
+                      (e['item_code'] ?? '').toString(),
+                      (e['item_name'] ?? '').toString(),
+                      (e['request_qty'] ?? '').toString(),
+                    ];
+                  }).toList(),
+
+                  rowDecoration: pw.BoxDecoration(color: PdfColors.white),
+                ),
+
+                pw.SizedBox(height: 25),
+              ];
+            }),
+          ];
+        },
+      ),
+    );
 
     await Printing.layoutPdf(onLayout: (format) async => pdf.save());
   }

@@ -52,7 +52,7 @@ class _MaxSidePanelState extends State<MaxSidePanel> {
                     child: Row(
                       children: [
                         Text(
-                          "Max Adjustment ($branchCount / 15)",
+                          "Max Adjustment ($branchCount / 50)",
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 18,
@@ -277,7 +277,7 @@ class _AddMaxFormState extends State<_AddMaxForm> {
         .where((e) => e['added_by'] == 'branch')
         .length;
 
-    final isFull = branchCount >= 15;
+    final isFull = branchCount >= 50;
 
     return BlocListener<OrdersBloc, OrdersState>(
       listenWhen: (prev, curr) =>
@@ -576,7 +576,7 @@ class _AddMaxFormState extends State<_AddMaxForm> {
                                 });
                               },
                         child: Text(
-                          isFull ? "Limit Reached (15)" : "Add Max",
+                          isFull ? "Limit Reached (50)" : "Add Max",
                           style: const TextStyle(color: Colors.white),
                         ),
                       ),

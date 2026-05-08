@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:html' as html;
 import 'dart:typed_data';
 
@@ -52,6 +53,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     on<ExportAssortmentWithHistory>(_onExportAssortmentHistory);
     on<ExportFormularyCurrent>(_onExportFormularyCurrent);
     on<ExportFormularyWithHistory>(_onExportFormularyHistory);
+    on<ExportInventoryOrders>(_onExportInventoryOrders);
     on<ExportFormularyTemplate>(_onExportFormularyTemplate);
     on<ImportFormularyExcel>(_onImportFormulary);
     on<ImportTmaExcel>(_onImportTma);
@@ -73,6 +75,15 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
             },
           )
           .subscribe();
+    });
+    on<UpdateExportDailyProgress>((event, emit) {
+      emit(
+        state.copyWith(
+          isExporting: true,
+          importProgress: event.progress,
+          exportMessage: event.message,
+        ),
+      );
     });
     on<ExportMismatchCurrent>((event, emit) async {
       try {
@@ -1814,6 +1825,177 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           importSuccess: false,
         ),
       );
+    }
+  }
+
+  Future<void> _onExportInventoryOrders(
+    ExportInventoryOrders event,
+    Emitter<InventoryState> emit,
+  ) async {
+    try {
+      emit(
+        state.copyWith(
+          isExporting: true,
+          importProgress: 0.05,
+          exportMessage: "Preparing CSV...",
+        ),
+      );
+
+      /// =========================
+      /// UI -> DB COLUMN MAPPING
+      /// =========================
+
+      final Map<String, String?> dbColumnMap = {
+        'row_no': null,
+        'additional_request': null,
+
+        'reason_for_max_adjustment_30d': 'reason',
+
+        'total_sold_qty_cash_last_90': null,
+        'total_sold_qty_online_last_90': null,
+        'total_sold_qty_insurance_last_90': null,
+
+        'upp_thiqa': null,
+        'upp_basic': null,
+        'tier': null,
+      };
+
+      /// =========================
+      /// DB COLUMNS
+      /// =========================
+
+      final dbColumns = event.visibleColumns
+          .map((e) {
+            if (dbColumnMap.containsKey(e)) {
+              return dbColumnMap[e];
+            }
+
+            return e;
+          })
+          .whereType<String>()
+          .toList();
+
+      /// =========================
+      /// HEADERS
+      /// =========================
+
+      final headers = event.visibleColumns
+          .where((e) {
+            final mapped = dbColumnMap[e];
+
+            if (mapped == null && dbColumnMap.containsKey(e)) {
+              return false;
+            }
+
+            return true;
+          })
+          .map((e) {
+            return (OrdersTable.titles[e] ?? e)
+                .replaceAll('\n', ' ')
+                .replaceAll(',', ' ');
+          })
+          .toList();
+
+      /// =========================
+      /// BATCH EXPORT
+      /// =========================
+
+      const batchSize = 50000;
+
+      int offset = 0;
+
+      final List<String> csvParts = [];
+
+      while (true) {
+        emit(
+          state.copyWith(
+            importProgress: (0.05 + ((offset / 800000) * 0.85)).clamp(0, 0.9),
+            exportMessage: "Loading rows $offset...",
+          ),
+        );
+
+        final csvChunk = await Supabase.instance.client.rpc(
+          'export_daily_order_csv',
+          params: {
+            'p_run_date': event.runDate,
+            'p_columns': dbColumns,
+            'p_limit': batchSize,
+            'p_offset': offset,
+          },
+        );
+
+        final lines = csvChunk.toString().split('\n');
+
+        if (lines.length <= 1) {
+          break;
+        }
+
+        /// =========================
+        /// FIRST BATCH
+        /// =========================
+
+        if (offset == 0) {
+          lines[0] = headers.join(',');
+
+          csvParts.add(lines.join('\n'));
+        } else {
+          csvParts.add(lines.skip(1).join('\n'));
+        }
+
+        offset += batchSize;
+
+        await Future.delayed(const Duration(milliseconds: 5));
+      }
+
+      /// =========================
+      /// GENERATE FINAL CSV
+      /// =========================
+
+      emit(
+        state.copyWith(
+          importProgress: 0.95,
+          exportMessage: "Generating file...",
+        ),
+      );
+
+      final finalCsv = csvParts.join('\n');
+
+      /// =========================
+      /// UTF8 BOM FIX
+      /// =========================
+
+      final bytes = utf8.encode('\uFEFF$finalCsv');
+
+      emit(
+        state.copyWith(importProgress: 0.98, exportMessage: "Downloading..."),
+      );
+
+      final blob = html.Blob([
+        Uint8List.fromList(bytes),
+      ], 'text/csv;charset=utf-8;');
+
+      final url = html.Url.createObjectUrlFromBlob(blob);
+
+      html.AnchorElement(href: url)
+        ..setAttribute(
+          'download',
+          'daily_order_${DateTime.now().millisecondsSinceEpoch}.csv',
+        )
+        ..click();
+
+      html.Url.revokeObjectUrl(url);
+
+      emit(
+        state.copyWith(
+          isExporting: false,
+          importProgress: 1,
+          exportMessage: "Export completed",
+        ),
+      );
+    } catch (e) {
+      print(e);
+
+      emit(state.copyWith(isExporting: false, exportMessage: "Export failed"));
     }
   }
 }

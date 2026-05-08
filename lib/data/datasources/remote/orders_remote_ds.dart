@@ -272,7 +272,41 @@ store_item_classifications
       final part = rows.sublist(i, end);
 
       await _retryOnTimeout<void>(() async {
-        await client.from('additional_requests').insert(part);
+        for (final row in part) {
+          await client.rpc(
+            'create_additional_request',
+            params: {
+              'p_request_group_id': row['request_group_id'],
+              'p_run_date': row['run_date'],
+              'p_zone': row['zone'],
+              'p_branch_name': row['branch_name'],
+              'p_item_code': row['item_code'],
+              'p_item_name': row['item_name'],
+              'p_request_qty': row['request_qty'],
+              'p_reason': row['reason'],
+
+              'p_branch_stock': row['branch_stock'],
+              'p_store_stock': row['store_stock'],
+              'p_sales_45d': row['sales_45d'],
+              'p_final_reorder_qty': row['final_reorder_qty'],
+              'p_item_purchase_type': row['item_purchase_type'],
+              'p_max_type': row['max_type'],
+
+              'p_contact_logistic': row['contact_logistic'],
+            },
+          );
+        }
+        final ids = part
+            .map((e) => e['draft_id'])
+            .where((e) => e != null)
+            .toList();
+
+        if (ids.isNotEmpty) {
+          await client
+              .from('additional_request_drafts')
+              .delete()
+              .inFilter('id', ids);
+        }
       });
     }
   }
@@ -668,5 +702,78 @@ done_at
         'created_at': now,
       });
     }
+  }
+
+  Future<void> upsertFinalReorderDraft({
+    required String runDate,
+    required String branchName,
+    required String itemCode,
+    required String itemName,
+    required int oldQty,
+    required int newQty,
+    required String reason,
+  }) async {
+    await client.from('order_edits_draft').upsert({
+      'run_date': runDate,
+      'branch_name': branchName,
+      'item_code': itemCode,
+      'item_name': itemName,
+      'old_qty': oldQty,
+      'new_qty': newQty,
+      'reason': reason,
+      'status': 'draft',
+      'updated_at': DateTime.now().toIso8601String(),
+    }, onConflict: 'run_date,branch_name,item_code');
+  }
+
+  Future<List<Map<String, dynamic>>> fetchFinalReorderDrafts({
+    required String runDate,
+    required String branchName,
+  }) async {
+    final res = await client
+        .from('order_edits_draft')
+        .select()
+        .eq('run_date', runDate)
+        .eq('branch_name', branchName);
+
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<void> upsertAdditionalRequestDraft({
+    required String runDate,
+    required String branchName,
+    required String itemCode,
+    required String itemName,
+    required num requestQty,
+    required String reason,
+    required bool isUrgent,
+  }) async {
+    await client.from('additional_request_drafts').upsert({
+      'run_date': runDate,
+      'branch_name': branchName,
+      'item_code': itemCode,
+      'item_name': itemName,
+      'request_qty': requestQty,
+      'reason': reason,
+      'contact_logistic': isUrgent ? 'urgent' : null,
+      'updated_at': DateTime.now().toIso8601String(),
+    }, onConflict: 'run_date,branch_name,item_code');
+  }
+
+  Future<List<Map<String, dynamic>>> fetchAdditionalRequestDrafts({
+    required String runDate,
+    required String branchName,
+  }) async {
+    final res = await client
+        .from('additional_request_drafts')
+        .select()
+        .eq('run_date', runDate)
+        .eq('branch_name', branchName);
+
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<void> deleteAdditionalRequestDraft({required String id}) async {
+    await client.from('additional_request_drafts').delete().eq('id', id);
   }
 }
