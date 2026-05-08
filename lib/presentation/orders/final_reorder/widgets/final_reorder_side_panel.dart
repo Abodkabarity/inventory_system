@@ -13,11 +13,12 @@ class FinalReorderSidePanel extends StatefulWidget {
   final DailyOrderRow row;
 
   final int oldQty;
+  final int compareQty;
   final int initialQty;
   final String initialReason;
 
   final VoidCallback onClose;
-  final void Function(int newQty, String reason) onSave;
+  final Future<void> Function(int newQty, String reason) onSave;
   final VoidCallback onReset;
 
   const FinalReorderSidePanel({
@@ -29,6 +30,7 @@ class FinalReorderSidePanel extends StatefulWidget {
     required this.onClose,
     required this.onSave,
     required this.onReset,
+    required this.compareQty,
   });
 
   @override
@@ -59,6 +61,7 @@ class _FinalReorderSidePanelState extends State<FinalReorderSidePanel> {
       create: (_) => FinalReorderBloc(
         row: widget.row,
         oldQtyInput: widget.oldQty,
+        compareQtyInput: widget.compareQty,
         initialQtyInput: widget.initialQty,
         initialReasonInput: widget.initialReason,
         onSave: widget.onSave,
@@ -212,7 +215,7 @@ class _FinalReorderSidePanelState extends State<FinalReorderSidePanel> {
                             const SizedBox(height: 10),
 
                             DiffChip(
-                              oldQty: s.oldQty,
+                              oldQty: widget.compareQty,
                               newQty: int.tryParse(_qtyCtrl.text) ?? 0,
                             ),
 

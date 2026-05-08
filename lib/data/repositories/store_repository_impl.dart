@@ -103,9 +103,10 @@ class StoreRepositoryImpl implements StoreRepository {
       final createdRaw = first['created_at'];
 
       if (createdRaw == null) {
-        created = DateTime.now();
+        created = DateTime.now().toLocal();
       } else {
-        created = DateTime.tryParse(createdRaw.toString()) ?? DateTime.now();
+        created = (DateTime.tryParse(createdRaw.toString()) ?? DateTime.now())
+            .toLocal();
       }
 
       final validItems = items.where((e) {
@@ -207,7 +208,7 @@ class StoreRepositoryImpl implements StoreRepository {
         AdditionalRequestGroup(
           groupId: groupId,
           branchName: first['branch_name'],
-          createdAt: DateTime.parse(first['created_at']),
+          createdAt: DateTime.parse(first['created_at']).toLocal(),
           itemsCount: validItems.length,
           status: status,
           itemNames: itemNames,

@@ -38,6 +38,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
 
         final statsAll = BranchOrdersSelectors.calcStats(s.rows);
         final categories = BranchOrdersSelectors.extractCategories(s.rows);
+
         final orderedColumns = s.isOrderDay
             ? BranchOrdersSelectors.orderedVisibleColumns(s)
             : [
@@ -47,6 +48,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                 'store_stock',
                 'additional_request',
               ];
+
         final draftAddCount = s.additionalCount;
         final sentAddCount = s.sentAdditionalQtyByItemCode.length;
 
@@ -59,7 +61,6 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                 child: Padding(
                   padding: const EdgeInsets.all(18),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       BlocBuilder<BranchZoneCubit, BranchZoneState>(
                         builder: (context, zs) {
@@ -79,323 +80,513 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                           );
                         },
                       ),
+
                       const SizedBox(height: 14),
 
-                      if (s.showCreate && s.submissionStatus != 'submitted')
-                        SizedBox(
-                          height: MediaQuery.of(context).size.height * 0.7.h,
-
-                          child: Center(
-                            child: _GenerateCard(
-                              isBusy: isBusy,
-                              progress: s.progress,
-                              message: s.progressMessage,
-                              error: s.status == OrdersStatus.failure
-                                  ? s.error
-                                  : null,
-                              onGenerate: () => context.read<OrdersBloc>().add(
-                                const OrdersPressedGenerate(),
-                              ),
-                            ),
-                          ),
-                        )
-                      else ...[
-                        if (s.status == OrdersStatus.generating ||
-                            s.status == OrdersStatus.loading)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: _ProgressStrip(
-                              progress: s.progress,
-                              message: s.progressMessage ?? 'Working...',
-                            ),
-                          ),
-                        if (s.status == OrdersStatus.failure && s.error != null)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: Text(
-                              s.error!,
-                              style: const TextStyle(color: Colors.red),
-                            ),
-                          ),
-
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            SizedBox(
-                              width: 300.w,
-                              height: 75.h,
-                              child: _KpiCard(
-                                title: 'Total Products',
-                                value: statsAll.totalProducts.toString(),
-                                subtitle: 'All APG Items',
-                                icon: Icons.list_alt_outlined,
-                              ),
-                            ),
-                            SizedBox(
-                              width: 300.w,
-                              height: 75.h,
-                              child: _KpiCard(
-                                title: 'Items in Order',
-                                value: statsAll.finalReorderCount
-                                    .round()
-                                    .toString(),
-                                subtitle: '',
-                                icon: Icons.inventory_2_outlined,
-                              ),
-                            ),
-                            SizedBox(
-                              width: 300.w,
-                              height: 75.h,
-                              child: _KpiCard(
-                                title: 'Essential',
-                                value: '${statsAll.essential}',
-                                subtitle: '',
-                                icon: Icons.star_border,
-                              ),
-                            ),
-                            SizedBox(
-                              width: 300.w,
-                              height: 75.h,
-                              child: _KpiCard(
-                                title: 'Non',
-                                value: '${statsAll.non}',
-                                subtitle: '',
-                                icon: Icons.layers_outlined,
-                              ),
-                            ),
-                            SizedBox(
-                              width: 300.w,
-
-                              height: 75.h,
-                              child: _KpiCard(
-                                title: 'Additional Orders Today',
-                                value: '$sentAddCount',
-                                subtitle: '',
-                                icon: Icons.add_box_outlined,
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 12),
-                        _FiltersBar(
-                          categories: categories,
-                          selectedCategory: s.categoryFilter,
-                          selectedFormulary: s.formularyFilter,
-                          nonWithSales45Only: s.nonWithSales45Only,
-                          numericFinalOnly: s.numericFinalOnly,
-                          additionalOnly: s.additionalOnly,
-                          onCategoryChanged: (v) => context
-                              .read<OrdersBloc>()
-                              .add(OrdersCategoryChanged(v)),
-                          onFormularyChanged: (v) => context
-                              .read<OrdersBloc>()
-                              .add(OrdersFormularyChanged(v)),
-                          onNonWithSales45Changed: (v) => context
-                              .read<OrdersBloc>()
-                              .add(OrdersNonWithSales45Toggled(v)),
-                          onNumericFinalOnlyChanged: (v) => context
-                              .read<OrdersBloc>()
-                              .add(OrdersNumericFinalOnlyToggled(v)),
-                          onAdditionalOnlyChanged: (v) => context
-                              .read<OrdersBloc>()
-                              .add(OrdersAdditionalOnlyToggled(v)),
-                          isSubmitted: s.isSubmitted,
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        BlocSelector<OrdersBloc, OrdersState, String>(
-                          selector: (s) => s.search,
-                          builder: (context, search) {
-                            return BlocBuilder<
-                              BranchZoneCubit,
-                              BranchZoneState
-                            >(
-                              builder: (context, zs) {
-                                final zoneReady =
-                                    zs.zone != null &&
-                                    zs.zone!.trim().isNotEmpty;
-
-                                return OrdersToolbar(
-                                  search: search,
-                                  onSearchChanged: (v) => context
-                                      .read<OrdersBloc>()
-                                      .add(OrdersSearchChanged(v)),
-                                  onOpenColumns: () =>
-                                      Scaffold.of(context).openEndDrawer(),
-                                  onExport: () {
-                                    context.read<OrdersBloc>().add(
-                                      const OrdersExportPressed(),
-                                    );
-                                  },
-                                  statusChip: null,
-                                  actions: [
-                                    OrdersToolbar.actionButton(
-                                      label: 'Additional Order Track',
-                                      icon: Icons.track_changes_outlined,
-                                      badgeCount: s.trackingPending,
-                                      color: AppColors.primaryColor,
-                                      tooltip:
-                                          'Track additional requests status',
-                                      onPressed:
-                                          (s.isSubmitted && !isBusy ||
-                                              !s.isOrderDay)
-                                          ? () =>
-                                                BranchOrdersActions.openTrackingDialog(
-                                                  context,
-                                                )
-                                          : null,
-                                    ),
-                                    if (s.hasEdits && !s.isSubmitted)
-                                      SizedBox(width: 6.w),
-                                    if (s.hasEdits && !s.isSubmitted)
-                                      OrdersToolbar.actionButton(
-                                        label:
-                                            'Review Changes (${s.editsCount})',
-                                        icon: Icons.fact_check_outlined,
-                                        color: AppColors.primaryColor,
-                                        onPressed: () =>
-                                            BranchOrdersActions.openReviewDialog(
-                                              context: context,
-                                              state: s,
-                                            ),
-                                      ),
-                                    if (s.isSubmitted || !s.isOrderDay)
-                                      SizedBox(width: 6),
-                                    if (s.isSubmitted || !s.isOrderDay)
-                                      OrdersToolbar.actionButton(
-                                        label:
-                                            'Send Additional ($draftAddCount)',
-                                        icon: Icons.add_box_outlined,
-                                        badgeCount: draftAddCount,
-                                        color: AppColors.secondaryColor,
-                                        onPressed:
-                                            (!zoneReady ||
-                                                s.additionalEdits.isEmpty ||
-                                                isBusy)
-                                            ? null
-                                            : () {
-                                                context.read<OrdersBloc>().add(
-                                                  OrdersSendAdditionalRequestsPressed(
-                                                    zone: zs.zone!,
-                                                  ),
-                                                );
-                                              },
-                                      ),
-                                    if (!s.isSubmitted && s.isOrderDay)
-                                      SizedBox(width: 6),
-                                    if (!s.isSubmitted && s.isOrderDay)
-                                      OrdersToolbar.actionButton(
-                                        label: 'Submit',
-                                        icon: Icons.check_circle_outline,
-                                        color: AppColors.secondaryColor,
-                                        onPressed:
-                                            (!zoneReady ||
-                                                s.isSubmitted ||
-                                                isBusy ||
-                                                !s.isOrderDay)
-                                            ? null
-                                            : () {
-                                                context.read<OrdersBloc>().add(
-                                                  OrdersSubmitOrderPressed(
-                                                    zone: zs.zone!,
-                                                  ),
-                                                );
-                                              },
-                                      ),
-                                  ],
-                                  onClearAll: () {
-                                    context.read<OrdersBloc>().add(
-                                      const OrdersClearAllFilters(),
-                                    );
-                                    _grid.resetGridUi();
-                                  },
-                                  addMismatch: () {
-                                    BranchOrdersActions.openMismatchPanel(
-                                      context,
-                                    );
-                                  },
-                                  addMax: () {
-                                    BranchOrdersActions.openMaxPanel(context);
-                                  },
-                                  isOrderDay: s.isOrderDay,
-                                );
-                              },
-                            );
-                          },
-                        ),
-
-                        const SizedBox(height: 10),
-
-                        Container(
-                          constraints: BoxConstraints(
-                            minHeight:
-                                MediaQuery.of(context).size.height * 0.4.h,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(color: const Color(0xFFE6E8F0)),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.04),
-                                blurRadius: 18,
-                                offset: const Offset(0, 10),
-                              ),
-                            ],
-                          ),
-                          padding: const EdgeInsets.all(14),
+                      Expanded(
+                        child: SingleChildScrollView(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const _TableTitle(),
-                              const SizedBox(height: 10),
+                              if (s.showCreate &&
+                                  s.submissionStatus != 'submitted')
+                                SizedBox(
+                                  height:
+                                      MediaQuery.of(context).size.height *
+                                      0.7.h,
+                                  child: Center(
+                                    child: _GenerateCard(
+                                      isBusy: isBusy,
+                                      progress: s.progress,
+                                      message: s.progressMessage,
+                                      error: s.status == OrdersStatus.failure
+                                          ? s.error
+                                          : null,
+                                      onGenerate: () {
+                                        context.read<OrdersBloc>().add(
+                                          const OrdersPressedGenerate(),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                )
+                              else ...[
+                                if (s.status == OrdersStatus.generating ||
+                                    s.status == OrdersStatus.loading)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: _ProgressStrip(
+                                      progress: s.progress,
+                                      message:
+                                          s.progressMessage ?? 'Working...',
+                                    ),
+                                  ),
 
-                              SizedBox(
-                                height: 400.h,
-                                child: OrdersTable(
-                                  rows: s.viewRows,
-                                  isLoading: isBusy,
-                                  orderedColumns: orderedColumns,
-                                  columnWidths: s.columnWidths,
-                                  finalEdits: s.finalEdits,
-                                  onTapFinalReorder: (row) =>
-                                      BranchOrdersActions.openFinalSidePanel(
-                                        context: context,
-                                        state: s,
-                                        row: row,
+                                if (s.status == OrdersStatus.failure &&
+                                    s.error != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 10),
+                                    child: Text(
+                                      s.error!,
+                                      style: const TextStyle(color: Colors.red),
+                                    ),
+                                  ),
+
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceEvenly,
+                                  children: [
+                                    SizedBox(
+                                      width: 300.w,
+                                      height: 75.h,
+                                      child: _KpiCard(
+                                        title: 'Total Products',
+                                        value: statsAll.totalProducts
+                                            .toString(),
+                                        subtitle: 'All APG Items',
+                                        icon: Icons.list_alt_outlined,
                                       ),
-                                  additionalEdits: s.additionalEdits,
-                                  sentAdditionalQtyByItemCode:
-                                      s.sentAdditionalQtyByItemCode,
-                                  onTapAdditionalRequest: (row) =>
-                                      BranchOrdersActions.openAdditionalSidePanel(
-                                        context: context,
-                                        state: s,
-                                        row: row,
+                                    ),
+
+                                    SizedBox(
+                                      width: 300.w,
+                                      height: 75.h,
+                                      child: _KpiCard(
+                                        title: 'Items in Order',
+                                        value: statsAll.finalReorderCount
+                                            .round()
+                                            .toString(),
+                                        subtitle: '',
+                                        icon: Icons.inventory_2_outlined,
                                       ),
-                                  isSubmitted: s.isSubmitted,
-                                  controller: _grid.controller,
-                                  gridController: _grid,
-                                  onColumnResized: (key, width) {
+                                    ),
+
+                                    SizedBox(
+                                      width: 300.w,
+                                      height: 75.h,
+                                      child: _KpiCard(
+                                        title: 'Essential',
+                                        value: '${statsAll.essential}',
+                                        subtitle: '',
+                                        icon: Icons.star_border,
+                                      ),
+                                    ),
+
+                                    SizedBox(
+                                      width: 300.w,
+                                      height: 75.h,
+                                      child: _KpiCard(
+                                        title: 'Non',
+                                        value: '${statsAll.non}',
+                                        subtitle: '',
+                                        icon: Icons.layers_outlined,
+                                      ),
+                                    ),
+
+                                    SizedBox(
+                                      width: 300.w,
+                                      height: 75.h,
+                                      child: _KpiCard(
+                                        title: 'Additional Orders Today',
+                                        value: '$sentAddCount',
+                                        subtitle: '',
+                                        icon: Icons.add_box_outlined,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+
+                                const SizedBox(height: 12),
+
+                                _FiltersBar(
+                                  categories: categories,
+                                  selectedCategory: s.categoryFilter,
+                                  selectedFormulary: s.formularyFilter,
+                                  nonWithSales45Only: s.nonWithSales45Only,
+                                  numericFinalOnly: s.numericFinalOnly,
+                                  additionalOnly: s.additionalOnly,
+                                  onCategoryChanged: (v) {
                                     context.read<OrdersBloc>().add(
-                                      OrdersColumnResized(
-                                        columnKey: key,
-                                        width: width,
-                                      ),
+                                      OrdersCategoryChanged(v),
+                                    );
+                                  },
+                                  onFormularyChanged: (v) {
+                                    context.read<OrdersBloc>().add(
+                                      OrdersFormularyChanged(v),
+                                    );
+                                  },
+                                  onNonWithSales45Changed: (v) {
+                                    context.read<OrdersBloc>().add(
+                                      OrdersNonWithSales45Toggled(v),
+                                    );
+                                  },
+                                  onNumericFinalOnlyChanged: (v) {
+                                    context.read<OrdersBloc>().add(
+                                      OrdersNumericFinalOnlyToggled(v),
+                                    );
+                                  },
+                                  onAdditionalOnlyChanged: (v) {
+                                    context.read<OrdersBloc>().add(
+                                      OrdersAdditionalOnlyToggled(v),
+                                    );
+                                  },
+                                  isSubmitted: s.isSubmitted,
+                                ),
+
+                                const SizedBox(height: 12),
+
+                                BlocSelector<OrdersBloc, OrdersState, String>(
+                                  selector: (s) => s.search,
+                                  builder: (context, search) {
+                                    return BlocBuilder<
+                                      BranchZoneCubit,
+                                      BranchZoneState
+                                    >(
+                                      builder: (context, zs) {
+                                        final zoneReady =
+                                            zs.zone != null &&
+                                            zs.zone!.trim().isNotEmpty;
+
+                                        return OrdersToolbar(
+                                          search: search,
+                                          onSearchChanged: (v) {
+                                            context.read<OrdersBloc>().add(
+                                              OrdersSearchChanged(v),
+                                            );
+                                          },
+                                          onOpenColumns: () {
+                                            Scaffold.of(
+                                              context,
+                                            ).openEndDrawer();
+                                          },
+                                          onExport: () {
+                                            context.read<OrdersBloc>().add(
+                                              const OrdersExportPressed(),
+                                            );
+                                          },
+                                          statusChip: null,
+                                          actions: [
+                                            OrdersToolbar.actionButton(
+                                              label: 'Additional Order Track',
+                                              icon:
+                                                  Icons.track_changes_outlined,
+                                              badgeCount: s.trackingPending,
+                                              color: AppColors.primaryColor,
+                                              tooltip:
+                                                  'Track additional requests status',
+                                              onPressed:
+                                                  (s.isSubmitted && !isBusy) ||
+                                                      !s.isOrderDay
+                                                  ? () {
+                                                      BranchOrdersActions.openTrackingDialog(
+                                                        context,
+                                                      );
+                                                    }
+                                                  : null,
+                                            ),
+
+                                            if (s.hasEdits && !s.isSubmitted)
+                                              SizedBox(width: 6.w),
+
+                                            if (s.hasEdits && !s.isSubmitted)
+                                              OrdersToolbar.actionButton(
+                                                label:
+                                                    'Review Changes (${s.editsCount})',
+                                                icon: Icons.fact_check_outlined,
+                                                color: AppColors.primaryColor,
+                                                onPressed: () {
+                                                  BranchOrdersActions.openReviewDialog(
+                                                    context: context,
+                                                    state: s,
+                                                  );
+                                                },
+                                              ),
+
+                                            if (s.isSubmitted || !s.isOrderDay)
+                                              const SizedBox(width: 6),
+
+                                            if (s.isSubmitted || !s.isOrderDay)
+                                              OrdersToolbar.actionButton(
+                                                label:
+                                                    'Send Additional ($draftAddCount)',
+                                                icon: Icons.add_box_outlined,
+                                                badgeCount: draftAddCount,
+                                                color: AppColors.secondaryColor,
+                                                onPressed:
+                                                    (!zoneReady ||
+                                                        s
+                                                            .additionalEdits
+                                                            .isEmpty ||
+                                                        isBusy)
+                                                    ? null
+                                                    : () {
+                                                        context
+                                                            .read<OrdersBloc>()
+                                                            .add(
+                                                              OrdersSendAdditionalRequestsPressed(
+                                                                zone: zs.zone!,
+                                                              ),
+                                                            );
+                                                      },
+                                              ),
+
+                                            if (!s.isSubmitted && s.isOrderDay)
+                                              const SizedBox(width: 6),
+
+                                            if (!s.isSubmitted && s.isOrderDay)
+                                              OrdersToolbar.actionButton(
+                                                label: 'Submit',
+                                                icon:
+                                                    Icons.check_circle_outline,
+                                                color: AppColors.secondaryColor,
+                                                onPressed:
+                                                    (!zoneReady ||
+                                                        s.isSubmitted ||
+                                                        isBusy ||
+                                                        !s.isOrderDay)
+                                                    ? null
+                                                    : () {
+                                                        context
+                                                            .read<OrdersBloc>()
+                                                            .add(
+                                                              OrdersSubmitOrderPressed(
+                                                                zone: zs.zone!,
+                                                              ),
+                                                            );
+                                                      },
+                                              ),
+                                          ],
+                                          onClearAll: () {
+                                            context.read<OrdersBloc>().add(
+                                              const OrdersClearAllFilters(),
+                                            );
+
+                                            _grid.resetGridUi();
+                                          },
+                                          addMismatch: () {
+                                            BranchOrdersActions.openMismatchPanel(
+                                              context,
+                                            );
+                                          },
+                                          addMax: () {
+                                            BranchOrdersActions.openMaxPanel(
+                                              context,
+                                            );
+                                          },
+                                          isOrderDay: s.isOrderDay,
+                                        );
+                                      },
                                     );
                                   },
                                 ),
-                              ),
+
+                                const SizedBox(height: 10),
+
+                                Container(
+                                  constraints: BoxConstraints(
+                                    minHeight:
+                                        MediaQuery.of(context).size.height *
+                                        0.4.h,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(18),
+                                    border: Border.all(
+                                      color: const Color(0xFFE6E8F0),
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.04,
+                                        ),
+                                        blurRadius: 18,
+                                        offset: const Offset(0, 10),
+                                      ),
+                                    ],
+                                  ),
+                                  padding: const EdgeInsets.all(14),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const _TableTitle(),
+
+                                      const SizedBox(height: 10),
+
+                                      SizedBox(
+                                        height:
+                                            MediaQuery.of(context).size.height *
+                                            0.72,
+                                        child: Builder(
+                                          builder: (_) {
+                                            final hasActiveFilters =
+                                                s.categoryFilter != 'ALL' ||
+                                                s.formularyFilter != 'ALL' ||
+                                                s.nonWithSales45Only ||
+                                                s.numericFinalOnly ||
+                                                s.additionalOnly;
+
+                                            final noResults =
+                                                s.viewRows.isEmpty &&
+                                                s.rows.isNotEmpty;
+
+                                            if (noResults && hasActiveFilters) {
+                                              return Center(
+                                                child: Column(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.center,
+                                                  children: [
+                                                    const Icon(
+                                                      Icons
+                                                          .filter_alt_off_outlined,
+                                                      size: 54,
+                                                      color: Colors.grey,
+                                                    ),
+
+                                                    const SizedBox(height: 14),
+
+                                                    const Text(
+                                                      'No results found',
+                                                      style: TextStyle(
+                                                        fontSize: 18,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        color: Colors.black87,
+                                                      ),
+                                                    ),
+
+                                                    const SizedBox(height: 8),
+
+                                                    const Text(
+                                                      'Current filters are hiding all items',
+                                                      style: TextStyle(
+                                                        fontSize: 13,
+                                                        color: Colors.grey,
+                                                      ),
+                                                    ),
+
+                                                    const SizedBox(height: 18),
+
+                                                    FilledButton(
+                                                      onPressed:
+                                                          s.isRemovingFilters
+                                                          ? null
+                                                          : () {
+                                                              context
+                                                                  .read<
+                                                                    OrdersBloc
+                                                                  >()
+                                                                  .add(
+                                                                    const OrdersClearFiltersOnly(),
+                                                                  );
+
+                                                              _grid
+                                                                  .resetGridUi();
+                                                            },
+                                                      style: FilledButton.styleFrom(
+                                                        backgroundColor:
+                                                            Colors.redAccent,
+                                                        foregroundColor:
+                                                            Colors.white,
+                                                        padding:
+                                                            const EdgeInsets.symmetric(
+                                                              horizontal: 18,
+                                                              vertical: 14,
+                                                            ),
+                                                        shape: RoundedRectangleBorder(
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                14,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                      child: s.isRemovingFilters
+                                                          ? const SizedBox(
+                                                              width: 18,
+                                                              height: 18,
+                                                              child:
+                                                                  CircularProgressIndicator(
+                                                                    strokeWidth:
+                                                                        2,
+                                                                    color: Colors
+                                                                        .white,
+                                                                  ),
+                                                            )
+                                                          : const Row(
+                                                              mainAxisSize:
+                                                                  MainAxisSize
+                                                                      .min,
+                                                              children: [
+                                                                Icon(
+                                                                  Icons
+                                                                      .restart_alt,
+                                                                ),
+                                                                SizedBox(
+                                                                  width: 8,
+                                                                ),
+                                                                Text(
+                                                                  'Remove Filters',
+                                                                ),
+                                                              ],
+                                                            ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                            }
+
+                                            return OrdersTable(
+                                              rows: s.viewRows,
+                                              isLoading: isBusy,
+                                              orderedColumns: orderedColumns,
+                                              columnWidths: s.columnWidths,
+                                              finalEdits: s.finalEdits,
+                                              onTapFinalReorder: (row) {
+                                                BranchOrdersActions.openFinalSidePanel(
+                                                  context: context,
+                                                  state: s,
+                                                  row: row,
+                                                );
+                                              },
+                                              additionalEdits:
+                                                  s.additionalEdits,
+                                              sentAdditionalQtyByItemCode:
+                                                  s.sentAdditionalQtyByItemCode,
+                                              onTapAdditionalRequest: (row) {
+                                                BranchOrdersActions.openAdditionalSidePanel(
+                                                  context: context,
+                                                  state: s,
+                                                  row: row,
+                                                );
+                                              },
+                                              isSubmitted: s.isSubmitted,
+                                              controller: _grid.controller,
+                                              gridController: _grid,
+                                              onColumnResized: (key, width) {
+                                                context.read<OrdersBloc>().add(
+                                                  OrdersColumnResized(
+                                                    columnKey: key,
+                                                    width: width,
+                                                  ),
+                                                );
+                                              },
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         ),
-                      ],
+                      ),
                     ],
                   ),
                 ),
               ),
+
               if (s.isExporting)
                 Container(
                   color: Colors.black.withValues(alpha: 0.3),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../domain/entities/daily_order_row.dart';
@@ -285,26 +286,7 @@ class _Header extends StatelessWidget {
               ],
             ),
           ),
-          if (onClearAll != null) ...[
-            TextButton.icon(
-              onPressed: onClearAll,
-              icon: const Icon(
-                Icons.restart_alt_rounded,
-                size: 18,
-                color: AppColors.secondaryColor,
-              ),
-              label: const Text(
-                'Clear All',
-                style: TextStyle(color: AppColors.secondaryColor),
-              ),
-              style: TextButton.styleFrom(
-                foregroundColor: cs.primary,
 
-                textStyle: const TextStyle(fontWeight: FontWeight.w900),
-              ),
-            ),
-            const SizedBox(width: 4),
-          ],
           IconButton(
             tooltip: 'Close',
             onPressed: onClose,
@@ -533,68 +515,25 @@ class _CompactChangeCard extends StatelessWidget {
           const Spacer(),
 
           // Actions row (consistent)
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: onEdit,
-                  icon: Icon(
-                    Icons.edit_rounded,
-                    size: 18,
-                    color: AppColors.white,
-                  ),
-                  label: Text(
-                    'Edit',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: AppColors.white,
-                    ),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: accent.withValues(alpha: 0.40)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    backgroundColor: AppColors.primaryColor,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                  ),
-                ),
+          OutlinedButton.icon(
+            onPressed: onEdit,
+            icon: Icon(Icons.edit_rounded, size: 18, color: AppColors.white),
+            label: Text(
+              'Edit',
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                color: AppColors.white,
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: onReset,
-                  icon: const Icon(
-                    Icons.restart_alt_rounded,
-                    size: 18,
-                    color: Color(0xFFB42318),
-                  ),
-                  label: const Text(
-                    'Reset to Default',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFFB42318),
-                    ),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(
-                      color: Color(0xFFB42318),
-                      width: 0.9,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                  ),
-                ),
+            ),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: accent.withValues(alpha: 0.40)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
               ),
-            ],
+
+              backgroundColor: AppColors.primaryColor,
+              padding: EdgeInsets.symmetric(horizontal: 75.w, vertical: 16.h),
+            ),
           ),
         ],
       ),

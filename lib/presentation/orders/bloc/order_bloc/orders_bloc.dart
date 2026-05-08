@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../../core/utils/excel_exporter.dart';
 import '../../../../core/utils/order_row_mapper.dart';
+import '../../../../data/models/daily_order_row_model.dart';
 import '../../../../domain/entities/daily_order_row.dart';
 import '../../../../domain/repositories/orders_repository.dart';
 import '../../../../domain/usecases/fetch_orders_all.dart';
@@ -52,7 +53,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     on<OrdersNumericFinalOnlyToggled>(_onNumericFinalOnlyToggled);
     on<OrdersAdditionalOnlyToggled>(_onAdditionalOnlyToggled);
     on<OrdersClearAllFilters>(_onClearAllFilters);
-
+    on<OrdersClearFiltersOnly>(_onClearFiltersOnly);
     // Side panel + edits
     on<OrdersSelectItemForEdit>(_onSelectItemForEdit);
     on<OrdersClearSelection>(_onClearSelection);
@@ -65,7 +66,6 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     on<OrdersRemoveAdditionalRequest>(_onRemoveAdditionalRequest);
     on<OrdersSendAdditionalRequestsPressed>(_onSendAdditionalRequestsPressed);
     on<OrdersSubmitOrderPressed>(_onSubmitOrderPressed);
-
     // NEW: tracking
     on<OrdersLoadAdditionalTracking>(_onLoadAdditionalTracking);
     on<OrdersSearchMismatchList>(_onSearchMismatchList);
@@ -121,9 +121,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         status: OrdersStatus.generating,
         error: null,
         progress: 0,
-        numericFinalOnly: submissionStatus == 'submitted'
-            ? false
-            : state.numericFinalOnly,
+        numericFinalOnly: state.numericFinalOnly,
         progressMessage: 'Generating order...',
       ),
     );
@@ -242,14 +240,116 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
           );
         },
       );
+      final drafts = await repo.fetchFinalReorderDrafts(
+        runDate: state.runDate,
+        branchName: state.branchName,
+      );
+      final draftMap = <String, FinalReorderEdit>{};
 
+      for (final d in drafts) {
+        final code = (d['item_code'] ?? '').toString();
+
+        draftMap[code] = FinalReorderEdit(
+          itemCode: code,
+          oldQty: num.tryParse((d['old_qty'] ?? '0').toString())?.toInt() ?? 0,
+          newQty: num.tryParse((d['new_qty'] ?? '0').toString())?.toInt() ?? 0,
+          reason: (d['reason'] ?? '').toString(),
+        );
+      }
+
+      for (var i = 0; i < baseRows.length; i++) {
+        final row = baseRows[i];
+
+        final draft = draftMap[row.itemCode];
+
+        if (draft == null) continue;
+
+        baseRows[i] = DailyOrderRowModel(
+          branch: row.branch,
+          itemCode: row.itemCode,
+          itemName: row.itemName,
+          branchStock: row.branchStock,
+          mismatchStock: row.mismatchStock,
+          storeStock: row.storeStock,
+          pendingStockReceived: row.pendingStockReceived,
+          isLimitedStock: row.isLimitedStock,
+          extraQtyMoreThanMonth: row.extraQtyMoreThanMonth,
+          maxAdjustment30d: row.maxAdjustment30d,
+          demandFor30Days: row.demandFor30Days,
+          finalReorderQtyStoreStockGt0: draft.newQty.toString(),
+          qty30DaysFromLast45d: row.qty30DaysFromLast45d,
+          reorderQtyNum: row.reorderQtyNum,
+          totalReorderAllBranches: row.totalReorderAllBranches,
+          branchFormulary: row.branchFormulary,
+          totalReorderToday: row.totalReorderToday,
+          assortmentQtyBaseStock: row.assortmentQtyBaseStock,
+          assortmentBy: row.assortmentBy,
+          itemPurchaseType: row.itemPurchaseType,
+          salesOrientation: row.salesOrientation,
+          category: row.category,
+          subCategory: row.subCategory,
+          isUpp: row.isUpp,
+          uppThiqa: row.uppThiqa,
+          uppBasic: row.uppBasic,
+          tier: row.tier,
+          minOrderUnit: row.minOrderUnit,
+          company: row.company,
+          supplier: row.supplier,
+          barcode: row.barcode,
+          reorderPointMin: row.reorderPointMin,
+          reorderMax: row.reorderMax,
+          reorderQty: row.reorderQty,
+          dateOfLastQtyReceivedInBranch: row.dateOfLastQtyReceivedInBranch,
+          reason: row.reason,
+          assortmentStart: row.assortmentStart,
+          assortmentEnd: row.assortmentEnd,
+          tmaQty: row.tmaQty,
+          tmaStart: row.tmaStart,
+          tmaEnd: row.tmaEnd,
+          indication: row.indication,
+          activeIngredient: row.activeIngredient,
+          packSize: row.packSize,
+          concentration: row.concentration,
+          productTypeForm: row.productTypeForm,
+          retailPrice: row.retailPrice,
+          vat: row.vat,
+          storeItemClassifications: row.storeItemClassifications,
+          goodsReceivedLast7Days: row.goodsReceivedLast7Days,
+          totalSoldQtyCashLast90: row.totalSoldQtyCashLast90,
+          totalSoldQtyOnlineLast90: row.totalSoldQtyOnlineLast90,
+          totalSoldQtyInsuranceLast90: row.totalSoldQtyInsuranceLast90,
+        );
+      }
       print('✅ Loaded rows: ${baseRows.length}');
 
       // ==========================
       // STEP 4: STATUS
       // ==========================
       print('🔄 Fetching submission status...');
+      final additionalDrafts = await repo.fetchAdditionalRequestDrafts(
+        runDate: state.runDate,
+        branchName: state.branchName,
+      );
 
+      final additionalDraftMap = <String, AdditionalRequestEdit>{};
+
+      for (final d in additionalDrafts) {
+        final code = (d['item_code'] ?? '').toString();
+
+        additionalDraftMap[code] = AdditionalRequestEdit(
+          id: (d['id'] ?? '').toString(),
+
+          itemCode: code,
+          itemName: (d['item_name'] ?? '').toString(),
+          requestQty: num.tryParse((d['request_qty'] ?? '0').toString()) ?? 0,
+
+          reason: (d['reason'] ?? '').toString(),
+
+          isUrgent:
+              (d['contact_logistic'] ?? '').toString().trim().toLowerCase() ==
+              'urgent',
+        );
+      }
       final submissionStatus = await repo.fetchSubmissionStatus(
         runDate: state.runDate,
         branchName: state.branchName,
@@ -285,6 +385,8 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
           submissionStatus: submissionStatus,
           visibleColumns: nextVisible,
           sentAdditionalQtyByItemCode: sentAdditional,
+          finalEdits: draftMap,
+          additionalEdits: additionalDraftMap,
           sentAdditionalHistoryByItemCode: sentHistory,
         ),
       );
@@ -352,16 +454,16 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       final isOrderDay = orderDays.contains(todayName);
 
       print('📆 Business Day: $todayName | isOrderDay: $isOrderDay');
+      final forcedNumericFinalOnly = submissionStatus != 'submitted';
+
       final view = _applyUiFilters(
         rows: searched,
         categoryFilter: state.categoryFilter,
         formularyFilter: state.formularyFilter,
         nonWithSales45Only: state.nonWithSales45Only,
-        numericFinalOnly: submissionStatus == 'submitted'
-            ? false
-            : state.numericFinalOnly,
+        numericFinalOnly: forcedNumericFinalOnly,
         additionalOnly: state.additionalOnly,
-        additionalEdits: state.additionalEdits,
+        additionalEdits: additionalDraftMap,
         sentAdditionalQtyByItemCode: sentAdditional,
       );
 
@@ -381,7 +483,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
           showCreate: false,
           viewRows: view,
           isOrderDay: isOrderDay,
-
+          numericFinalOnly: forcedNumericFinalOnly,
           error: null,
         ),
       );
@@ -468,18 +570,13 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
   }
 
   void _onReorderColumns(OrdersReorderColumns e, Emitter<OrdersState> emit) {
-    final list = List<String>.from(state.columnOrder);
+    final current = List<String>.from(state.columnOrder);
 
-    var newIndex = e.newIndex;
-    if (newIndex > e.oldIndex) newIndex -= 1;
+    current.removeWhere((c) => c != 'additional_request');
 
-    if (e.oldIndex < 0 || e.oldIndex >= list.length) return;
-    if (newIndex < 0 || newIndex >= list.length) return;
+    final finalOrder = [...e.columns, 'additional_request'];
 
-    final item = list.removeAt(e.oldIndex);
-    list.insert(newIndex, item);
-
-    emit(state.copyWith(columnOrder: list));
+    emit(state.copyWith(columnOrder: finalOrder));
   }
 
   void _onResetColumnsToDefault(
@@ -738,10 +835,10 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
   // ==========================
   // Additional requests (local draft)
   // ==========================
-  void _onApplyAdditionalRequest(
+  Future<void> _onApplyAdditionalRequest(
     OrdersApplyAdditionalRequest e,
     Emitter<OrdersState> emit,
-  ) {
+  ) async {
     final code = e.itemCode.trim();
     final name = e.itemName.trim();
     final reason = e.reason.trim();
@@ -751,14 +848,37 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     if (e.requestQty <= 0) return;
     if (reason.isEmpty) return;
 
-    final next = Map<String, AdditionalRequestEdit>.from(state.additionalEdits);
-    next[code] = AdditionalRequestEdit(
+    await repo.upsertAdditionalRequestDraft(
+      runDate: state.runDate,
+      branchName: state.branchName,
       itemCode: code,
       itemName: name,
       requestQty: e.requestQty,
       reason: reason,
       isUrgent: e.isUrgent,
     );
+
+    final drafts = await repo.fetchAdditionalRequestDrafts(
+      runDate: state.runDate,
+      branchName: state.branchName,
+    );
+
+    final next = <String, AdditionalRequestEdit>{};
+
+    for (final d in drafts) {
+      final code = (d['item_code'] ?? '').toString();
+
+      next[code] = AdditionalRequestEdit(
+        id: (d['id'] ?? '').toString(),
+        itemCode: code,
+        itemName: (d['item_name'] ?? '').toString(),
+        requestQty: num.tryParse((d['request_qty'] ?? '0').toString()) ?? 0,
+        reason: (d['reason'] ?? '').toString(),
+        isUrgent:
+            (d['contact_logistic'] ?? '').toString().trim().toLowerCase() ==
+            'urgent',
+      );
+    }
 
     final view = _applyUiFilters(
       rows: _applySearch(state.rows, state.search),
@@ -774,11 +894,19 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     emit(state.copyWith(additionalEdits: next, viewRows: view));
   }
 
-  void _onRemoveAdditionalRequest(
+  Future<void> _onRemoveAdditionalRequest(
     OrdersRemoveAdditionalRequest e,
     Emitter<OrdersState> emit,
-  ) {
+  ) async {
     final next = Map<String, AdditionalRequestEdit>.from(state.additionalEdits);
+
+    final draft = next[e.itemCode];
+
+    // 🔥 حذف من السيرفر
+    if (draft != null) {
+      await repo.deleteAdditionalRequestDraft(id: draft.id);
+    }
+
     next.remove(e.itemCode);
 
     final view = _applyUiFilters(
@@ -855,7 +983,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         branchName: state.branchName,
         rows: payload,
       );
-
+      for (final a in state.additionalEdits.values) {
+        await repo.deleteAdditionalRequestDraft(id: a.id);
+      }
       final sentAdditionalQty = await repo.fetchAdditionalRequestsForBranch(
         runDate: state.runDate,
         branchName: state.branchName,
@@ -1259,5 +1389,43 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     } catch (e) {
       emit(state.copyWith(isExporting: false));
     }
+  }
+
+  Future<void> _onClearFiltersOnly(
+    OrdersClearFiltersOnly e,
+    Emitter<OrdersState> emit,
+  ) async {
+    emit(state.copyWith(isRemovingFilters: true));
+
+    await Future.delayed(const Duration(milliseconds: 250));
+
+    const category = 'ALL';
+    const formulary = 'ALL';
+    const nonSales = false;
+    const numericFinalOnly = false;
+    const additionalOnly = false;
+
+    final view = _applyUiFilters(
+      rows: _applySearch(state.rows, state.search),
+      categoryFilter: category,
+      formularyFilter: formulary,
+      nonWithSales45Only: nonSales,
+      numericFinalOnly: numericFinalOnly,
+      additionalOnly: additionalOnly,
+      additionalEdits: state.additionalEdits,
+      sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
+    );
+
+    emit(
+      state.copyWith(
+        categoryFilter: category,
+        formularyFilter: formulary,
+        nonWithSales45Only: nonSales,
+        numericFinalOnly: numericFinalOnly,
+        additionalOnly: additionalOnly,
+        viewRows: view,
+        isRemovingFilters: false,
+      ),
+    );
   }
 }

@@ -71,7 +71,7 @@ class DailyOrderRow {
 
   final String? storeItemClassifications;
 
-  final bool? goodsReceivedLast7Days;
+  final String? goodsReceivedLast7Days;
 
   final num? totalSoldQtyCashLast90;
   final num? totalSoldQtyOnlineLast90;
@@ -182,7 +182,7 @@ class DailyOrderRow {
     num? retailPrice,
     num? vat,
     String? storeItemClassifications,
-    bool? goodsReceivedLast7Days,
+    String? goodsReceivedLast7Days,
     num? totalSoldQtyCashLast90,
     num? totalSoldQtyOnlineLast90,
     num? totalSoldQtyInsuranceLast90,
@@ -336,7 +336,7 @@ class DailyOrderRow {
       storeItemClassifications: str(map['store_item_classifications']),
 
       /// 🔹 GOODS RECEIVED
-      goodsReceivedLast7Days: map['goods_received_last_7_days'] == true,
+      goodsReceivedLast7Days: (map['goods_received_last_7_days'] ?? ''),
     );
   }
 }

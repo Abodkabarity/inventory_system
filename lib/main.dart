@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/config/supabase_config.dart';
 import 'core/router/app_router.dart';
+import 'core/theme/app_colors.dart';
 import 'data/datasources/remote/supabase_auth_remote_ds.dart';
 import 'data/datasources/remote/supabase_branch_remote_ds.dart';
 import 'data/datasources/remote/supabase_item_remote_ds.dart';
@@ -87,7 +88,15 @@ class MyApp extends StatelessWidget {
         return MaterialApp.router(
           debugShowCheckedModeBanner: false,
           routerConfig: router,
-          theme: ThemeData(useMaterial3: true),
+          theme: ThemeData(
+            useMaterial3: true,
+
+            textSelectionTheme: const TextSelectionThemeData(
+              selectionColor: AppColors.primaryColor,
+              selectionHandleColor: AppColors.primaryColor,
+              cursorColor: AppColors.primaryColor,
+            ),
+          ),
         );
       },
     );

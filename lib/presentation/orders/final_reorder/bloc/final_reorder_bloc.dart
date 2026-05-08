@@ -7,10 +7,11 @@ import 'final_reorder_state.dart';
 class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
   final DailyOrderRow row;
   final int oldQtyInput;
+  final int compareQtyInput;
   final int initialQtyInput;
   final String initialReasonInput;
 
-  final void Function(int newQty, String reason) onSave;
+  final Future<void> Function(int newQty, String reason) onSave;
   final void Function() onReset;
 
   FinalReorderBloc({
@@ -20,11 +21,13 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     required this.initialReasonInput,
     required this.onSave,
     required this.onReset,
+    required this.compareQtyInput,
   }) : super(
          _buildInitial(
            row: row,
            oldQtyInput: oldQtyInput,
            initialQtyInput: initialQtyInput,
+           compareQtyInput: compareQtyInput,
            initialReasonInput: initialReasonInput,
          ),
        ) {
@@ -42,6 +45,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     required DailyOrderRow row,
     required int oldQtyInput,
     required int initialQtyInput,
+    required int compareQtyInput,
     required String initialReasonInput,
   }) {
     final oldSafe = oldQtyInput < 0 ? 0 : oldQtyInput;
@@ -77,6 +81,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
       oldSafe: oldSafe,
       storeStock: storeStock,
       reorderQtyNum: reorderQtyNum,
+      compareQtyInput: compareQtyInput,
       totalReorderToday: totalReorderToday,
       isNonFormulary: isNonFormulary,
       hasTma: hasTma,
@@ -92,7 +97,6 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     FinalReorderQtyTextChanged e,
     Emitter<FinalReorderState> emit,
   ) {
-    // 🔥 NON → منع كامل
     if (state.isNonFormulary) {
       emit(
         state.copyWith(
@@ -174,6 +178,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         reorderQtyNum: state.reorderQtyNum,
         totalReorderToday: state.totalReorderToday,
         isNonFormulary: state.isNonFormulary,
+        compareQtyInput: compareQtyInput,
         hasTma: state.hasTma,
         isLocked: state.isLocked,
         onlyDecrease: state.onlyDecrease,
@@ -213,6 +218,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         qty: attempted,
         reason: state.reason,
         oldSafe: state.oldQty,
+        compareQtyInput: compareQtyInput,
         storeStock: state.storeStock,
         reorderQtyNum: state.reorderQtyNum,
         totalReorderToday: state.totalReorderToday,
@@ -228,7 +234,6 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
   void _onDec(FinalReorderDecPressed e, Emitter<FinalReorderState> emit) {
     if (state.isLocked) return;
 
-    // 🔥 TMA → ممنوع decrease
     if (state.hasTma) {
       emit(
         state.copyWith(
@@ -251,6 +256,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         oldSafe: state.oldQty,
         storeStock: state.storeStock,
         reorderQtyNum: state.reorderQtyNum,
+        compareQtyInput: compareQtyInput,
         totalReorderToday: state.totalReorderToday,
         isNonFormulary: state.isNonFormulary,
         hasTma: state.hasTma,
@@ -271,6 +277,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         reason: e.text,
         oldSafe: state.oldQty,
         storeStock: state.storeStock,
+        compareQtyInput: compareQtyInput,
         reorderQtyNum: state.reorderQtyNum,
         totalReorderToday: state.totalReorderToday,
         isNonFormulary: state.isNonFormulary,
@@ -295,6 +302,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         oldSafe: state.oldQty,
         storeStock: state.storeStock,
         reorderQtyNum: state.reorderQtyNum,
+        compareQtyInput: compareQtyInput,
         totalReorderToday: state.totalReorderToday,
         isNonFormulary: state.isNonFormulary,
         hasTma: state.hasTma,
@@ -305,12 +313,13 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     );
   }
 
-  void _onSavePressed(
+  Future<void> _onSavePressed(
     FinalReorderSavePressed e,
     Emitter<FinalReorderState> emit,
-  ) {
+  ) async {
     if (!state.canSave) return;
-    onSave(state.qty, state.reason.trim());
+
+    await onSave(state.qty, state.reason.trim());
   }
 
   void _onDialogConsumed(
@@ -328,6 +337,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     required int qty,
     required String reason,
     required int oldSafe,
+    required int compareQtyInput,
     required int storeStock,
     required int reorderQtyNum,
     required int totalReorderToday,
@@ -344,7 +354,6 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
       totalReorderToday: totalReorderToday,
     );
 
-    // 🔥 NON → lock كامل
     if (isNonFormulary) {
       return FinalReorderState(
         qty: oldSafe,
@@ -371,7 +380,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     final canInc = !isLocked && qty < cap;
     final canDec = !isLocked && qty > 0 && !hasTma;
 
-    final hasChange = qty != oldSafe;
+    final hasChange = qty != compareQtyInput;
     final reasonOk = reason.trim().isNotEmpty;
 
     final canSave = !isLocked && hasChange && reasonOk && qty <= cap;

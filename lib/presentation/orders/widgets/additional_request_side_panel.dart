@@ -22,7 +22,7 @@ class AdditionalRequestSidePanel extends StatefulWidget {
   // existing draft (if any)
   final num? initialQty;
   final String initialReason;
-
+  final bool initialIsUrgent;
   // NEW: full history for this item (today / run_date)
   final List<SentAdditionalRequest> sentHistory;
 
@@ -42,6 +42,7 @@ class AdditionalRequestSidePanel extends StatefulWidget {
     required this.onClose,
     required this.onSave,
     required this.onRemove,
+    required this.initialIsUrgent,
   });
 
   @override
@@ -74,6 +75,7 @@ class _AdditionalRequestSidePanelState
     _selectedReason = widget.initialReason.isEmpty
         ? null
         : widget.initialReason;
+    isUrgent = widget.initialIsUrgent;
   }
 
   @override

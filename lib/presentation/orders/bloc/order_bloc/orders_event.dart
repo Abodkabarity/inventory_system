@@ -37,12 +37,12 @@ class OrdersSetColumnVisible extends OrdersEvent {
 }
 
 class OrdersReorderColumns extends OrdersEvent {
-  final int oldIndex;
-  final int newIndex;
-  const OrdersReorderColumns({required this.oldIndex, required this.newIndex});
+  final List<String> columns;
+
+  const OrdersReorderColumns({required this.columns});
 
   @override
-  List<Object?> get props => [oldIndex, newIndex];
+  List<Object?> get props => [columns];
 }
 
 class OrdersResetColumnsToDefault extends OrdersEvent {
@@ -319,3 +319,7 @@ class OrdersClearSelectedDemand extends OrdersEvent {
 }
 
 class OrdersShowCreate extends OrdersEvent {}
+
+class OrdersClearFiltersOnly extends OrdersEvent {
+  const OrdersClearFiltersOnly();
+}
