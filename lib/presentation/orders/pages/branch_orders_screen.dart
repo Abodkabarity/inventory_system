@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/operational_date_helper.dart';
 import '../bloc/order_bloc/orders_bloc.dart';
 import '../bloc/order_bloc/orders_event.dart';
 import '../bloc/order_bloc/orders_state.dart';
@@ -23,15 +25,93 @@ class BranchOrdersScreen extends StatefulWidget {
 
 class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
   late final OrdersGridController _grid;
+  RealtimeChannel? _jobChannel;
 
+  bool _dialogShown = false;
   @override
   void initState() {
     super.initState();
+
     _grid = OrdersGridController();
+
+    _listenOrderReady();
+  }
+
+  void _listenOrderReady() {
+    final bloc = context.read<OrdersBloc>();
+
+    final client = Supabase.instance.client;
+
+    _jobChannel = client
+        .channel('daily-order-job-state')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'daily_order_job_state',
+          callback: (payload) async {
+            final data = payload.newRecord;
+
+            final phase = (data['phase'] ?? '').toString();
+
+            final runDate = (data['run_date'] ?? '').toString();
+
+            if (phase != 'done') return;
+
+            final currentOperationalDate =
+                OperationalDateHelper.operationalDate;
+
+            if (runDate != currentOperationalDate) {
+              return;
+            }
+
+            if (_dialogShown) return;
+
+            _dialogShown = true;
+
+            if (!mounted) return;
+
+            await showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (_) {
+                return AlertDialog(
+                  title: const Text('Order Ready'),
+                  content: const Text(
+                    'Your order has been generated successfully.',
+                  ),
+                  actions: [
+                    ElevatedButton(
+                      onPressed: () async {
+                        Navigator.pop(context);
+
+                        bloc.add(const OrdersRefreshOperationalDate());
+
+                        await Future.delayed(const Duration(milliseconds: 100));
+
+                        bloc.add(const OrdersLoadAll());
+                      },
+                      child: const Text('Open Order'),
+                    ),
+                  ],
+                );
+              },
+            );
+
+            _dialogShown = false;
+          },
+        )
+        .subscribe();
+  }
+
+  @override
+  void dispose() {
+    _jobChannel?.unsubscribe();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    print('UAE NOW: ${OperationalDateHelper.nowUae}');
     return BlocBuilder<OrdersBloc, OrdersState>(
       builder: (context, s) {
         final isBusy = s.isBusy;
@@ -88,25 +168,60 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              if (s.showCreate &&
-                                  s.submissionStatus != 'submitted')
+                              if (s.status == OrdersStatus.loading &&
+                                  s.rows.isEmpty)
                                 SizedBox(
                                   height:
                                       MediaQuery.of(context).size.height *
                                       0.7.h,
                                   child: Center(
-                                    child: _GenerateCard(
-                                      isBusy: isBusy,
-                                      progress: s.progress,
-                                      message: s.progressMessage,
-                                      error: s.status == OrdersStatus.failure
-                                          ? s.error
-                                          : null,
-                                      onGenerate: () {
-                                        context.read<OrdersBloc>().add(
-                                          const OrdersPressedGenerate(),
-                                        );
-                                      },
+                                    child: Container(
+                                      width: 520,
+                                      padding: const EdgeInsets.all(22),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(22),
+                                        border: Border.all(
+                                          color: const Color(0xFFE6E8F0),
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(
+                                              alpha: 0.05,
+                                            ),
+                                            blurRadius: 30,
+                                            offset: const Offset(0, 16),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const CircularProgressIndicator(),
+
+                                          const SizedBox(height: 20),
+
+                                          const Text(
+                                            'Generating Order',
+                                            style: TextStyle(
+                                              fontSize: 20,
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+
+                                          const SizedBox(height: 10),
+
+                                          Text(
+                                            s.progressMessage ??
+                                                'Please wait...',
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                              color: Colors.grey,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 )
@@ -330,10 +445,14 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                       },
                                               ),
 
-                                            if (!s.isSubmitted && s.isOrderDay)
+                                            if (!s.isSubmitted &&
+                                                s.isOrderDay &&
+                                                OperationalDateHelper.canSubmit)
                                               const SizedBox(width: 6),
 
-                                            if (!s.isSubmitted && s.isOrderDay)
+                                            if (!s.isSubmitted &&
+                                                s.isOrderDay &&
+                                                OperationalDateHelper.canSubmit)
                                               OrdersToolbar.actionButton(
                                                 label: 'Submit',
                                                 icon:
@@ -343,7 +462,9 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                     (!zoneReady ||
                                                         s.isSubmitted ||
                                                         isBusy ||
-                                                        !s.isOrderDay)
+                                                        !s.isOrderDay ||
+                                                        !OperationalDateHelper
+                                                            .canSubmit)
                                                     ? null
                                                     : () {
                                                         context
@@ -774,100 +895,6 @@ class _TopHeader extends StatelessWidget {
         ),
         ?right,
       ],
-    );
-  }
-}
-
-class _GenerateCard extends StatelessWidget {
-  final bool isBusy;
-  final int progress;
-  final String? message;
-  final String? error;
-  final VoidCallback onGenerate;
-
-  const _GenerateCard({
-    required this.isBusy,
-    required this.progress,
-    required this.message,
-    required this.error,
-    required this.onGenerate,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 520,
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFE6E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 30,
-            offset: const Offset(0, 16),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 58,
-            height: 58,
-            decoration: BoxDecoration(
-              color: const Color(0xFFEEF2FF),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0xFFE6E8F0)),
-            ),
-            child: const Icon(
-              Icons.bolt,
-              color: AppColors.primaryColor,
-              size: 30,
-            ),
-          ),
-          const SizedBox(height: 14),
-          const Text(
-            'Create Branch Order',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              color: Color(0xFF111827),
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Press create to build the order, then we will load all items for your branch.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
-          ),
-          const SizedBox(height: 16),
-          if (isBusy) ...[
-            _ProgressStrip(
-              progress: progress,
-              message: message ?? 'Working...',
-            ),
-            const SizedBox(height: 12),
-          ],
-          if (error != null) ...[
-            Text(error!, style: const TextStyle(color: Colors.red)),
-            const SizedBox(height: 12),
-          ],
-          SizedBox(
-            width: double.infinity,
-            height: 46,
-            child: FilledButton.icon(
-              onPressed: isBusy ? null : onGenerate,
-              icon: const Icon(Icons.create),
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.primaryColor,
-              ),
-              label: const Text('Create Order'),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

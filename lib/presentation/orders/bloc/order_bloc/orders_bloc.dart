@@ -6,18 +6,18 @@ import 'package:stream_transform/stream_transform.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/utils/excel_exporter.dart';
+import '../../../../core/utils/operational_date_helper.dart';
 import '../../../../core/utils/order_row_mapper.dart';
 import '../../../../data/models/daily_order_row_model.dart';
 import '../../../../domain/entities/daily_order_row.dart';
 import '../../../../domain/repositories/orders_repository.dart';
 import '../../../../domain/usecases/fetch_orders_all.dart';
-import '../../../../domain/usecases/generate_branch_order.dart';
 import 'orders_event.dart';
 import 'orders_state.dart';
 
 class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
   final FetchOrdersAll fetchOrdersAll;
-  final GenerateBranchOrder generateBranchOrder;
+
   final OrdersRepository repo;
 
   Timer? _progressTimer;
@@ -25,10 +25,8 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
   OrdersBloc({
     required OrdersState initialState,
     required this.fetchOrdersAll,
-    required this.generateBranchOrder,
     required this.repo,
   }) : super(initialState) {
-    on<OrdersPressedGenerate>(_onPressedGenerate);
     on<OrdersLoadAll>(_onLoadAll);
 
     on<OrdersSearchChanged>(_onSearchChanged);
@@ -48,7 +46,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     on<OrdersCategoryChanged>(_onCategoryChanged);
     on<OrdersFormularyChanged>(_onFormularyChanged);
     on<OrdersNonWithSales45Toggled>(_onNonWithSales45Toggled);
-
+    on<OrdersRefreshOperationalDate>(_onRefreshOperationalDate);
     // NEW Filters
     on<OrdersNumericFinalOnlyToggled>(_onNumericFinalOnlyToggled);
     on<OrdersAdditionalOnlyToggled>(_onAdditionalOnlyToggled);
@@ -104,53 +102,6 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     return super.close();
   }
 
-  // ==========================
-  // Generate
-  // ==========================
-  Future<void> _onPressedGenerate(
-    OrdersPressedGenerate e,
-    Emitter<OrdersState> emit,
-  ) async {
-    final submissionStatus = await repo.fetchSubmissionStatus(
-      runDate: state.runDate,
-      branchName: state.branchName,
-    );
-
-    emit(
-      state.copyWith(
-        status: OrdersStatus.generating,
-        error: null,
-        progress: 0,
-        numericFinalOnly: state.numericFinalOnly,
-        progressMessage: 'Generating order...',
-      ),
-    );
-    _startSmoothProgress(emit);
-
-    try {
-      await generateBranchOrder(
-        runDate: state.runDate,
-        branchName: state.branchName,
-      );
-
-      _progressTimer?.cancel();
-
-      emit(
-        state.copyWith(
-          status: OrdersStatus.loading,
-          progress: 0,
-
-          progressMessage: 'Starting load...',
-        ),
-      );
-
-      add(const OrdersLoadAll());
-    } catch (err) {
-      _progressTimer?.cancel();
-      emit(state.copyWith(status: OrdersStatus.failure, error: err.toString()));
-    }
-  }
-
   void _startSmoothProgress(Emitter<OrdersState> emit) {
     _progressTimer?.cancel();
     var p = 0;
@@ -186,16 +137,15 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       print('📦 Exists: $exists');
 
       if (!exists) {
-        print('❌ No order exists → SHOW CREATE SCREEN');
-
         emit(
           state.copyWith(
-            status: OrdersStatus.idle,
+            status: OrdersStatus.loading,
             rows: [],
             viewRows: [],
             progress: 0,
-            progressMessage: null,
+            progressMessage: 'Your order is being generated...',
             error: null,
+            showCreate: false,
           ),
         );
 
@@ -426,7 +376,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       final orderDays = await repo.fetchBranchOrderDays(
         branchName: state.branchName,
       );
-      final now = DateTime.now().toLocal();
+      final now = OperationalDateHelper.nowUae;
 
       final cutoff = DateTime(
         now.year,
@@ -1427,5 +1377,12 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         isRemovingFilters: false,
       ),
     );
+  }
+
+  Future<void> _onRefreshOperationalDate(
+    OrdersRefreshOperationalDate e,
+    Emitter<OrdersState> emit,
+  ) async {
+    emit(state.copyWith(runDate: OperationalDateHelper.operationalDate));
   }
 }

@@ -58,7 +58,7 @@ class BranchOrdersEntryPage extends StatelessWidget {
             );
           }
 
-          return BranchOrdersPage(runDate: _today(), branchName: name);
+          return BranchOrdersPage(branchName: name);
         },
       ),
     );

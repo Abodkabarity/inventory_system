@@ -323,3 +323,7 @@ class OrdersShowCreate extends OrdersEvent {}
 class OrdersClearFiltersOnly extends OrdersEvent {
   const OrdersClearFiltersOnly();
 }
+
+class OrdersRefreshOperationalDate extends OrdersEvent {
+  const OrdersRefreshOperationalDate();
+}

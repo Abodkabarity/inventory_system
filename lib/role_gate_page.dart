@@ -72,7 +72,7 @@ class RoleGatePage extends StatelessWidget {
           );
         }
 
-        return BranchOrdersPage(runDate: runDate, branchName: branchName);
+        return BranchOrdersPage(branchName: branchName);
       },
     );
   }
