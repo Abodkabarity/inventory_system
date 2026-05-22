@@ -327,3 +327,12 @@ class OrdersClearFiltersOnly extends OrdersEvent {
 class OrdersRefreshOperationalDate extends OrdersEvent {
   const OrdersRefreshOperationalDate();
 }
+
+class OrdersReceivedLast7DaysToggled extends OrdersEvent {
+  final bool value;
+
+  const OrdersReceivedLast7DaysToggled(this.value);
+
+  @override
+  List<Object?> get props => [value];
+}

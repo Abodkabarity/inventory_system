@@ -164,7 +164,12 @@ class BranchOrdersActions {
     required DailyOrderRow row,
   }) async {
     final itemCode = row.itemCode;
-    final draft = state.additionalEdits[itemCode];
+
+    final bloc = context.read<OrdersBloc>();
+
+    final latestState = bloc.state;
+
+    final draft = latestState.additionalEdits[itemCode];
 
     final rawHistory =
         state.sentAdditionalHistoryByItemCode[itemCode] ?? const [];
@@ -195,7 +200,7 @@ class BranchOrdersActions {
             initialQty: draft?.requestQty,
             initialReason: draft?.reason ?? '',
             initialIsUrgent:
-                state.additionalEdits[row.itemCode]?.isUrgent ?? false,
+                latestState.additionalEdits[row.itemCode]?.isUrgent ?? false,
             onClose: () => Navigator.of(context).pop(),
             onSave: (qty, reason, isUrgent) async {
               final bloc = context.read<OrdersBloc>();
