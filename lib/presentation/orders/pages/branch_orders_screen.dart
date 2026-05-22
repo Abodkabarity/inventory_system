@@ -152,6 +152,12 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                 _StatusChip(
                                   isSubmitted: s.isSubmitted,
                                   isOrderDay: s.isOrderDay,
+
+                                  isMissingOrder:
+                                      s.isOrderDay &&
+                                      !s.isSubmitted &&
+                                      OperationalDateHelper
+                                          .isMissingOrderWindow,
                                 ),
                                 const SizedBox(width: 10),
                                 _ZoneChip(zone: zs.zone),
@@ -319,7 +325,14 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                   selectedFormulary: s.formularyFilter,
                                   nonWithSales45Only: s.nonWithSales45Only,
                                   numericFinalOnly: s.numericFinalOnly,
+                                  receivedLast7DaysOnly:
+                                      s.receivedLast7DaysOnly,
                                   additionalOnly: s.additionalOnly,
+                                  onReceivedLast7DaysChanged: (v) {
+                                    context.read<OrdersBloc>().add(
+                                      OrdersReceivedLast7DaysToggled(v),
+                                    );
+                                  },
                                   onCategoryChanged: (v) {
                                     context.read<OrdersBloc>().add(
                                       OrdersCategoryChanged(v),
@@ -390,8 +403,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                               tooltip:
                                                   'Track additional requests status',
                                               onPressed:
-                                                  (s.isSubmitted && !isBusy) ||
-                                                      !s.isOrderDay
+                                                  (!isBusy) || !s.isOrderDay
                                                   ? () {
                                                       BranchOrdersActions.openTrackingDialog(
                                                         context,
@@ -417,33 +429,31 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                 },
                                               ),
 
-                                            if (s.isSubmitted || !s.isOrderDay)
-                                              const SizedBox(width: 6),
+                                            const SizedBox(width: 6),
 
-                                            if (s.isSubmitted || !s.isOrderDay)
-                                              OrdersToolbar.actionButton(
-                                                label:
-                                                    'Send Additional ($draftAddCount)',
-                                                icon: Icons.add_box_outlined,
-                                                badgeCount: draftAddCount,
-                                                color: AppColors.secondaryColor,
-                                                onPressed:
-                                                    (!zoneReady ||
-                                                        s
-                                                            .additionalEdits
-                                                            .isEmpty ||
-                                                        isBusy)
-                                                    ? null
-                                                    : () {
-                                                        context
-                                                            .read<OrdersBloc>()
-                                                            .add(
-                                                              OrdersSendAdditionalRequestsPressed(
-                                                                zone: zs.zone!,
-                                                              ),
-                                                            );
-                                                      },
-                                              ),
+                                            OrdersToolbar.actionButton(
+                                              label:
+                                                  'Send Additional ($draftAddCount)',
+                                              icon: Icons.add_box_outlined,
+                                              badgeCount: draftAddCount,
+                                              color: AppColors.secondaryColor,
+                                              onPressed:
+                                                  (!zoneReady ||
+                                                      s
+                                                          .additionalEdits
+                                                          .isEmpty ||
+                                                      isBusy)
+                                                  ? null
+                                                  : () {
+                                                      context
+                                                          .read<OrdersBloc>()
+                                                          .add(
+                                                            OrdersSendAdditionalRequestsPressed(
+                                                              zone: zs.zone!,
+                                                            ),
+                                                          );
+                                                    },
+                                            ),
 
                                             if (!s.isSubmitted &&
                                                 s.isOrderDay &&
@@ -663,6 +673,16 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                               columnWidths: s.columnWidths,
                                               finalEdits: s.finalEdits,
                                               onTapFinalReorder: (row) {
+                                                final locked =
+                                                    s.isOrderDay &&
+                                                    !s.isSubmitted &&
+                                                    OperationalDateHelper
+                                                        .isMissingOrderWindow;
+
+                                                if (locked) {
+                                                  return;
+                                                }
+
                                                 BranchOrdersActions.openFinalSidePanel(
                                                   context: context,
                                                   state: s,
@@ -742,7 +762,13 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
 class _StatusChip extends StatelessWidget {
   final bool isSubmitted;
   final bool isOrderDay;
-  const _StatusChip({required this.isSubmitted, required this.isOrderDay});
+  final bool isMissingOrder;
+
+  const _StatusChip({
+    required this.isSubmitted,
+    required this.isOrderDay,
+    required this.isMissingOrder,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -766,6 +792,13 @@ class _StatusChip extends StatelessWidget {
       fg = const Color(0xFF027A48);
       text = 'Submitted';
       icon = Icons.check_circle;
+    } else if (isMissingOrder) {
+      // 🔥 Missing Order
+      bg = const Color(0xFFFEF3F2);
+      br = const Color(0xFFFDA29B);
+      fg = const Color(0xFFB42318);
+      text = 'Missing Order';
+      icon = Icons.warning_amber_rounded;
     } else {
       // 🟡 Draft
       bg = const Color(0xFFFFFBEB);
@@ -1049,7 +1082,9 @@ class _FiltersBar extends StatelessWidget {
   final String selectedFormulary;
   final bool nonWithSales45Only;
   final bool numericFinalOnly;
+  final bool receivedLast7DaysOnly;
 
+  final ValueChanged<bool> onReceivedLast7DaysChanged;
   final bool additionalOnly;
 
   /// 🔥 NEW
@@ -1078,6 +1113,8 @@ class _FiltersBar extends StatelessWidget {
     required this.onFormularyChanged,
     required this.onNonWithSales45Changed,
     required this.onNumericFinalOnlyChanged,
+    required this.receivedLast7DaysOnly,
+    required this.onReceivedLast7DaysChanged,
   });
 
   @override
@@ -1117,7 +1154,15 @@ class _FiltersBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-
+          Expanded(
+            child: _SwitchTile(
+              title: 'Item Received Last 7 Days',
+              subtitle: 'Show received items with stock > 0',
+              value: receivedLast7DaysOnly,
+              onChanged: onReceivedLast7DaysChanged,
+            ),
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: _SwitchTile(
               title: 'NON + Sales (45d)',
@@ -1130,8 +1175,8 @@ class _FiltersBar extends StatelessWidget {
 
           Expanded(
             child: _SwitchTile(
-              title: 'Items you Will Received',
-              subtitle: 'Available Item in Order',
+              title: 'Available Item in Order',
+              subtitle: '',
               value: numericFinalOnly,
 
               onChanged: onNumericFinalOnlyChanged,

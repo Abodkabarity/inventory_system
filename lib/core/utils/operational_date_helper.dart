@@ -6,10 +6,10 @@ class OperationalDateHelper {
 */
   static const bool debugMode = true;
 
-  static const int debugHourOffset = 60;
+  static const int debugHourOffset = -1;
 
   static DateTime get nowUae {
-    final real = DateTime.now().toUtc().add(const Duration(hours: 4));
+    final real = DateTime.now().toUtc().add(const Duration(hours: -13));
 
     if (!debugMode) {
       return real;
@@ -50,5 +50,13 @@ class OperationalDateHelper {
 
   static bool get isAfter9Pm {
     return nowUae.hour >= 21;
+  }
+
+  static bool get isMissingOrderWindow {
+    final now = nowUae;
+
+    final hour = now.hour;
+
+    return hour >= 9 && hour < 21;
   }
 }

@@ -218,7 +218,7 @@ class OrdersState extends Equatable {
 
   // filter additional only
   final bool additionalOnly;
-
+  final bool receivedLast7DaysOnly;
   // submission status
   final String submissionStatus; // draft/submitted
   final bool isExporting;
@@ -268,6 +268,7 @@ class OrdersState extends Equatable {
     required this.onlyBranchMaxAdj,
     required this.showCreate,
     required this.isRemovingFilters,
+    required this.receivedLast7DaysOnly,
   });
 
   static const List<String> defaultVisibleInTable = [
@@ -285,8 +286,6 @@ class OrdersState extends Equatable {
     ...defaultVisibleInTable,
 
     // Keep it in the system, but it becomes visible only after submit
-    'additional_request',
-
     'branch',
     'mismatch_stock',
     'pending_stock_received',
@@ -335,9 +334,8 @@ class OrdersState extends Equatable {
 
   static double defaultWidthFor(String key) {
     if (key == 'row_no') return 70;
-    if (key == 'additional_request') return 190;
 
-    if (key == 'item_name') return 420;
+    if (key == 'item_name') return 450;
     if (key == 'item_code') return 160;
     if (key == 'branch') return 170;
 
@@ -370,11 +368,7 @@ class OrdersState extends Equatable {
     required String runDate,
     required String branchName,
   }) {
-    final allKeys = <String>[
-      'row_no',
-      'additional_request',
-      ...defaultColumnOrder,
-    ];
+    final allKeys = <String>['row_no', ...defaultColumnOrder];
 
     return OrdersState(
       status: OrdersStatus.idle,
@@ -383,11 +377,13 @@ class OrdersState extends Equatable {
       search: '',
       rows: const [],
       viewRows: const [],
+      receivedLast7DaysOnly: false,
       progress: 0,
       progressMessage: null,
       error: null,
       mismatchItems: const [],
       mismatchSuggestions: const [],
+
       editingMismatchId: null,
       maxAdjSearch: '',
       isMismatchLoading: false,
@@ -470,6 +466,7 @@ class OrdersState extends Equatable {
     num? selectedItemDemand,
     String? maxAdjSearch,
     bool? showMismatchResult,
+    bool? receivedLast7DaysOnly,
     bool? isRemovingFilters,
     Set<String>? visibleColumns,
     List<String>? columnOrder,
@@ -508,6 +505,8 @@ class OrdersState extends Equatable {
       progress: progress ?? this.progress,
       progressMessage: progressMessage ?? this.progressMessage,
       error: error,
+      receivedLast7DaysOnly:
+          receivedLast7DaysOnly ?? this.receivedLast7DaysOnly,
       visibleColumns: visibleColumns ?? this.visibleColumns,
       columnOrder: columnOrder ?? this.columnOrder,
       columnWidths: columnWidths ?? this.columnWidths,
@@ -573,6 +572,7 @@ class OrdersState extends Equatable {
     sentAdditionalQtyByItemCode,
     additionalOnly,
     isRemovingFilters,
+    receivedLast7DaysOnly,
     submissionStatus,
     selectedItemCode,
     additionalTrackingRows,

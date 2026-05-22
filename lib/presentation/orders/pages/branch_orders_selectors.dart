@@ -31,18 +31,6 @@ class BranchOrdersSelectors {
     if (!out.contains('item_code')) out.insert(1, 'item_code');
     if (!out.contains('item_name')) out.insert(2, 'item_name');
 
-    out.remove('additional_request');
-
-    if (s.isSubmitted) {
-      final index = out.indexOf('final_reorder_qty_store_stock_gt_0');
-
-      if (index != -1) {
-        out.insert(index + 1, 'additional_request');
-      } else {
-        out.add('additional_request');
-      }
-    }
-
     return out;
   }
 

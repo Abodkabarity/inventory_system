@@ -9,6 +9,7 @@ import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/operational_date_helper.dart';
 import '../../../domain/entities/daily_order_row.dart';
 import '../bloc/order_bloc/orders_state.dart';
 import 'orders_grid_controller.dart';
@@ -64,8 +65,6 @@ class OrdersTable extends StatefulWidget {
     'row_no',
 
     // NEW
-    'additional_request',
-
     'branch',
     'item_code',
     'item_name',
@@ -122,8 +121,6 @@ class OrdersTable extends StatefulWidget {
     'row_no': '#',
 
     // NEW
-    'additional_request': 'ADDITIONAL\nREQUEST',
-
     'branch': 'BRANCH',
     'item_code': 'ITEM CODE',
     'item_name': 'ITEM NAME',
@@ -199,6 +196,7 @@ class _OrdersTableState extends State<OrdersTable> {
       finalEdits: widget.finalEdits,
       additionalEdits: widget.additionalEdits,
       sentAdditionalQtyByItemCode: widget.sentAdditionalQtyByItemCode,
+      onTapAdditionalRequest: widget.onTapAdditionalRequest,
       isSubmitted: widget.isSubmitted, // ✅ NEW
     );
 
@@ -253,7 +251,6 @@ class _OrdersTableState extends State<OrdersTable> {
 
   _ColGroup _groupFor(String key) {
     if (key == 'row_no' ||
-        key == 'additional_request' ||
         key == 'item_code' ||
         key == 'item_name' ||
         key == 'branch') {
@@ -308,7 +305,6 @@ class _OrdersTableState extends State<OrdersTable> {
   int _frozenCount() {
     var count = 0;
     if (_columns.contains('row_no')) count++;
-    if (_columns.contains('additional_request')) count++;
     if (_columns.contains('item_code')) count++;
     if (_columns.contains('item_name')) count++;
     if (_columns.contains('branch')) count++;
@@ -348,7 +344,7 @@ class _OrdersTableState extends State<OrdersTable> {
               allowColumnsResizing: true,
               columnWidthMode: ColumnWidthMode.none,
               frozenColumnsCount: frozenCount,
-              rowHeight: 52,
+              rowHeight: 72,
               headerRowHeight: 72,
               onColumnResizeUpdate: (d) {
                 widget.onColumnResized(d.column.columnName, d.width);
@@ -371,11 +367,6 @@ class _OrdersTableState extends State<OrdersTable> {
                   // ✅ disable after submit
                   if (widget.isSubmitted) return;
                   widget.onTapFinalReorder(daily);
-                  return;
-                }
-
-                if (colName == 'additional_request') {
-                  widget.onTapAdditionalRequest(daily);
                   return;
                 }
               },
@@ -469,7 +460,7 @@ class _OrdersDataSource extends DataGridSource {
 
   // ✅ NEW
   bool _isSubmitted = false;
-
+  late final ValueChanged<DailyOrderRow> _onTapAdditionalRequest;
   final Map<DataGridRow, int> _rowToIndex = {};
 
   _OrdersDataSource({
@@ -478,8 +469,10 @@ class _OrdersDataSource extends DataGridSource {
     required Map<String, FinalReorderEdit> finalEdits,
     required Map<String, AdditionalRequestEdit> additionalEdits,
     required Map<String, num> sentAdditionalQtyByItemCode,
-    required bool isSubmitted, // ✅ NEW
+    required bool isSubmitted,
+    required ValueChanged<DailyOrderRow> onTapAdditionalRequest, // ✅ NEW
   }) {
+    _onTapAdditionalRequest = onTapAdditionalRequest;
     update(
       rows: rows,
       columns: columns,
@@ -544,8 +537,6 @@ class _OrdersDataSource extends DataGridSource {
         return (index + 1).toString();
 
       // NEW: additional request column text is computed in buildRow (we can keep simple)
-      case 'additional_request':
-        return '';
 
       case 'branch':
         return r.branch;
@@ -763,77 +754,127 @@ class _OrdersDataSource extends DataGridSource {
         final align = (key == 'item_name')
             ? Alignment.centerLeft
             : Alignment.center;
-
-        // ============ NEW: Additional request cell UI ============
-        if (key == 'additional_request' && daily != null) {
+        // ============ ITEM NAME + ADDITIONAL REQUEST UI ============
+        if (key == 'item_name' && daily != null) {
           final draft = _draftAdditionalFor(daily);
+
           final sent = _sentQtyFor(daily);
 
           final hasDraft = draft != null;
+
           final hasSent = sent != 0;
 
-          // display qty: prefer draft if exists
+          final hasAdditional = hasDraft || hasSent;
+
           final qtyText = hasDraft
               ? draft.requestQty.toString()
               : (hasSent ? sent.toString() : '');
 
-          final chipText = hasDraft
-              ? 'Draft: $qtyText'
-              : (hasSent ? 'Sent: $qtyText' : 'Add');
-
-          final bg = hasDraft
-              ? const Color(0xFFEEF2FF)
-              : (hasSent ? AppColors.primaryColor : const Color(0xFFF9FAFB));
-
-          final fg = hasDraft
-              ? const Color(0xFF3F2AA5)
-              : (hasSent ? Colors.white : const Color(0xFF111827));
-
-          return Container(
-            alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: bg,
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: const Color(0xFFE6E8F0)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
+          return GestureDetector(
+            onTap: () {
+              _onTapAdditionalRequest(daily);
+            },
+            child: Container(
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        hasDraft
-                            ? Icons.edit_note_outlined
-                            : Icons.add_circle_outline,
-                        size: 16,
-                        color: fg,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              text.isEmpty ? '—' : text,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12.8,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.text,
+                              ),
+                            ),
+
+                            if (hasAdditional) ...[
+                              const SizedBox(height: 5),
+
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: hasDraft
+                                      ? const Color(0xFFEEF2FF)
+                                      : const Color(0xFFF3E8FF),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: const Color(0xFFE6E8F0),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      hasDraft
+                                          ? Icons.edit_note_outlined
+                                          : Icons.check_circle_outline,
+                                      size: 14,
+                                      color: hasDraft
+                                          ? const Color(0xFF4338CA)
+                                          : const Color(0xFF7E22CE),
+                                    ),
+
+                                    const SizedBox(width: 5),
+
+                                    Text(
+                                      'Additional Request • $qtyText',
+                                      style: TextStyle(
+                                        fontSize: 10.8,
+                                        fontWeight: FontWeight.w800,
+                                        color: hasDraft
+                                            ? const Color(0xFF4338CA)
+                                            : const Color(0xFF7E22CE),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
-                      const SizedBox(width: 6),
-                      Text(
-                        chipText,
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w900,
-                          color: fg,
+
+                      const SizedBox(width: 8),
+
+                      InkWell(
+                        borderRadius: BorderRadius.circular(999),
+                        onTap: () {
+                          _onTapAdditionalRequest(daily);
+                        },
+                        child: Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF9FAFB),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: const Color(0xFFE6E8F0)),
+                          ),
+                          child: const Icon(
+                            Icons.add,
+                            size: 16,
+                            color: Color(0xFF6B7280),
+                          ),
                         ),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(width: 8),
-                const Icon(
-                  Icons.chevron_right,
-                  size: 18,
-                  color: Color(0xFF6B7280),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         }
@@ -881,8 +922,8 @@ class _OrdersDataSource extends DataGridSource {
               ? newQty.toString()
               : (text.isEmpty ? '—' : text);
 
-          final locked = _isSubmitted;
-
+          final locked =
+              _isSubmitted || OperationalDateHelper.isMissingOrderWindow;
           return Container(
             alignment: Alignment.center,
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),

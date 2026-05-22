@@ -58,7 +58,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     on<OrdersApplyFinalEdit>(_onApplyFinalEdit);
     on<OrdersResetFinalEdit>(_onResetFinalEdit);
     on<OrdersClearAllEdits>(_onClearAllEdits);
-
+    on<OrdersReceivedLast7DaysToggled>(_onReceivedLast7DaysToggled);
     // additional request edits
     on<OrdersApplyAdditionalRequest>(_onApplyAdditionalRequest);
     on<OrdersRemoveAdditionalRequest>(_onRemoveAdditionalRequest);
@@ -404,7 +404,12 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       final isOrderDay = orderDays.contains(todayName);
 
       print('📆 Business Day: $todayName | isOrderDay: $isOrderDay');
-      final forcedNumericFinalOnly = submissionStatus != 'submitted';
+
+      final forceOffWindow = now.hour >= 9 && now.hour < 21;
+
+      final forcedNumericFinalOnly = forceOffWindow
+          ? false
+          : submissionStatus != 'submitted';
 
       final view = _applyUiFilters(
         rows: searched,
@@ -414,6 +419,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         numericFinalOnly: forcedNumericFinalOnly,
         additionalOnly: state.additionalOnly,
         additionalEdits: additionalDraftMap,
+        receivedLast7DaysOnly: state.receivedLast7DaysOnly,
         sentAdditionalQtyByItemCode: sentAdditional,
       );
 
@@ -477,6 +483,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       numericFinalOnly: state.numericFinalOnly,
       additionalOnly: state.additionalOnly,
       additionalEdits: state.additionalEdits,
+      receivedLast7DaysOnly: state.receivedLast7DaysOnly,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
     );
 
@@ -553,6 +560,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       numericFinalOnly: state.numericFinalOnly,
       additionalOnly: state.additionalOnly,
       additionalEdits: state.additionalEdits,
+      receivedLast7DaysOnly: state.receivedLast7DaysOnly,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
     );
     emit(state.copyWith(categoryFilter: e.category, viewRows: view));
@@ -569,6 +577,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       nonWithSales45Only: state.nonWithSales45Only,
       numericFinalOnly: state.numericFinalOnly,
       additionalOnly: state.additionalOnly,
+      receivedLast7DaysOnly: state.receivedLast7DaysOnly,
       additionalEdits: state.additionalEdits,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
     );
@@ -587,6 +596,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       numericFinalOnly: state.numericFinalOnly,
       additionalOnly: state.additionalOnly,
       additionalEdits: state.additionalEdits,
+      receivedLast7DaysOnly: state.receivedLast7DaysOnly,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
     );
     emit(state.copyWith(nonWithSales45Only: e.value, viewRows: view));
@@ -603,6 +613,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       nonWithSales45Only: state.nonWithSales45Only,
       numericFinalOnly: e.value,
       additionalOnly: state.additionalOnly,
+      receivedLast7DaysOnly: state.receivedLast7DaysOnly,
       additionalEdits: state.additionalEdits,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
     );
@@ -622,6 +633,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       numericFinalOnly: state.numericFinalOnly,
       additionalOnly: e.value,
       additionalEdits: state.additionalEdits,
+      receivedLast7DaysOnly: state.receivedLast7DaysOnly,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
     );
 
@@ -644,6 +656,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       numericFinalOnly: numericFinalOnly,
       additionalOnly: additionalOnly,
       additionalEdits: state.additionalEdits,
+      receivedLast7DaysOnly: state.receivedLast7DaysOnly,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
     );
 
@@ -667,6 +680,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     required bool nonWithSales45Only,
     required bool numericFinalOnly,
     required bool additionalOnly,
+    required bool receivedLast7DaysOnly,
     required Map<String, AdditionalRequestEdit> additionalEdits,
     required Map<String, num> sentAdditionalQtyByItemCode,
   }) {
@@ -703,12 +717,25 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       return hasLocalDraft || hasSent;
     }
 
+    bool matchReceivedLast7Days(DailyOrderRow r) {
+      if (!receivedLast7DaysOnly) return true;
+
+      final received = (r.goodsReceivedLast7Days ?? '')
+          .toString()
+          .toLowerCase();
+
+      final storeStock = _toNum(r.storeStock);
+
+      return received.contains('received') && storeStock > 0;
+    }
+
     return rows.where((r) {
       return matchCategory(r) &&
           matchFormulary(r) &&
           matchNonWithSales45(r) &&
           matchNumericFinalOnly(r) &&
-          matchAdditionalOnly(r);
+          matchAdditionalOnly(r) &&
+          matchReceivedLast7Days(r);
     }).toList();
   }
 
@@ -837,6 +864,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       nonWithSales45Only: state.nonWithSales45Only,
       numericFinalOnly: state.numericFinalOnly,
       additionalOnly: state.additionalOnly,
+      receivedLast7DaysOnly: state.receivedLast7DaysOnly,
       additionalEdits: next,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
     );
@@ -866,6 +894,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       nonWithSales45Only: state.nonWithSales45Only,
       numericFinalOnly: state.numericFinalOnly,
       additionalOnly: state.additionalOnly,
+      receivedLast7DaysOnly: state.receivedLast7DaysOnly,
       additionalEdits: next,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
     );
@@ -961,6 +990,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         formularyFilter: state.formularyFilter,
         nonWithSales45Only: state.nonWithSales45Only,
         numericFinalOnly: state.numericFinalOnly,
+        receivedLast7DaysOnly: state.receivedLast7DaysOnly,
         additionalOnly: state.additionalOnly,
         additionalEdits: const {},
         sentAdditionalQtyByItemCode: sentAdditionalQty,
@@ -1088,6 +1118,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         nonWithSales45Only: state.nonWithSales45Only,
         numericFinalOnly: false,
         additionalOnly: state.additionalOnly,
+        receivedLast7DaysOnly: state.receivedLast7DaysOnly,
         additionalEdits: state.additionalEdits,
         sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
       );
@@ -1363,6 +1394,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       numericFinalOnly: numericFinalOnly,
       additionalOnly: additionalOnly,
       additionalEdits: state.additionalEdits,
+      receivedLast7DaysOnly: state.receivedLast7DaysOnly,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
     );
 
@@ -1384,5 +1416,24 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     Emitter<OrdersState> emit,
   ) async {
     emit(state.copyWith(runDate: OperationalDateHelper.operationalDate));
+  }
+
+  void _onReceivedLast7DaysToggled(
+    OrdersReceivedLast7DaysToggled e,
+    Emitter<OrdersState> emit,
+  ) {
+    final view = _applyUiFilters(
+      rows: _applySearch(state.rows, state.search),
+      categoryFilter: state.categoryFilter,
+      formularyFilter: state.formularyFilter,
+      nonWithSales45Only: state.nonWithSales45Only,
+      numericFinalOnly: state.numericFinalOnly,
+      additionalOnly: state.additionalOnly,
+      receivedLast7DaysOnly: e.value,
+      additionalEdits: state.additionalEdits,
+      sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
+    );
+
+    emit(state.copyWith(receivedLast7DaysOnly: e.value, viewRows: view));
   }
 }
