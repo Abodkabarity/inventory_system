@@ -839,4 +839,52 @@ class InventoryRepositoryImpl implements InventoryRepository {
 
     return all;
   }
+
+  @override
+  Future<void> deleteFormularyRow({
+    required String itemCode,
+    required String branch,
+  }) async {
+    await remote.client
+        .from('branch_formulary')
+        .delete()
+        .eq('item_code', itemCode)
+        .eq('branch_name', branch);
+  }
+
+  @override
+  Future<void> deleteAssortmentRow({
+    required String itemCode,
+    required String branch,
+  }) async {
+    await remote.client
+        .from('assortment')
+        .delete()
+        .eq('item_code', itemCode)
+        .eq('branch_name', branch);
+  }
+
+  @override
+  Future<void> deleteTmaRow({
+    required String itemCode,
+    required String branch,
+  }) async {
+    await remote.client
+        .from('tma')
+        .delete()
+        .eq('item_code', itemCode)
+        .eq('branch_name', branch);
+  }
+
+  @override
+  Future<void> deleteMaxAdjRow({
+    required String itemCode,
+    required String branch,
+  }) async {
+    await remote.client
+        .from('max_adj')
+        .delete()
+        .eq('item_code', itemCode)
+        .eq('branch_name', branch);
+  }
 }

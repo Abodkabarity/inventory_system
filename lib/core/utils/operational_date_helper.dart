@@ -9,7 +9,7 @@ class OperationalDateHelper {
   static const int debugHourOffset = -1;
 
   static DateTime get nowUae {
-    final real = DateTime.now().toUtc().add(const Duration(hours: -13));
+    final real = DateTime.now().toUtc().add(const Duration(hours: 5));
 
     if (!debugMode) {
       return real;

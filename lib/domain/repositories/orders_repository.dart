@@ -148,4 +148,5 @@ abstract class OrdersRepository {
     required String branchName,
   });
   Future<void> deleteAdditionalRequestDraft({required String id});
+  Future<bool> isOperationalOrderReady({required String runDate});
 }

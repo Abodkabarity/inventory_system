@@ -341,4 +341,9 @@ class OrdersRepositoryImpl implements OrdersRepository {
   Future<void> deleteAdditionalRequestDraft({required String id}) {
     return remote.deleteAdditionalRequestDraft(id: id);
   }
+
+  @override
+  Future<bool> isOperationalOrderReady({required String runDate}) {
+    return remote.isOperationalOrderReady(runDate: runDate);
+  }
 }

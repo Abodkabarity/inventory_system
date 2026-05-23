@@ -407,7 +407,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
 
       final forceOffWindow = now.hour >= 9 && now.hour < 21;
 
-      final forcedNumericFinalOnly = forceOffWindow
+      final forcedNumericFinalOnly = !isOrderDay
+          ? false
+          : forceOffWindow
           ? false
           : submissionStatus != 'submitted';
 
@@ -1412,7 +1414,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
   }
 
   Future<void> _onRefreshOperationalDate(
-    OrdersRefreshOperationalDate e,
+    OrdersRefreshOperationalDate event,
     Emitter<OrdersState> emit,
   ) async {
     emit(state.copyWith(runDate: OperationalDateHelper.operationalDate));
