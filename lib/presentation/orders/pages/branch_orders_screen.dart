@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -26,86 +28,309 @@ class BranchOrdersScreen extends StatefulWidget {
 class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
   late final OrdersGridController _grid;
   RealtimeChannel? _jobChannel;
+  Timer? _operationalTimer;
 
-  bool _dialogShown = false;
+  bool _newDayDialogVisible = false;
+
+  String? _lastDialogDate;
   @override
   void initState() {
     super.initState();
 
     _grid = OrdersGridController();
 
-    _listenOrderReady();
+    _startOperationalWatcher();
   }
 
-  void _listenOrderReady() {
+  void _startOperationalWatcher() {
+    _operationalTimer?.cancel();
+
+    _operationalTimer = Timer.periodic(const Duration(seconds: 20), (_) async {
+      if (!mounted) return;
+
+      final now = OperationalDateHelper.nowUae;
+
+      if (now.hour < 21) {
+        return;
+      }
+
+      final nextOperationalDate = OperationalDateHelper.operationalDate;
+
+      if (_lastDialogDate == nextOperationalDate) {
+        return;
+      }
+
+      _lastDialogDate = nextOperationalDate;
+
+      if (_newDayDialogVisible) {
+        return;
+      }
+
+      _newDayDialogVisible = true;
+
+      if (!mounted) return;
+
+      await _showNewOrderDialog(nextOperationalDate);
+
+      _newDayDialogVisible = false;
+    });
+  }
+
+  Future<void> _showNewOrderDialog(String operationalDate) async {
     final bloc = context.read<OrdersBloc>();
 
-    final client = Supabase.instance.client;
+    bool loading = false;
 
-    _jobChannel = client
-        .channel('daily-order-job-state')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.update,
-          schema: 'public',
-          table: 'daily_order_job_state',
-          callback: (payload) async {
-            final data = payload.newRecord;
+    String? errorMessage;
 
-            final phase = (data['phase'] ?? '').toString();
-
-            final runDate = (data['run_date'] ?? '').toString();
-
-            if (phase != 'done') return;
-
-            final currentOperationalDate =
-                OperationalDateHelper.operationalDate;
-
-            if (runDate != currentOperationalDate) {
-              return;
-            }
-
-            if (_dialogShown) return;
-
-            _dialogShown = true;
-
-            if (!mounted) return;
-
-            await showDialog(
-              context: context,
-              barrierDismissible: false,
-              builder: (_) {
-                return AlertDialog(
-                  title: const Text('Order Ready'),
-                  content: const Text(
-                    'Your order has been generated successfully.',
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return PopScope(
+              canPop: false,
+              child: Dialog(
+                backgroundColor: Colors.transparent,
+                child: Container(
+                  width: 420,
+                  padding: const EdgeInsets.all(28),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(28),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(.18),
+                        blurRadius: 30,
+                        offset: const Offset(0, 14),
+                      ),
+                    ],
                   ),
-                  actions: [
-                    ElevatedButton(
-                      onPressed: () async {
-                        Navigator.pop(context);
 
-                        bloc.add(const OrdersRefreshOperationalDate());
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // =========================
+                      // ICON
+                      // =========================
+                      Container(
+                        width: 88,
+                        height: 88,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF7ED),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: const Color(0xFFF97316),
+                            width: 2,
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.warning_amber_rounded,
+                          color: Color(0xFFF97316),
+                          size: 52,
+                        ),
+                      ),
 
-                        await Future.delayed(const Duration(milliseconds: 100));
+                      const SizedBox(height: 24),
 
-                        bloc.add(const OrdersLoadAll());
-                      },
-                      child: const Text('Open Order'),
-                    ),
-                  ],
-                );
-              },
+                      // =========================
+                      // TITLE
+                      // =========================
+                      const Text(
+                        'NEW ORDER AVAILABLE',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 30,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF111827),
+                          letterSpacing: .6,
+                        ),
+                      ),
+
+                      const SizedBox(height: 18),
+
+                      const Text(
+                        'A new operational order is available.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF374151),
+                          height: 1.4,
+                        ),
+                      ),
+
+                      const SizedBox(height: 14),
+
+                      const Text(
+                        'PLEASE REFRESH THE PAGE',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.red,
+                          letterSpacing: 1.3,
+                        ),
+                      ),
+
+                      // =========================
+                      // ERROR MESSAGE
+                      // =========================
+                      if (errorMessage != null) ...[
+                        const SizedBox(height: 22),
+
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 16,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF1F2),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: const Color(0xFFFDA4AF),
+                              width: 1.4,
+                            ),
+                          ),
+
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.schedule,
+                                color: Color(0xFFDC2626),
+                                size: 28,
+                              ),
+
+                              const SizedBox(width: 14),
+
+                              Expanded(
+                                child: Text(
+                                  errorMessage!,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFFB91C1C),
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+
+                      // =========================
+                      // LOADING
+                      // =========================
+                      if (loading) ...[
+                        const SizedBox(height: 28),
+
+                        const CircularProgressIndicator(),
+
+                        const SizedBox(height: 16),
+
+                        const Text(
+                          'Checking new order...',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF6B7280),
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 30),
+
+                      // =========================
+                      // BUTTON
+                      // =========================
+                      SizedBox(
+                        width: double.infinity,
+                        height: 58,
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text(
+                            'REFRESH ORDER',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: .5,
+                            ),
+                          ),
+
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF2563EB),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                          ),
+
+                          onPressed: loading
+                              ? null
+                              : () async {
+                                  setState(() {
+                                    loading = true;
+                                    errorMessage = null;
+                                  });
+
+                                  final ready = await bloc.repo
+                                      .isOperationalOrderReady(
+                                        runDate: operationalDate,
+                                      );
+
+                                  if (!mounted) return;
+
+                                  // =========================
+                                  // READY
+                                  // =========================
+
+                                  if (ready) {
+                                    Navigator.of(dialogContext).pop();
+
+                                    bloc.add(
+                                      const OrdersRefreshOperationalDate(),
+                                    );
+
+                                    await Future.delayed(
+                                      const Duration(milliseconds: 300),
+                                    );
+
+                                    bloc.add(const OrdersLoadAll());
+
+                                    return;
+                                  }
+
+                                  // =========================
+                                  // STILL CALCULATING
+                                  // =========================
+
+                                  setState(() {
+                                    loading = false;
+
+                                    errorMessage =
+                                        'The new order is still calculating.\nPlease wait a few minutes and try again.';
+                                  });
+                                },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             );
-
-            _dialogShown = false;
           },
-        )
-        .subscribe();
+        );
+      },
+    );
   }
 
   @override
   void dispose() {
     _jobChannel?.unsubscribe();
+    _operationalTimer?.cancel();
     super.dispose();
   }
 
@@ -121,13 +346,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
 
         final orderedColumns = s.isOrderDay
             ? BranchOrdersSelectors.orderedVisibleColumns(s)
-            : [
-                'item_code',
-                'item_name',
-                'branch_stock',
-                'store_stock',
-                'additional_request',
-              ];
+            : ['item_code', 'item_name', 'branch_stock', 'store_stock'];
 
         final draftAddCount = s.additionalCount;
         final sentAddCount = s.sentAdditionalQtyByItemCode.length;
@@ -324,7 +543,9 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                   selectedCategory: s.categoryFilter,
                                   selectedFormulary: s.formularyFilter,
                                   nonWithSales45Only: s.nonWithSales45Only,
-                                  numericFinalOnly: s.numericFinalOnly,
+                                  numericFinalOnly: s.isOrderDay
+                                      ? s.numericFinalOnly
+                                      : false,
                                   receivedLast7DaysOnly:
                                       s.receivedLast7DaysOnly,
                                   additionalOnly: s.additionalOnly,
@@ -348,11 +569,13 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                       OrdersNonWithSales45Toggled(v),
                                     );
                                   },
-                                  onNumericFinalOnlyChanged: (v) {
-                                    context.read<OrdersBloc>().add(
-                                      OrdersNumericFinalOnlyToggled(v),
-                                    );
-                                  },
+                                  onNumericFinalOnlyChanged: s.isOrderDay
+                                      ? (v) {
+                                          context.read<OrdersBloc>().add(
+                                            OrdersNumericFinalOnlyToggled(v),
+                                          );
+                                        }
+                                      : null,
                                   onAdditionalOnlyChanged: (v) {
                                     context.read<OrdersBloc>().add(
                                       OrdersAdditionalOnlyToggled(v),
@@ -1094,8 +1317,7 @@ class _FiltersBar extends StatelessWidget {
   final ValueChanged<String> onCategoryChanged;
   final ValueChanged<String> onFormularyChanged;
   final ValueChanged<bool> onNonWithSales45Changed;
-  final ValueChanged<bool> onNumericFinalOnlyChanged;
-
+  final ValueChanged<bool>? onNumericFinalOnlyChanged;
   const _FiltersBar({
     super.key,
     required this.categories,
@@ -1112,7 +1334,7 @@ class _FiltersBar extends StatelessWidget {
     required this.onCategoryChanged,
     required this.onFormularyChanged,
     required this.onNonWithSales45Changed,
-    required this.onNumericFinalOnlyChanged,
+    this.onNumericFinalOnlyChanged,
     required this.receivedLast7DaysOnly,
     required this.onReceivedLast7DaysChanged,
   });

@@ -805,12 +805,14 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       final content = String.fromCharCodes(file.bytes!);
 
       final rows = const CsvToListConverter().convert(content);
+
       // ===============================
-      // ✅ HEADER VALIDATION (IMPORTANT)
+      // ✅ HEADER VALIDATION
       // ===============================
       final header = rows.first.map((e) => e.toString().trim()).toList();
 
       final expected = [
+        "action",
         "branch_name",
         "item_code",
         "item_name",
@@ -836,10 +838,12 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
         return;
       }
+
       if (rows.length <= 1) {
         emit(
           state.copyWith(isImporting: false, importMessage: "CSV is empty ❌"),
         );
+
         return;
       }
 
@@ -848,39 +852,82 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
       final total = rows.length - 1;
 
+      final updatedList = List<Map<String, dynamic>>.from(state.maxAdjustment);
+
       for (int i = 1; i < rows.length; i++) {
         final row = rows[i];
 
-        if (row.length < 7) {
-          errors.add({"row": row, "error": "Invalid columns"});
+        // ===============================
+        // VALIDATE COLUMN COUNT
+        // ===============================
+        if (row.length < 9) {
+          errors.add({"row": row, "error": "Invalid columns count"});
+
+          continue;
+        }
+
+        // ===============================
+        // ACTION
+        // ===============================
+        final action = (row[0]?.toString() ?? 'ADD').trim().toUpperCase();
+
+        // ===============================
+        // VALIDATE ACTION
+        // ===============================
+        if (!['ADD', 'UPDATE', 'DELETE'].contains(action)) {
+          errors.add({"row": row, "error": "Invalid action: $action"});
+
           continue;
         }
 
         try {
-          final current = num.tryParse("${row[3]}") ?? 0;
-          final max = num.tryParse("${row[4]}") ?? 0;
+          // ===============================
+          // READ DATA
+          // ===============================
+          final branch = (row[1]?.toString() ?? '').trim();
+
+          final itemCode = (row[2]?.toString() ?? '').trim();
+
+          final current = num.tryParse("${row[4]}") ?? 0;
+
+          final max = num.tryParse("${row[5]}") ?? 0;
 
           final type = max > current
               ? 'INCREASE'
               : max < current
               ? 'DECREASE'
               : 'EQUAL';
-          final branch = (row[0]?.toString() ?? '').trim();
-          final itemCode = (row[1]?.toString() ?? '').trim();
+
           final data = {
             'branch_name': branch,
             'item_code': itemCode,
-            'item_name': row[2]?.toString() ?? '',
+            'item_name': row[3]?.toString() ?? '',
             'current_demand_30d': current,
             'max_adjustment_30d': max,
             'adjustment_type': type,
-            'reason': row.length > 5 ? row[5]?.toString() : '',
-            'update_date': row.length > 6 ? _parseDate(row[6]) : null,
-            'end_date': row.length > 7 ? _parseDate(row[7]) : null,
+            'reason': row[6]?.toString() ?? '',
+            'update_date': _parseDate(row[7]),
+            'end_date': _parseDate(row[8]),
             'qty': max,
             'added_by': 'inventory',
           };
 
+          // ===============================
+          // DELETE
+          // ===============================
+          if (action == 'DELETE') {
+            await repo.deleteMaxAdjRow(itemCode: itemCode, branch: branch);
+
+            updatedList.removeWhere(
+              (e) => e['item_code'] == itemCode && e['branch_name'] == branch,
+            );
+
+            continue;
+          }
+
+          // ===============================
+          // CHECK EXIST
+          // ===============================
           final exists = await repo.checkIfExists(
             itemCode: itemCode,
             branch: branch,
@@ -897,7 +944,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
               "item_code": itemCode,
               "item_name": data['item_name'],
 
-              /// 🔵 OLD
+              /// OLD
               "old_current_demand": old['current_demand_30d'],
               "old_max_adj": old['max_adjustment_30d'],
               "old_reason": old['reason'],
@@ -906,7 +953,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
               "old_added_by": old['added_by'],
               "old_end_date": old['end_date'],
 
-              /// 🟢 NEW
+              /// NEW
               "new_current_demand": data['current_demand_30d'],
               "new_max_adj": data['max_adjustment_30d'],
               "new_reason": data['reason'],
@@ -917,6 +964,9 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
             });
           }
 
+          // ===============================
+          // IMPORT
+          // ===============================
           if (!exists || event.forceApply) {
             final ok = await repo.importMaxAdjRow(
               data: data,
@@ -925,6 +975,16 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
             if (!ok) {
               errors.add(data);
+            } else {
+              final index = updatedList.indexWhere(
+                (e) => e['item_code'] == itemCode && e['branch_name'] == branch,
+              );
+
+              if (index != -1) {
+                updatedList[index] = {...updatedList[index], ...data};
+              } else {
+                updatedList.add(data);
+              }
             }
           }
         } catch (e) {
@@ -939,6 +999,9 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         );
       }
 
+      // ===============================
+      // EXPORT CONFLICTS
+      // ===============================
       if (conflicts.isNotEmpty && !event.forceApply) {
         await MaxAdjExcelExporter.export(
           rows: conflicts,
@@ -957,25 +1020,26 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         return;
       }
 
+      // ===============================
+      // EXPORT ERRORS
+      // ===============================
       if (errors.isNotEmpty) {
         await MaxAdjExcelExporter.export(rows: errors, includeHistory: false);
       }
 
       final hasErrors = errors.isNotEmpty;
-      final hasConflicts = conflicts.isNotEmpty;
 
       emit(
         state.copyWith(
           isImporting: false,
           importProgress: 1,
-
           importSuccess: !hasErrors,
-
           importMessage: hasErrors
               ? "Completed with ${errors.length} errors ❌"
-              : hasConflicts
-              ? "Import completed successfully ✅"
               : "Import completed successfully ✅",
+
+          maxAdjustment: updatedList,
+          filteredMaxAdjustment: updatedList,
         ),
       );
     } catch (e) {
@@ -1008,6 +1072,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     try {
       final rows = [
         [
+          "action",
+
           "branch_name",
           "item_code",
           "item_name",
@@ -1120,6 +1186,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       final header = rows.first.map((e) => e.toString().trim()).toList();
 
       final expected = [
+        "action",
+
         "branch_name",
         "item_code",
         "item_name",
@@ -1150,28 +1218,44 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       final List<Map<String, dynamic>> conflicts = [];
       final List<Map<String, dynamic>> errors = [];
 
-      /// 🔥 نسخة محلية لتحديث الجدول بدون reload
       final List<Map<String, dynamic>> updatedList = List.from(
         state.assortment,
       );
 
       for (int i = 1; i < rows.length; i++) {
         final row = rows[i];
+        if (row.length < 9) {
+          errors.add({"row": row, "error": "Invalid columns count"});
 
+          continue;
+        }
+        final action = (row[0]?.toString() ?? 'ADD').trim().toUpperCase();
+        if (!['ADD', 'UPDATE', 'DELETE'].contains(action)) {
+          errors.add({"row": row, "error": "Invalid action: $action"});
+
+          continue;
+        }
         try {
-          final branch = (row[0]?.toString() ?? '').trim();
-          final itemCode = (row[1]?.toString() ?? '').trim();
+          final branch = (row[1]?.toString() ?? '').trim();
+          final itemCode = (row[2]?.toString() ?? '').trim();
 
           final data = {
             'branch_name': branch,
             'item_code': itemCode,
-            'item_name': row[2]?.toString(),
-            'reason': row[3]?.toString(),
-            'assortment_qty': num.tryParse("${row[4]}") ?? 0,
-            'assortment_by': row[5]?.toString(),
-            'assortment_start': _parseDate(row[6]),
-            'assortment_end': _parseDate(row[7]),
+            'item_name': row[3]?.toString(),
+            'reason': row[4]?.toString(),
+            'assortment_qty': num.tryParse("${row[5]}") ?? 0,
+            'assortment_by': row[6]?.toString(),
+            'assortment_start': _parseDate(row[7]),
+            'assortment_end': _parseDate(row[8]),
           };
+          if (action == 'DELETE') {
+            await repo.deleteAssortmentRow(itemCode: itemCode, branch: branch);
+            updatedList.removeWhere(
+              (e) => e['item_code'] == itemCode && e['branch_name'] == branch,
+            );
+            continue;
+          }
 
           /// 🔥 CHECK EXIST
           final existing = await Supabase.instance.client
@@ -1284,6 +1368,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   ) async {
     final rows = [
       [
+        "action",
+
         "branch_name",
         "item_code",
         "item_name",
@@ -1349,6 +1435,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   ) async {
     final rows = [
       [
+        "action",
+
         "branch_name",
         "item_code",
         "item_name",
@@ -1406,6 +1494,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       final header = rows.first.map((e) => e.toString().trim()).toList();
 
       final expected = [
+        "action",
+
         "branch_name",
         "item_code",
         "item_name",
@@ -1434,24 +1524,42 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       final List<Map<String, dynamic>> conflicts = [];
       final List<Map<String, dynamic>> errors = [];
 
-      /// 🔥 نسخة محلية بدون reload
       final updatedList = List<Map<String, dynamic>>.from(state.tma);
 
       for (int i = 1; i < rows.length; i++) {
         final row = rows[i];
+        if (row.length < 7) {
+          errors.add({"row": row, "error": "Invalid columns count"});
+
+          continue;
+        }
+        final action = (row[0]?.toString() ?? 'ADD').trim().toUpperCase();
+
+        if (!['ADD', 'UPDATE', 'DELETE'].contains(action)) {
+          errors.add({"row": row, "error": "Invalid action: $action"});
+
+          continue;
+        }
 
         try {
-          final branch = (row[0]?.toString() ?? '').trim();
-          final itemCode = (row[1]?.toString() ?? '').trim();
+          final branch = (row[1]?.toString() ?? '').trim();
+          final itemCode = (row[2]?.toString() ?? '').trim();
 
           final data = {
             'branch_name': branch,
             'item_code': itemCode,
-            'item_name': row[2]?.toString(),
-            'qty_per_duration': num.tryParse("${row[3]}") ?? 0,
-            'start_date': _parseDate(row[4]),
-            'end_date': _parseDate(row[5]),
+            'item_name': row[3]?.toString(),
+            'qty_per_duration': num.tryParse("${row[4]}") ?? 0,
+            'start_date': _parseDate(row[5]),
+            'end_date': _parseDate(row[6]),
           };
+          if (action == 'DELETE') {
+            await repo.deleteTmaRow(itemCode: itemCode, branch: branch);
+            updatedList.removeWhere(
+              (e) => e['item_code'] == itemCode && e['branch_name'] == branch,
+            );
+            continue;
+          }
 
           /// 🔥 CHECK EXIST
           final existing = await Supabase.instance.client
@@ -1523,10 +1631,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
       /// 🔥 errors
       if (errors.isNotEmpty) {
-        await AssortmentExcelExporter.export(
-          rows: errors,
-          includeHistory: false,
-        );
+        await TmaExcelExporter.export(rows: errors, includeHistory: false);
       }
 
       emit(
@@ -1626,6 +1731,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   ) async {
     final rows = [
       [
+        "action",
+
         "branch_name",
         "item_code",
         "item_name",
@@ -1679,6 +1786,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       final header = rows.first.map((e) => e.toString().trim()).toList();
 
       final expected = [
+        "action",
+
         "branch_name",
         "item_code",
         "item_name",
@@ -1711,19 +1820,31 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
       for (int i = 1; i < rows.length; i++) {
         final row = rows[i];
+        final action = (row[0]?.toString() ?? 'ADD').trim().toUpperCase();
+        if (!['ADD', 'UPDATE', 'DELETE'].contains(action)) {
+          errors.add({"row": row, "error": "Invalid action: $action"});
 
+          continue;
+        }
         try {
-          final branch = (row[0] ?? '').toString().trim();
-          final itemCode = (row[1] ?? '').toString().trim();
+          final branch = (row[1] ?? '').toString().trim();
+          final itemCode = (row[2] ?? '').toString().trim();
 
           final data = {
             'branch_name': branch,
             'item_code': itemCode,
-            'item_name': row[2],
-            'revised_branch_formulary': row[3],
-            'revised_date': _parseDate(row[4]),
-            'reason': row[5],
+            'item_name': row[3],
+            'revised_branch_formulary': row[4],
+            'revised_date': _parseDate(row[5]),
+            'reason': row[6],
           };
+          if (action == 'DELETE') {
+            await repo.deleteFormularyRow(itemCode: itemCode, branch: branch);
+            updatedList.removeWhere(
+              (e) => e['item_code'] == itemCode && e['branch_name'] == branch,
+            );
+            continue;
+          }
 
           /// 🔥 CHECK EXIST
           final existing = await Supabase.instance.client

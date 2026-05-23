@@ -776,4 +776,20 @@ done_at
   Future<void> deleteAdditionalRequestDraft({required String id}) async {
     await client.from('additional_request_drafts').delete().eq('id', id);
   }
+
+  Future<bool> isOperationalOrderReady({required String runDate}) async {
+    final row = await client
+        .from('daily_order_job_state')
+        .select('phase')
+        .eq('run_date', runDate)
+        .maybeSingle();
+
+    if (row == null) {
+      return false;
+    }
+
+    final phase = (row['phase'] ?? '').toString().trim();
+
+    return phase == 'done';
+  }
 }

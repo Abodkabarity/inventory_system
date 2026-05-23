@@ -105,4 +105,17 @@ abstract class InventoryRepository {
     Function(double progress)? onProgress,
   });
   Future<List<Map<String, dynamic>>> fetchMismatchLogExport();
+  Future<void> deleteFormularyRow({
+    required String itemCode,
+    required String branch,
+  });
+  Future<void> deleteAssortmentRow({
+    required String itemCode,
+    required String branch,
+  });
+  Future<void> deleteTmaRow({required String itemCode, required String branch});
+  Future<void> deleteMaxAdjRow({
+    required String itemCode,
+    required String branch,
+  });
 }
