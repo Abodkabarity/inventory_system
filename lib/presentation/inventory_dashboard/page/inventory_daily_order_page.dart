@@ -7,6 +7,7 @@ import '../bloc/inventory_bloc.dart';
 import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
 import '../widgets/inventory_columns_panel.dart';
+import '../widgets/inventory_orders_table.dart';
 
 class InventoryDailyOrderPage extends StatefulWidget {
   final String runDate;
@@ -76,9 +77,9 @@ class _InventoryDailyOrderPageState extends State<InventoryDailyOrderPage> {
                             ),
                           ),
                           onChanged: (v) {
-                            setState(() {
-                              searchQuery = v;
-                            });
+                            context.read<InventoryBloc>().add(
+                              SearchInventoryOrders(v),
+                            );
                           },
                         ),
                       ),
@@ -122,26 +123,112 @@ class _InventoryDailyOrderPageState extends State<InventoryDailyOrderPage> {
                   const SizedBox(height: 12),
 
                   /// 📊 TABLE
+                  /// 📊 TABLE
                   Expanded(
-                    child: OrdersTable(
-                      rows: filteredRows,
-                      isLoading: state.isOrdersLoading,
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: InventoryOrdersTable(
+                            rows: filteredRows,
 
-                      orderedColumns: finalColumns,
+                            isLoading: state.isOrdersLoading,
 
-                      columnWidths: {},
+                            orderedColumns: finalColumns,
 
-                      finalEdits: {},
-                      additionalEdits: {},
-                      sentAdditionalQtyByItemCode: {},
+                            columnWidths: {},
 
-                      onTapFinalReorder: (_) {},
-                      onTapAdditionalRequest: (_) {},
+                            onColumnResized: (_, __) {},
+                          ),
+                        ),
 
-                      isSubmitted: true,
+                        /// =====================================
+                        /// PAGINATION
+                        /// =====================================
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 14,
+                            horizontal: 20,
+                          ),
 
-                      gridController: controller,
-                      onColumnResized: (_, __) {},
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            border: Border(
+                              top: BorderSide(color: Colors.grey.shade300),
+                            ),
+                          ),
+
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+
+                            children: [
+                              /// PREVIOUS
+                              ElevatedButton.icon(
+                                onPressed: state.currentPage == 0
+                                    ? null
+                                    : () {
+                                        context.read<InventoryBloc>().add(
+                                          LoadOrdersPage(
+                                            runDate: widget.runDate,
+
+                                            page: state.currentOrdersPage - 1,
+                                          ),
+                                        );
+                                      },
+
+                                icon: const Icon(Icons.arrow_back),
+
+                                label: const Text("Previous"),
+                              ),
+
+                              const SizedBox(width: 25),
+
+                              /// PAGE NUMBER
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 18,
+                                  vertical: 10,
+                                ),
+
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.shade50,
+
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+
+                                child: Text(
+                                  "Page ${state.currentOrdersPage + 1}",
+
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ),
+
+                              const SizedBox(width: 25),
+
+                              /// NEXT
+                              ElevatedButton.icon(
+                                onPressed: !state.hasMorePages
+                                    ? null
+                                    : () {
+                                        context.read<InventoryBloc>().add(
+                                          LoadOrdersPage(
+                                            runDate: widget.runDate,
+
+                                            page: state.currentOrdersPage + 1,
+                                          ),
+                                        );
+                                      },
+
+                                icon: const Icon(Icons.arrow_forward),
+
+                                label: const Text("Next"),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],

@@ -1,6 +1,6 @@
 import 'package:daily_order/presentation/auth/pages/login_page.dart';
 import 'package:daily_order/presentation/inventory_dashboard/page/inventory_dashboard_page.dart';
-import 'package:daily_order/presentation/store_dashboard/page/store_dashboard_page.dart';
+import 'package:daily_order/presentation/store_dashboard/page/store_shell_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -59,7 +59,7 @@ class RoleGatePage extends StatelessWidget {
         final branchName = (s.me!.branchName ?? '').trim();
 
         if (role == 'store') {
-          return StoreDashboardPage(runDate: runDate);
+          return StoreShellPage(runDate: runDate);
         }
 
         if (role == 'inventory') {

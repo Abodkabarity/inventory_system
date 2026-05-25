@@ -887,4 +887,24 @@ class InventoryRepositoryImpl implements InventoryRepository {
         .eq('item_code', itemCode)
         .eq('branch_name', branch);
   }
+  // ====================================
+  // DAILY ORDER PAGINATION
+  // ====================================
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchOrdersPage({
+    required String runDate,
+    required int from,
+    required int to,
+  }) {
+    return remote.fetchOrdersPage(runDate: runDate, from: from, to: to);
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> searchOrders({
+    required String runDate,
+    required String query,
+  }) {
+    return remote.searchOrders(runDate: runDate, query: query);
+  }
 }

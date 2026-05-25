@@ -1,4 +1,5 @@
 import '../../domain/entities/additional_request_group.dart';
+import '../../domain/entities/product_movement.dart';
 import '../../domain/entities/store_order_item.dart';
 import '../../domain/repositories/store_repository.dart';
 import '../datasources/remote/store_remote_ds.dart';
@@ -237,5 +238,36 @@ class StoreRepositoryImpl implements StoreRepository {
   @override
   Future<List<Map<String, dynamic>>> fetchProcessingRequests() {
     return remote.fetchProcessingRequests();
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchProductSuggestions({
+    required String branch,
+    required String query,
+  }) {
+    return remote.fetchProductSuggestions(branch: branch, query: query);
+  }
+
+  @override
+  Future<List<ProductMovement>> fetchProductMovement({
+    required String branch,
+    required String itemCode,
+  }) async {
+    final rows = await remote.fetchProductMovement(
+      branch: branch,
+      itemCode: itemCode,
+    );
+
+    return rows.map((e) {
+      return ProductMovement(
+        branch: e['branch'],
+        itemCode: e['item_code'],
+        itemName: e['item_name'],
+        barcode: e['barcode'] ?? '',
+        movementType: e['movement_type'],
+        qty: e['qty'] ?? 0,
+        createdAt: DateTime.parse(e['created_at']).toLocal(),
+      );
+    }).toList();
   }
 }

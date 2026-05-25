@@ -118,4 +118,14 @@ abstract class InventoryRepository {
     required String itemCode,
     required String branch,
   });
+  Future<List<Map<String, dynamic>>> fetchOrdersPage({
+    required String runDate,
+    required int from,
+    required int to,
+  });
+
+  Future<List<Map<String, dynamic>>> searchOrders({
+    required String runDate,
+    required String query,
+  });
 }

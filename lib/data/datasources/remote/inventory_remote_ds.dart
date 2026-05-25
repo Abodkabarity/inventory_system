@@ -404,4 +404,87 @@ store_item_classifications
 
     return List<Map<String, dynamic>>.from(res);
   }
+
+  Future<List<Map<String, dynamic>>> fetchOrdersPage({
+    required String runDate,
+
+    required int from,
+
+    required int to,
+  }) async {
+    const cols = '''
+run_date,
+branch,
+item_code,
+item_name,
+goods_received_last_7_days,
+branch_stock,
+mismatch_stock,
+store_stock,
+pending_stock_received,
+extra_qty_more_than_month,
+max_adjustment_30d,
+demand_for_30_days,
+reorder_point_min,
+reorder_max,
+reorder_qty_num,
+reorder_qty,
+final_reorder_qty_store_stock_gt_0,
+date_of_last_qty_received_in_branch,
+qty_30_days_from_last_45d,
+branch_formulary,
+assortment_qty_base_stock,
+assortment_by,
+reason,
+assortment_start,
+assortment_end,
+tma_qty,
+tma_start,
+tma_end,
+item_purchase_type,
+sales_orientation,
+category,
+sub_category,
+company,
+supplier,
+indication,
+active_ingredient,
+pack_size,
+concentration,
+product_type_form,
+retail_price,
+vat,
+is_upp,
+max_type,
+item_minimum_order_unit,
+barcode,
+store_item_classifications
+''';
+
+    final res = await client
+        .from('daily_order')
+        .select(cols)
+        .eq('run_date', runDate)
+        .range(from, to);
+
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<List<Map<String, dynamic>>> searchOrders({
+    required String runDate,
+    required String query,
+  }) async {
+    final res = await client
+        .from('daily_order')
+        .select()
+        .eq('run_date', runDate)
+        .or(
+          'item_name.ilike.%$query%,'
+          'item_code.ilike.%$query%,'
+          'barcode.ilike.%$query%',
+        )
+        .limit(200);
+
+    return List<Map<String, dynamic>>.from(res);
+  }
 }

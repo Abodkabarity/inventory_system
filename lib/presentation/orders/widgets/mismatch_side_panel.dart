@@ -29,130 +29,134 @@ class _MismatchSidePanelState extends State<MismatchSidePanel> {
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
 
-    return Align(
-      alignment: Alignment.centerRight,
-      child: Material(
-        color: Colors.white,
-        elevation: 20,
-        child: SizedBox(
-          width: screenWidth * 0.5,
-          child: Column(
-            children: [
-              /// HEADER
-              BlocBuilder<OrdersBloc, OrdersState>(
-                builder: (context, state) {
-                  final count = state.mismatchItems.length;
-
-                  return Container(
-                    padding: const EdgeInsets.all(16),
-                    color: AppColors.primaryColor,
-                    child: Row(
-                      children: [
-                        Text(
-                          "Mismatch Items ($count)",
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                          ),
-                        ),
-
-                        const Spacer(),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white),
-                          onPressed: () {
-                            context.read<OrdersBloc>().add(
-                              OrdersSearchMismatchList(''),
-                            );
-                            searchController.clear();
-                            Navigator.pop(context);
-                          },
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-
-              const _AddForm(),
-              const Divider(
-                color: AppColors.secondaryColor,
-                endIndent: 100,
-                indent: 100,
-              ),
-
-              /// SEARCH
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: TextField(
-                  controller: searchController,
-                  decoration: InputDecoration(
-                    hintText: "Search...",
-                    prefixIcon: const Icon(Icons.search),
-                    filled: true,
-                    fillColor: AppColors.backgroundWidget,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: AppColors.primaryColor),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: AppColors.primaryColor),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: AppColors.primaryColor),
-                    ),
-                  ),
-                  onChanged: (v) {
-                    context.read<OrdersBloc>().add(OrdersSearchMismatchList(v));
-                  },
-                ),
-              ),
-
-              /// LIST + LOADING
-              Expanded(
-                child: BlocBuilder<OrdersBloc, OrdersState>(
+    return SelectionArea(
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Material(
+          color: Colors.white,
+          elevation: 20,
+          child: SizedBox(
+            width: screenWidth * 0.5,
+            child: Column(
+              children: [
+                /// HEADER
+                BlocBuilder<OrdersBloc, OrdersState>(
                   builder: (context, state) {
-                    final isLoading = state.isMismatchLoading;
-                    final query = state.mismatchSearch.toLowerCase();
+                    final count = state.mismatchItems.length;
 
-                    final filtered = state.mismatchItems.where((e) {
-                      final code = (e['item_code'] ?? '')
-                          .toString()
-                          .toLowerCase();
-                      final name = (e['item_name'] ?? '')
-                          .toString()
-                          .toLowerCase();
-                      return code.contains(query) || name.contains(query);
-                    }).toList();
-
-                    return Stack(
-                      children: [
-                        /// LIST
-                        ListView.builder(
-                          itemCount: filtered.length,
-                          itemBuilder: (_, i) {
-                            return _Row(index: i, item: filtered[i]);
-                          },
-                        ),
-
-                        if (isLoading)
-                          Positioned.fill(
-                            child: Container(
-                              color: Colors.white.withValues(alpha: 0.6),
-                              child: const Center(
-                                child: CircularProgressIndicator(
-                                  color: AppColors.primaryColor,
-                                ),
-                              ),
+                    return Container(
+                      padding: const EdgeInsets.all(16),
+                      color: AppColors.primaryColor,
+                      child: Row(
+                        children: [
+                          Text(
+                            "Mismatch Items ($count)",
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
                             ),
                           ),
-                      ],
+
+                          const Spacer(),
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white),
+                            onPressed: () {
+                              context.read<OrdersBloc>().add(
+                                OrdersSearchMismatchList(''),
+                              );
+                              searchController.clear();
+                              Navigator.pop(context);
+                            },
+                          ),
+                        ],
+                      ),
                     );
                   },
                 ),
-              ),
-            ],
+
+                const _AddForm(),
+                const Divider(
+                  color: AppColors.secondaryColor,
+                  endIndent: 100,
+                  indent: 100,
+                ),
+
+                /// SEARCH
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: TextField(
+                    controller: searchController,
+                    decoration: InputDecoration(
+                      hintText: "Search...",
+                      prefixIcon: const Icon(Icons.search),
+                      filled: true,
+                      fillColor: AppColors.backgroundWidget,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: AppColors.primaryColor),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: AppColors.primaryColor),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: AppColors.primaryColor),
+                      ),
+                    ),
+                    onChanged: (v) {
+                      context.read<OrdersBloc>().add(
+                        OrdersSearchMismatchList(v),
+                      );
+                    },
+                  ),
+                ),
+
+                /// LIST + LOADING
+                Expanded(
+                  child: BlocBuilder<OrdersBloc, OrdersState>(
+                    builder: (context, state) {
+                      final isLoading = state.isMismatchLoading;
+                      final query = state.mismatchSearch.toLowerCase();
+
+                      final filtered = state.mismatchItems.where((e) {
+                        final code = (e['item_code'] ?? '')
+                            .toString()
+                            .toLowerCase();
+                        final name = (e['item_name'] ?? '')
+                            .toString()
+                            .toLowerCase();
+                        return code.contains(query) || name.contains(query);
+                      }).toList();
+
+                      return Stack(
+                        children: [
+                          /// LIST
+                          ListView.builder(
+                            itemCount: filtered.length,
+                            itemBuilder: (_, i) {
+                              return _Row(index: i, item: filtered[i]);
+                            },
+                          ),
+
+                          if (isLoading)
+                            Positioned.fill(
+                              child: Container(
+                                color: Colors.white.withValues(alpha: 0.6),
+                                child: const Center(
+                                  child: CircularProgressIndicator(
+                                    color: AppColors.primaryColor,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

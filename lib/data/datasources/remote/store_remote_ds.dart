@@ -225,4 +225,60 @@ class StoreRemoteDs {
 
     return List<Map<String, dynamic>>.from(res);
   }
+
+  Future<List<Map<String, dynamic>>> fetchProductSuggestions({
+    required String branch,
+    required String query,
+  }) async {
+    if (query.trim().isEmpty) {
+      return [];
+    }
+
+    final res = await client
+        .from('product_movement_history')
+        .select('item_code,item_name,barcode')
+        .eq('branch', branch)
+        .or(
+          'item_name.ilike.%$query%,'
+          'item_code.ilike.%$query%,'
+          'barcode.ilike.%$query%',
+        )
+        .limit(20);
+
+    final rows = List<Map<String, dynamic>>.from(res);
+
+    final unique = <String, Map<String, dynamic>>{};
+
+    for (final row in rows) {
+      unique[row['item_code']] = row;
+    }
+
+    return unique.values.toList();
+  }
+
+  Future<List<Map<String, dynamic>>> fetchProductMovement({
+    required String branch,
+    required String itemCode,
+  }) async {
+    final res = await client
+        .from('product_movement_history')
+        .select()
+        .eq('branch', branch)
+        .eq('item_code', itemCode)
+        .order('created_at', ascending: false);
+
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<List<String>> fetchMovementBranches() async {
+    final res = await client
+        .from('branches')
+        .select('branch_name')
+        .eq('is_active', true)
+        .order('branch_name');
+
+    return List<Map<String, dynamic>>.from(
+      res,
+    ).map((e) => e['branch_name'].toString()).toList();
+  }
 }

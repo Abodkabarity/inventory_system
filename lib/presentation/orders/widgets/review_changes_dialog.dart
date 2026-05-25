@@ -8,7 +8,9 @@ import '../bloc/order_bloc/orders_state.dart';
 class ReviewChangesDialog extends StatefulWidget {
   final List<DailyOrderRow> rows;
   final Map<String, FinalReorderEdit> edits;
+  final bool submitMode;
 
+  final VoidCallback? onConfirmSubmit;
   final ValueChanged<String> onEdit;
   final ValueChanged<String> onReset;
   final VoidCallback onClearAll;
@@ -20,6 +22,8 @@ class ReviewChangesDialog extends StatefulWidget {
     required this.onEdit,
     required this.onReset,
     required this.onClearAll,
+    this.submitMode = false,
+    this.onConfirmSubmit,
   });
 
   @override
@@ -195,25 +199,78 @@ class _ReviewChangesDialogState extends State<ReviewChangesDialog> {
                           ),
                         ),
                       ),
-                      FilledButton.icon(
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(Icons.check_rounded, size: 18),
-                        label: const Text(
-                          'Done',
-                          style: TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: AppColors.primaryColor,
-                          foregroundColor: Colors.white,
+
+                      // =========================
+                      // CANCEL
+                      // =========================
+                      OutlinedButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                        },
+                        style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
+                            horizontal: 18,
+                            vertical: 12,
                           ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
                           ),
                         ),
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
                       ),
+
+                      const SizedBox(width: 10),
+
+                      // =========================
+                      // SUBMIT MODE
+                      // =========================
+                      if (widget.submitMode)
+                        FilledButton.icon(
+                          onPressed: list.isEmpty
+                              ? null
+                              : widget.onConfirmSubmit,
+                          icon: const Icon(Icons.check_circle, size: 18),
+                          label: const Text(
+                            'Confirm Submit',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                        )
+                      else
+                        FilledButton.icon(
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                          },
+                          icon: const Icon(Icons.check_rounded, size: 18),
+                          label: const Text(
+                            'Done',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.primaryColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),

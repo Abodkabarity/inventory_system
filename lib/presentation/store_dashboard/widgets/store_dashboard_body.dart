@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import '../bloc/store_state.dart';
 import 'additional_requests_panel.dart';
 import 'branch_grid.dart';
-import 'order_panel.dart';
 
 class StoreDashboardBody extends StatelessWidget {
   final StoreState state;
@@ -80,14 +79,7 @@ class StoreDashboardBody extends StatelessWidget {
               ),
 
               /// ORDERS PANEL
-              Expanded(
-                child: OrdersPanel(
-                  items: state.items,
-                  branch: state.selectedBranch,
-                  isSubmitted: isSubmitted,
-                  isLoading: state.isLoading,
-                ),
-              ),
+              SizedBox(width: 15),
 
               /// ADDITIONAL REQUESTS
               Expanded(
