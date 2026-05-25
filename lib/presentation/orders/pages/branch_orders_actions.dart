@@ -70,28 +70,44 @@ class BranchOrdersActions {
     );
   }
 
-  static Future<void> openReviewDialog({
+  static Future<bool?> openSubmitReviewDialog({
     required BuildContext context,
     required OrdersState state,
+    required String zone,
   }) async {
-    await showDialog(
+    return await showDialog<bool>(
       context: context,
       barrierDismissible: true,
-      builder: (_) => ReviewChangesDialog(
-        rows: state.rows,
-        edits: state.finalEdits,
-        onEdit: (itemCode) {
-          Navigator.of(context).pop();
-          final row = state.rows.firstWhere((r) => r.itemCode == itemCode);
-          openFinalSidePanel(context: context, state: state, row: row);
-        },
-        onReset: (itemCode) {
-          context.read<OrdersBloc>().add(OrdersResetFinalEdit(itemCode));
-        },
-        onClearAll: () {
-          context.read<OrdersBloc>().add(const OrdersClearAllEdits());
-        },
-      ),
+      builder: (_) {
+        return ReviewChangesDialog(
+          rows: state.rows,
+          edits: state.finalEdits,
+
+          onEdit: (itemCode) {
+            Navigator.of(context).pop(false);
+
+            final row = state.rows.firstWhere((r) => r.itemCode == itemCode);
+
+            openFinalSidePanel(context: context, state: state, row: row);
+          },
+
+          onReset: (itemCode) {
+            context.read<OrdersBloc>().add(OrdersResetFinalEdit(itemCode));
+          },
+
+          onClearAll: () {
+            context.read<OrdersBloc>().add(const OrdersClearAllEdits());
+          },
+
+          // 🔥 NEW
+          submitMode: true,
+
+          // 🔥 NEW
+          onConfirmSubmit: () {
+            Navigator.of(context).pop(true);
+          },
+        );
+      },
     );
   }
 

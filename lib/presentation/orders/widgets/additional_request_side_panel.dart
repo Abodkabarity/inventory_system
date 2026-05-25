@@ -132,205 +132,207 @@ class _AdditionalRequestSidePanelState
     final history = widget.sentHistory;
     final totalSent = _sumSent(history);
 
-    return Material(
-      color: Colors.transparent,
-      child: Container(
-        width: 420,
-        height: double.infinity,
-        padding: const EdgeInsets.all(18),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(22),
-            bottomLeft: Radius.circular(22),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black12,
-              blurRadius: 26,
-              offset: Offset(-6, 0),
+    return SelectionArea(
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          width: 420,
+          height: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(22),
+              bottomLeft: Radius.circular(22),
             ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _Header(
-              title: 'Additional Request',
-              subtitle: '${widget.row.itemCode} • ${widget.row.itemName}',
-              onClose: widget.onClose,
-            ),
-            const SizedBox(height: 14),
-
-            if (history.isNotEmpty) ...[
-              _InfoBox(
-                title: 'Previously sent',
-                value: 'Count: ${history.length} • Total qty: $totalSent',
-                icon: Icons.history_outlined,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black12,
+                blurRadius: 26,
+                offset: Offset(-6, 0),
               ),
-              const SizedBox(height: 10),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _Header(
+                title: 'Additional Request',
+                subtitle: '${widget.row.itemCode} • ${widget.row.itemName}',
+                onClose: widget.onClose,
+              ),
+              const SizedBox(height: 14),
 
-              _FieldLabel('Today history'),
-              const SizedBox(height: 6),
+              if (history.isNotEmpty) ...[
+                _InfoBox(
+                  title: 'Previously sent',
+                  value: 'Count: ${history.length} • Total qty: $totalSent',
+                  icon: Icons.history_outlined,
+                ),
+                const SizedBox(height: 10),
 
-              // Scrollable history list (won’t push buttons off screen)
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 160),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF9FAFB),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFFE6E8F0)),
+                _FieldLabel('Today history'),
+                const SizedBox(height: 6),
+
+                // Scrollable history list (won’t push buttons off screen)
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 160),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF9FAFB),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFE6E8F0)),
+                    ),
+                    child: ListView.separated(
+                      padding: const EdgeInsets.all(10),
+                      itemCount: history.length,
+                      separatorBuilder: (_, _) => const Divider(height: 14),
+                      itemBuilder: (context, i) {
+                        final h = history[i];
+                        return _HistoryRow(
+                          qty: h.qty,
+                          reason: h.reason,
+                          createdAt: _fmtDateTime(h.createdAt),
+                        );
+                      },
+                    ),
                   ),
-                  child: ListView.separated(
-                    padding: const EdgeInsets.all(10),
-                    itemCount: history.length,
-                    separatorBuilder: (_, _) => const Divider(height: 14),
-                    itemBuilder: (context, i) {
-                      final h = history[i];
-                      return _HistoryRow(
-                        qty: h.qty,
-                        reason: h.reason,
-                        createdAt: _fmtDateTime(h.createdAt),
-                      );
-                    },
+                ),
+                const SizedBox(height: 12),
+              ],
+
+              _FieldLabel('Request Qty'),
+              TextField(
+                controller: _qty,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                  signed: true,
+                ),
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: InputDecoration(
+                  hintText: 'Enter Your Additional Quantity',
+                  filled: true,
+                  fillColor: AppColors.backgroundWidget,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: AppColors.primaryColor),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: AppColors.primaryColor),
                   ),
                 ),
               ),
               const SizedBox(height: 12),
-            ],
 
-            _FieldLabel('Request Qty'),
-            TextField(
-              controller: _qty,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-                signed: true,
+              _FieldLabel('Reason'),
+              DropdownButtonFormField<String>(
+                initialValue: _selectedReason,
+                items: reasons
+                    .map(
+                      (r) => DropdownMenuItem(
+                        value: r,
+                        child: Text(
+                          r,
+                          style: TextStyle(color: AppColors.secondaryColor),
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (v) {
+                  setState(() {
+                    _selectedReason = v;
+                  });
+                },
+                dropdownColor: AppColors.white,
+                decoration: InputDecoration(
+                  hintText: 'Select reason...',
+                  filled: true,
+                  fillColor: AppColors.backgroundWidget,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: AppColors.primaryColor),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: AppColors.primaryColor),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: AppColors.primaryColor),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 14,
+                  ),
+                ),
+                icon: const Icon(Icons.keyboard_arrow_down),
               ),
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: InputDecoration(
-                hintText: 'Enter Your Additional Quantity',
-                filled: true,
-                fillColor: AppColors.backgroundWidget,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(color: AppColors.primaryColor),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: AppColors.primaryColor),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
+              const SizedBox(height: 12),
 
-            _FieldLabel('Reason'),
-            DropdownButtonFormField<String>(
-              initialValue: _selectedReason,
-              items: reasons
-                  .map(
-                    (r) => DropdownMenuItem(
-                      value: r,
-                      child: Text(
-                        r,
-                        style: TextStyle(color: AppColors.secondaryColor),
+              Row(
+                children: [
+                  Checkbox(
+                    value: isUrgent,
+                    activeColor: AppColors.primaryColor,
+
+                    onChanged: (v) {
+                      setState(() {
+                        isUrgent = v ?? false;
+                      });
+                    },
+                  ),
+                  Expanded(
+                    child: Text(
+                      "Urgent customer – We contacted logistics for delivery",
+                      style: TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(_error!, style: const TextStyle(color: Colors.red)),
+              ],
+
+              const Spacer(),
+
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: widget.onRemove,
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                      ),
+                      icon: const Icon(
+                        Icons.delete_outline,
+                        color: AppColors.white,
+                      ),
+                      label: const Text(
+                        'Remove Draft',
+                        style: TextStyle(color: AppColors.white),
                       ),
                     ),
-                  )
-                  .toList(),
-              onChanged: (v) {
-                setState(() {
-                  _selectedReason = v;
-                });
-              },
-              dropdownColor: AppColors.white,
-              decoration: InputDecoration(
-                hintText: 'Select reason...',
-                filled: true,
-                fillColor: AppColors.backgroundWidget,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: AppColors.primaryColor),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: AppColors.primaryColor),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(color: AppColors.primaryColor),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 14,
-                ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _save,
+                      icon: const Icon(Icons.save_outlined),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.primaryColor,
+                      ),
+                      label: const Text('Save Draft'),
+                    ),
+                  ),
+                ],
               ),
-              icon: const Icon(Icons.keyboard_arrow_down),
-            ),
-            const SizedBox(height: 12),
-
-            Row(
-              children: [
-                Checkbox(
-                  value: isUrgent,
-                  activeColor: AppColors.primaryColor,
-
-                  onChanged: (v) {
-                    setState(() {
-                      isUrgent = v ?? false;
-                    });
-                  },
-                ),
-                Expanded(
-                  child: Text(
-                    "Urgent customer – We contacted logistics for delivery",
-                    style: TextStyle(fontSize: 13),
-                  ),
-                ),
-              ],
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 10),
-              Text(_error!, style: const TextStyle(color: Colors.red)),
             ],
-
-            const Spacer(),
-
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: widget.onRemove,
-                    style: OutlinedButton.styleFrom(
-                      backgroundColor: Colors.redAccent,
-                    ),
-                    icon: const Icon(
-                      Icons.delete_outline,
-                      color: AppColors.white,
-                    ),
-                    label: const Text(
-                      'Remove Draft',
-                      style: TextStyle(color: AppColors.white),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: _save,
-                    icon: const Icon(Icons.save_outlined),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.primaryColor,
-                    ),
-                    label: const Text('Save Draft'),
-                  ),
-                ),
-              ],
-            ),
-          ],
+          ),
         ),
       ),
     );

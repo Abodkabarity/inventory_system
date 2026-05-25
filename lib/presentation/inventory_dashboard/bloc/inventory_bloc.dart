@@ -25,6 +25,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   late final RealtimeChannel maxAdjChannel;
   late final RealtimeChannel assortmentChannel;
   late final RealtimeChannel formularyChannel;
+  static final Map<String, List<DailyOrderRow>> ordersCache = {};
   String runDate = '';
   late final RealtimeChannel mismatchChannel;
   InventoryBloc(this.repo) : super(InventoryState.initial()) {
@@ -56,6 +57,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     on<ExportInventoryOrders>(_onExportInventoryOrders);
     on<ExportFormularyTemplate>(_onExportFormularyTemplate);
     on<ImportFormularyExcel>(_onImportFormulary);
+    on<LoadOrdersPage>(_onLoadOrdersPage);
     on<ImportTmaExcel>(_onImportTma);
     on<ExportTmaTemplate>(_onExportTmaTemplate);
     on<ExportTmaCurrent>(_onExportTmaCurrent);
@@ -389,12 +391,161 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     on<LoadInventoryOrders>((event, emit) async {
       emit(state.copyWith(isOrdersLoading: true));
 
-      final rows = await repo.fetchAllOrders(event.runDate);
-      final mapped = rows.map((e) {
-        return DailyOrderRow.fromMap(e);
+      final cacheKey = event.runDate;
+
+      // =====================================
+      // CACHE
+      // =====================================
+
+      if (ordersCache.containsKey(cacheKey)) {
+        final cached = ordersCache[cacheKey]!;
+
+        final firstPage = cached.take(50000).toList();
+
+        emit(
+          state.copyWith(
+            allOrders: firstPage,
+            cachedOrders: cached,
+            loadedCount: cached.length,
+            currentOrdersPage: 0,
+            hasMorePages: cached.length > 50000,
+            isOrdersLoading: false,
+            allDataLoaded: true,
+          ),
+        );
+
+        return;
+      }
+
+      // =====================================
+      // FIRST 50000
+      // =====================================
+
+      final firstBatch = await repo.fetchOrdersPage(
+        runDate: event.runDate,
+
+        from: 0,
+
+        to: 49999,
+      );
+
+      final firstRows = firstBatch
+          .map((e) => DailyOrderRow.fromMap(e))
+          .toList();
+
+      emit(
+        state.copyWith(
+          allOrders: firstRows,
+          cachedOrders: firstRows,
+          loadedCount: firstRows.length,
+          isOrdersLoading: false,
+        ),
+      );
+
+      // =====================================
+      // BACKGROUND LOADING
+      // =====================================
+
+      Future(() async {
+        List<DailyOrderRow> all = List.from(firstRows);
+
+        int from = 50000;
+
+        const batch = 50000;
+
+        while (true) {
+          final data = await repo.fetchOrdersPage(
+            runDate: event.runDate,
+
+            from: from,
+
+            to: from + batch - 1,
+          );
+
+          if (data.isEmpty) break;
+
+          final mapped = data.map((e) => DailyOrderRow.fromMap(e)).toList();
+
+          all.addAll(mapped);
+
+          from += batch;
+
+          emit(
+            state.copyWith(
+              cachedOrders: all,
+              loadedCount: all.length,
+              isBackgroundLoading: true,
+            ),
+          );
+
+          if (data.length < batch) {
+            break;
+          }
+        }
+
+        ordersCache[cacheKey] = all;
+
+        emit(
+          state.copyWith(
+            cachedOrders: all,
+            isBackgroundLoading: false,
+            allDataLoaded: true,
+          ),
+        );
+      });
+    });
+    on<SearchInventoryOrders>((event, emit) async {
+      final q = event.query.trim();
+
+      if (q.isEmpty) {
+        emit(state.copyWith(allOrders: state.cachedOrders));
+
+        return;
+      }
+
+      // =====================================
+      // SEARCH LOCAL FIRST
+      // =====================================
+
+      final local = state.cachedOrders.where((e) {
+        return e.itemName.toLowerCase().contains(q.toLowerCase()) ||
+            e.itemCode.toLowerCase().contains(q.toLowerCase()) ||
+            e.barcode!.toLowerCase().contains(q.toLowerCase());
       }).toList();
 
-      emit(state.copyWith(allOrders: mapped, isOrdersLoading: false));
+      // =====================================
+      // FOUND LOCAL
+      // =====================================
+
+      if (local.isNotEmpty) {
+        emit(state.copyWith(allOrders: local));
+
+        return;
+      }
+
+      // =====================================
+      // SEARCH SERVER
+      // =====================================
+
+      emit(state.copyWith(isSearching: true));
+
+      final remote = await repo.searchOrders(runDate: runDate, query: q);
+
+      final rows = remote.map((e) => DailyOrderRow.fromMap(e)).toList();
+
+      // add to cache
+
+      final updated = List<DailyOrderRow>.from(state.cachedOrders);
+
+      updated.addAll(rows);
+
+      emit(
+        state.copyWith(
+          allOrders: rows,
+          cachedOrders: updated,
+          isSearching: false,
+        ),
+      );
     });
     on<StartAssortmentRealtime>((event, emit) {
       assortmentChannel = Supabase.instance.client
@@ -2118,5 +2269,69 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
       emit(state.copyWith(isExporting: false, exportMessage: "Export failed"));
     }
+  }
+
+  Future<void> _onLoadOrdersPage(
+    LoadOrdersPage event,
+    Emitter<InventoryState> emit,
+  ) async {
+    const pageSize = 50000;
+
+    final start = event.page * pageSize;
+
+    final end = start + pageSize;
+
+    // =====================================
+    // LOADING OVERLAY ONLY
+    // =====================================
+
+    emit(state.copyWith(isOrdersLoading: true));
+
+    // =====================================
+    // CACHE AVAILABLE
+    // =====================================
+
+    if (state.cachedOrders.length >= end) {
+      final rows = state.cachedOrders.sublist(
+        start,
+        end > state.cachedOrders.length ? state.cachedOrders.length : end,
+      );
+
+      emit(
+        state.copyWith(
+          allOrders: rows,
+          currentOrdersPage: event.page,
+          hasMorePages: end < state.cachedOrders.length || !state.allDataLoaded,
+          isOrdersLoading: false,
+        ),
+      );
+
+      return;
+    }
+
+    // =====================================
+    // SERVER FETCH
+    // =====================================
+
+    final data = await repo.fetchOrdersPage(
+      runDate: event.runDate,
+      from: start,
+      to: end - 1,
+    );
+
+    final rows = data.map((e) => DailyOrderRow.fromMap(e)).toList();
+
+    final updatedCache = List<DailyOrderRow>.from(state.cachedOrders)
+      ..addAll(rows);
+
+    emit(
+      state.copyWith(
+        cachedOrders: updatedCache,
+        allOrders: rows,
+        currentOrdersPage: event.page,
+        hasMorePages: rows.length == pageSize,
+        isOrdersLoading: false,
+      ),
+    );
   }
 }

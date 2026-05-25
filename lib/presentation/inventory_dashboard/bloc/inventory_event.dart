@@ -290,3 +290,22 @@ class UpdateExportDailyProgress extends InventoryEvent {
   @override
   List<Object> get props => [progress, message];
 }
+
+class LoadMoreInventoryOrders extends InventoryEvent {}
+
+class SearchInventoryOrders extends InventoryEvent {
+  final String query;
+
+  SearchInventoryOrders(this.query);
+}
+
+class LoadOrdersPage extends InventoryEvent {
+  final String runDate;
+
+  final int page;
+
+  LoadOrdersPage({required this.runDate, required this.page});
+
+  @override
+  List<Object?> get props => [runDate, page];
+}

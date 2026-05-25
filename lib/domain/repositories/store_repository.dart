@@ -1,4 +1,5 @@
 import '../entities/additional_request_group.dart';
+import '../entities/product_movement.dart';
 import '../entities/store_order_item.dart';
 
 abstract class StoreRepository {
@@ -21,4 +22,13 @@ abstract class StoreRepository {
 
   Future<void> markAsProcessing(List<String> ids);
   Future<List<Map<String, dynamic>>> fetchProcessingRequests();
+  Future<List<Map<String, dynamic>>> fetchProductSuggestions({
+    required String branch,
+    required String query,
+  });
+
+  Future<List<ProductMovement>> fetchProductMovement({
+    required String branch,
+    required String itemCode,
+  });
 }

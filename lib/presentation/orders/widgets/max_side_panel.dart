@@ -31,131 +31,133 @@ class _MaxSidePanelState extends State<MaxSidePanel> {
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
 
-    return Align(
-      alignment: Alignment.centerRight,
-      child: Material(
-        color: Colors.white,
-        elevation: 20,
-        child: SizedBox(
-          width: screenWidth * 0.5.w,
-          child: Column(
-            children: [
-              /// HEADER
-              BlocBuilder<OrdersBloc, OrdersState>(
-                builder: (context, state) {
-                  final branchCount = state.maxAdjItems
-                      .where((e) => e['added_by'] == 'branch')
-                      .length;
-                  return Container(
-                    padding: const EdgeInsets.all(16),
-                    color: AppColors.primaryColor,
-                    child: Row(
-                      children: [
-                        Text(
-                          "Max Adjustment ($branchCount / 50)",
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                          ),
-                        ),
-
-                        const Spacer(),
-
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-
-              const _AddMaxForm(),
-
-              const Divider(
-                color: AppColors.secondaryColor,
-                endIndent: 100,
-                indent: 100,
-              ),
-
-              /// SEARCH
-              Padding(
-                padding: const EdgeInsets.all(5),
-                child: TextField(
-                  controller: searchController,
-                  decoration: InputDecoration(
-                    hintText: "Search...",
-                    prefixIcon: const Icon(Icons.search),
-                    filled: true,
-                    fillColor: AppColors.backgroundWidget,
-                    labelStyle: TextStyle(color: AppColors.secondaryColor),
-                    border: OutlineInputBorder(
-                      borderSide: BorderSide(color: AppColors.primaryColor),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderSide: BorderSide(color: AppColors.primaryColor),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderSide: BorderSide(color: AppColors.primaryColor),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  onChanged: (v) {
-                    context.read<OrdersBloc>().add(OrdersSearchMaxAdjList(v));
-                  },
-                ),
-              ),
-
-              /// LIST
-              Expanded(
-                child: BlocBuilder<OrdersBloc, OrdersState>(
+    return SelectionArea(
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Material(
+          color: Colors.white,
+          elevation: 20,
+          child: SizedBox(
+            width: screenWidth * 0.5.w,
+            child: Column(
+              children: [
+                /// HEADER
+                BlocBuilder<OrdersBloc, OrdersState>(
                   builder: (context, state) {
-                    final isLoading = state.isMaxAdjLoading;
-
-                    final query = state.maxAdjSearch.toLowerCase();
-
-                    final filtered = state.maxAdjItems.where((e) {
-                      final code = (e['item_code'] ?? '')
-                          .toString()
-                          .toLowerCase();
-                      final name = (e['item_name'] ?? '')
-                          .toString()
-                          .toLowerCase();
-
-                      final matchSearch =
-                          code.contains(query) || name.contains(query);
-
-                      if (state.onlyBranchMaxAdj) {
-                        return matchSearch && e['added_by'] == 'branch';
-                      }
-
-                      return matchSearch;
-                    }).toList();
-
-                    return Stack(
-                      children: [
-                        ListView.builder(
-                          itemCount: filtered.length,
-                          itemBuilder: (_, i) {
-                            return _MaxRow(index: i, item: filtered[i]);
-                          },
-                        ),
-
-                        if (isLoading)
-                          const Center(
-                            child: CircularProgressIndicator(
-                              color: AppColors.primaryColor,
+                    final branchCount = state.maxAdjItems
+                        .where((e) => e['added_by'] == 'branch')
+                        .length;
+                    return Container(
+                      padding: const EdgeInsets.all(16),
+                      color: AppColors.primaryColor,
+                      child: Row(
+                        children: [
+                          Text(
+                            "Max Adjustment ($branchCount / 50)",
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
                             ),
                           ),
-                      ],
+
+                          const Spacer(),
+
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ],
+                      ),
                     );
                   },
                 ),
-              ),
-            ],
+
+                const _AddMaxForm(),
+
+                const Divider(
+                  color: AppColors.secondaryColor,
+                  endIndent: 100,
+                  indent: 100,
+                ),
+
+                /// SEARCH
+                Padding(
+                  padding: const EdgeInsets.all(5),
+                  child: TextField(
+                    controller: searchController,
+                    decoration: InputDecoration(
+                      hintText: "Search...",
+                      prefixIcon: const Icon(Icons.search),
+                      filled: true,
+                      fillColor: AppColors.backgroundWidget,
+                      labelStyle: TextStyle(color: AppColors.secondaryColor),
+                      border: OutlineInputBorder(
+                        borderSide: BorderSide(color: AppColors.primaryColor),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: AppColors.primaryColor),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: AppColors.primaryColor),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onChanged: (v) {
+                      context.read<OrdersBloc>().add(OrdersSearchMaxAdjList(v));
+                    },
+                  ),
+                ),
+
+                /// LIST
+                Expanded(
+                  child: BlocBuilder<OrdersBloc, OrdersState>(
+                    builder: (context, state) {
+                      final isLoading = state.isMaxAdjLoading;
+
+                      final query = state.maxAdjSearch.toLowerCase();
+
+                      final filtered = state.maxAdjItems.where((e) {
+                        final code = (e['item_code'] ?? '')
+                            .toString()
+                            .toLowerCase();
+                        final name = (e['item_name'] ?? '')
+                            .toString()
+                            .toLowerCase();
+
+                        final matchSearch =
+                            code.contains(query) || name.contains(query);
+
+                        if (state.onlyBranchMaxAdj) {
+                          return matchSearch && e['added_by'] == 'branch';
+                        }
+
+                        return matchSearch;
+                      }).toList();
+
+                      return Stack(
+                        children: [
+                          ListView.builder(
+                            itemCount: filtered.length,
+                            itemBuilder: (_, i) {
+                              return _MaxRow(index: i, item: filtered[i]);
+                            },
+                          ),
+
+                          if (isLoading)
+                            const Center(
+                              child: CircularProgressIndicator(
+                                color: AppColors.primaryColor,
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

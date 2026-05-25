@@ -4,6 +4,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/theme/app_colors.dart';
 import '../bloc/store_bloc.dart';
 import '../bloc/store_event.dart';
+import '../bloc/store_state.dart';
+import 'order_panel.dart';
 
 class BranchGrid extends StatelessWidget {
   final List<String> branches;
@@ -61,7 +63,68 @@ class BranchGrid extends StatelessWidget {
 
                 return GestureDetector(
                   onTap: () {
-                    context.read<StoreBloc>().add(SelectBranch(branch));
+                    final bloc = context.read<StoreBloc>();
+
+                    // =========================
+                    // LOAD BRANCH
+                    // =========================
+
+                    bloc.add(SelectBranch(branch));
+
+                    // =========================
+                    // SHOW DIALOG
+                    // =========================
+
+                    showDialog(
+                      context: context,
+
+                      barrierDismissible: true,
+
+                      builder: (_) {
+                        return BlocProvider.value(
+                          value: bloc,
+
+                          child: BlocBuilder<StoreBloc, StoreState>(
+                            builder: (_, state) {
+                              final isSubmitted =
+                                  state.selectedBranch != null &&
+                                  state.submittedBranches.contains(
+                                    state.selectedBranch,
+                                  );
+
+                              return Dialog(
+                                backgroundColor: Colors.transparent,
+
+                                insetPadding: const EdgeInsets.all(30),
+
+                                child: Container(
+                                  width: 650,
+
+                                  height:
+                                      MediaQuery.of(context).size.height * .88,
+
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+
+                                    borderRadius: BorderRadius.circular(26),
+                                  ),
+
+                                  child: OrdersPanel(
+                                    items: state.items,
+
+                                    branch: state.selectedBranch,
+
+                                    isSubmitted: isSubmitted,
+
+                                    isLoading: state.isLoading,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        );
+                      },
+                    );
                   },
 
                   child: AnimatedContainer(
