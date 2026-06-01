@@ -109,7 +109,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                     borderRadius: BorderRadius.circular(28),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(.18),
+                        color: Colors.black.withValues(alpha: .18),
                         blurRadius: 30,
                         offset: const Offset(0, 14),
                       ),
@@ -377,17 +377,42 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                               subtitle: 'Orders • ${s.runDate}',
                               right: Row(
                                 children: [
+                                  FilledButton.icon(
+                                    onPressed: () {
+                                      context.read<OrdersBloc>().add(
+                                        const OrdersExportPressed(),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.download, size: 18),
+                                    label: const Text(
+                                      'Export',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.blueGrey,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                    ),
+                                  ),
+
+                                  const SizedBox(width: 10),
+
                                   _StatusChip(
                                     isSubmitted: s.isSubmitted,
                                     isOrderDay: s.isOrderDay,
-
                                     isMissingOrder:
                                         s.isOrderDay &&
                                         !s.isSubmitted &&
                                         OperationalDateHelper
                                             .isMissingOrderWindow,
                                   ),
+
                                   const SizedBox(width: 10),
+
                                   _ZoneChip(zone: zs.zone),
                                 ],
                               ),
@@ -491,7 +516,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
 
                                   LayoutBuilder(
                                     builder: (context, constraints) {
-                                      final double cardWidth = 275.w;
+                                      final double cardWidth = 300.w;
 
                                       return Row(
                                         mainAxisAlignment:
@@ -590,6 +615,13 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                       );
                                     },
                                     isSubmitted: s.isSubmitted,
+                                    onClearAll: () {
+                                      context.read<OrdersBloc>().add(
+                                        const OrdersClearAllFilters(),
+                                      );
+
+                                      _grid.resetGridUi();
+                                    },
                                   ),
 
                                   const SizedBox(height: 12),
@@ -1154,8 +1186,8 @@ class _TopHeader extends StatelessWidget {
                     ),
                     child: Text(
                       title,
-                      style: const TextStyle(
-                        fontSize: 22,
+                      style: TextStyle(
+                        fontSize: 22.sp,
                         fontWeight: FontWeight.w900,
                         color: AppColors.white,
                       ),
@@ -1164,8 +1196,8 @@ class _TopHeader extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     subtitle,
-                    style: const TextStyle(
-                      fontSize: 13,
+                    style: TextStyle(
+                      fontSize: 15.sp,
                       color: Color(0xFF6B7280),
                       fontWeight: FontWeight.bold,
                     ),
@@ -1275,7 +1307,7 @@ class _KpiCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: const Color(0xFFE6E8F0)),
             ),
-            child: Icon(icon, color: AppColors.primaryColor),
+            child: Icon(icon, color: AppColors.primaryColor, size: 18.h),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1285,8 +1317,8 @@ class _KpiCard extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
-                    fontSize: 12,
+                  style: TextStyle(
+                    fontSize: 12.sp,
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF6B7280),
                   ),
@@ -1296,8 +1328,8 @@ class _KpiCard extends StatelessWidget {
                   children: [
                     Text(
                       value,
-                      style: const TextStyle(
-                        fontSize: 22,
+                      style: TextStyle(
+                        fontSize: 22.sp,
                         fontWeight: FontWeight.w900,
                         color: AppColors.secondaryColor,
                       ),
@@ -1308,8 +1340,8 @@ class _KpiCard extends StatelessWidget {
                         subtitle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12,
+                        style: TextStyle(
+                          fontSize: 12.sp,
                           color: Color(0xFF6B7280),
                         ),
                       ),
@@ -1344,6 +1376,7 @@ class _FiltersBar extends StatelessWidget {
   final ValueChanged<String> onFormularyChanged;
   final ValueChanged<bool> onNonWithSales45Changed;
   final ValueChanged<bool>? onNumericFinalOnlyChanged;
+  final VoidCallback onClearAll;
   const _FiltersBar({
     super.key,
     required this.categories,
@@ -1363,6 +1396,7 @@ class _FiltersBar extends StatelessWidget {
     this.onNumericFinalOnlyChanged,
     required this.receivedLast7DaysOnly,
     required this.onReceivedLast7DaysChanged,
+    required this.onClearAll,
   });
 
   @override
@@ -1450,6 +1484,26 @@ class _FiltersBar extends StatelessWidget {
                   onChanged: onAdditionalOnlyChanged,
                 ),
               ),
+              SizedBox(
+                width: 200.w,
+                height: 40.h,
+                child: ElevatedButton.icon(
+                  onPressed: onClearAll,
+                  icon: const Icon(Icons.filter_alt_off),
+                  label: const Text(
+                    'Clear Filters',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(56),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+              ),
             ],
           );
         },
@@ -1531,7 +1585,7 @@ class _SwitchTile extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: AppColors.backgroundWidget,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(14.r),
         border: Border.all(color: const Color(0xFFE6E8F0)),
       ),
       child: Row(
@@ -1543,9 +1597,9 @@ class _SwitchTile extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w800,
-                    fontSize: 12.5,
+                    fontSize: 14.5.sp,
                     color: AppColors.secondaryColor,
                   ),
                 ),
@@ -1554,10 +1608,7 @@ class _SwitchTile extends StatelessWidget {
                   subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 11.5,
-                    color: Color(0xFF6B7280),
-                  ),
+                  style: TextStyle(fontSize: 13.5.sp, color: Color(0xFF6B7280)),
                 ),
               ],
             ),
