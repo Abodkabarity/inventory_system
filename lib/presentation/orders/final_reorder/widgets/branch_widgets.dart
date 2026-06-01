@@ -359,7 +359,7 @@ class ReasonField extends StatelessWidget {
       controller: controller,
       enabled: enabled,
       onChanged: onChanged, // ✅ NEW
-      maxLines: 3,
+      maxLines: 1,
       decoration: InputDecoration(
         labelText: 'Reason',
         hintText: 'Why are you increasing or decreasing this item?',

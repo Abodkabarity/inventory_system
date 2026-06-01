@@ -647,6 +647,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     const formulary = 'ALL';
     const nonSales = false;
     const search = '';
+    const receivedLast7DaysOnly = false;
     const numericFinalOnly = false;
     const additionalOnly = false;
 
@@ -658,10 +659,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       numericFinalOnly: numericFinalOnly,
       additionalOnly: additionalOnly,
       additionalEdits: state.additionalEdits,
-      receivedLast7DaysOnly: state.receivedLast7DaysOnly,
+      receivedLast7DaysOnly: receivedLast7DaysOnly,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
     );
-
     emit(
       state.copyWith(
         search: search,
@@ -670,6 +670,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         nonWithSales45Only: nonSales,
         numericFinalOnly: numericFinalOnly,
         additionalOnly: additionalOnly,
+        receivedLast7DaysOnly: false,
         viewRows: view,
       ),
     );
@@ -1387,6 +1388,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     const nonSales = false;
     const numericFinalOnly = false;
     const additionalOnly = false;
+    const receivedLast7DaysOnly = false;
 
     final view = _applyUiFilters(
       rows: _applySearch(state.rows, state.search),
@@ -1396,7 +1398,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       numericFinalOnly: numericFinalOnly,
       additionalOnly: additionalOnly,
       additionalEdits: state.additionalEdits,
-      receivedLast7DaysOnly: state.receivedLast7DaysOnly,
+      receivedLast7DaysOnly: receivedLast7DaysOnly,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
     );
 
@@ -1407,6 +1409,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         nonWithSales45Only: nonSales,
         numericFinalOnly: numericFinalOnly,
         additionalOnly: additionalOnly,
+        receivedLast7DaysOnly: receivedLast7DaysOnly,
         viewRows: view,
         isRemovingFilters: false,
       ),

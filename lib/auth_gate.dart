@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../role_gate_page.dart';
+import 'core/theme/app_colors.dart';
 
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
@@ -37,7 +38,9 @@ class _AuthGateState extends State<AuthGate> {
         /// ⏳ loading
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+            body: Center(
+              child: CircularProgressIndicator(color: AppColors.primaryColor),
+            ),
           );
         }
 

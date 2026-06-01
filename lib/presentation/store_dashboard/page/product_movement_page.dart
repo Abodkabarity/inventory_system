@@ -358,7 +358,11 @@ class _ProductMovementPageState extends State<ProductMovementPage> {
                   // =====================================
 
                   if (isLoading) {
-                    return const Center(child: CircularProgressIndicator());
+                    return const Center(
+                      child: CircularProgressIndicator(
+                        color: AppColors.primaryColor,
+                      ),
+                    );
                   }
 
                   // =====================================
