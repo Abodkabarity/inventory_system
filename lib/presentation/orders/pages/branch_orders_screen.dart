@@ -1599,7 +1599,7 @@ class _SwitchTile extends StatelessWidget {
                   title,
                   style: TextStyle(
                     fontWeight: FontWeight.w800,
-                    fontSize: 14.5.sp,
+                    fontSize: 12.5.sp,
                     color: AppColors.secondaryColor,
                   ),
                 ),
@@ -1608,7 +1608,7 @@ class _SwitchTile extends StatelessWidget {
                   subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 13.5.sp, color: Color(0xFF6B7280)),
+                  style: TextStyle(fontSize: 11.5.sp, color: Color(0xFF6B7280)),
                 ),
               ],
             ),
