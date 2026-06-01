@@ -491,16 +491,11 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
 
                                   LayoutBuilder(
                                     builder: (context, constraints) {
-                                      final double cardWidth =
-                                          constraints.maxWidth >= 1800
-                                          ? (constraints.maxWidth - 48) / 5
-                                          : constraints.maxWidth >= 1300
-                                          ? (constraints.maxWidth - 24) / 3
-                                          : (constraints.maxWidth - 12) / 2;
+                                      final double cardWidth = 275.w;
 
-                                      return Wrap(
-                                        spacing: 12,
-                                        runSpacing: 12,
+                                      return Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceEvenly,
                                         children: [
                                           SizedBox(
                                             width: cardWidth,
@@ -522,16 +517,6 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                   .toString(),
                                               subtitle: '',
                                               icon: Icons.inventory_2_outlined,
-                                            ),
-                                          ),
-
-                                          SizedBox(
-                                            width: cardWidth,
-                                            child: _KpiCard(
-                                              title: 'Essential',
-                                              value: '${statsAll.essential}',
-                                              subtitle: '',
-                                              icon: Icons.star_border,
                                             ),
                                           ),
 
@@ -1393,7 +1378,7 @@ class _FiltersBar extends StatelessWidget {
         builder: (context, constraints) {
           double itemWidth;
 
-          itemWidth = ((constraints.maxWidth - 60) / 6).clamp(120.0, 200.0);
+          itemWidth = 350.w;
 
           return Wrap(
             spacing: 12,
