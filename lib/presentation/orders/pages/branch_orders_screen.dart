@@ -505,7 +505,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                           SizedBox(
                                             width: cardWidth,
                                             child: _KpiCard(
-                                              title: 'N Total Products',
+                                              title: 'Total Products',
                                               value: statsAll.totalProducts
                                                   .toString(),
                                               subtitle: 'All APG Items',
