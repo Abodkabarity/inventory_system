@@ -1485,7 +1485,7 @@ class _FiltersBar extends StatelessWidget {
               ),
               SizedBox(
                 width: 140.w,
-                height: 30.h,
+                height: 45.h,
                 child: ElevatedButton.icon(
                   onPressed: onClearAll,
                   icon: const Icon(Icons.filter_alt_off),
