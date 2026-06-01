@@ -116,12 +116,11 @@ class BranchOrdersActions {
     required OrdersState state,
     required DailyOrderRow row,
   }) async {
-    final oldQty = num.tryParse(row.reorderQtyNum.toString())?.toInt() ?? 0;
+    final oldQty = num.tryParse(row.finalReorderQtyStoreStockGt0.toString())?.toInt() ?? 0;
 
     final edit = state.finalEdits[row.itemCode];
     final initialQty = edit?.newQty ?? oldQty;
-    final compareQty = edit?.newQty ?? oldQty;
-    final initialReason = edit?.reason ?? '';
+    final compareQty = oldQty;    final initialReason = edit?.reason ?? '';
 
     await showGeneralDialog(
       context: context,
