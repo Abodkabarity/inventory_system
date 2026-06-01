@@ -1393,15 +1393,7 @@ class _FiltersBar extends StatelessWidget {
         builder: (context, constraints) {
           double itemWidth;
 
-          if (constraints.maxWidth > 1800) {
-            itemWidth = (constraints.maxWidth - 60) / 6;
-          } else if (constraints.maxWidth > 1400) {
-            itemWidth = (constraints.maxWidth - 36) / 4;
-          } else if (constraints.maxWidth > 1000) {
-            itemWidth = (constraints.maxWidth - 24) / 3;
-          } else {
-            itemWidth = constraints.maxWidth;
-          }
+          itemWidth = ((constraints.maxWidth - 60) / 6).clamp(120.0, 200.0);
 
           return Wrap(
             spacing: 12,
@@ -1550,7 +1542,7 @@ class _SwitchTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 56,
+      height: 56.h,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: AppColors.backgroundWidget,
