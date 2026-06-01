@@ -4,6 +4,7 @@ import 'package:daily_order/presentation/store_dashboard/page/store_shell_page.d
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'core/theme/app_colors.dart';
 import 'presentation/app/bloc/app_bloc.dart';
 import 'presentation/app/bloc/app_state.dart';
 import 'presentation/orders/pages/branch_orders_page.dart';
@@ -40,7 +41,9 @@ class RoleGatePage extends StatelessWidget {
         // 🔥 مهم جداً
         if (s.status == AppStatus.initial || s.status == AppStatus.loading) {
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+            body: Center(
+              child: CircularProgressIndicator(color: AppColors.primaryColor),
+            ),
           );
         }
 
@@ -50,7 +53,9 @@ class RoleGatePage extends StatelessWidget {
 
         if (s.me == null) {
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+            body: Center(
+              child: CircularProgressIndicator(color: AppColors.primaryColor),
+            ),
           );
         }
 

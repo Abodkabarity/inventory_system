@@ -235,7 +235,9 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                       if (loading) ...[
                         const SizedBox(height: 28),
 
-                        const CircularProgressIndicator(),
+                        const CircularProgressIndicator(
+                          color: AppColors.primaryColor,
+                        ),
 
                         const SizedBox(height: 16),
 
@@ -458,7 +460,9 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                         child: Column(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            const CircularProgressIndicator(),
+                                            const CircularProgressIndicator(
+                                              color: AppColors.primaryColor,
+                                            ),
 
                                             const SizedBox(height: 20),
 
