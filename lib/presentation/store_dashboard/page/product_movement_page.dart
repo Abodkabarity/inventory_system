@@ -28,7 +28,7 @@ class _ProductMovementPageState extends State<ProductMovementPage> {
   List<Map<String, dynamic>> movements = [];
 
   bool isLoading = false;
-
+  bool searchedProduct = false;
   @override
   void initState() {
     super.initState();
@@ -85,9 +85,8 @@ class _ProductMovementPageState extends State<ProductMovementPage> {
     }
 
     final res = await client
-        .from('product_movement_history')
+        .from('item_report')
         .select('item_code,item_name')
-        .eq('branch', selectedBranch!)
         .or(
           'item_name.ilike.%$query%,'
           'item_code.ilike.%$query%',
@@ -118,6 +117,7 @@ class _ProductMovementPageState extends State<ProductMovementPage> {
 
     setState(() {
       isLoading = true;
+      searchedProduct = true;
     });
 
     final res = await client
@@ -176,6 +176,7 @@ class _ProductMovementPageState extends State<ProductMovementPage> {
                   movements = [];
 
                   suggestions = [];
+                  searchedProduct = false;
 
                   searchController.clear();
                 });
@@ -369,11 +370,10 @@ class _ProductMovementPageState extends State<ProductMovementPage> {
                   // NO MOVEMENT
                   // =====================================
 
-                  if (movements.isEmpty) {
+                  if (movements.isEmpty && searchedProduct) {
                     return const Center(
                       child: Text(
-                        'No movement found',
-
+                        'This product has no movement history',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w600,

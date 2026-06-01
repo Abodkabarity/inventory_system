@@ -178,7 +178,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         onProgress: (loaded) {
           print('⏳ Loading progress: $loaded');
 
-          const total = 15000;
+          const total = 15191;
           final p = ((loaded / total) * 90).clamp(0, 90).round();
 
           emit(
