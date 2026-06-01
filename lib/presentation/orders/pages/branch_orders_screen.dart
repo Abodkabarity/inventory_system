@@ -489,68 +489,74 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                       ),
                                     ),
 
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceEvenly,
-                                    children: [
-                                      SizedBox(
-                                        width: 300.w,
-                                        height: 75.h,
-                                        child: _KpiCard(
-                                          title: 'Total Products',
-                                          value: statsAll.totalProducts
-                                              .toString(),
-                                          subtitle: 'All APG Items',
-                                          icon: Icons.list_alt_outlined,
-                                        ),
-                                      ),
+                                  LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final double cardWidth =
+                                          constraints.maxWidth >= 1800
+                                          ? (constraints.maxWidth - 48) / 5
+                                          : constraints.maxWidth >= 1300
+                                          ? (constraints.maxWidth - 24) / 3
+                                          : (constraints.maxWidth - 12) / 2;
 
-                                      SizedBox(
-                                        width: 300.w,
-                                        height: 75.h,
-                                        child: _KpiCard(
-                                          title: 'Items in Order',
-                                          value: statsAll.finalReorderCount
-                                              .round()
-                                              .toString(),
-                                          subtitle: '',
-                                          icon: Icons.inventory_2_outlined,
-                                        ),
-                                      ),
+                                      return Wrap(
+                                        spacing: 12,
+                                        runSpacing: 12,
+                                        children: [
+                                          SizedBox(
+                                            width: cardWidth,
+                                            child: _KpiCard(
+                                              title: 'N Total Products',
+                                              value: statsAll.totalProducts
+                                                  .toString(),
+                                              subtitle: 'All APG Items',
+                                              icon: Icons.list_alt_outlined,
+                                            ),
+                                          ),
 
-                                      SizedBox(
-                                        width: 300.w,
-                                        height: 75.h,
-                                        child: _KpiCard(
-                                          title: 'Essential',
-                                          value: '${statsAll.essential}',
-                                          subtitle: '',
-                                          icon: Icons.star_border,
-                                        ),
-                                      ),
+                                          SizedBox(
+                                            width: cardWidth,
+                                            child: _KpiCard(
+                                              title: 'Items in Order',
+                                              value: statsAll.finalReorderCount
+                                                  .round()
+                                                  .toString(),
+                                              subtitle: '',
+                                              icon: Icons.inventory_2_outlined,
+                                            ),
+                                          ),
 
-                                      SizedBox(
-                                        width: 300.w,
-                                        height: 75.h,
-                                        child: _KpiCard(
-                                          title: 'Non',
-                                          value: '${statsAll.non}',
-                                          subtitle: '',
-                                          icon: Icons.layers_outlined,
-                                        ),
-                                      ),
+                                          SizedBox(
+                                            width: cardWidth,
+                                            child: _KpiCard(
+                                              title: 'Essential',
+                                              value: '${statsAll.essential}',
+                                              subtitle: '',
+                                              icon: Icons.star_border,
+                                            ),
+                                          ),
 
-                                      SizedBox(
-                                        width: 300.w,
-                                        height: 75.h,
-                                        child: _KpiCard(
-                                          title: 'Additional Orders Today',
-                                          value: '$sentAddCount',
-                                          subtitle: '',
-                                          icon: Icons.add_box_outlined,
-                                        ),
-                                      ),
-                                    ],
+                                          SizedBox(
+                                            width: cardWidth,
+                                            child: _KpiCard(
+                                              title: 'Non',
+                                              value: '${statsAll.non}',
+                                              subtitle: '',
+                                              icon: Icons.layers_outlined,
+                                            ),
+                                          ),
+
+                                          SizedBox(
+                                            width: cardWidth,
+                                            child: _KpiCard(
+                                              title: 'Additional Orders Today',
+                                              value: '$sentAddCount',
+                                              subtitle: '',
+                                              icon: Icons.add_box_outlined,
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    },
                                   ),
 
                                   const SizedBox(height: 12),
@@ -1383,73 +1389,93 @@ class _FiltersBar extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFE6E8F0)),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _ModernDropdown(
-              label: 'Category',
-              value: selectedCategory,
-              items: categories,
-              onChanged: onCategoryChanged,
-            ),
-          ),
-          const SizedBox(width: 12),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          double itemWidth;
 
-          Expanded(
-            child: _ModernDropdown(
-              label: 'Formulary',
-              value: selectedFormulary,
-              items: const [
-                'ALL',
-                'ESSENTIAL',
-                'NON',
-                "SALES",
-                "TMA",
-                "NEW ITEM",
-              ],
-              onChanged: onFormularyChanged,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _SwitchTile(
-              title: 'Item Received Last 7 Days',
-              subtitle: 'Show received items with stock > 0',
-              value: receivedLast7DaysOnly,
-              onChanged: onReceivedLast7DaysChanged,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _SwitchTile(
-              title: 'NON + Sales (45d)',
-              subtitle: 'Show NON items with sales > 0',
-              value: nonWithSales45Only,
-              onChanged: onNonWithSales45Changed,
-            ),
-          ),
-          const SizedBox(width: 12),
+          if (constraints.maxWidth > 1800) {
+            itemWidth = (constraints.maxWidth - 60) / 6;
+          } else if (constraints.maxWidth > 1400) {
+            itemWidth = (constraints.maxWidth - 36) / 4;
+          } else if (constraints.maxWidth > 1000) {
+            itemWidth = (constraints.maxWidth - 24) / 3;
+          } else {
+            itemWidth = constraints.maxWidth;
+          }
 
-          Expanded(
-            child: _SwitchTile(
-              title: 'Available Item in Order',
-              subtitle: '',
-              value: numericFinalOnly,
+          return Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              SizedBox(
+                width: itemWidth,
+                child: _ModernDropdown(
+                  label: 'Category',
+                  value: selectedCategory,
+                  items: categories,
+                  onChanged: onCategoryChanged,
+                ),
+              ),
 
-              onChanged: onNumericFinalOnlyChanged,
-            ),
-          ),
-          const SizedBox(width: 12),
+              SizedBox(
+                width: itemWidth,
+                child: _ModernDropdown(
+                  label: 'Formulary',
+                  value: selectedFormulary,
+                  items: const [
+                    'ALL',
+                    'ESSENTIAL',
+                    'NON',
+                    'SALES',
+                    'TMA',
+                    'NEW ITEM',
+                  ],
+                  onChanged: onFormularyChanged,
+                ),
+              ),
 
-          Expanded(
-            child: _SwitchTile(
-              title: 'Additional Only',
-              subtitle: 'Show items with additional requests',
-              value: additionalOnly,
-              onChanged: onAdditionalOnlyChanged,
-            ),
-          ),
-        ],
+              SizedBox(
+                width: itemWidth,
+                child: _SwitchTile(
+                  title: 'Item Received Last 7 Days',
+                  subtitle: 'Show received items with stock > 0',
+                  value: receivedLast7DaysOnly,
+                  onChanged: onReceivedLast7DaysChanged,
+                ),
+              ),
+
+              SizedBox(
+                width: itemWidth,
+                child: _SwitchTile(
+                  title: 'NON + Sales (45d)',
+                  subtitle: 'Show NON items with sales > 0',
+                  value: nonWithSales45Only,
+                  onChanged: onNonWithSales45Changed,
+                ),
+              ),
+
+              SizedBox(
+                width: itemWidth,
+                child: _SwitchTile(
+                  title: 'Available Item in Order',
+                  subtitle: '',
+                  value: numericFinalOnly,
+                  onChanged: onNumericFinalOnlyChanged,
+                ),
+              ),
+
+              SizedBox(
+                width: itemWidth,
+                child: _SwitchTile(
+                  title: 'Additional Only',
+                  subtitle: 'Show items with additional requests',
+                  value: additionalOnly,
+                  onChanged: onAdditionalOnlyChanged,
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
