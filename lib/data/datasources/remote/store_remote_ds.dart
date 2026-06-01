@@ -235,9 +235,8 @@ class StoreRemoteDs {
     }
 
     final res = await client
-        .from('product_movement_history')
+        .from('item_report')
         .select('item_code,item_name,barcode')
-        .eq('branch', branch)
         .or(
           'item_name.ilike.%$query%,'
           'item_code.ilike.%$query%,'
