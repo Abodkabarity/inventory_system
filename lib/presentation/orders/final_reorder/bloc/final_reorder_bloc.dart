@@ -234,20 +234,14 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
   void _onDec(FinalReorderDecPressed e, Emitter<FinalReorderState> emit) {
     if (state.isLocked) return;
 
-    if (state.hasTma) {
-      emit(
-        state.copyWith(
-          dialog: const FinalReorderDialogPayload(
-            title: 'TMA Restriction',
-            body: 'You can only increase quantity for this item.',
-          ),
-        ),
-      );
-      return;
-    }
+    int next;
 
-    final attempted = state.qty - 1;
-    final next = attempted < 0 ? 0 : attempted;
+    if (state.hasTma) {
+      next = (state.qty - 1).clamp(state.oldQty, 999999999);
+    } else {
+      final attempted = state.qty - 1;
+      next = attempted < 0 ? 0 : attempted;
+    }
 
     emit(
       _recompute(
@@ -378,7 +372,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     }
 
     final canInc = !isLocked && qty < cap;
-    final canDec = !isLocked && qty > 0 && !hasTma;
+    final canDec = !isLocked && (hasTma ? qty > oldSafe : qty > 0);
 
     final hasChange = qty != compareQtyInput;
     final reasonOk = reason.trim().isNotEmpty;
