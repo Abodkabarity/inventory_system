@@ -507,7 +507,7 @@ class _AddMaxFormState extends State<_AddMaxForm> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Text("Added By You"),
+                        const Text("Added By Branch"),
                         Switch(
                           value: state.onlyBranchMaxAdj,
                           activeThumbColor: AppColors.primaryColor,
