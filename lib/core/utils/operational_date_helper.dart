@@ -1,29 +1,22 @@
 class OperationalDateHelper {
-  /*
-  static DateTime get nowUae {
-    return DateTime.now().toUtc().add(const Duration(hours: 4));
-  }
-*/
-  static const bool debugMode = true;
+  static const bool debugMode = false;
 
   static const int debugHourOffset = -1;
 
   static DateTime get nowUae {
-    final real = DateTime.now().toUtc().add(const Duration(hours: 5));
+    final real = DateTime.now().toUtc().add(const Duration(hours: 4));
 
     if (!debugMode) {
       return real;
     }
 
-    return real.add(const Duration(hours: debugHourOffset));
+    return real.add(Duration(hours: debugHourOffset));
   }
 
   static DateTime get operationalNow {
     final now = nowUae;
 
-    final cutoff = DateTime(now.year, now.month, now.day, 21);
-
-    if (now.isAfter(cutoff)) {
+    if (now.hour >= 21) {
       return now.add(const Duration(days: 1));
     }
 
@@ -41,9 +34,7 @@ class OperationalDateHelper {
   }
 
   static bool get canSubmit {
-    final now = nowUae;
-
-    final hour = now.hour;
+    final hour = nowUae.hour;
 
     return hour >= 21 || hour < 9;
   }
@@ -53,9 +44,7 @@ class OperationalDateHelper {
   }
 
   static bool get isMissingOrderWindow {
-    final now = nowUae;
-
-    final hour = now.hour;
+    final hour = nowUae.hour;
 
     return hour >= 9 && hour < 21;
   }

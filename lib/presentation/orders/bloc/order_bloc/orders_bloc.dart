@@ -137,7 +137,8 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       // 🔥 STEP 1: CHECK IF EXISTS
       // ==========================
       print('🔍 Checking if order exists...');
-
+      print('STATE RUN DATE: ${state.runDate}');
+      print('HELPER DATE   : ${OperationalDateHelper.operationalDate}');
       final exists = await repo.checkIfOrderExists(
         runDate: state.runDate,
         branchName: state.branchName,
