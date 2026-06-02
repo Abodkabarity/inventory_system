@@ -1,6 +1,7 @@
 // orders_state.dart
 import 'package:equatable/equatable.dart';
 
+import '../../../../data/models/item_to_order_model.dart';
 import '../../../../domain/entities/daily_order_row.dart';
 
 enum OrdersStatus { idle, generating, loading, ready, failure }
@@ -215,7 +216,7 @@ class OrdersState extends Equatable {
   final num selectedItemDemand;
   // already sent additional requests (loaded from db) - per item_code sum
   final Map<String, num> sentAdditionalQtyByItemCode;
-
+  final List<ItemToOrder> itemsToOrder;
   // filter additional only
   final bool additionalOnly;
   final bool receivedLast7DaysOnly;
@@ -269,6 +270,7 @@ class OrdersState extends Equatable {
     required this.showCreate,
     required this.isRemovingFilters,
     required this.receivedLast7DaysOnly,
+    required this.itemsToOrder,
   });
 
   static const List<String> defaultVisibleInTable = [
@@ -389,6 +391,7 @@ class OrdersState extends Equatable {
       isMismatchLoading: false,
       isExporting: false,
       selectedItemDemand: 0,
+      itemsToOrder: [],
       visibleColumns: defaultVisibleInTable.toSet(),
       columnOrder: defaultColumnOrder,
       columnWidths: defaultColumnWidths(allKeys),
@@ -475,6 +478,7 @@ class OrdersState extends Equatable {
     String? formularyFilter,
     bool? nonWithSales45Only,
     bool? numericFinalOnly,
+    List<ItemToOrder>? itemsToOrder,
     bool? isMismatchLoading,
     bool? lastActionSuccess,
     bool? isExporting,
@@ -526,6 +530,7 @@ class OrdersState extends Equatable {
           this.sentAdditionalHistoryByItemCode,
       additionalTrackingRows:
           additionalTrackingRows ?? this.additionalTrackingRows,
+      itemsToOrder: itemsToOrder ?? this.itemsToOrder,
       mismatchItems: mismatchItems ?? this.mismatchItems,
       mismatchSuggestions: mismatchSuggestions ?? this.mismatchSuggestions,
       editingMismatchId: editingMismatchId ?? this.editingMismatchId,
@@ -586,6 +591,7 @@ class OrdersState extends Equatable {
     isExporting,
     isOrderDay,
     selectedItemDemand,
+    itemsToOrder,
     onlyBranchMaxAdj,
     showCreate,
   ];

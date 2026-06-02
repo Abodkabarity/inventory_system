@@ -336,3 +336,54 @@ class OrdersReceivedLast7DaysToggled extends OrdersEvent {
   @override
   List<Object?> get props => [value];
 }
+// ==========================
+// ITEMS TO ORDER
+// ==========================
+
+class OrdersLoadItemsToOrder extends OrdersEvent {
+  const OrdersLoadItemsToOrder();
+}
+
+class OrdersAddItemToOrder extends OrdersEvent {
+  final String itemCode;
+  final String itemName;
+  final num qty;
+  final String reason;
+
+  const OrdersAddItemToOrder({
+    required this.itemCode,
+    required this.itemName,
+    required this.qty,
+    required this.reason,
+  });
+
+  @override
+  List<Object?> get props => [itemCode, itemName, qty, reason];
+}
+
+class OrdersDeleteItemToOrder extends OrdersEvent {
+  final String id;
+
+  const OrdersDeleteItemToOrder(this.id);
+
+  @override
+  List<Object?> get props => [id];
+}
+
+class OrdersSearchItemsToOrder extends OrdersEvent {
+  final String query;
+
+  const OrdersSearchItemsToOrder(this.query);
+
+  @override
+  List<Object?> get props => [query];
+}
+
+class OrdersIgnoreItemToOrder extends OrdersEvent {
+  final String id;
+
+  const OrdersIgnoreItemToOrder(this.id);
+
+  @override
+  List<Object?> get props => [id];
+}

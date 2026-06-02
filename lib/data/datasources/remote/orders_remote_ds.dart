@@ -792,4 +792,86 @@ done_at
 
     return phase == 'done';
   }
+  // ==========================
+  // ITEMS TO ORDER
+  // ==========================
+
+  Future<void> createItemToOrder({
+    required String runDate,
+    required String branchName,
+    required String itemCode,
+    required String itemName,
+    required num qty,
+    required String reason,
+  }) async {
+    await client.from('items_to_order').insert({
+      'run_date': runDate,
+      'branch_name': branchName,
+      'item_code': itemCode,
+      'item_name': itemName,
+      'qty': qty,
+      'reason': reason,
+      'status': 'pending',
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> fetchItemsToOrder({
+    required String runDate,
+    required String branchName,
+  }) async {
+    final res = await client
+        .from('items_to_order')
+        .select()
+        .eq('run_date', runDate)
+        .eq('branch_name', branchName)
+        .eq('status', 'pending')
+        .order('created_at');
+
+    return (res as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<void> deleteItemToOrder({required String id}) async {
+    await client.from('items_to_order').delete().eq('id', id);
+  }
+
+  Future<void> markItemToOrderProcessed({required String id}) async {
+    await client
+        .from('items_to_order')
+        .update({'status': 'added_to_order'})
+        .eq('id', id);
+  }
+
+  Future<void> clearProcessedItemsToOrder({
+    required String runDate,
+    required String branchName,
+  }) async {
+    await client
+        .from('items_to_order')
+        .delete()
+        .eq('run_date', runDate)
+        .eq('branch_name', branchName)
+        .inFilter('status', ['added_to_order', 'ignored']);
+  }
+
+  Future<List<Map<String, dynamic>>> searchItemsToOrderSuggestions(
+    String query,
+  ) async {
+    if (query.trim().isEmpty) return [];
+
+    final res = await client
+        .from('item_report')
+        .select('item_code,item_name')
+        .or('item_code.ilike.%$query%,item_name.ilike.%$query%')
+        .limit(20);
+
+    return (res as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<void> updateItemToOrderStatus({
+    required String id,
+    required String status,
+  }) async {
+    await client.from('items_to_order').update({'status': status}).eq('id', id);
+  }
 }

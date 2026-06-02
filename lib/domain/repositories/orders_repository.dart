@@ -149,4 +149,34 @@ abstract class OrdersRepository {
   });
   Future<void> deleteAdditionalRequestDraft({required String id});
   Future<bool> isOperationalOrderReady({required String runDate});
+  Future<void> createItemToOrder({
+    required String runDate,
+    required String branchName,
+    required String itemCode,
+    required String itemName,
+    required num qty,
+    required String reason,
+  });
+
+  Future<List<Map<String, dynamic>>> fetchItemsToOrder({
+    required String runDate,
+    required String branchName,
+  });
+
+  Future<void> deleteItemToOrder({required String id});
+
+  Future<void> markItemToOrderProcessed({required String id});
+
+  Future<void> clearProcessedItemsToOrder({
+    required String runDate,
+    required String branchName,
+  });
+  Future<List<Map<String, dynamic>>> searchItemsToOrderSuggestions(
+    String query,
+  );
+
+  Future<void> updateItemToOrderStatus({
+    required String id,
+    required String status,
+  });
 }
