@@ -346,4 +346,70 @@ class OrdersRepositoryImpl implements OrdersRepository {
   Future<bool> isOperationalOrderReady({required String runDate}) {
     return remote.isOperationalOrderReady(runDate: runDate);
   }
+  // ==========================
+  // ITEMS TO ORDER
+  // ==========================
+
+  @override
+  Future<void> createItemToOrder({
+    required String runDate,
+    required String branchName,
+    required String itemCode,
+    required String itemName,
+    required num qty,
+    required String reason,
+  }) {
+    return remote.createItemToOrder(
+      runDate: runDate,
+      branchName: branchName,
+      itemCode: itemCode,
+      itemName: itemName,
+      qty: qty,
+      reason: reason,
+    );
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchItemsToOrder({
+    required String runDate,
+    required String branchName,
+  }) {
+    return remote.fetchItemsToOrder(runDate: runDate, branchName: branchName);
+  }
+
+  @override
+  Future<void> deleteItemToOrder({required String id}) {
+    return remote.deleteItemToOrder(id: id);
+  }
+
+  @override
+  Future<void> markItemToOrderProcessed({required String id}) {
+    return remote.markItemToOrderProcessed(id: id);
+  }
+
+  @override
+  Future<void> clearProcessedItemsToOrder({
+    required String runDate,
+    required String branchName,
+  }) {
+    return remote.clearProcessedItemsToOrder(
+      runDate: runDate,
+      branchName: branchName,
+    );
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> searchItemsToOrderSuggestions(
+    String query,
+  ) {
+    return remote.searchItemsToOrderSuggestions(query);
+  }
+
+  @override
+  Future<void> updateItemToOrderStatus({
+    required String id,
+    required String status,
+  }) {
+    return remote.updateItemToOrderStatus(id: id, status: status);
+  }
 }

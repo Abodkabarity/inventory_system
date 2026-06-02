@@ -14,6 +14,7 @@ import '../widgets/branch_zone_cubit.dart';
 import '../widgets/orders_grid_controller.dart';
 import '../widgets/orders_table.dart';
 import '../widgets/orders_toolbar.dart';
+import '../widgets/pending_items_to_order_dialog.dart';
 import 'branch_orders_actions.dart';
 import 'branch_orders_selectors.dart';
 import 'branch_widgets/columns_panel.dart';
@@ -678,7 +679,40 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                       }
                                                     : null,
                                               ),
+                                              /*  const SizedBox(width: 6),
+                                              OrdersToolbar.actionButton(
+                                                label:
+                                                    'Items To Order (${s.itemsToOrder.length})',
 
+                                                icon: Icons
+                                                    .shopping_cart_outlined,
+
+                                                color: Colors.indigo,
+
+                                                badgeCount:
+                                                    s.itemsToOrder.length,
+
+                                                onPressed: () async {
+                                                  await showDialog(
+                                                    context: context,
+                                                    builder: (_) =>
+                                                        BlocProvider.value(
+                                                          value: context
+                                                              .read<
+                                                                OrdersBloc
+                                                              >(),
+                                                          child:
+                                                              const ItemsToOrderDialog(),
+                                                        ),
+                                                  );
+
+                                                  if (!context.mounted) return;
+
+                                                  context.read<OrdersBloc>().add(
+                                                    const OrdersLoadItemsToOrder(),
+                                                  );
+                                                },
+                                              ),*/
                                               const SizedBox(width: 6),
 
                                               OrdersToolbar.actionButton(
@@ -731,12 +765,58 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                               .canSubmit)
                                                       ? null
                                                       : () async {
-                                                          // 🔥 OPEN REVIEW FIRST
+                                                          // =========================
+                                                          // ITEMS TO ORDER FIRST
+                                                          // =========================
+
+                                                          if (s
+                                                              .itemsToOrder
+                                                              .isNotEmpty) {
+                                                            final result = await showDialog(
+                                                              context: context,
+                                                              barrierDismissible:
+                                                                  false,
+                                                              builder: (_) =>
+                                                                  PendingItemsToOrderDialog(
+                                                                    items: s
+                                                                        .itemsToOrder,
+                                                                  ),
+                                                            );
+
+                                                            if (result ==
+                                                                null) {
+                                                              return;
+                                                            }
+
+                                                            context
+                                                                .read<
+                                                                  OrdersBloc
+                                                                >()
+                                                                .add(
+                                                                  const OrdersLoadItemsToOrder(),
+                                                                );
+
+                                                            await Future.delayed(
+                                                              const Duration(
+                                                                milliseconds:
+                                                                    300,
+                                                              ),
+                                                            );
+                                                          }
+
+                                                          // =========================
+                                                          // REVIEW CHANGES
+                                                          // =========================
+
                                                           final confirmed =
                                                               await BranchOrdersActions.openSubmitReviewDialog(
                                                                 context:
                                                                     context,
-                                                                state: s,
+                                                                state: context
+                                                                    .read<
+                                                                      OrdersBloc
+                                                                    >()
+                                                                    .state,
                                                                 zone: zs.zone!,
                                                               );
 

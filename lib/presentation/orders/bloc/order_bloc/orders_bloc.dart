@@ -9,6 +9,7 @@ import '../../../../core/utils/excel_exporter.dart';
 import '../../../../core/utils/operational_date_helper.dart';
 import '../../../../core/utils/order_row_mapper.dart';
 import '../../../../data/models/daily_order_row_model.dart';
+import '../../../../data/models/item_to_order_model.dart';
 import '../../../../domain/entities/daily_order_row.dart';
 import '../../../../domain/repositories/orders_repository.dart';
 import '../../../../domain/usecases/fetch_orders_all.dart';
@@ -65,6 +66,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     on<OrdersSendAdditionalRequestsPressed>(_onSendAdditionalRequestsPressed);
     on<OrdersSubmitOrderPressed>(_onSubmitOrderPressed);
     // NEW: tracking
+    on<OrdersSearchItemsToOrder>(_onSearchItemsToOrder);
+
+    on<OrdersIgnoreItemToOrder>(_onIgnoreItemToOrder);
     on<OrdersLoadAdditionalTracking>(_onLoadAdditionalTracking);
     on<OrdersSearchMismatchList>(_onSearchMismatchList);
     on<OrdersSearchMismatchItemsCode>(_onSearchByCode);
@@ -72,6 +76,11 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     on<OrdersClearMismatchResult>((event, emit) {
       emit(state.copyWith(showMismatchResult: false));
     });
+    on<OrdersLoadItemsToOrder>(_onLoadItemsToOrder);
+
+    on<OrdersAddItemToOrder>(_onAddItemToOrder);
+
+    on<OrdersDeleteItemToOrder>(_onDeleteItemToOrder);
     on<OrdersLoadMaxAdj>(_onLoadMaxAdj);
     on<OrdersAddMaxAdj>(_onAddMaxAdj);
     on<OrdersDeleteMaxAdj>(_onDeleteMaxAdj);
@@ -280,7 +289,12 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         runDate: state.runDate,
         branchName: state.branchName,
       );
+      final itemsToOrderRaw = await repo.fetchItemsToOrder(
+        runDate: state.runDate,
+        branchName: state.branchName,
+      );
 
+      final itemsToOrder = itemsToOrderRaw.map(ItemToOrder.fromMap).toList();
       final additionalDraftMap = <String, AdditionalRequestEdit>{};
 
       for (final d in additionalDrafts) {
@@ -336,6 +350,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
           visibleColumns: nextVisible,
           sentAdditionalQtyByItemCode: sentAdditional,
           finalEdits: draftMap,
+          itemsToOrder: itemsToOrder,
           additionalEdits: additionalDraftMap,
           sentAdditionalHistoryByItemCode: sentHistory,
         ),
@@ -1440,5 +1455,75 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     );
 
     emit(state.copyWith(receivedLast7DaysOnly: e.value, viewRows: view));
+  }
+
+  Future<void> _onLoadItemsToOrder(
+    OrdersLoadItemsToOrder event,
+    Emitter<OrdersState> emit,
+  ) async {
+    try {
+      final raw = await repo.fetchItemsToOrder(
+        runDate: state.runDate,
+        branchName: state.branchName,
+      );
+
+      final items = raw.map(ItemToOrder.fromMap).toList();
+
+      emit(state.copyWith(itemsToOrder: items));
+    } catch (_) {}
+  }
+
+  Future<void> _onAddItemToOrder(
+    OrdersAddItemToOrder event,
+    Emitter<OrdersState> emit,
+  ) async {
+    try {
+      await repo.createItemToOrder(
+        runDate: state.runDate,
+        branchName: state.branchName,
+        itemCode: event.itemCode,
+        itemName: event.itemName,
+        qty: event.qty,
+        reason: event.reason,
+      );
+
+      add(const OrdersLoadItemsToOrder());
+    } catch (_) {}
+  }
+
+  Future<void> _onDeleteItemToOrder(
+    OrdersDeleteItemToOrder event,
+    Emitter<OrdersState> emit,
+  ) async {
+    try {
+      await repo.deleteItemToOrder(id: event.id);
+
+      add(const OrdersLoadItemsToOrder());
+    } catch (_) {}
+  }
+
+  Future<void> _onIgnoreItemToOrder(
+    OrdersIgnoreItemToOrder event,
+    Emitter<OrdersState> emit,
+  ) async {
+    await repo.updateItemToOrderStatus(id: event.id, status: 'ignored');
+
+    add(const OrdersLoadItemsToOrder());
+  }
+
+  Future<void> _onSearchItemsToOrder(
+    OrdersSearchItemsToOrder event,
+    Emitter<OrdersState> emit,
+  ) async {
+    try {
+      if (event.query.trim().length < 2) {
+        emit(state.copyWith(mismatchSuggestions: []));
+        return;
+      }
+
+      final result = await repo.searchItemsToOrderSuggestions(event.query);
+
+      emit(state.copyWith(mismatchSuggestions: result));
+    } catch (_) {}
   }
 }
