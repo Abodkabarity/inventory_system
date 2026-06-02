@@ -209,7 +209,7 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
     });
 
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+      margin:  EdgeInsets.symmetric(vertical: 6.h, horizontal: 5.w),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -220,13 +220,63 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           /// HEADER
-          Text(
-            "${group.first.itemCodes} - ${group.first.itemNames}",
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  "${group.first.itemCodes} - ${group.first.itemNames}",
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+
+              if (group.any((e) => e.contactLogistic == 'urgent'))
+                Container(
+                  margin: const EdgeInsets.only(left: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    "URGENT",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+
+              Container(
+                margin: const EdgeInsets.only(left: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: _getStatusColor(group.first.status),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  group.first.status.toUpperCase(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
           ),
 
           const SizedBox(height: 10),
-
           /// ITEMS
           Column(
             children: group.map((e) {
@@ -437,7 +487,7 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
                           SizedBox(width: 10.w),
 
                           SizedBox(
-                            width: 250.w,
+                            width: 225.w,
                             child: TextField(
                               controller: storeNoteControllers[id],
                               readOnly: true,
@@ -471,46 +521,7 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
                             ),
                           ),
                         ],
-                        const SizedBox(width: 10),
 
-                        if (e.contactLogistic == 'urgent')
-                          Container(
-                            margin: const EdgeInsets.only(right: 6),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.red,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: const Text(
-                              "URGENT",
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                              ),
-                            ),
-                          ),
-
-                        /// STATUS
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _getStatusColor(e.status),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            e.status.toUpperCase(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ),
                       ],
                     ),
 

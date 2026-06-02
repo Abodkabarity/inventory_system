@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 class InventoryStatsCards extends StatelessWidget {
   final int totalOrdersToday;
@@ -31,7 +32,7 @@ class InventoryStatsCards extends StatelessWidget {
             ),
           ),
 
-          const SizedBox(width: 20),
+           SizedBox(width: 10.w),
 
           Expanded(
             child: _card(
@@ -42,7 +43,7 @@ class InventoryStatsCards extends StatelessWidget {
             ),
           ),
 
-          const SizedBox(width: 20),
+           SizedBox(width: 10.w),
 
           Expanded(
             child: _card(
@@ -53,7 +54,7 @@ class InventoryStatsCards extends StatelessWidget {
             ),
           ),
 
-          const SizedBox(width: 20),
+           SizedBox(width: 10.w),
 
           Expanded(
             child: _card(
@@ -64,7 +65,7 @@ class InventoryStatsCards extends StatelessWidget {
             ),
           ),
 
-          const SizedBox(width: 20),
+           SizedBox(width: 10.w),
 
           Expanded(
             child: _card(
@@ -88,7 +89,7 @@ class InventoryStatsCards extends StatelessWidget {
     return Container(
       height: 100,
       alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      padding:  EdgeInsets.symmetric(horizontal: 5.w, vertical: 18),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
