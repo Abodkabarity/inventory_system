@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../domain/entities/daily_order_row.dart';
@@ -498,13 +499,29 @@ class MiniStats extends StatelessWidget {
       children: [
         const SectionTitle('Quick info'),
         const SizedBox(height: 10),
-        _kv('Store Stock', storeStock.toString()),
-        _kv('Min Reorder', minReOrder.toString()),
-        _kv('Max Reorder', maxReorder.toString()),
-        _kv('Reorder QTY', reorderQtyNum.toString()),
-        _kv('Mismatch', t(row.mismatchStock)),
-        _kv('Purchase Type', t(row.itemPurchaseType)),
-        _kv('Formulary', t(row.branchFormulary)),
+        Row(
+          children: [
+            Expanded(child: _kv('Store Stock', storeStock.toString())),
+            SizedBox(width: 5),
+            Expanded(child: _kv('Min Reorder', minReOrder.toString())),
+          ],
+        ),
+        Row(
+          children: [
+            Expanded(child: _kv('Max Reorder', maxReorder.toString())),
+            SizedBox(width: 5),
+            Expanded(child: _kv('Reorder QTY', reorderQtyNum.toString())),
+          ],
+        ),
+        Row(
+          children: [
+            Expanded(child: _kv('Mismatch', t(row.mismatchStock))),
+            SizedBox(width: 5),
+            Expanded(child: _kv('Formulary', t(row.branchFormulary))),
+          ],
+        ),
+
+        Center(child: _kv('Purchase Type', t(row.itemPurchaseType))),
       ],
     );
   }
@@ -512,13 +529,21 @@ class MiniStats extends StatelessWidget {
   Widget _kv(String k, String v) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(k, style: const TextStyle(color: Color(0xFF6B7280))),
-          ),
-          Text(v, style: const TextStyle(fontWeight: FontWeight.w800)),
-        ],
+      child: Container(
+        width: 250.w,
+        height: 30.h,
+        padding: EdgeInsets.symmetric(horizontal: 10.w),
+        decoration: BoxDecoration(
+          color: AppColors.backgroundWidget,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            Text(k, style: const TextStyle(color: Color(0xFF6B7280))),
+            SizedBox(width: 10.w),
+            Text(v, style: const TextStyle(fontWeight: FontWeight.w800)),
+          ],
+        ),
       ),
     );
   }
