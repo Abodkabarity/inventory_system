@@ -7,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../bloc/order_bloc/orders_bloc.dart';
 import '../bloc/order_bloc/orders_event.dart';
+import '../bloc/order_bloc/orders_state.dart';
 
 class ItemsToOrderDialog extends StatefulWidget {
   const ItemsToOrderDialog({super.key});
@@ -106,8 +107,17 @@ class _ItemsToOrderDialogState extends State<ItemsToOrderDialog> {
       ),
     );
 
-    Navigator.pop(context);
-  }
+    _searchController.clear();
+    _qtyController.text = '1';
+    _reasonController.clear();
+
+    selectedItem = null;
+
+    context.read<OrdersBloc>().add(
+      const OrdersLoadItemsToOrder(),
+    );
+
+    setState(() {});  }
 
   @override
   Widget build(BuildContext context) {
@@ -280,7 +290,73 @@ class _ItemsToOrderDialogState extends State<ItemsToOrderDialog> {
             ),
 
             const SizedBox(height: 24),
+            BlocBuilder<OrdersBloc, OrdersState>(
+              builder: (context, state) {
 
+                if (state.itemsToOrder.isEmpty) {
+                  return const SizedBox();
+                }
+
+                return Flexible(
+                  child: Container(
+                    constraints: const BoxConstraints(
+                      maxHeight: 250,
+                    ),
+
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: state.itemsToOrder.length,
+
+                      itemBuilder: (_, index) {
+
+                        final item =
+                        state.itemsToOrder[index];
+
+                        return Card(
+                          child: ListTile(
+                            title: Text(
+                              item.itemName,
+                            ),
+
+                            subtitle: Text(
+                              '${item.itemCode}\n'
+                                  'Qty: ${item.qty}\n'
+                                  '${item.reason}',
+                            ),
+
+                            trailing: IconButton(
+                              icon: const Icon(
+                                Icons.delete,
+                                color: Colors.red,
+                              ),
+
+                              onPressed: () async {
+
+                                context.read<OrdersBloc>().add(
+                                  OrdersDeleteItemToOrder(
+                                    item.id,
+                                  ),
+                                );
+
+                                await Future.delayed(
+                                  const Duration(milliseconds: 300),
+                                );
+
+                                if (!context.mounted) return;
+
+                                context.read<OrdersBloc>().add(
+                                  const OrdersLoadItemsToOrder(),
+                                );
+                              },
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                );
+              },
+            ),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
 

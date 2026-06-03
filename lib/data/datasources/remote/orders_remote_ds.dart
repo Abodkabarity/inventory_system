@@ -158,30 +158,40 @@ store_item_classifications
   // ==========================
   // NEW: Fetch branch zone from branches table
   // ==========================
-  Future<String> fetchBranchZone({required String branchName}) async {
-    final row = await _retryOnTimeout<Map<String, dynamic>?>(() async {
-      final res = await client
-          .from('branches')
-          .select('zone')
-          .eq('branch_name', branchName)
-          .maybeSingle();
+  Future<Map<String, dynamic>> fetchBranchInfo({
+    required String branchName,
+  }) async {
 
-      if (res == null) return null;
-      return (res as Map).cast<String, dynamic>();
-    });
+    final branch = await client
+        .from('branches')
+        .select('''
+zone,
+submit_start_hour,
+submit_end_hour,
+max_adj_limit,
+order_increase_limit,
+order_edit_limit,
+additional_order_limit
+''')
+        .eq('branch_name', branchName)
+        .single();
 
-    if (row == null) {
-      throw Exception('Branch not found in branches table');
-    }
+    final usage = await client
+        .from('vw_max_adj_usage')
+        .select('''
+used_slots,
+remaining_slots,
+next_available_date,
+days_until_next_slot
+''')
+        .eq('branch_name', branchName)
+        .single();
 
-    final z = (row['zone'] ?? '').toString().trim();
-    if (z.isEmpty) {
-      throw Exception('Zone is empty for this branch');
-    }
-
-    return z;
+    return {
+      ...branch,
+      ...usage,
+    };
   }
-
   // ==========================
   // NEW: Upsert order edits (changed items only)
   // ==========================

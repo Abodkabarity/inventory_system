@@ -30,8 +30,10 @@ abstract class OrdersRepository {
   Future<Map<String, dynamic>?> fetchJob({required String jobId});
 
   // zone
-  Future<String> fetchBranchZone({required String branchName});
-
+// branch info
+  Future<Map<String, dynamic>> fetchBranchInfo({
+    required String branchName,
+  });
   // edits + submission
   Future<void> upsertOrderEdits({
     required String runDate,

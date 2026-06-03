@@ -67,9 +67,12 @@ class OrdersRepositoryImpl implements OrdersRepository {
     return remote.fetchJob(jobId: jobId);
   }
 
-  @override
-  Future<String> fetchBranchZone({required String branchName}) {
-    return remote.fetchBranchZone(branchName: branchName);
+  Future<Map<String, dynamic>> fetchBranchInfo({
+    required String branchName,
+  }) {
+    return remote.fetchBranchInfo(
+      branchName: branchName,
+    );
   }
 
   @override

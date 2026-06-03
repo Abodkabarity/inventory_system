@@ -193,6 +193,13 @@ class OrdersState extends Equatable {
   final List<DailyOrderRow> viewRows;
   final String mismatchSearch;
   final int progress;
+  final int maxAdjLimit;
+
+  final num orderIncreaseLimit;
+
+  final num orderEditLimit;
+
+  final num additionalOrderLimit;
   final String? progressMessage;
   final bool onlyBranchMaxAdj;
   final String? error;
@@ -220,11 +227,17 @@ class OrdersState extends Equatable {
   // filter additional only
   final bool additionalOnly;
   final bool receivedLast7DaysOnly;
+  final String? nextAvailableDate;
+  final int? daysUntilNextSlot;
   // submission status
   final String submissionStatus; // draft/submitted
   final bool isExporting;
+  final int usedMaxAdjSlots;
+  final int remainingMaxAdjSlots;
   final String? selectedItemCode;
   final bool? showMismatchResult;
+  final int submitStartHour;
+  final int submitEndHour;
   // tracking list (flat list of requests rows)
   final List<AdditionalRequestRow> additionalTrackingRows;
   final bool isOrderDay;
@@ -253,7 +266,11 @@ class OrdersState extends Equatable {
     this.selectedItemCode,
     this.progressMessage,
     this.error,
+    this.submitStartHour = 21,
+    this.submitEndHour = 9,
     required this.mismatchItems,
+    this.nextAvailableDate,
+    this.daysUntilNextSlot,
     required this.mismatchSuggestions,
     this.editingMismatchId,
     required this.mismatchSearch,
@@ -271,6 +288,12 @@ class OrdersState extends Equatable {
     required this.isRemovingFilters,
     required this.receivedLast7DaysOnly,
     required this.itemsToOrder,
+    this.usedMaxAdjSlots = 0,
+    this.remainingMaxAdjSlots = 25,
+    this.maxAdjLimit = 25,
+    this.orderIncreaseLimit = 10,
+    this.orderEditLimit = 20,
+    this.additionalOrderLimit = 10,
   });
 
   static const List<String> defaultVisibleInTable = [
@@ -385,7 +408,8 @@ class OrdersState extends Equatable {
       error: null,
       mismatchItems: const [],
       mismatchSuggestions: const [],
-
+      submitStartHour : 21,
+      submitEndHour : 9,
       editingMismatchId: null,
       maxAdjSearch: '',
       isMismatchLoading: false,
@@ -415,7 +439,7 @@ class OrdersState extends Equatable {
       mismatchSearch: '',
       maxAdjItems: const [],
       isMaxAdjLoading: false,
-      onlyBranchMaxAdj: false,
+      onlyBranchMaxAdj: true,
     );
   }
 
@@ -484,6 +508,10 @@ class OrdersState extends Equatable {
     bool? isExporting,
     bool? isOrderDay,
     bool? onlyBranchMaxAdj,
+     int? submitStartHour,
+     int? submitEndHour,
+    String? nextAvailableDate,
+    int? daysUntilNextSlot,
     bool? showCreate,
     List<Map<String, dynamic>>? mismatchItems,
     List<Map<String, dynamic>>? mismatchSuggestions,
@@ -493,8 +521,17 @@ class OrdersState extends Equatable {
     Map<String, num>? sentAdditionalQtyByItemCode,
     bool? additionalOnly,
     String? submissionStatus,
+    int? usedMaxAdjSlots,
+    int? remainingMaxAdjSlots,
     String? selectedItemCode,
     String? mismatchSearch,
+    int? maxAdjLimit,
+
+    num? orderIncreaseLimit,
+
+    num? orderEditLimit,
+
+    num? additionalOrderLimit,
     List<AdditionalRequestRow>? additionalTrackingRows,
     List<Map<String, dynamic>>? maxAdjItems,
     bool? isMaxAdjLoading,
@@ -528,8 +565,28 @@ class OrdersState extends Equatable {
       sentAdditionalHistoryByItemCode:
           sentAdditionalHistoryByItemCode ??
           this.sentAdditionalHistoryByItemCode,
+      usedMaxAdjSlots:
+      usedMaxAdjSlots ?? this.usedMaxAdjSlots,
+
+      remainingMaxAdjSlots:
+      remainingMaxAdjSlots ?? this.remainingMaxAdjSlots,
       additionalTrackingRows:
           additionalTrackingRows ?? this.additionalTrackingRows,
+      maxAdjLimit:
+      maxAdjLimit ?? this.maxAdjLimit,
+
+      orderIncreaseLimit:
+      orderIncreaseLimit ?? this.orderIncreaseLimit,
+      nextAvailableDate:
+      nextAvailableDate ?? this.nextAvailableDate,
+
+      daysUntilNextSlot:
+      daysUntilNextSlot ?? this.daysUntilNextSlot,
+      orderEditLimit:
+      orderEditLimit ?? this.orderEditLimit,
+
+      additionalOrderLimit:
+      additionalOrderLimit ?? this.additionalOrderLimit,
       itemsToOrder: itemsToOrder ?? this.itemsToOrder,
       mismatchItems: mismatchItems ?? this.mismatchItems,
       mismatchSuggestions: mismatchSuggestions ?? this.mismatchSuggestions,
@@ -547,6 +604,8 @@ class OrdersState extends Equatable {
       selectedItemDemand: selectedItemDemand ?? this.selectedItemDemand,
       onlyBranchMaxAdj: onlyBranchMaxAdj ?? this.onlyBranchMaxAdj,
       showCreate: showCreate ?? this.showCreate,
+      submitStartHour:submitStartHour ??this.submitStartHour,
+         submitEndHour : submitEndHour ?? this.submitEndHour,
     );
   }
 
@@ -568,6 +627,8 @@ class OrdersState extends Equatable {
     formularyFilter,
     mismatchItems,
     mismatchSuggestions,
+    submitEndHour,
+    submitStartHour,
     editingMismatchId,
     nonWithSales45Only,
     numericFinalOnly,
@@ -590,6 +651,12 @@ class OrdersState extends Equatable {
     maxAdjSearch,
     isExporting,
     isOrderDay,
+    maxAdjLimit,
+    orderIncreaseLimit,
+    orderEditLimit,
+    usedMaxAdjSlots,
+    remainingMaxAdjSlots,
+    additionalOrderLimit,
     selectedItemDemand,
     itemsToOrder,
     onlyBranchMaxAdj,

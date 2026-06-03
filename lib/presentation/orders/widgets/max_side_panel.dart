@@ -44,16 +44,16 @@ class _MaxSidePanelState extends State<MaxSidePanel> {
                 /// HEADER
                 BlocBuilder<OrdersBloc, OrdersState>(
                   builder: (context, state) {
-                    final branchCount = state.maxAdjItems
-                        .where((e) => e['added_by'] == 'branch')
-                        .length;
+                    final usedSlots =
+                        state.usedMaxAdjSlots;
+
                     return Container(
                       padding: const EdgeInsets.all(16),
                       color: AppColors.primaryColor,
                       child: Row(
                         children: [
                           Text(
-                            "Max Adjustment ($branchCount / 50)",
+                      "Max Adjustment ($usedSlots / ${state.maxAdjLimit})",
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 18,
@@ -275,16 +275,23 @@ class _AddMaxFormState extends State<_AddMaxForm> {
   Widget build(BuildContext context) {
     final state = context.watch<OrdersBloc>().state;
 
-    final branchCount = state.maxAdjItems
-        .where((e) => e['added_by'] == 'branch')
-        .length;
+    final usedSlots = state.usedMaxAdjSlots;
 
-    final isFull = branchCount >= 50;
+    final remainingSlots =
+        state.remainingMaxAdjSlots;
 
+    final isFull =
+        remainingSlots <= 0;
+    final nextDate =
+        state.nextAvailableDate;
+
+    final nextDays =
+        state.daysUntilNextSlot;
     return BlocListener<OrdersBloc, OrdersState>(
       listenWhen: (prev, curr) =>
-          prev.mismatchSuggestions != curr.mismatchSuggestions ||
-          prev.selectedItemDemand != curr.selectedItemDemand,
+      prev.mismatchSuggestions != curr.mismatchSuggestions ||
+          prev.selectedItemDemand != curr.selectedItemDemand ||
+          prev.showMismatchResult != curr.showMismatchResult,
 
       listener: (context, state) {
         if (state.mismatchSuggestions.isNotEmpty &&
@@ -295,6 +302,25 @@ class _AddMaxFormState extends State<_AddMaxForm> {
         }
 
         demand.text = state.selectedItemDemand.toString();
+        if (state.showMismatchResult == true &&
+            state.lastActionSuccess == false &&
+            state.error != null &&
+            state.error!.isNotEmpty) {
+
+          showDialog(
+            context: context,
+            builder: (_) => AlertDialog(
+              title: const Text('Cannot Add Max Adjustment'),
+              content: Text(state.error!),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        }
       },
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -577,15 +603,60 @@ class _AddMaxFormState extends State<_AddMaxForm> {
                                   submitted = false;
                                 });
                               },
-                        child: Text(
-                          isFull ? "Limit Reached (50)" : "Add Max",
-                          style: const TextStyle(color: Colors.white),
-                        ),
+                          child: Text(
+                            isFull
+                                ? "Limit Reached (${state.maxAdjLimit})"
+                                : "Add Max",
+                            style: TextStyle(color: Colors.white),
+                          )
                       ),
+
+                    ),
+                  ),
+
+                ],
+              ),
+              Row(
+                children: [
+                  const Expanded(child: SizedBox()),
+
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (isFull && nextDays != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Column(
+                              children: [
+                                Text(
+                                  'Next slot available in $nextDays day(s)',
+                                  textAlign: TextAlign.center,
+
+                                  style: const TextStyle(
+                                    color: Colors.red,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  'Available on $nextDate',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+
+                                    color: Colors.black54,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+
+                      ],
                     ),
                   ),
                 ],
-              ),
+              )
             ],
           ),
         ),
@@ -612,7 +683,52 @@ class _MaxRow extends StatelessWidget {
     }
     return v.toString();
   }
+  String getRemainingDays(Map item) {
+    try {
+      final updateDateStr =
+      (item['update_date'] ?? '').toString();
 
+      final endDateStr =
+      (item['end_date'] ?? '').toString();
+
+      final adjustmentType =
+      (item['adjustment_type'] ?? '')
+          .toString()
+          .toUpperCase();
+
+      final now = DateTime.now();
+
+      DateTime expiryDate;
+
+      if (endDateStr.isNotEmpty &&
+          endDateStr != 'null') {
+        expiryDate = DateTime.parse(endDateStr);
+      } else {
+        final updateDate =
+        DateTime.parse(updateDateStr);
+
+        final durationDays =
+        adjustmentType == 'DECREASE'
+            ? 45
+            : 30;
+
+        expiryDate = updateDate.add(
+          Duration(days: durationDays),
+        );
+      }
+
+      final daysLeft =
+          expiryDate.difference(now).inDays;
+
+      if (daysLeft <= 0) {
+        return 'Expired';
+      }
+
+      return '$daysLeft Days Left';
+    } catch (_) {
+      return '';
+    }
+  }
   @override
   Widget build(BuildContext context) {
     final demand = item['current_demand_30d'];
@@ -625,7 +741,8 @@ class _MaxRow extends StatelessWidget {
 
     final qty = item['qty'];
     final reason = (item['reason'] ?? '').toString();
-
+    final remainingDays =
+    getRemainingDays(item);
     return Card(
       color: Colors.white,
       elevation: 3,
@@ -680,13 +797,32 @@ class _MaxRow extends StatelessWidget {
                     ],
                   ),
 
-                  if (reason.isNotEmpty) ...[
-                    SizedBox(height: 6.h),
-                    Text(
-                      "Reason: $reason",
-                      style: TextStyle(fontSize: 12.sp, color: Colors.black87),
+                  if (reason.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        "Reason: $reason",
+                        style: TextStyle(
+                          fontSize: 12.sp,
+                          color: Colors.black87,
+                        ),
+                      ),
                     ),
-                  ],
+
+                  if (remainingDays.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        remainingDays,
+                        style: TextStyle(
+                          color: remainingDays == 'Expired'
+                              ? Colors.red
+                              : Colors.orange,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
