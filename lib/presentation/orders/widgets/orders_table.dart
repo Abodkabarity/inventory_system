@@ -34,7 +34,8 @@ class OrdersTable extends StatefulWidget {
 
   // ✅ NEW: submitted flag (locks final reorder tap + hides edit icon)
   final bool isSubmitted;
-
+  final int submitStartHour;
+  final int submitEndHour;
   // Controller for selection/scroll.
   final DataGridController? controller;
 
@@ -58,7 +59,7 @@ class OrdersTable extends StatefulWidget {
     required this.gridController,
     required this.onColumnResized,
     required this.isSubmitted, // ✅ NEW
-    this.controller,
+    this.controller, required this.submitStartHour, required this.submitEndHour,
   });
 
   static const List<String> allColumns = [
@@ -194,6 +195,8 @@ class _OrdersTableState extends State<OrdersTable> {
       rows: widget.rows,
       columns: _columns,
       finalEdits: widget.finalEdits,
+      submitStartHour: widget.submitStartHour,
+      submitEndHour: widget.submitEndHour,
       additionalEdits: widget.additionalEdits,
       sentAdditionalQtyByItemCode: widget.sentAdditionalQtyByItemCode,
       onTapAdditionalRequest: widget.onTapAdditionalRequest,
@@ -232,6 +235,8 @@ class _OrdersTableState extends State<OrdersTable> {
         rows: widget.rows,
         columns: _columns,
         finalEdits: widget.finalEdits,
+        submitStartHour: widget.submitStartHour,
+        submitEndHour: widget.submitEndHour,
         additionalEdits: widget.additionalEdits,
         sentAdditionalQtyByItemCode: widget.sentAdditionalQtyByItemCode,
         isSubmitted: widget.isSubmitted, // ✅ NEW
@@ -460,12 +465,16 @@ class _OrdersDataSource extends DataGridSource {
 
   // ✅ NEW
   bool _isSubmitted = false;
+  int _submitStartHour = 21;
+  int _submitEndHour = 9;
   late final ValueChanged<DailyOrderRow> _onTapAdditionalRequest;
   final Map<DataGridRow, int> _rowToIndex = {};
 
   _OrdersDataSource({
     required List<DailyOrderRow> rows,
     required List<String> columns,
+    required int submitStartHour,
+    required int submitEndHour,
     required Map<String, FinalReorderEdit> finalEdits,
     required Map<String, AdditionalRequestEdit> additionalEdits,
     required Map<String, num> sentAdditionalQtyByItemCode,
@@ -478,6 +487,8 @@ class _OrdersDataSource extends DataGridSource {
       columns: columns,
       finalEdits: finalEdits,
       additionalEdits: additionalEdits,
+      submitStartHour: submitStartHour,
+      submitEndHour: submitEndHour,
       sentAdditionalQtyByItemCode: sentAdditionalQtyByItemCode,
       isSubmitted: isSubmitted, // ✅ NEW
     );
@@ -486,6 +497,8 @@ class _OrdersDataSource extends DataGridSource {
   void update({
     required List<DailyOrderRow> rows,
     required List<String> columns,
+    required int submitStartHour,
+    required int submitEndHour,
     required Map<String, FinalReorderEdit> finalEdits,
     required Map<String, AdditionalRequestEdit> additionalEdits,
     required Map<String, num> sentAdditionalQtyByItemCode,
@@ -494,7 +507,8 @@ class _OrdersDataSource extends DataGridSource {
     _rows = rows;
     _columns = columns;
     _edits = finalEdits;
-
+    _submitStartHour = submitStartHour;
+    _submitEndHour = submitEndHour;
     _additionalEdits = additionalEdits;
     _sentAdditionalQtyByItemCode = sentAdditionalQtyByItemCode;
 
@@ -923,7 +937,11 @@ class _OrdersDataSource extends DataGridSource {
               : (text.isEmpty ? '—' : text);
 
           final locked =
-              _isSubmitted || OperationalDateHelper.isMissingOrderWindow;
+              _isSubmitted ||
+                  OperationalDateHelper.isMissingWindowForBranch(
+                    startHour: _submitStartHour,
+                    endHour: _submitEndHour,
+                  );
           return Container(
             alignment: Alignment.center,
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
