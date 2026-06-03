@@ -191,7 +191,7 @@ class _ReviewChangesDialogState extends State<ReviewChangesDialog> {
                       Expanded(
                         child: Text(
                           list.isEmpty
-                              ? 'No changes to review'
+                              ? 'No edits. Order can still be submitted.'
                               : '${list.length} change(s) ready',
                           style: const TextStyle(
                             color: Color(0xFF6B7280),
@@ -229,9 +229,7 @@ class _ReviewChangesDialogState extends State<ReviewChangesDialog> {
                       // =========================
                       if (widget.submitMode)
                         FilledButton.icon(
-                          onPressed: list.isEmpty
-                              ? null
-                              : widget.onConfirmSubmit,
+                          onPressed: widget.onConfirmSubmit,
                           icon: const Icon(Icons.check_circle, size: 18),
                           label: const Text(
                             'Confirm Submit',
@@ -391,7 +389,7 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             const Text(
-              'You did not edit any items yet.',
+              'No edits were made. You can still submit the order.',
               style: TextStyle(color: Color(0xFF6B7280)),
             ),
             const SizedBox(height: 12),
