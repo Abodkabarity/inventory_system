@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../core/utils/operational_date_helper.dart';
 import '../../../core/utils/print_additional_service.dart';
 import '../../../domain/repositories/store_repository.dart';
 import 'store_event.dart';
@@ -59,21 +60,99 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
     }
 
     try {
-      final branches = await repo.fetchAllBranches();
-      final submitted = await repo.fetchSubmittedBranches(runDate);
+      final branchRows = await repo.fetchAllBranches();
+
+      final branches = <String>[];
+
+      final startHours = <String, int>{};
+      final endHours = <String, int>{};
+
+      for (final row in branchRows) {
+        final branch = row['branch_name'].toString();
+
+        branches.add(branch);
+
+        startHours[branch] =
+            row['submit_start_hour'] ?? 0;
+
+        endHours[branch] =
+            row['submit_end_hour'] ?? 24;
+      }
+
+      final submittedRows =
+      await repo.fetchSubmittedBranches(runDate);
+
       final additional = await repo.fetchAdditionalRequests();
+
+      final submitted = <String>[];
+      final printed = <String>[];
+      final submittedMap = <String, DateTime>{};
+
+      for (final row in submittedRows) {
+        final branch = row['branch_name'].toString();
+
+        submitted.add(branch);
+
+        if (row['printed'] == true) {
+          printed.add(branch);
+        }
+
+        final submittedAt = DateTime.tryParse(
+          row['submitted_at']?.toString() ?? '',
+        );
+
+        if (submittedAt != null) {
+          submittedMap[branch] = submittedAt;
+        }
+      }
 
       final pending = additional
           .where((e) => e.status == 'sent_to_store')
           .length;
 
       final done = additional.where((e) => e.status == 'done').length;
+      branches.sort((a, b) {
+        final aSubmitted = submittedMap.containsKey(a);
+        final bSubmitted = submittedMap.containsKey(b);
 
+        final aLate =
+            OperationalDateHelper.isMissingWindowForBranch(
+              startHour: startHours[a] ?? 21,
+              endHour: endHours[a] ?? 9,
+            ) &&
+                !aSubmitted;
+
+        final bLate =
+            OperationalDateHelper.isMissingWindowForBranch(
+              startHour: startHours[b] ?? 21,
+              endHour: endHours[b] ?? 9,
+            ) &&
+                !bSubmitted;
+
+        if (aLate && !bLate) return 1;
+        if (!aLate && bLate) return -1;
+
+        if (aSubmitted && bSubmitted) {
+          return submittedMap[a]!.compareTo(
+            submittedMap[b]!,
+          );
+        }
+
+        if (aSubmitted) return -1;
+        if (bSubmitted) return 1;
+
+        return a.toLowerCase().compareTo(
+          b.toLowerCase(),
+        );
+      });
       emit(
         state.copyWith(
           branches: branches,
           submittedBranches: submitted,
           additionalRequests: additional,
+          submitStartHours: startHours,
+          printedBranches: printed,
+          submitEndHours: endHours,
           submittedCount: submitted.length,
           additionalCount: additional.length,
           additionalPendingCount: pending,
@@ -112,7 +191,24 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
         branch: branch,
       );
 
-      emit(state.copyWith(items: items, isLoading: false));
+      await repo.markBranchPrinted(
+        runDate: runDate,
+        branch: branch,
+      );
+
+      add(
+        LoadStoreDashboard(
+          runDate,
+          silent: true,
+        ),
+      );
+
+      emit(
+        state.copyWith(
+          items: items,
+          isLoading: false,
+        ),
+      );
     } catch (e) {
       emit(state.copyWith(isLoading: false));
       print("SelectBranch Error: $e");

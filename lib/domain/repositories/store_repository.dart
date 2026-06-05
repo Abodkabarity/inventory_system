@@ -3,15 +3,20 @@ import '../entities/product_movement.dart';
 import '../entities/store_order_item.dart';
 
 abstract class StoreRepository {
-  Future<List<String>> fetchAllBranches();
+  Future<List<Map<String, dynamic>>> fetchAllBranches();
 
-  Future<List<String>> fetchSubmittedBranches(String runDate);
+  Future<List<Map<String, dynamic>>> fetchSubmittedBranches(
+      String runDate,
+      );
 
   Future<List<StoreOrderItem>> fetchBranchItems({
     required String runDate,
     required String branch,
   });
-
+  Future<void> markBranchPrinted({
+    required String runDate,
+    required String branch,
+  });
   Future<List<AdditionalRequestGroup>> fetchAdditionalRequests();
   Future<void> approveRequest({required String id, required num qty});
   Future<List<AdditionalRequestGroup>> fetchAdditionalHistory({

@@ -89,7 +89,7 @@ class _StoreShellPageState extends State<StoreShellPage> {
                             image: DecorationImage(
                               image: AssetImage("assets/images/logo1.png"),
 
-                              fit: BoxFit.contain,
+                              fit: BoxFit.cover,
                             ),
                           ),
                         ),

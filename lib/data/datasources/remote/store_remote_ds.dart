@@ -27,32 +27,28 @@ class StoreRemoteDs {
   }
 
   /// SUBMITTED BRANCHES
-  Future<List<String>> fetchSubmittedBranches(String runDate) async {
+  Future<List<Map<String, dynamic>>> fetchSubmittedBranches(
+      String runDate,
+      ) async {
     final res = await client
         .from('order_submissions')
-        .select('branch_name')
+        .select('branch_name,submitted_at,printed')
         .eq('run_date', runDate)
         .eq('status', 'submitted');
 
-    return (res as List)
-        .map((e) => (e['branch_name'] ?? '').toString())
-        .where((e) => e.isNotEmpty)
-        .toSet()
-        .toList();
+    return List<Map<String, dynamic>>.from(res);
   }
 
   /// GET ALL BRANCHES
-  Future<List<String>> fetchAllBranches() async {
+  Future<List<Map<String, dynamic>>> fetchAllBranches() async {
     final res = await client
         .from('branches')
-        .select('branch_name')
-        .eq('is_active', true)
-        .order('branch_name');
+        .select(
+      'branch_name,submit_start_hour,submit_end_hour',
+    )
+        .eq('is_active', true);
 
-    return (res as List)
-        .map((e) => (e['branch_name'] ?? '').toString())
-        .where((e) => e.isNotEmpty)
-        .toList();
+    return List<Map<String, dynamic>>.from(res);
   }
 
   /// BRANCH ITEMS
@@ -279,5 +275,18 @@ class StoreRemoteDs {
     return List<Map<String, dynamic>>.from(
       res,
     ).map((e) => e['branch_name'].toString()).toList();
+  }
+  Future<void> markBranchPrinted({
+    required String runDate,
+    required String branch,
+  }) async {
+    await client
+        .from('order_submissions')
+        .update({
+      'printed': true,
+      'printed_at': DateTime.now().toIso8601String(),
+    })
+        .eq('run_date', runDate)
+        .eq('branch_name', branch);
   }
 }

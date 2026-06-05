@@ -38,19 +38,27 @@ class StoreRepositoryImpl implements StoreRepository {
   /// ================================
   /// ALL BRANCHES
   /// ================================
-  @override
-  Future<List<String>> fetchAllBranches() async {
-    final rows = await remote.fetchBranchesToday();
-    return rows;
+  Future<List<Map<String, dynamic>>> fetchAllBranches() async {
+    return await remote.fetchAllBranches();
   }
-
+  @override
+  Future<void> markBranchPrinted({
+    required String runDate,
+    required String branch,
+  }) {
+    return remote.markBranchPrinted(
+      runDate: runDate,
+      branch: branch,
+    );
+  }
   /// ================================
   /// SUBMITTED BRANCHES
   /// ================================
   @override
-  Future<List<String>> fetchSubmittedBranches(String runDate) async {
-    final rows = await remote.fetchSubmittedBranches(runDate);
-    return rows;
+  Future<List<Map<String, dynamic>>> fetchSubmittedBranches(
+      String runDate,
+      ) async {
+    return await remote.fetchSubmittedBranches(runDate);
   }
 
   /// ================================
@@ -98,6 +106,7 @@ class StoreRepositoryImpl implements StoreRepository {
     final List<AdditionalRequestGroup> result = [];
 
     grouped.forEach((groupId, items) {
+
       final first = items.first;
 
       DateTime created;
@@ -116,18 +125,29 @@ class StoreRepositoryImpl implements StoreRepository {
         if (inv == null) return true;
         return inv > 0;
       }).toList();
+      if (validItems.isEmpty) {
+        return;
+      }
+      final hasPending = validItems.any(
+            (e) => e['status'] == 'sent_to_store',
+      );
+
+      final allRejected = validItems.every(
+            (e) => e['status'] == 'rejected',
+      );
 
       String status;
 
-      if (items.every((e) => e['status'] == 'done')) {
-        status = 'done';
-      } else if (items.every((e) => e['status'] == 'rejected')) {
+      if (hasPending) {
+        status = 'sent_to_store';
+      } else if (allRejected) {
         status = 'rejected';
       } else {
-        status = 'sent_to_store';
+        // done OR mixed(done + rejected)
+        status = 'done';
       }
-      final isUrgent = items.any((e) => e['contact_logistic'] == 'urgent');
-      final isProcessing = items.any((e) => e['store_status'] == 'processing');
+      final isUrgent = validItems.any((e) => e['contact_logistic'] == 'urgent');
+      final isProcessing = validItems.any((e) => e['store_status'] == 'processing');
       result.add(
         AdditionalRequestGroup(
           groupId: groupId,
@@ -194,17 +214,28 @@ class StoreRepositoryImpl implements StoreRepository {
         if (inv == null) return true;
         return inv > 0;
       }).toList();
+      if (validItems.isEmpty) {
+        return;
+      }
+      final hasPending = validItems.any(
+            (e) => e['status'] == 'sent_to_store',
+      );
+
+      final allRejected = validItems.every(
+            (e) => e['status'] == 'rejected',
+      );
 
       String status;
 
-      if (items.every((e) => e['status'] == 'done')) {
-        status = 'done';
-      } else if (items.every((e) => e['status'] == 'rejected')) {
+      if (hasPending) {
+        status = 'sent_to_store';
+      } else if (allRejected) {
         status = 'rejected';
       } else {
-        status = 'sent_to_store';
+        // done OR mixed(done + rejected)
+        status = 'done';
       }
-      final isProcessing = items.any((e) => e['store_status'] == 'processing');
+      final isProcessing = validItems.any((e) => e['store_status'] == 'processing');
       result.add(
         AdditionalRequestGroup(
           groupId: groupId,
