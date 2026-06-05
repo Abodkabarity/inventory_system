@@ -20,13 +20,48 @@ class PrintService {
       if (qty <= 0) return false;
 
       if (isGeneral) {
-        return cls == 'general';
+        return cls.contains('general');
       } else {
-        return cls != 'general';
+        return !cls.contains('general');
       }
     }).toList();
 
-    filtered.sort((a, b) => a.itemName.compareTo(b.itemName));
+    filtered.sort((a, b) {
+      int compareText(String x, String y) {
+        return x.trim().toLowerCase().compareTo(y.trim().toLowerCase());
+      }
+
+      if (isGeneral) {
+        // General:
+        // 1. Category (A to Z)
+        // 2. Supplier (A to Z)
+        // 3. Item Name (A to Z)
+
+        final byCategory = compareText(a.category, b.category);
+        if (byCategory != 0) return byCategory;
+
+        final bySupplier = compareText(a.supplier, b.supplier);
+        if (bySupplier != 0) return bySupplier;
+
+        return compareText(a.itemName, b.itemName);
+      } else {
+        // Medicine:
+        // 1. Store Classification (A to Z)
+        // 2. Supplier (A to Z)
+        // 3. Item Name (A to Z)
+
+        final byClassification = compareText(
+          a.classification,
+          b.classification,
+        );
+        if (byClassification != 0) return byClassification;
+
+        final bySupplier = compareText(a.supplier, b.supplier);
+        if (bySupplier != 0) return bySupplier;
+
+        return compareText(a.itemName, b.itemName);
+      }
+    });
 
     pdf.addPage(
       pw.MultiPage(
