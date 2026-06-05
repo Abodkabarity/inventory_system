@@ -47,7 +47,12 @@ class _AdditionalRequestDialogState extends State<AdditionalRequestDialog> {
         .order('item_name');
 
     items = List<Map<String, dynamic>>.from(res);
-
+print('GROUP ${widget.groupId}');
+for (final e in items) {
+  print(
+    '${e['item_name']} | inventory_qty=${e['inventory_qty']} | status=${e['status']}',
+  );
+}
     items = items.where((e) {
       final inv = e['inventory_qty'];
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/operational_date_helper.dart';
 import '../bloc/store_bloc.dart';
 import '../bloc/store_event.dart';
 import '../bloc/store_state.dart';
@@ -61,6 +62,26 @@ class BranchGrid extends StatelessWidget {
                 final isSubmitted = submitted.contains(branch);
                 final isSelected = selectedBranch == branch;
 
+                final isPrinted =
+                context.read<StoreBloc>()
+                    .state
+                    .printedBranches
+                    .contains(branch);
+                final blocState =
+                    context.read<StoreBloc>().state;
+
+                final startHour =
+                    blocState.submitStartHours[branch] ?? 0;
+
+                final endHour =
+                    blocState.submitEndHours[branch] ?? 24;
+
+                final isLate =
+                    OperationalDateHelper.isMissingWindowForBranch(
+                      startHour: startHour,
+                      endHour: endHour,
+                    ) &&
+                        !isSubmitted;
                 return GestureDetector(
                   onTap: () {
                     final bloc = context.read<StoreBloc>();
@@ -138,8 +159,12 @@ class BranchGrid extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: isSelected
                           ? AppColors.primaryColor
-                          : isSubmitted
+                          : isPrinted
                           ? Colors.greenAccent.shade100
+                          : isLate
+                          ? Colors.red.shade100
+                          : isSubmitted
+                          ? Colors.orange.shade100
                           : Colors.white,
 
                       borderRadius: BorderRadius.circular(14),
@@ -167,12 +192,18 @@ class BranchGrid extends StatelessWidget {
                               ? Colors.white
                               : Colors.blue.shade50,
                           child: Icon(
-                            isSubmitted ? Icons.check : Icons.store,
-                            size: isSubmitted ? 25 : 18,
+                            isPrinted
+                                ? Icons.check
+                                : isSubmitted
+                                ? Icons.inventory_2
+                                : Icons.store,
+                            size: isPrinted ? 25 : 18,
                             color: isSelected
                                 ? AppColors.secondaryColor
-                                : isSubmitted
+                                : isPrinted
                                 ? Colors.green
+                                : isSubmitted
+                                ? Colors.orange
                                 : AppColors.primaryColor,
                           ),
                         ),
@@ -196,21 +227,45 @@ class BranchGrid extends StatelessWidget {
 
                               const SizedBox(height: 4),
 
-                              Text(
-                                isSubmitted ? "Submitted" : "Not Submitted Yet",
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: isSelected
-                                      ? Colors.white70
-                                      : Colors.grey,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                              Builder(
+                                builder: (_) {
+                                  String statusText;
+                                  Color statusColor;
+
+                                  if (isPrinted) {
+                                    statusText = "PRINTED";
+                                    statusColor = Colors.green.shade800;
+                                  }
+                                  else if (isSubmitted) {
+                                    statusText = "SUBMITTED";
+                                    statusColor = Colors.deepOrange;
+                                  }
+                                  else if (isLate) {
+                                    statusText = "BRANCH NOT SUBMIT THE ORDER";
+                                    statusColor = Colors.red.shade900;
+                                  }
+                                  else {
+                                    statusText = "NOT SUBMITTED YET";
+                                    statusColor = Colors.grey;
+                                  }
+
+                                  return Text(
+                                    statusText,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: isSelected
+                                          ? Colors.white70
+                                          : statusColor,
+                                    ),
+                                  );
+                                },
                               ),
                             ],
                           ),
                         ),
 
-                        if (isSubmitted)
+                        if (isPrinted)
                           Icon(
                             Icons.check_circle,
                             color: isSelected ? Colors.white : Colors.green,
