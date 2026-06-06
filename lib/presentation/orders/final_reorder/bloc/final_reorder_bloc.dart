@@ -10,7 +10,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
   final int compareQtyInput;
   final int initialQtyInput;
   final String initialReasonInput;
-
+  final num orderIncreaseLimit;
   final Future<void> Function(int newQty, String reason) onSave;
   final void Function() onReset;
 
@@ -21,15 +21,16 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     required this.initialReasonInput,
     required this.onSave,
     required this.onReset,
-    required this.compareQtyInput,
+    required this.compareQtyInput, required this.orderIncreaseLimit,
   }) : super(
-         _buildInitial(
-           row: row,
-           oldQtyInput: oldQtyInput,
-           initialQtyInput: initialQtyInput,
-           compareQtyInput: compareQtyInput,
-           initialReasonInput: initialReasonInput,
-         ),
+    _buildInitial(
+      row: row,
+      oldQtyInput: oldQtyInput,
+      initialQtyInput: initialQtyInput,
+      compareQtyInput: compareQtyInput,
+      initialReasonInput: initialReasonInput,
+      orderIncreaseLimit: orderIncreaseLimit,
+    ),
        ) {
     on<FinalReorderStarted>(_onStarted);
     on<FinalReorderQtyTextChanged>(_onQtyTextChanged);
@@ -47,6 +48,8 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     required int initialQtyInput,
     required int compareQtyInput,
     required String initialReasonInput,
+    required num orderIncreaseLimit,
+
   }) {
     final oldSafe = oldQtyInput < 0 ? 0 : oldQtyInput;
     final storeStock = _toInt(row.storeStock);
@@ -73,6 +76,8 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
       storeStock: storeStock,
       reorderQtyNum: reorderQtyNum,
       totalReorderToday: totalReorderToday,
+      orderIncreaseLimit: orderIncreaseLimit,
+
     );
 
     return _recompute(
@@ -88,6 +93,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
       isLocked: isLocked,
       onlyDecrease: onlyDecrease,
       dialog: null,
+      orderIncreaseLimit: orderIncreaseLimit,
     );
   }
 
@@ -150,6 +156,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         storeStock: state.storeStock,
         reorderQtyNum: state.reorderQtyNum,
         totalReorderToday: state.totalReorderToday,
+        orderIncreaseLimit: orderIncreaseLimit,
       );
 
       next = clamped;
@@ -162,6 +169,8 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
             storeStock: state.storeStock,
             reorderQtyNum: state.reorderQtyNum,
             totalReorderToday: state.totalReorderToday,
+            orderIncreaseLimit: orderIncreaseLimit,
+
           ),
           onlyDecrease: state.onlyDecrease,
           storeStock: state.storeStock,
@@ -182,6 +191,8 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         hasTma: state.hasTma,
         isLocked: state.isLocked,
         onlyDecrease: state.onlyDecrease,
+        orderIncreaseLimit: orderIncreaseLimit,
+
         dialog: dialog,
       ),
     );
@@ -195,6 +206,8 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
       storeStock: state.storeStock,
       reorderQtyNum: state.reorderQtyNum,
       totalReorderToday: state.totalReorderToday,
+      orderIncreaseLimit: orderIncreaseLimit,
+
     );
 
     final attempted = state.qty + 1;
@@ -225,6 +238,8 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         isNonFormulary: state.isNonFormulary,
         hasTma: state.hasTma,
         isLocked: state.isLocked,
+        orderIncreaseLimit: orderIncreaseLimit,
+
         onlyDecrease: state.onlyDecrease,
         dialog: state.dialog,
       ),
@@ -251,6 +266,8 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         storeStock: state.storeStock,
         reorderQtyNum: state.reorderQtyNum,
         compareQtyInput: compareQtyInput,
+        orderIncreaseLimit: orderIncreaseLimit,
+
         totalReorderToday: state.totalReorderToday,
         isNonFormulary: state.isNonFormulary,
         hasTma: state.hasTma,
@@ -278,6 +295,8 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         hasTma: state.hasTma,
         isLocked: state.isLocked,
         onlyDecrease: state.onlyDecrease,
+        orderIncreaseLimit: orderIncreaseLimit,
+
         dialog: state.dialog,
       ),
     );
@@ -303,6 +322,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         isLocked: state.isLocked,
         onlyDecrease: state.onlyDecrease,
         dialog: state.dialog,
+          orderIncreaseLimit: orderIncreaseLimit
       ),
     );
   }
@@ -328,6 +348,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
   // =========================
 
   static FinalReorderState _recompute({
+    required num orderIncreaseLimit,
     required int qty,
     required String reason,
     required int oldSafe,
@@ -346,6 +367,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
       storeStock: storeStock,
       reorderQtyNum: reorderQtyNum,
       totalReorderToday: totalReorderToday,
+      orderIncreaseLimit: orderIncreaseLimit,
     );
 
     if (isNonFormulary) {
@@ -422,13 +444,17 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     required int storeStock,
     required int reorderQtyNum,
     required int totalReorderToday,
+    required num orderIncreaseLimit,
   }) {
     if (reorderQtyNum > oldSafe) {
       return oldSafe;
     }
 
-    final availableStock = (storeStock - totalReorderToday).clamp(0, 999999999);
-    final extra = (availableStock * 0.2).floor();
+    final availableStock =
+    (storeStock - totalReorderToday).clamp(0, 999999999);
+
+    final extra =
+    (availableStock * (orderIncreaseLimit / 100)).floor();
 
     return oldSafe + extra;
   }
@@ -440,6 +466,8 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     required int storeStock,
     required int reorderQtyNum,
     required int totalReorderToday,
+    required num orderIncreaseLimit,
+
   }) {
     if (isLocked) return oldSafe;
 
@@ -448,6 +476,8 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
       storeStock: storeStock,
       reorderQtyNum: reorderQtyNum,
       totalReorderToday: totalReorderToday,
+      orderIncreaseLimit: orderIncreaseLimit,
+
     );
 
     if (v > cap) return cap;

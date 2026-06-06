@@ -23,6 +23,7 @@ class OrdersTable extends StatefulWidget {
 
   // Final edits
   final Map<String, FinalReorderEdit> finalEdits;
+  final int orderEditLimit;
   final ValueChanged<DailyOrderRow> onTapFinalReorder;
 
   // NEW: Additional requests (draft + sent)
@@ -59,7 +60,8 @@ class OrdersTable extends StatefulWidget {
     required this.gridController,
     required this.onColumnResized,
     required this.isSubmitted, // ✅ NEW
-    this.controller, required this.submitStartHour, required this.submitEndHour,
+    this.controller,
+    required this.orderEditLimit, required this.submitStartHour, required this.submitEndHour,
   });
 
   static const List<String> allColumns = [
@@ -197,6 +199,7 @@ class _OrdersTableState extends State<OrdersTable> {
       finalEdits: widget.finalEdits,
       submitStartHour: widget.submitStartHour,
       submitEndHour: widget.submitEndHour,
+      orderEditLimit: widget.orderEditLimit,
       additionalEdits: widget.additionalEdits,
       sentAdditionalQtyByItemCode: widget.sentAdditionalQtyByItemCode,
       onTapAdditionalRequest: widget.onTapAdditionalRequest,
@@ -237,6 +240,7 @@ class _OrdersTableState extends State<OrdersTable> {
         finalEdits: widget.finalEdits,
         submitStartHour: widget.submitStartHour,
         submitEndHour: widget.submitEndHour,
+        orderEditLimit: widget.orderEditLimit,
         additionalEdits: widget.additionalEdits,
         sentAdditionalQtyByItemCode: widget.sentAdditionalQtyByItemCode,
         isSubmitted: widget.isSubmitted, // ✅ NEW
@@ -458,7 +462,7 @@ class _OrdersDataSource extends DataGridSource {
   List<String> _columns = [];
 
   Map<String, FinalReorderEdit> _edits = const {};
-
+  int _orderEditLimit = 0;
   // NEW
   Map<String, AdditionalRequestEdit> _additionalEdits = const {};
   Map<String, num> _sentAdditionalQtyByItemCode = const {};
@@ -475,6 +479,7 @@ class _OrdersDataSource extends DataGridSource {
     required List<String> columns,
     required int submitStartHour,
     required int submitEndHour,
+    required int orderEditLimit,
     required Map<String, FinalReorderEdit> finalEdits,
     required Map<String, AdditionalRequestEdit> additionalEdits,
     required Map<String, num> sentAdditionalQtyByItemCode,
@@ -489,6 +494,7 @@ class _OrdersDataSource extends DataGridSource {
       additionalEdits: additionalEdits,
       submitStartHour: submitStartHour,
       submitEndHour: submitEndHour,
+      orderEditLimit: orderEditLimit,
       sentAdditionalQtyByItemCode: sentAdditionalQtyByItemCode,
       isSubmitted: isSubmitted, // ✅ NEW
     );
@@ -499,6 +505,7 @@ class _OrdersDataSource extends DataGridSource {
     required List<String> columns,
     required int submitStartHour,
     required int submitEndHour,
+    required int orderEditLimit,
     required Map<String, FinalReorderEdit> finalEdits,
     required Map<String, AdditionalRequestEdit> additionalEdits,
     required Map<String, num> sentAdditionalQtyByItemCode,
@@ -511,7 +518,7 @@ class _OrdersDataSource extends DataGridSource {
     _submitEndHour = submitEndHour;
     _additionalEdits = additionalEdits;
     _sentAdditionalQtyByItemCode = sentAdditionalQtyByItemCode;
-
+    _orderEditLimit = orderEditLimit;
     _isSubmitted = isSubmitted; // ✅ NEW
 
     _gridRows = rows.asMap().entries.map((entry) {
@@ -935,9 +942,17 @@ class _OrdersDataSource extends DataGridSource {
           final main = showNew
               ? newQty.toString()
               : (text.isEmpty ? '—' : text);
+          final alreadyEdited =
+          _edits.containsKey(daily.itemCode);
 
+          final editLimitReached =
+              _edits.length >= _orderEditLimit;
+
+          final editLocked =
+              editLimitReached && !alreadyEdited;
           final locked =
               _isSubmitted ||
+                  editLocked ||
                   OperationalDateHelper.isMissingWindowForBranch(
                     startHour: _submitStartHour,
                     endHour: _submitEndHour,

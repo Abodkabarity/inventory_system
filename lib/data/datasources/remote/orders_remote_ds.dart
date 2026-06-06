@@ -161,7 +161,6 @@ store_item_classifications
   Future<Map<String, dynamic>> fetchBranchInfo({
     required String branchName,
   }) async {
-
     final branch = await client
         .from('branches')
         .select('''
@@ -187,11 +186,9 @@ days_until_next_slot
         .eq('branch_name', branchName)
         .single();
 
-    return {
-      ...branch,
-      ...usage,
-    };
+    return {...branch, ...usage};
   }
+
   // ==========================
   // NEW: Upsert order edits (changed items only)
   // ==========================
@@ -883,5 +880,24 @@ done_at
     required String status,
   }) async {
     await client.from('items_to_order').update({'status': status}).eq('id', id);
+  }
+
+  Future<int> fetchAdditionalRequestsCount({
+    required String runDate,
+    required String branchName,
+  }) async {
+    final drafts = await client
+        .from('additional_request_drafts')
+        .select('id')
+        .eq('run_date', runDate)
+        .eq('branch_name', branchName);
+
+    final sent = await client
+        .from('additional_requests')
+        .select('id')
+        .eq('run_date', runDate)
+        .eq('branch_name', branchName);
+
+    return drafts.length + sent.length;
   }
 }
