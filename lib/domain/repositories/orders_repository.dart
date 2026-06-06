@@ -8,7 +8,10 @@ abstract class OrdersRepository {
     int batchSize,
     void Function(int loaded)? onProgress,
   });
-
+  Future<int> fetchAdditionalRequestsCount({
+    required String runDate,
+    required String branchName,
+  });
   Future<Map<String, ProductInfo>> fetchProductInfoBatch({
     required List<String> itemCodes,
     required String branchName,
@@ -30,10 +33,8 @@ abstract class OrdersRepository {
   Future<Map<String, dynamic>?> fetchJob({required String jobId});
 
   // zone
-// branch info
-  Future<Map<String, dynamic>> fetchBranchInfo({
-    required String branchName,
-  });
+  // branch info
+  Future<Map<String, dynamic>> fetchBranchInfo({required String branchName});
   // edits + submission
   Future<void> upsertOrderEdits({
     required String runDate,

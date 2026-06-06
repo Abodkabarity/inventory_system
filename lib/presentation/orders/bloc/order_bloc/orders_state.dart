@@ -197,7 +197,7 @@ class OrdersState extends Equatable {
 
   final num orderIncreaseLimit;
 
-  final num orderEditLimit;
+  final int orderEditLimit;
 
   final num additionalOrderLimit;
   final String? progressMessage;
@@ -226,6 +226,7 @@ class OrdersState extends Equatable {
   final List<ItemToOrder> itemsToOrder;
   // filter additional only
   final bool additionalOnly;
+  final int usedAdditionalOrders;
   final bool receivedLast7DaysOnly;
   final String? nextAvailableDate;
   final int? daysUntilNextSlot;
@@ -293,7 +294,7 @@ class OrdersState extends Equatable {
     this.maxAdjLimit = 25,
     this.orderIncreaseLimit = 10,
     this.orderEditLimit = 20,
-    this.additionalOrderLimit = 10,
+    this.additionalOrderLimit = 10, required this.usedAdditionalOrders,
   });
 
   static const List<String> defaultVisibleInTable = [
@@ -420,6 +421,7 @@ class OrdersState extends Equatable {
       columnOrder: defaultColumnOrder,
       columnWidths: defaultColumnWidths(allKeys),
       categoryFilter: 'ALL',
+      usedAdditionalOrders : 0,
       formularyFilter: 'ALL',
       nonWithSales45Only: false,
       showCreate: true,
@@ -501,6 +503,7 @@ class OrdersState extends Equatable {
     String? categoryFilter,
     String? formularyFilter,
     bool? nonWithSales45Only,
+    int? usedAdditionalOrders,
     bool? numericFinalOnly,
     List<ItemToOrder>? itemsToOrder,
     bool? isMismatchLoading,
@@ -529,7 +532,7 @@ class OrdersState extends Equatable {
 
     num? orderIncreaseLimit,
 
-    num? orderEditLimit,
+    int? orderEditLimit,
 
     num? additionalOrderLimit,
     List<AdditionalRequestRow>? additionalTrackingRows,
@@ -602,6 +605,8 @@ class OrdersState extends Equatable {
       isExporting: isExporting ?? this.isExporting,
       isOrderDay: isOrderDay ?? this.isOrderDay,
       selectedItemDemand: selectedItemDemand ?? this.selectedItemDemand,
+      usedAdditionalOrders:
+      usedAdditionalOrders ?? this.usedAdditionalOrders,
       onlyBranchMaxAdj: onlyBranchMaxAdj ?? this.onlyBranchMaxAdj,
       showCreate: showCreate ?? this.showCreate,
       submitStartHour:submitStartHour ??this.submitStartHour,
@@ -640,6 +645,7 @@ class OrdersState extends Equatable {
     isRemovingFilters,
     receivedLast7DaysOnly,
     submissionStatus,
+    usedAdditionalOrders,
     selectedItemCode,
     additionalTrackingRows,
     mismatchSearch,

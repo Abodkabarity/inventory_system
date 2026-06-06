@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 
+import '../../../core/theme/app_colors.dart';
 import '../../../domain/entities/daily_order_row.dart';
 import '../bloc/order_bloc/orders_bloc.dart';
 import '../bloc/order_bloc/orders_event.dart';
@@ -33,8 +35,8 @@ class BranchOrdersActions {
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Mismatch',
-      barrierColor: Colors.black.withOpacity(0.2),
-      pageBuilder: (_, __, ___) {
+      barrierColor: Colors.black.withValues(alpha: 0.2),
+      pageBuilder: (dialogContext, __, ___) {
         return Align(
           alignment: Alignment.centerRight,
           child: BlocProvider.value(
@@ -55,7 +57,7 @@ class BranchOrdersActions {
       barrierDismissible: true,
       barrierLabel: 'Max',
       barrierColor: Colors.black.withValues(alpha: 0.2),
-      pageBuilder: (_, __, ___) {
+      pageBuilder: (dialogContext, __, ___) {
         return Align(
           alignment: Alignment.centerRight,
           child: BlocProvider.value(
@@ -86,9 +88,11 @@ class BranchOrdersActions {
           onEdit: (itemCode) {
             Navigator.of(context).pop(false);
 
-            final row = state.rows.firstWhere((r) => r.itemCode == itemCode);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              final row = state.rows.firstWhere((r) => r.itemCode == itemCode);
 
-            openFinalSidePanel(context: context, state: state, row: row);
+              openFinalSidePanel(context: context, state: state, row: row);
+            });
           },
 
           onReset: (itemCode) {
@@ -116,18 +120,43 @@ class BranchOrdersActions {
     required OrdersState state,
     required DailyOrderRow row,
   }) async {
-    final oldQty = num.tryParse(row.finalReorderQtyStoreStockGt0.toString())?.toInt() ?? 0;
+    final oldQty =
+        num.tryParse(row.finalReorderQtyStoreStockGt0.toString())?.toInt() ?? 0;
 
     final edit = state.finalEdits[row.itemCode];
-    final initialQty = edit?.newQty ?? oldQty;
-    final compareQty = oldQty;    final initialReason = edit?.reason ?? '';
+    final alreadyEdited = state.finalEdits.containsKey(row.itemCode);
 
+    final limitReached = state.finalEdits.length >= state.orderEditLimit;
+    final initialQty = edit?.newQty ?? oldQty;
+    final compareQty = oldQty;
+    final initialReason = edit?.reason ?? '';
+    if (!alreadyEdited && limitReached) {
+      await showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Edit Limit Reached'),
+          content: Text(
+            'Maximum edited products allowed: '
+            '${state.orderEditLimit}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+
+      return;
+    }
     await showGeneralDialog(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Edit Final Reorder',
       barrierColor: Colors.black.withValues(alpha: 0.18),
-      pageBuilder: (_, __, ___) {
+      pageBuilder: (dialogContext, __, ___) {
+        final navigator = Navigator.of(dialogContext);
         return Align(
           alignment: Alignment.centerRight,
           child: FinalReorderSidePanel(
@@ -135,8 +164,9 @@ class BranchOrdersActions {
             oldQty: oldQty,
             compareQty: compareQty,
             initialQty: initialQty,
+            orderIncreaseLimit: state.orderIncreaseLimit,
             initialReason: initialReason,
-            onClose: () => Navigator.of(context).pop(),
+            onClose: () => navigator.pop(),
             onSave: (newQty, reason) async {
               final bloc = context.read<OrdersBloc>();
 
@@ -149,6 +179,15 @@ class BranchOrdersActions {
                 newQty: newQty,
                 reason: reason,
               );
+              print('BEFORE POP');
+
+              if (navigator.canPop()) {
+                navigator.pop();
+              }
+
+              print('AFTER POP');
+
+              await Future.delayed(const Duration(milliseconds: 100));
 
               bloc.add(
                 OrdersApplyFinalEdit(
@@ -158,14 +197,12 @@ class BranchOrdersActions {
                   reason: reason,
                 ),
               );
-
-              Navigator.of(context).pop();
             },
             onReset: () {
               context.read<OrdersBloc>().add(
                 OrdersResetFinalEdit(row.itemCode),
               );
-              Navigator.of(context).pop();
+              navigator.pop();
             },
           ),
         );
@@ -183,8 +220,72 @@ class BranchOrdersActions {
     final bloc = context.read<OrdersBloc>();
 
     final latestState = bloc.state;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.primaryColor,
+              ),
+            ),
+            SizedBox(width: 16),
+            Text('Loading...'),
+          ],
+        ),
+      ),
+    );
+    final existingDraft = latestState.additionalEdits[itemCode];
 
-    final draft = latestState.additionalEdits[itemCode];
+    final isNewRequest = existingDraft == null;
+
+    final currentCount = await bloc.repo.fetchAdditionalRequestsCount(
+      runDate: latestState.runDate,
+      branchName: latestState.branchName,
+    );
+    Navigator.of(context, rootNavigator: true).pop();
+    final limitReached = currentCount >= latestState.additionalOrderLimit;
+
+    if (isNewRequest && limitReached) {
+      await showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Additional Order Limit Reached'),
+          content: Row(
+            children: [
+              Text('Maximum additional requests allowed: '),
+              SizedBox(width: 10),
+              Text(
+                '${latestState.additionalOrderLimit}',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                  fontSize: 16.sp,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                'OK',
+                style: TextStyle(color: AppColors.secondaryColor),
+              ),
+            ),
+          ],
+        ),
+      );
+
+      return;
+    }
+    final draft = existingDraft;
 
     final rawHistory =
         state.sentAdditionalHistoryByItemCode[itemCode] ?? const [];
@@ -207,7 +308,7 @@ class BranchOrdersActions {
       barrierDismissible: true,
       barrierLabel: 'Additional Request',
       barrierColor: Colors.black.withValues(alpha: 0.18),
-      pageBuilder: (_, __, ___) {
+      pageBuilder: (dialogContext, __, ___) {
         return Align(
           alignment: Alignment.centerRight,
           child: AdditionalRequestSidePanel(
@@ -216,7 +317,9 @@ class BranchOrdersActions {
             initialReason: draft?.reason ?? '',
             initialIsUrgent:
                 latestState.additionalEdits[row.itemCode]?.isUrgent ?? false,
-            onClose: () => Navigator.of(context).pop(),
+
+            onClose: () => Navigator.of(dialogContext).pop(),
+
             onSave: (qty, reason, isUrgent) async {
               final bloc = context.read<OrdersBloc>();
 
@@ -242,7 +345,7 @@ class BranchOrdersActions {
                 ),
               );
 
-              Navigator.of(context).pop();
+              Navigator.of(dialogContext).pop();
             },
             onRemove: () async {
               final bloc = context.read<OrdersBloc>();
@@ -255,7 +358,7 @@ class BranchOrdersActions {
 
               bloc.add(OrdersRemoveAdditionalRequest(itemCode));
 
-              Navigator.of(context).pop();
+              Navigator.of(dialogContext).pop();
             },
             sentHistory: sentHistory,
           ),

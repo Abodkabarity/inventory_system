@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../domain/entities/daily_order_row.dart';
+import '../../bloc/order_bloc/orders_bloc.dart';
 import '../bloc/final_reorder_bloc.dart';
 import '../bloc/final_reorder_event.dart';
 import '../bloc/final_reorder_state.dart';
@@ -16,7 +17,7 @@ class FinalReorderSidePanel extends StatefulWidget {
   final int compareQty;
   final int initialQty;
   final String initialReason;
-
+  final num orderIncreaseLimit;
   final VoidCallback onClose;
   final Future<void> Function(int newQty, String reason) onSave;
   final VoidCallback onReset;
@@ -30,7 +31,7 @@ class FinalReorderSidePanel extends StatefulWidget {
     required this.onClose,
     required this.onSave,
     required this.onReset,
-    required this.compareQty,
+    required this.compareQty, required this.orderIncreaseLimit,
   });
 
   @override
@@ -64,6 +65,9 @@ class _FinalReorderSidePanelState extends State<FinalReorderSidePanel> {
         compareQtyInput: widget.compareQty,
         initialQtyInput: widget.initialQty,
         initialReasonInput: widget.initialReason,
+
+        orderIncreaseLimit: widget.orderIncreaseLimit,
+
         onSave: widget.onSave,
         onReset: widget.onReset,
       )..add(const FinalReorderStarted()),

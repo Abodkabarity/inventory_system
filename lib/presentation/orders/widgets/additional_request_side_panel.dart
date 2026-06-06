@@ -161,6 +161,7 @@ class _AdditionalRequestSidePanelState
                 subtitle: '${widget.row.itemCode} • ${widget.row.itemName}',
                 onClose: widget.onClose,
               ),
+
               const SizedBox(height: 14),
 
               if (history.isNotEmpty) ...[
