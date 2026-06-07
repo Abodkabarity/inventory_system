@@ -540,13 +540,57 @@ done_at
   Future<List<Map<String, dynamic>>> fetchMaxAdj({
     required String branch,
   }) async {
-    final res = await client
+    final active = await client
         .from('max_adj')
         .select()
-        .eq('branch_name', branch)
-        .order('created_at', ascending: false);
+        .eq('branch_name', branch);
 
-    return List<Map<String, dynamic>>.from(res);
+    final deleted = await client
+        .from('max_adj_log')
+        .select()
+        .eq('branch_name', branch)
+        .eq('action_type', 'deleted_by_branch');
+
+    final now = DateTime.now();
+
+    final deletedRows = deleted
+        .where((e) {
+          final d = DateTime.tryParse((e['update_date'] ?? '').toString());
+
+          if (d == null) return false;
+
+          return now.difference(d).inDays < 30;
+        })
+        .map((e) {
+          final d = DateTime.parse(e['update_date'].toString());
+
+          return {
+            ...e,
+            'status': 'removed',
+            'days_left': 30 - now.difference(d).inDays,
+          };
+        })
+        .toList();
+
+    final activeRows = active.map((e) {
+      return {...e, 'status': 'active'};
+    }).toList();
+
+    final all = [...activeRows, ...deletedRows];
+
+    all.sort((a, b) {
+      final da = DateTime.tryParse((a['update_date'] ?? '').toString());
+
+      final db = DateTime.tryParse((b['update_date'] ?? '').toString());
+
+      if (da == null || db == null) {
+        return 0;
+      }
+
+      return db.compareTo(da);
+    });
+
+    return all;
   }
 
   Future<void> insertMaxAdj(Map<String, dynamic> data) async {
@@ -575,6 +619,29 @@ done_at
   }
 
   Future<void> deleteMaxAdj(String id) async {
+    final row = await client.from('max_adj').select().eq('id', id).single();
+
+    await client.from('max_adj_log').insert({
+      'branch_name': row['branch_name'],
+      'item_code': row['item_code'],
+      'item_name': row['item_name'],
+
+      'current_demand_30d': row['current_demand_30d'],
+      'max_adjustment_30d': row['max_adjustment_30d'],
+      'qty': row['qty'],
+
+      'adjustment_type': row['adjustment_type'],
+      'reason': row['reason'],
+      'added_by': row['added_by'],
+
+      'update_date': DateTime.now().toIso8601String(),
+
+      'action_type': 'deleted_by_branch',
+
+      'original_id': row['id'],
+      'moved_at': DateTime.now().toIso8601String(),
+    });
+
     await client.from('max_adj').delete().eq('id', id);
   }
 
