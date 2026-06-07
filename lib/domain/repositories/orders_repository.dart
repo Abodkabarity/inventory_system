@@ -17,7 +17,7 @@ abstract class OrdersRepository {
     required String branchName,
     required String runDate,
   });
-
+  Future<int> fetchItemReportCount();
   Future<String> generateBranchOrder({
     required String runDate,
     required String branchName,

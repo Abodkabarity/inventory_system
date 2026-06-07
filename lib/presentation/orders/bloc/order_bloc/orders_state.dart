@@ -198,7 +198,8 @@ class OrdersState extends Equatable {
   final num orderIncreaseLimit;
 
   final int orderEditLimit;
-
+  final bool orderLoadedOnce;
+  final String loadedOperationalDate;
   final num additionalOrderLimit;
   final String? progressMessage;
   final bool onlyBranchMaxAdj;
@@ -294,7 +295,10 @@ class OrdersState extends Equatable {
     this.maxAdjLimit = 25,
     this.orderIncreaseLimit = 10,
     this.orderEditLimit = 20,
-    this.additionalOrderLimit = 10, required this.usedAdditionalOrders,
+    this.additionalOrderLimit = 10,
+    required this.usedAdditionalOrders,
+    required this.orderLoadedOnce,
+    required this.loadedOperationalDate,
   });
 
   static const List<String> defaultVisibleInTable = [
@@ -409,19 +413,21 @@ class OrdersState extends Equatable {
       error: null,
       mismatchItems: const [],
       mismatchSuggestions: const [],
-      submitStartHour : 21,
-      submitEndHour : 9,
+      submitStartHour: 21,
+      submitEndHour: 9,
       editingMismatchId: null,
       maxAdjSearch: '',
       isMismatchLoading: false,
       isExporting: false,
       selectedItemDemand: 0,
       itemsToOrder: [],
+      orderLoadedOnce: false,
+      loadedOperationalDate: '',
       visibleColumns: defaultVisibleInTable.toSet(),
       columnOrder: defaultColumnOrder,
       columnWidths: defaultColumnWidths(allKeys),
       categoryFilter: 'ALL',
-      usedAdditionalOrders : 0,
+      usedAdditionalOrders: 0,
       formularyFilter: 'ALL',
       nonWithSales45Only: false,
       showCreate: true,
@@ -511,8 +517,10 @@ class OrdersState extends Equatable {
     bool? isExporting,
     bool? isOrderDay,
     bool? onlyBranchMaxAdj,
-     int? submitStartHour,
-     int? submitEndHour,
+    int? submitStartHour,
+    bool? orderLoadedOnce,
+    String? loadedOperationalDate,
+    int? submitEndHour,
     String? nextAvailableDate,
     int? daysUntilNextSlot,
     bool? showCreate,
@@ -568,28 +576,23 @@ class OrdersState extends Equatable {
       sentAdditionalHistoryByItemCode:
           sentAdditionalHistoryByItemCode ??
           this.sentAdditionalHistoryByItemCode,
-      usedMaxAdjSlots:
-      usedMaxAdjSlots ?? this.usedMaxAdjSlots,
+      usedMaxAdjSlots: usedMaxAdjSlots ?? this.usedMaxAdjSlots,
+      orderLoadedOnce: orderLoadedOnce ?? this.orderLoadedOnce,
 
-      remainingMaxAdjSlots:
-      remainingMaxAdjSlots ?? this.remainingMaxAdjSlots,
+      loadedOperationalDate:
+          loadedOperationalDate ?? this.loadedOperationalDate,
+      remainingMaxAdjSlots: remainingMaxAdjSlots ?? this.remainingMaxAdjSlots,
       additionalTrackingRows:
           additionalTrackingRows ?? this.additionalTrackingRows,
-      maxAdjLimit:
-      maxAdjLimit ?? this.maxAdjLimit,
+      maxAdjLimit: maxAdjLimit ?? this.maxAdjLimit,
 
-      orderIncreaseLimit:
-      orderIncreaseLimit ?? this.orderIncreaseLimit,
-      nextAvailableDate:
-      nextAvailableDate ?? this.nextAvailableDate,
+      orderIncreaseLimit: orderIncreaseLimit ?? this.orderIncreaseLimit,
+      nextAvailableDate: nextAvailableDate ?? this.nextAvailableDate,
 
-      daysUntilNextSlot:
-      daysUntilNextSlot ?? this.daysUntilNextSlot,
-      orderEditLimit:
-      orderEditLimit ?? this.orderEditLimit,
+      daysUntilNextSlot: daysUntilNextSlot ?? this.daysUntilNextSlot,
+      orderEditLimit: orderEditLimit ?? this.orderEditLimit,
 
-      additionalOrderLimit:
-      additionalOrderLimit ?? this.additionalOrderLimit,
+      additionalOrderLimit: additionalOrderLimit ?? this.additionalOrderLimit,
       itemsToOrder: itemsToOrder ?? this.itemsToOrder,
       mismatchItems: mismatchItems ?? this.mismatchItems,
       mismatchSuggestions: mismatchSuggestions ?? this.mismatchSuggestions,
@@ -605,12 +608,11 @@ class OrdersState extends Equatable {
       isExporting: isExporting ?? this.isExporting,
       isOrderDay: isOrderDay ?? this.isOrderDay,
       selectedItemDemand: selectedItemDemand ?? this.selectedItemDemand,
-      usedAdditionalOrders:
-      usedAdditionalOrders ?? this.usedAdditionalOrders,
+      usedAdditionalOrders: usedAdditionalOrders ?? this.usedAdditionalOrders,
       onlyBranchMaxAdj: onlyBranchMaxAdj ?? this.onlyBranchMaxAdj,
       showCreate: showCreate ?? this.showCreate,
-      submitStartHour:submitStartHour ??this.submitStartHour,
-         submitEndHour : submitEndHour ?? this.submitEndHour,
+      submitStartHour: submitStartHour ?? this.submitStartHour,
+      submitEndHour: submitEndHour ?? this.submitEndHour,
     );
   }
 
@@ -661,6 +663,8 @@ class OrdersState extends Equatable {
     orderIncreaseLimit,
     orderEditLimit,
     usedMaxAdjSlots,
+    orderLoadedOnce,
+    loadedOperationalDate,
     remainingMaxAdjSlots,
     additionalOrderLimit,
     selectedItemDemand,

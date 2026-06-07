@@ -22,7 +22,7 @@ class BranchOrdersPage extends StatelessWidget {
           create: (_) => OrdersBlocFactory.create(
             runDate: OperationalDateHelper.operationalDate,
             branchName: branchName,
-          )..add(const OrdersLoadAll()),
+          )..add(const OrdersCheckAutoLoad()),
         ),
         BlocProvider<BranchZoneCubit>(
           create: (_) => BranchZoneCubit(

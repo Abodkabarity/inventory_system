@@ -387,3 +387,7 @@ class OrdersIgnoreItemToOrder extends OrdersEvent {
   @override
   List<Object?> get props => [id];
 }
+
+class OrdersCheckAutoLoad extends OrdersEvent {
+  const OrdersCheckAutoLoad();
+}

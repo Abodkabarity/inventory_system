@@ -79,6 +79,11 @@ class OrdersRepositoryImpl implements OrdersRepository {
   }
 
   @override
+  Future<int> fetchItemReportCount() {
+    return remote.fetchItemReportCount();
+  }
+
+  @override
   Future<Map<String, dynamic>> fetchBranchInfo({required String branchName}) {
     return remote.fetchBranchInfo(branchName: branchName);
   }
