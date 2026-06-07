@@ -44,8 +44,7 @@ class _MaxSidePanelState extends State<MaxSidePanel> {
                 /// HEADER
                 BlocBuilder<OrdersBloc, OrdersState>(
                   builder: (context, state) {
-                    final usedSlots =
-                        state.usedMaxAdjSlots;
+                    final usedSlots = state.usedMaxAdjSlots;
 
                     return Container(
                       padding: const EdgeInsets.all(16),
@@ -53,7 +52,7 @@ class _MaxSidePanelState extends State<MaxSidePanel> {
                       child: Row(
                         children: [
                           Text(
-                      "Max Adjustment ($usedSlots / ${state.maxAdjLimit})",
+                            "Max Adjustment ($usedSlots / ${state.maxAdjLimit})",
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 18,
@@ -277,19 +276,15 @@ class _AddMaxFormState extends State<_AddMaxForm> {
 
     final usedSlots = state.usedMaxAdjSlots;
 
-    final remainingSlots =
-        state.remainingMaxAdjSlots;
+    final remainingSlots = state.remainingMaxAdjSlots;
 
-    final isFull =
-        remainingSlots <= 0;
-    final nextDate =
-        state.nextAvailableDate;
+    final isFull = remainingSlots <= 0;
+    final nextDate = state.nextAvailableDate;
 
-    final nextDays =
-        state.daysUntilNextSlot;
+    final nextDays = state.daysUntilNextSlot;
     return BlocListener<OrdersBloc, OrdersState>(
       listenWhen: (prev, curr) =>
-      prev.mismatchSuggestions != curr.mismatchSuggestions ||
+          prev.mismatchSuggestions != curr.mismatchSuggestions ||
           prev.selectedItemDemand != curr.selectedItemDemand ||
           prev.showMismatchResult != curr.showMismatchResult,
 
@@ -306,7 +301,6 @@ class _AddMaxFormState extends State<_AddMaxForm> {
             state.lastActionSuccess == false &&
             state.error != null &&
             state.error!.isNotEmpty) {
-
           showDialog(
             context: context,
             builder: (_) => AlertDialog(
@@ -565,7 +559,55 @@ class _AddMaxFormState extends State<_AddMaxForm> {
                                 if (!_formKey.currentState!.validate()) {
                                   return;
                                 }
+                                final state = context.read<OrdersBloc>().state;
 
+                                final alreadyExists = state.maxAdjItems.any(
+                                  (e) =>
+                                      e['item_code'] == code.text &&
+                                      e['status'] != 'removed',
+                                );
+
+                                if (alreadyExists) {
+                                  showDialog(
+                                    context: context,
+                                    builder: (_) => AlertDialog(
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      title: const Row(
+                                        children: [
+                                          Icon(
+                                            Icons.info_outline,
+                                            color: Colors.orange,
+                                          ),
+                                          SizedBox(width: 8),
+                                          Text('Already Exists'),
+                                        ],
+                                      ),
+                                      content: const Text(
+                                        'This item already exists in Max list.',
+                                      ),
+                                      actions: [
+                                        TextButton.icon(
+                                          icon: const Icon(
+                                            Icons.close,
+                                            color: AppColors.secondaryColor,
+                                          ),
+                                          label: const Text(
+                                            'Close',
+                                            style: TextStyle(
+                                              color: AppColors.secondaryColor,
+                                            ),
+                                          ),
+                                          onPressed: () =>
+                                              Navigator.pop(context),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+
+                                  return;
+                                }
                                 final demandVal =
                                     num.tryParse(demand.text) ?? 0;
                                 final maxVal = num.tryParse(maxQty.text) ?? 0;
@@ -603,17 +645,15 @@ class _AddMaxFormState extends State<_AddMaxForm> {
                                   submitted = false;
                                 });
                               },
-                          child: Text(
-                            isFull
-                                ? "Limit Reached (${state.maxAdjLimit})"
-                                : "Add Max",
-                            style: TextStyle(color: Colors.white),
-                          )
+                        child: Text(
+                          isFull
+                              ? "Limit Reached (${state.maxAdjLimit})"
+                              : "Add Max",
+                          style: TextStyle(color: Colors.white),
+                        ),
                       ),
-
                     ),
                   ),
-
                 ],
               ),
               Row(
@@ -642,7 +682,6 @@ class _AddMaxFormState extends State<_AddMaxForm> {
                                   'Available on $nextDate',
                                   textAlign: TextAlign.center,
                                   style: const TextStyle(
-
                                     color: Colors.black54,
                                     fontSize: 12,
                                   ),
@@ -650,13 +689,11 @@ class _AddMaxFormState extends State<_AddMaxForm> {
                               ],
                             ),
                           ),
-
-
                       ],
                     ),
                   ),
                 ],
-              )
+              ),
             ],
           ),
         ),
@@ -671,7 +708,11 @@ class _MaxRow extends StatelessWidget {
 
   const _MaxRow({required this.item, required this.index});
 
-  Color _getColor(String type) {
+  Color _getColor(String type, bool isRemoved) {
+    if (isRemoved) {
+      return Colors.grey;
+    }
+
     return type == "INCREASE" ? Colors.green : Colors.red;
   }
 
@@ -683,42 +724,36 @@ class _MaxRow extends StatelessWidget {
     }
     return v.toString();
   }
+
   String getRemainingDays(Map item) {
     try {
-      final updateDateStr =
-      (item['update_date'] ?? '').toString();
+      final updateDateStr = (item['update_date'] ?? '').toString();
 
-      final endDateStr =
-      (item['end_date'] ?? '').toString();
+      final endDateStr = (item['end_date'] ?? '').toString();
 
-      final adjustmentType =
-      (item['adjustment_type'] ?? '')
+      final adjustmentType = (item['adjustment_type'] ?? '')
           .toString()
           .toUpperCase();
+
+      final isRemoved = item['status'] == 'removed';
 
       final now = DateTime.now();
 
       DateTime expiryDate;
 
-      if (endDateStr.isNotEmpty &&
-          endDateStr != 'null') {
+      if (endDateStr.isNotEmpty && endDateStr != 'null' && !isRemoved) {
         expiryDate = DateTime.parse(endDateStr);
       } else {
-        final updateDate =
-        DateTime.parse(updateDateStr);
+        final updateDate = DateTime.parse(updateDateStr);
 
-        final durationDays =
-        adjustmentType == 'DECREASE'
-            ? 45
-            : 30;
+        final durationDays = isRemoved
+            ? 30
+            : (adjustmentType == 'DECREASE' ? 45 : 30);
 
-        expiryDate = updateDate.add(
-          Duration(days: durationDays),
-        );
+        expiryDate = updateDate.add(Duration(days: durationDays));
       }
 
-      final daysLeft =
-          expiryDate.difference(now).inDays;
+      final daysLeft = expiryDate.difference(now).inDays;
 
       if (daysLeft <= 0) {
         return 'Expired';
@@ -729,6 +764,7 @@ class _MaxRow extends StatelessWidget {
       return '';
     }
   }
+
   @override
   Widget build(BuildContext context) {
     final demand = item['current_demand_30d'];
@@ -741,8 +777,8 @@ class _MaxRow extends StatelessWidget {
 
     final qty = item['qty'];
     final reason = (item['reason'] ?? '').toString();
-    final remainingDays =
-    getRemainingDays(item);
+    final remainingDays = getRemainingDays(item);
+    final isRemoved = item['status'] == 'removed';
     return Card(
       color: Colors.white,
       elevation: 3,
@@ -798,16 +834,25 @@ class _MaxRow extends StatelessWidget {
                   ),
 
                   if (reason.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        "Reason: $reason",
-                        style: TextStyle(
-                          fontSize: 12.sp,
-                          color: Colors.black87,
+                    if (isRemoved)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          'Removed by Branch',
+                          style: TextStyle(
+                            fontSize: 12.sp,
+                            color: Colors.grey,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      "Reason: $reason",
+                      style: TextStyle(fontSize: 12.sp, color: Colors.black87),
                     ),
+                  ),
 
                   if (remainingDays.isNotEmpty)
                     Padding(
@@ -837,13 +882,13 @@ class _MaxRow extends StatelessWidget {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: _getColor(type).withValues(alpha: 0.15),
+                    color: _getColor(type, isRemoved).withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    type,
+                    isRemoved ? 'REMOVED' : type,
                     style: TextStyle(
-                      color: _getColor(type),
+                      color: _getColor(type, isRemoved),
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -852,16 +897,17 @@ class _MaxRow extends StatelessWidget {
                 SizedBox(height: 10.h),
 
                 /// DELETE
-                IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.red),
-                  onPressed: () {
-                    _showDeleteDialog(
-                      context,
-                      item['id'].toString(),
-                      item['item_name'],
-                    );
-                  },
-                ),
+                if (!isRemoved)
+                  IconButton(
+                    icon: const Icon(Icons.delete, color: Colors.red),
+                    onPressed: () {
+                      _showDeleteDialog(
+                        context,
+                        item['id'].toString(),
+                        item['item_name'],
+                      );
+                    },
+                  ),
               ],
             ),
           ],

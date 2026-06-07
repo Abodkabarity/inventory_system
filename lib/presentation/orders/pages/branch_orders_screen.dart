@@ -548,18 +548,31 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                   .toString(),
                                               subtitle: 'All APG Items',
                                               icon: Icons.list_alt_outlined,
+                                              isSelected: false,
                                             ),
                                           ),
 
                                           SizedBox(
                                             width: cardWidth,
-                                            child: _KpiCard(
-                                              title: 'Items in Order',
-                                              value: statsAll.finalReorderCount
-                                                  .round()
-                                                  .toString(),
-                                              subtitle: '',
-                                              icon: Icons.inventory_2_outlined,
+                                            child: GestureDetector(
+                                              onTap: () {
+                                                context.read<OrdersBloc>().add(
+                                                  OrdersNumericFinalOnlyToggled(
+                                                    !s.numericFinalOnly,
+                                                  ),
+                                                );
+                                              },
+                                              child: _KpiCard(
+                                                title: 'Items in Order',
+                                                value: statsAll
+                                                    .finalReorderCount
+                                                    .round()
+                                                    .toString(),
+                                                subtitle: '',
+                                                icon:
+                                                    Icons.inventory_2_outlined,
+                                                isSelected: s.numericFinalOnly,
+                                              ),
                                             ),
                                           ),
 
@@ -570,6 +583,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                               value: '${statsAll.non}',
                                               subtitle: '',
                                               icon: Icons.layers_outlined,
+                                              isSelected: false,
                                             ),
                                           ),
 
@@ -581,6 +595,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                   '$usedAdditional/$additionalLimit',
                                               subtitle: '',
                                               icon: Icons.add_box_outlined,
+                                              isSelected: false,
                                             ),
                                           ),
                                         ],
@@ -698,15 +713,15 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                               /* OrdersToolbar.actionButton(
                                                   label:
                                                       'Items To Order (${s.itemsToOrder.length})',
-  
+
                                                   icon: Icons
                                                       .shopping_cart_outlined,
-  
+
                                                   color: Colors.indigo,
-  
+
                                                   badgeCount:
                                                       s.itemsToOrder.length,
-  
+
                                                   onPressed: () async {
                                                     await showDialog(
                                                       context: context,
@@ -720,9 +735,9 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                                 const ItemsToOrderDialog(),
                                                           ),
                                                     );
-  
+
                                                     if (!context.mounted) return;
-  
+
                                                     context.read<OrdersBloc>().add(
                                                       const OrdersLoadItemsToOrder(),
                                                     );
@@ -1204,6 +1219,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                   s.formularyFilter != 'ALL' ||
                                                   s.nonWithSales45Only ||
                                                   s.numericFinalOnly ||
+                                                  s.receivedLast7DaysOnly ||
                                                   s.additionalOnly;
 
                                               final noResults =
@@ -1659,12 +1675,13 @@ class _KpiCard extends StatelessWidget {
   final String value;
   final String subtitle;
   final IconData icon;
-
+  final bool isSelected;
   const _KpiCard({
     required this.title,
     required this.value,
     required this.subtitle,
     required this.icon,
+    required this.isSelected,
   });
 
   @override
@@ -1675,7 +1692,10 @@ class _KpiCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE6E8F0)),
+        border: Border.all(
+          color: isSelected ? AppColors.primaryColor : const Color(0xFFE6E8F0),
+          width: isSelected ? 2 : 1,
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -1966,46 +1986,66 @@ class _SwitchTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 56.h,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: AppColors.backgroundWidget,
-        borderRadius: BorderRadius.circular(14.r),
-        border: Border.all(color: const Color(0xFFE6E8F0)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 11.sp,
-                    color: AppColors.secondaryColor,
+    return InkWell(
+      borderRadius: BorderRadius.circular(14.r),
+
+      onTap: onChanged == null ? null : () => onChanged!(!value),
+
+      child: Container(
+        height: 56.h,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+
+        decoration: BoxDecoration(
+          color: value
+              ? AppColors.primaryColor.withValues(alpha: 0.08)
+              : AppColors.backgroundWidget,
+
+          borderRadius: BorderRadius.circular(14.r),
+
+          border: Border.all(
+            color: value ? AppColors.primaryColor : const Color(0xFFE6E8F0),
+
+            width: value ? 2 : 1,
+          ),
+        ),
+
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 11.sp,
+                      color: AppColors.secondaryColor,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 10.sp, color: Color(0xFF6B7280)),
-                ),
-              ],
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10.sp,
+                      color: const Color(0xFF6B7280),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          Switch(
-            value: value,
-            onChanged: onChanged,
-            activeThumbColor: AppColors.primaryColor,
-            inactiveThumbColor: AppColors.secondaryColor,
-          ),
-        ],
+
+            Switch(
+              value: value,
+              onChanged: onChanged,
+              activeThumbColor: AppColors.primaryColor,
+              inactiveThumbColor: AppColors.secondaryColor,
+            ),
+          ],
+        ),
       ),
     );
   }

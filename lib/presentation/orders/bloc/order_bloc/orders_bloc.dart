@@ -1391,11 +1391,19 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     } catch (err) {
       String message = err.toString();
 
+      if (message.contains('Item already exists')) {
+        message = 'This item already in the Max list.';
+      }
+
       if (message.contains('Max limit reached')) {
         message =
             'You have reached your Max Adjustment limit.\n'
-            'Deleted items by branch remain reserved for 30 days before becoming available again.';
+            'Deleted items remain reserved for 30 days.';
       }
+
+      emit(state.copyWith(showMismatchResult: false));
+
+      await Future.delayed(const Duration(milliseconds: 50));
 
       emit(
         state.copyWith(
