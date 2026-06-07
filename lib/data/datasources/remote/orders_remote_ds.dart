@@ -955,6 +955,31 @@ done_at
     await client.from('items_to_order').update({'status': status}).eq('id', id);
   }
 
+  Future<void> saveUiSettings({
+    required String branchName,
+    required List<String> visibleColumns,
+    required List<String> columnOrder,
+    required Map<String, double> columnWidths,
+  }) async {
+    await client.from('branch_ui_settings').upsert({
+      'branch_name': branchName,
+      'visible_columns': visibleColumns,
+      'column_order': columnOrder,
+      'column_widths': columnWidths,
+      'updated_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  Future<Map<String, dynamic>?> loadUiSettings({
+    required String branchName,
+  }) async {
+    return await client
+        .from('branch_ui_settings')
+        .select()
+        .eq('branch_name', branchName)
+        .maybeSingle();
+  }
+
   Future<int> fetchAdditionalRequestsCount({
     required String runDate,
     required String branchName,
@@ -972,5 +997,12 @@ done_at
         .eq('branch_name', branchName);
 
     return drafts.length + sent.length;
+  }
+
+  Future<void> deleteUiSettings({required String branchName}) async {
+    await client
+        .from('branch_ui_settings')
+        .delete()
+        .eq('branch_name', branchName);
   }
 }

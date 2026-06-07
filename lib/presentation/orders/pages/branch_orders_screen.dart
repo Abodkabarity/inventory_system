@@ -380,6 +380,222 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                               right: Row(
                                 children: [
                                   FilledButton.icon(
+                                    icon: const Icon(Icons.save),
+
+                                    label: const Text('Save Setting'),
+
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.green,
+                                      foregroundColor: Colors.white,
+                                    ),
+
+                                    onPressed: () async {
+                                      final confirm = await showDialog<bool>(
+                                        context: context,
+                                        builder: (_) => AlertDialog(
+                                          backgroundColor: Colors.white,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              18,
+                                            ),
+                                          ),
+
+                                          title: const Row(
+                                            children: [
+                                              Icon(
+                                                Icons.save_outlined,
+                                                color: AppColors.primaryColor,
+                                              ),
+                                              SizedBox(width: 8),
+                                              Text('Save Layout'),
+                                            ],
+                                          ),
+
+                                          content: const Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'This will save your personal table layout.',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+
+                                              SizedBox(height: 12),
+
+                                              Text(
+                                                '✓ Visible / Hidden Columns',
+                                              ),
+
+                                              SizedBox(height: 4),
+
+                                              Text('✓ Column Arrangement'),
+
+                                              SizedBox(height: 4),
+
+                                              Text('✓ Column Widths'),
+
+                                              SizedBox(height: 12),
+
+                                              Text(
+                                                'The layout will be restored automatically after refresh or login.',
+                                              ),
+                                            ],
+                                          ),
+
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () {
+                                                Navigator.pop(context, false);
+                                              },
+                                              child: const Text(
+                                                'Cancel',
+                                                style: TextStyle(
+                                                  color:
+                                                      AppColors.secondaryColor,
+                                                ),
+                                              ),
+                                            ),
+
+                                            OutlinedButton.icon(
+                                              icon: const Icon(
+                                                Icons.restart_alt,
+                                                color: Colors.red,
+                                              ),
+
+                                              label: const Text(
+                                                'Reset',
+                                                style: TextStyle(
+                                                  color: Colors.red,
+                                                ),
+                                              ),
+
+                                              style: OutlinedButton.styleFrom(
+                                                side: const BorderSide(
+                                                  color: Colors.red,
+                                                ),
+                                              ),
+
+                                              onPressed: () async {
+                                                final resetConfirm = await showDialog<bool>(
+                                                  context: context,
+                                                  builder: (_) => AlertDialog(
+                                                    backgroundColor:
+                                                        Colors.white,
+
+                                                    title: const Row(
+                                                      children: [
+                                                        Icon(
+                                                          Icons
+                                                              .warning_amber_rounded,
+                                                          color: Colors.red,
+                                                        ),
+                                                        SizedBox(width: 8),
+                                                        Text('Reset Layout'),
+                                                      ],
+                                                    ),
+
+                                                    content: const Text(
+                                                      'This will permanently remove all saved layout settings for this branch and restore the default table layout.\n\nDo you want to continue?',
+                                                    ),
+
+                                                    actions: [
+                                                      TextButton(
+                                                        onPressed: () {
+                                                          Navigator.pop(
+                                                            context,
+                                                            false,
+                                                          );
+                                                        },
+                                                        child: const Text(
+                                                          'Cancel',
+                                                        ),
+                                                      ),
+
+                                                      FilledButton.icon(
+                                                        icon: const Icon(
+                                                          Icons.delete_forever,
+                                                        ),
+                                                        label: const Text(
+                                                          'Reset',
+                                                        ),
+                                                        style:
+                                                            FilledButton.styleFrom(
+                                                              backgroundColor:
+                                                                  Colors.red,
+                                                            ),
+                                                        onPressed: () {
+                                                          Navigator.pop(
+                                                            context,
+                                                            true,
+                                                          );
+                                                        },
+                                                      ),
+                                                    ],
+                                                  ),
+                                                );
+
+                                                if (resetConfirm != true)
+                                                  return;
+
+                                                if (!context.mounted) return;
+
+                                                context.read<OrdersBloc>().add(
+                                                  const OrdersDeleteUiSettings(),
+                                                );
+
+                                                Navigator.pop(context, false);
+
+                                                ScaffoldMessenger.of(
+                                                  context,
+                                                ).showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text(
+                                                      'Layout Reset Successfully',
+                                                    ),
+                                                  ),
+                                                );
+                                              },
+                                            ),
+
+                                            FilledButton.icon(
+                                              icon: const Icon(Icons.save),
+                                              label: const Text('Confirm'),
+                                              style: FilledButton.styleFrom(
+                                                backgroundColor:
+                                                    AppColors.primaryColor,
+                                              ),
+                                              onPressed: () {
+                                                Navigator.pop(context, true);
+                                              },
+                                            ),
+                                          ],
+                                        ),
+                                      );
+
+                                      if (confirm != true) return;
+
+                                      context.read<OrdersBloc>().add(
+                                        const OrdersSaveUiSettings(),
+                                      );
+
+                                      if (!context.mounted) return;
+
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'Layout Saved Successfully',
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  const SizedBox(width: 10),
+                                  FilledButton.icon(
                                     onPressed: () {
                                       context.read<OrdersBloc>().add(
                                         const OrdersExportPressed(),
@@ -736,6 +952,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                 context,
                                               ).openEndDrawer();
                                             },
+
                                             onExport: () {
                                               context.read<OrdersBloc>().add(
                                                 const OrdersExportPressed(),

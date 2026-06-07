@@ -68,8 +68,10 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     on<OrdersSendAdditionalRequestsPressed>(_onSendAdditionalRequestsPressed);
     on<OrdersSubmitOrderPressed>(_onSubmitOrderPressed);
     // NEW: tracking
+    on<OrdersDeleteUiSettings>(_onDeleteUiSettings);
     on<OrdersSearchItemsToOrder>(_onSearchItemsToOrder);
-
+    on<OrdersSaveUiSettings>(_onSaveUiSettings);
+    on<OrdersLoadUiSettings>(_onLoadUiSettings);
     on<OrdersIgnoreItemToOrder>(_onIgnoreItemToOrder);
     on<OrdersLoadAdditionalTracking>(_onLoadAdditionalTracking);
     on<OrdersSearchMismatchList>(_onSearchMismatchList);
@@ -489,6 +491,26 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       final prefs = await SharedPreferences.getInstance();
 
       await prefs.setString('loaded_order_${state.branchName}', state.runDate);
+      final uiSettings = await repo.loadUiSettings(
+        branchName: state.branchName,
+      );
+      final savedVisible = uiSettings == null
+          ? state.visibleColumns
+          : Set<String>.from(
+              List<String>.from(uiSettings['visible_columns'] ?? []),
+            );
+
+      final savedOrder = uiSettings == null
+          ? state.columnOrder
+          : List<String>.from(uiSettings['column_order'] ?? []);
+
+      final savedWidths = uiSettings == null
+          ? state.columnWidths
+          : Map<String, double>.from(
+              (uiSettings['column_widths'] ?? {}).map(
+                (k, v) => MapEntry(k, (v as num).toDouble()),
+              ),
+            );
       emit(
         state.copyWith(
           status: OrdersStatus.ready,
@@ -500,6 +522,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
           loadedOperationalDate: state.runDate,
           viewRows: view,
           isOrderDay: isOrderDay,
+          visibleColumns: savedVisible,
+          columnOrder: savedOrder,
+          columnWidths: savedWidths,
           numericFinalOnly: forcedNumericFinalOnly,
           error: null,
         ),
@@ -1633,5 +1658,61 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     } else {
       emit(state.copyWith(showCreate: true, status: OrdersStatus.ready));
     }
+  }
+
+  Future<void> _onSaveUiSettings(
+    OrdersSaveUiSettings event,
+    Emitter<OrdersState> emit,
+  ) async {
+    await repo.saveUiSettings(
+      branchName: state.branchName,
+      visibleColumns: state.visibleColumns.toList(),
+      columnOrder: state.columnOrder,
+      columnWidths: state.columnWidths,
+    );
+  }
+
+  Future<void> _onLoadUiSettings(
+    OrdersLoadUiSettings event,
+    Emitter<OrdersState> emit,
+  ) async {
+    final data = await repo.loadUiSettings(branchName: state.branchName);
+
+    if (data == null) return;
+
+    emit(
+      state.copyWith(
+        visibleColumns: Set<String>.from(
+          List<String>.from(data['visible_columns'] ?? []),
+        ),
+
+        columnOrder: List<String>.from(data['column_order'] ?? []),
+
+        columnWidths: Map<String, double>.from(
+          (data['column_widths'] ?? {}).map(
+            (k, v) => MapEntry(k, (v as num).toDouble()),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onDeleteUiSettings(
+    OrdersDeleteUiSettings event,
+    Emitter<OrdersState> emit,
+  ) async {
+    await repo.deleteUiSettings(branchName: state.branchName);
+
+    emit(
+      state.copyWith(
+        visibleColumns: OrdersState.defaultVisibleInTable.toSet(),
+
+        columnOrder: OrdersState.defaultColumnOrder,
+
+        columnWidths: const {},
+
+        viewRows: state.viewRows,
+      ),
+    );
   }
 }
