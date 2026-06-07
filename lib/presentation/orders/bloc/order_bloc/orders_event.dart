@@ -391,3 +391,15 @@ class OrdersIgnoreItemToOrder extends OrdersEvent {
 class OrdersCheckAutoLoad extends OrdersEvent {
   const OrdersCheckAutoLoad();
 }
+
+class OrdersSaveUiSettings extends OrdersEvent {
+  const OrdersSaveUiSettings();
+}
+
+class OrdersLoadUiSettings extends OrdersEvent {
+  const OrdersLoadUiSettings();
+}
+
+class OrdersDeleteUiSettings extends OrdersEvent {
+  const OrdersDeleteUiSettings();
+}

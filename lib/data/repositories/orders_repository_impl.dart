@@ -428,4 +428,29 @@ class OrdersRepositoryImpl implements OrdersRepository {
   }) {
     return remote.updateItemToOrderStatus(id: id, status: status);
   }
+
+  @override
+  Future<void> saveUiSettings({
+    required String branchName,
+    required List<String> visibleColumns,
+    required List<String> columnOrder,
+    required Map<String, double> columnWidths,
+  }) {
+    return remote.saveUiSettings(
+      branchName: branchName,
+      visibleColumns: visibleColumns,
+      columnOrder: columnOrder,
+      columnWidths: columnWidths,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>?> loadUiSettings({required String branchName}) {
+    return remote.loadUiSettings(branchName: branchName);
+  }
+
+  @override
+  Future<void> deleteUiSettings({required String branchName}) {
+    return remote.deleteUiSettings(branchName: branchName);
+  }
 }

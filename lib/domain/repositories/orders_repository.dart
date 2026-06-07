@@ -22,7 +22,14 @@ abstract class OrdersRepository {
     required String runDate,
     required String branchName,
   });
+  Future<void> saveUiSettings({
+    required String branchName,
+    required List<String> visibleColumns,
+    required List<String> columnOrder,
+    required Map<String, double> columnWidths,
+  });
 
+  Future<Map<String, dynamic>?> loadUiSettings({required String branchName});
   Future<String> generateAllOrders({required String runDate});
 
   Future<Map<String, dynamic>> stepGenerateAllOrders({
@@ -182,4 +189,5 @@ abstract class OrdersRepository {
     required String id,
     required String status,
   });
+  Future<void> deleteUiSettings({required String branchName});
 }
