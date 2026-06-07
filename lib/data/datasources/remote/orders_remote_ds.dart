@@ -618,6 +618,12 @@ done_at
     await client.from('max_adj').insert(payload);
   }
 
+  Future<int> fetchItemReportCount() async {
+    final res = await client.from('item_report').select('item_code');
+
+    return (res as List).length;
+  }
+
   Future<void> deleteMaxAdj(String id) async {
     final row = await client.from('max_adj').select().eq('id', id).single();
 

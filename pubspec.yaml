@@ -55,6 +55,7 @@ dependencies:
   syncfusion_flutter_xlsio: ^33.1.46
   csv: 5.0.2
   file_picker: ^8.0.0
+  shared_preferences: ^2.5.5
 
 
 

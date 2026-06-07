@@ -305,12 +305,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                     bloc.add(
                                       const OrdersRefreshOperationalDate(),
                                     );
-
-                                    await Future.delayed(
-                                      const Duration(milliseconds: 300),
-                                    );
-
-                                    bloc.add(const OrdersLoadAll());
+                                    bloc.add(const OrdersCheckAutoLoad());
 
                                     return;
                                   }
@@ -443,7 +438,64 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                if (s.status == OrdersStatus.loading &&
+                                if (s.showCreate)
+                                  SizedBox(
+                                    height:
+                                        MediaQuery.of(context).size.height * .7,
+                                    child: Center(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(
+                                            Icons.inventory_2_outlined,
+                                            size: 90,
+                                            color: AppColors.primaryColor,
+                                          ),
+
+                                          const SizedBox(height: 20),
+
+                                          const Text(
+                                            'Daily Order',
+                                            style: TextStyle(
+                                              fontSize: 28,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+
+                                          const SizedBox(height: 10),
+
+                                          const Text(
+                                            'Click Create Order to load today order',
+                                          ),
+
+                                          const SizedBox(height: 25),
+
+                                          FilledButton.icon(
+                                            icon: const Icon(Icons.create),
+
+                                            style: FilledButton.styleFrom(
+                                              backgroundColor:
+                                                  AppColors.primaryColor,
+                                              minimumSize: Size(250.w, 45.h),
+                                              elevation: 20,
+                                              shadowColor:
+                                                  AppColors.secondaryColor,
+                                            ),
+                                            label: Text(
+                                              'Create Order',
+                                              style: TextStyle(fontSize: 18.sp),
+                                            ),
+                                            onPressed: () {
+                                              context.read<OrdersBloc>().add(
+                                                const OrdersLoadAll(),
+                                              );
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  )
+                                else if (s.status == OrdersStatus.loading &&
                                     s.rows.isEmpty)
                                   SizedBox(
                                     height:

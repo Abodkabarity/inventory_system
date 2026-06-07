@@ -2,6 +2,7 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:stream_transform/stream_transform.dart';
 import 'package:uuid/uuid.dart';
 
@@ -54,6 +55,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     on<OrdersClearAllFilters>(_onClearAllFilters);
     on<OrdersClearFiltersOnly>(_onClearFiltersOnly);
     // Side panel + edits
+    on<OrdersCheckAutoLoad>(_onCheckAutoLoad);
     on<OrdersSelectItemForEdit>(_onSelectItemForEdit);
     on<OrdersClearSelection>(_onClearSelection);
     on<OrdersApplyFinalEdit>(_onApplyFinalEdit);
@@ -170,12 +172,14 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       emit(
         state.copyWith(
           status: OrdersStatus.loading,
+          showCreate: false,
+
           error: null,
           progress: 0,
           progressMessage: 'Loading items...',
         ),
       );
-
+      final total = await repo.fetchItemReportCount();
       print('📥 Loading full data...');
 
       // ==========================
@@ -188,7 +192,6 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         onProgress: (loaded) {
           print('⏳ Loading progress: $loaded');
 
-          const total = 15191;
           final p = ((loaded / total) * 90).clamp(0, 90).round();
 
           emit(
@@ -483,7 +486,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       // FINAL
       // ==========================
       print('🏁 DONE');
+      final prefs = await SharedPreferences.getInstance();
 
+      await prefs.setString('loaded_order_${state.branchName}', state.runDate);
       emit(
         state.copyWith(
           status: OrdersStatus.ready,
@@ -491,6 +496,8 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
           progressMessage: 'Done ${baseRows.length}/${baseRows.length}',
           rows: baseRows,
           showCreate: false,
+          orderLoadedOnce: true,
+          loadedOperationalDate: state.runDate,
           viewRows: view,
           isOrderDay: isOrderDay,
           numericFinalOnly: forcedNumericFinalOnly,
@@ -1233,7 +1240,6 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     emit(state.copyWith(isMismatchLoading: true));
 
     try {
-      // 🔥 أهم سطر (كان ناقص)
       await repo.insertMismatch(e.data);
 
       final newList = await repo.fetchMismatch(branch: state.branchName);
@@ -1605,5 +1611,27 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
 
       emit(state.copyWith(mismatchSuggestions: result));
     } catch (_) {}
+  }
+
+  Future<void> _onCheckAutoLoad(
+    OrdersCheckAutoLoad event,
+    Emitter<OrdersState> emit,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final key = 'loaded_order_${state.branchName}';
+
+    final savedDate = prefs.getString(key);
+
+    final currentDate = OperationalDateHelper.operationalDate;
+
+    print('SAVED DATE = $savedDate');
+    print('CURRENT DATE = $currentDate');
+
+    if (savedDate == currentDate) {
+      add(const OrdersLoadAll());
+    } else {
+      emit(state.copyWith(showCreate: true, status: OrdersStatus.ready));
+    }
   }
 }
