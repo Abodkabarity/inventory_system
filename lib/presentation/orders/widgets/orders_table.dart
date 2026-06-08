@@ -61,7 +61,9 @@ class OrdersTable extends StatefulWidget {
     required this.onColumnResized,
     required this.isSubmitted, // ✅ NEW
     this.controller,
-    required this.orderEditLimit, required this.submitStartHour, required this.submitEndHour,
+    required this.orderEditLimit,
+    required this.submitStartHour,
+    required this.submitEndHour,
   });
 
   static const List<String> allColumns = [
@@ -754,6 +756,20 @@ class _OrdersDataSource extends DataGridSource {
     return _additionalEdits[d.itemCode];
   }
 
+  String _formatNumber(dynamic value) {
+    if (value == null) return '';
+
+    final n = num.tryParse(value.toString());
+
+    if (n == null) return value.toString();
+
+    if (n == n.roundToDouble()) {
+      return n.toInt().toString();
+    }
+
+    return n.toStringAsFixed(2);
+  }
+
   @override
   DataGridRowAdapter buildRow(DataGridRow row) {
     final idx = _rowToIndex[row] ?? -1;
@@ -770,7 +786,10 @@ class _OrdersDataSource extends DataGridSource {
       cells: row.getCells().map((c) {
         final key = c.columnName;
         final raw = c.value;
-        final text = (raw ?? '').toString().trim();
+        final text =
+            {'qty_30_days_from_last_45d', 'demand_for_30_days'}.contains(key)
+            ? _formatNumber(raw)
+            : (raw ?? '').toString().trim();
 
         final align = (key == 'item_name')
             ? Alignment.centerLeft
@@ -942,21 +961,18 @@ class _OrdersDataSource extends DataGridSource {
           final main = showNew
               ? newQty.toString()
               : (text.isEmpty ? '—' : text);
-          final alreadyEdited =
-          _edits.containsKey(daily.itemCode);
+          final alreadyEdited = _edits.containsKey(daily.itemCode);
 
-          final editLimitReached =
-              _edits.length >= _orderEditLimit;
+          final editLimitReached = _edits.length >= _orderEditLimit;
 
-          final editLocked =
-              editLimitReached && !alreadyEdited;
+          final editLocked = editLimitReached && !alreadyEdited;
           final locked =
               _isSubmitted ||
-                  editLocked ||
-                  OperationalDateHelper.isMissingWindowForBranch(
-                    startHour: _submitStartHour,
-                    endHour: _submitEndHour,
-                  );
+              editLocked ||
+              OperationalDateHelper.isMissingWindowForBranch(
+                startHour: _submitStartHour,
+                endHour: _submitEndHour,
+              );
           return Container(
             alignment: Alignment.center,
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
