@@ -374,6 +374,7 @@ class OrdersRepositoryImpl implements OrdersRepository {
     required String itemName,
     required num qty,
     required String reason,
+    required String requestedBy,
   }) {
     return remote.createItemToOrder(
       runDate: runDate,
@@ -382,6 +383,7 @@ class OrdersRepositoryImpl implements OrdersRepository {
       itemName: itemName,
       qty: qty,
       reason: reason,
+      requestedBy: requestedBy,
     );
   }
 

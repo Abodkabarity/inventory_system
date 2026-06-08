@@ -348,6 +348,7 @@ class OrdersAddItemToOrder extends OrdersEvent {
   final String itemCode;
   final String itemName;
   final num qty;
+  final String requestedBy;
   final String reason;
 
   const OrdersAddItemToOrder({
@@ -355,10 +356,11 @@ class OrdersAddItemToOrder extends OrdersEvent {
     required this.itemName,
     required this.qty,
     required this.reason,
+    required this.requestedBy,
   });
 
   @override
-  List<Object?> get props => [itemCode, itemName, qty, reason];
+  List<Object?> get props => [itemCode, itemName, qty, reason, requestedBy];
 }
 
 class OrdersDeleteItemToOrder extends OrdersEvent {

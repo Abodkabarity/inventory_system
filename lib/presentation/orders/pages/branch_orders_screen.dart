@@ -12,6 +12,7 @@ import '../bloc/order_bloc/orders_event.dart';
 import '../bloc/order_bloc/orders_state.dart';
 import '../final_reorder/widgets/limit_dialog.dart';
 import '../widgets/branch_zone_cubit.dart';
+import '../widgets/items_to_order_dialog.dart';
 import '../widgets/orders_grid_controller.dart';
 import '../widgets/orders_table.dart';
 import '../widgets/orders_toolbar.dart';
@@ -982,6 +983,39 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                             statusChip: null,
                                             actions: [
                                               OrdersToolbar.actionButton(
+                                                label: 'Items To Order',
+
+                                                icon: Icons
+                                                    .shopping_cart_outlined,
+
+                                                color: Colors.indigo,
+
+                                                badgeCount:
+                                                    s.itemsToOrder.length,
+
+                                                onPressed: () async {
+                                                  await showDialog(
+                                                    context: context,
+                                                    builder: (_) =>
+                                                        BlocProvider.value(
+                                                          value: context
+                                                              .read<
+                                                                OrdersBloc
+                                                              >(),
+                                                          child:
+                                                              const ItemsToOrderDialog(),
+                                                        ),
+                                                  );
+
+                                                  if (!context.mounted) return;
+
+                                                  context.read<OrdersBloc>().add(
+                                                    const OrdersLoadItemsToOrder(),
+                                                  );
+                                                },
+                                              ),
+                                              const SizedBox(width: 6),
+                                              OrdersToolbar.actionButton(
                                                 label: 'Additional Order Track',
                                                 icon: Icons
                                                     .track_changes_outlined,
@@ -1000,43 +1034,8 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                               ),
                                               const SizedBox(width: 6),
 
-                                              /* OrdersToolbar.actionButton(
-                                                  label:
-                                                      'Items To Order (${s.itemsToOrder.length})',
-
-                                                  icon: Icons
-                                                      .shopping_cart_outlined,
-
-                                                  color: Colors.indigo,
-
-                                                  badgeCount:
-                                                      s.itemsToOrder.length,
-
-                                                  onPressed: () async {
-                                                    await showDialog(
-                                                      context: context,
-                                                      builder: (_) =>
-                                                          BlocProvider.value(
-                                                            value: context
-                                                                .read<
-                                                                  OrdersBloc
-                                                                >(),
-                                                            child:
-                                                                const ItemsToOrderDialog(),
-                                                          ),
-                                                    );
-
-                                                    if (!context.mounted) return;
-
-                                                    context.read<OrdersBloc>().add(
-                                                      const OrdersLoadItemsToOrder(),
-                                                    );
-                                                  },
-                                                ),
-                                                const SizedBox(width: 6),*/
                                               OrdersToolbar.actionButton(
-                                                label:
-                                                    'Send Additional ($draftAddCount)',
+                                                label: 'Send Additional',
                                                 icon: Icons.add_box_outlined,
                                                 badgeCount: draftAddCount,
                                                 color: AppColors.secondaryColor,
@@ -1122,7 +1121,16 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                               builder: (_) => PendingItemsToOrderDialog(
                                                                 items:
                                                                     pendingItems,
-
+                                                                onIgnorePressed: (item) async {
+                                                                  await bloc
+                                                                      .repo
+                                                                      .updateItemToOrderStatus(
+                                                                        id: item
+                                                                            .id,
+                                                                        status:
+                                                                            'ignored',
+                                                                      );
+                                                                },
                                                                 onAddPressed: (item) async {
                                                                   final row = bloc
                                                                       .state
@@ -1251,12 +1259,12 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                                             'ignored',
                                                                       );
 
-                                                                      return false;
+                                                                      return 'ignored';
                                                                     }
 
                                                                     if (decision !=
                                                                         'add') {
-                                                                      return false;
+                                                                      return 'ignored';
                                                                     }
                                                                   }
 
@@ -1294,7 +1302,16 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                                       ),
                                                                     );
 
-                                                                    return false;
+                                                                    await bloc
+                                                                        .repo
+                                                                        .updateItemToOrderStatus(
+                                                                          id: item
+                                                                              .id,
+                                                                          status:
+                                                                              'ignored',
+                                                                        );
+
+                                                                    return 'ignored';
                                                                   }
 
                                                                   // =========================
@@ -1314,7 +1331,16 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                                       ),
                                                                     );
 
-                                                                    return false;
+                                                                    await bloc
+                                                                        .repo
+                                                                        .updateItemToOrderStatus(
+                                                                          id: item
+                                                                              .id,
+                                                                          status:
+                                                                              'ignored',
+                                                                        );
+
+                                                                    return 'ignored';
                                                                   }
 
                                                                   // =========================
@@ -1380,11 +1406,13 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                                             'processed',
                                                                       );
 
-                                                                  return true;
+                                                                  return 'added';
                                                                 },
                                                               ),
                                                             );
-
+                                                            bloc.add(
+                                                              const OrdersLoadItemsToOrder(),
+                                                            );
                                                             if (result ==
                                                                 null) {
                                                               return;
@@ -1397,7 +1425,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                             await Future.delayed(
                                                               const Duration(
                                                                 milliseconds:
-                                                                    500,
+                                                                    300,
                                                               ),
                                                             );
                                                           }

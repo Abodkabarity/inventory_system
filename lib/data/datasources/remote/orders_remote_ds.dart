@@ -20,24 +20,24 @@ class OrdersRemoteDs {
     final out = <Map<String, dynamic>>[];
 
     const cols = '''
-run_date, branch, item_code, item_name,
-goods_received_last_7_days,
-branch_stock, mismatch_stock, store_stock, pending_stock_received,
-extra_qty_more_than_month, max_adjustment_30d, demand_for_30_days,
-reorder_point_min, reorder_max, reorder_qty_num, reorder_qty,
-final_reorder_qty_store_stock_gt_0, date_of_last_qty_received_in_branch,
-qty_30_days_from_last_45d,
-branch_formulary, assortment_qty_base_stock, assortment_by, reason, assortment_start, assortment_end,
-tma_qty, tma_start, tma_end,
-item_purchase_type, sales_orientation, category, sub_category, company, supplier, indication, active_ingredient,
-pack_size, concentration, product_type_form, retail_price, vat,
-is_upp,
-max_type,
-item_minimum_order_unit,
-barcode,
-total_reorder_today,
-store_item_classifications
-''';
+  run_date, branch, item_code, item_name,
+  goods_received_last_7_days,
+  branch_stock, mismatch_stock, store_stock, pending_stock_received,
+  extra_qty_more_than_month, max_adjustment_30d, demand_for_30_days,
+  reorder_point_min, reorder_max, reorder_qty_num, reorder_qty,
+  final_reorder_qty_store_stock_gt_0, date_of_last_qty_received_in_branch,
+  qty_30_days_from_last_45d,
+  branch_formulary, assortment_qty_base_stock, assortment_by, reason, assortment_start, assortment_end,
+  tma_qty, tma_start, tma_end,
+  item_purchase_type, sales_orientation, category, sub_category, company, supplier, indication, active_ingredient,
+  pack_size, concentration, product_type_form, retail_price, vat,
+  is_upp,
+  max_type,
+  item_minimum_order_unit,
+  barcode,
+  total_reorder_today,
+  store_item_classifications
+  ''';
 
     String lastItemCode = '';
 
@@ -164,25 +164,25 @@ store_item_classifications
     final branch = await client
         .from('branches')
         .select('''
-zone,
-submit_start_hour,
-submit_end_hour,
-max_adj_limit,
-order_increase_limit,
-order_edit_limit,
-additional_order_limit
-''')
+  zone,
+  submit_start_hour,
+  submit_end_hour,
+  max_adj_limit,
+  order_increase_limit,
+  order_edit_limit,
+  additional_order_limit
+  ''')
         .eq('branch_name', branchName)
         .single();
 
     final usage = await client
         .from('vw_max_adj_usage')
         .select('''
-used_slots,
-remaining_slots,
-next_available_date,
-days_until_next_slot
-''')
+  used_slots,
+  remaining_slots,
+  next_available_date,
+  days_until_next_slot
+  ''')
         .eq('branch_name', branchName)
         .single();
 
@@ -387,18 +387,18 @@ days_until_next_slot
     required String branchName,
   }) async {
     const cols = '''
-id,
-item_code,
-item_name,
-request_qty,
-reason,
-status,
-fulfilled_qty,
-store_note,
-created_at,
-sent_to_store_at,
-done_at
-''';
+  id,
+  item_code,
+  item_name,
+  request_qty,
+  reason,
+  status,
+  fulfilled_qty,
+  store_note,
+  created_at,
+  sent_to_store_at,
+  done_at
+  ''';
 
     final list = await _retryOnTimeout<List<Map<String, dynamic>>>(() async {
       PostgrestFilterBuilder query = client
@@ -881,6 +881,7 @@ done_at
     required String branchName,
     required String itemCode,
     required String itemName,
+    required String requestedBy,
     required num qty,
     required String reason,
   }) async {
@@ -892,6 +893,7 @@ done_at
       'qty': qty,
       'reason': reason,
       'status': 'pending',
+      'requested_by': requestedBy,
       'created_at': DateTime.now().toIso8601String(),
     });
   }
@@ -903,12 +905,59 @@ done_at
     final res = await client
         .from('items_to_order')
         .select()
-        .eq('run_date', runDate)
-        .eq('branch_name', branchName)
-        .eq('status', 'pending')
-        .order('created_at');
+        .eq('branch_name', branchName);
 
-    return (res as List).cast<Map<String, dynamic>>();
+    final rows = (res as List).cast<Map<String, dynamic>>();
+
+    final filtered = rows.where((row) {
+      final status = (row['status'] ?? 'pending').toString().toLowerCase();
+
+      final rowRunDate = (row['run_date'] ?? '').toString();
+
+      if (status == 'pending') {
+        return true;
+      }
+
+      return rowRunDate == runDate;
+    }).toList();
+
+    filtered.sort((a, b) {
+      int priority(String status) {
+        switch (status.toLowerCase()) {
+          case 'pending':
+            return 0;
+
+          case 'processed':
+          case 'added_to_order':
+            return 1;
+
+          case 'ignored':
+            return 2;
+
+          default:
+            return 99;
+        }
+      }
+
+      final pa = priority((a['status'] ?? '').toString());
+      final pb = priority((b['status'] ?? '').toString());
+
+      if (pa != pb) {
+        return pa.compareTo(pb);
+      }
+
+      final da =
+          DateTime.tryParse((a['created_at'] ?? '').toString()) ??
+          DateTime(2000);
+
+      final db =
+          DateTime.tryParse((b['created_at'] ?? '').toString()) ??
+          DateTime(2000);
+
+      return db.compareTo(da);
+    });
+
+    return filtered;
   }
 
   Future<void> deleteItemToOrder({required String id}) async {
