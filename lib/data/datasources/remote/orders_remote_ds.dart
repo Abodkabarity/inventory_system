@@ -1005,4 +1005,79 @@ done_at
         .delete()
         .eq('branch_name', branchName);
   }
+
+  Future<List<String>> fetchHistoryRunDates({
+    required String branchName,
+  }) async {
+    final res = await client
+        .from('daily_order_history')
+        .select('run_date')
+        .eq('branch', branchName)
+        .order('run_date', ascending: false);
+
+    final dates = (res as List)
+        .map((e) => e['run_date'].toString())
+        .toSet()
+        .toList();
+
+    return dates;
+  }
+
+  Future<List<Map<String, dynamic>>> fetchHistoryOrders({
+    required String runDate,
+    required String branchName,
+  }) async {
+    final res = await client
+        .from('daily_order_history')
+        .select()
+        .eq('run_date', runDate)
+        .eq('branch', branchName)
+        .order('item_code');
+
+    return (res as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<String> createExportJob({
+    required String branchName,
+    required String runDate,
+  }) async {
+    final result = await client.rpc(
+      'create_export_job',
+      params: {'p_branch_name': branchName, 'p_run_date': runDate},
+    );
+
+    return result.toString();
+  }
+
+  Future<Map<String, dynamic>?> fetchExportJob({required String jobId}) async {
+    return await client
+        .from('export_jobs')
+        .select()
+        .eq('id', jobId)
+        .maybeSingle();
+  }
+
+  Future<List<Map<String, dynamic>>> fetchPendingExportJobs() async {
+    final res = await client
+        .from('export_jobs')
+        .select()
+        .eq('status', 'pending')
+        .order('created_at');
+
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<void> completeExportJob({
+    required String id,
+    required String fileUrl,
+  }) async {
+    await client
+        .from('export_jobs')
+        .update({
+          'status': 'completed',
+          'file_url': fileUrl,
+          'completed_at': DateTime.now().toIso8601String(),
+        })
+        .eq('id', id);
+  }
 }

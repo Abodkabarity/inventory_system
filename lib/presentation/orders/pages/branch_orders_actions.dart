@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:html' as html;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -109,6 +112,177 @@ class BranchOrdersActions {
           // 🔥 NEW
           onConfirmSubmit: () {
             Navigator.of(context).pop(true);
+          },
+        );
+      },
+    );
+  }
+
+  static Future<void> openHistoryExportDialog(BuildContext context) async {
+    final bloc = context.read<OrdersBloc>();
+
+    // =====================
+    // LOADING BEFORE DIALOG
+    // =====================
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.primaryColor,
+              ),
+            ),
+            SizedBox(width: 16),
+            Text('Loading History...'),
+          ],
+        ),
+      ),
+    );
+
+    final dates = await bloc.repo.fetchHistoryRunDates(
+      branchName: bloc.state.branchName,
+    );
+
+    if (context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+
+    if (!context.mounted) return;
+
+    String? downloadingDate;
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+
+              title: Row(
+                children: [
+                  const Icon(Icons.history, color: Colors.deepPurple),
+
+                  const SizedBox(width: 10),
+
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Export Order History'),
+
+                        Text(
+                          '${dates.length} Historical Orders',
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                    },
+                  ),
+                ],
+              ),
+
+              content: SizedBox(
+                width: 450,
+                height: 500,
+                child: ListView.separated(
+                  itemCount: dates.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+
+                  itemBuilder: (_, i) {
+                    final runDate = dates[i];
+
+                    final isLoading = downloadingDate == runDate;
+
+                    return ListTile(
+                      leading: const Icon(Icons.calendar_month),
+
+                      title: Text(
+                        runDate,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+
+                      trailing: isLoading
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.download),
+
+                      onTap: downloadingDate != null
+                          ? null
+                          : () async {
+                              setState(() {
+                                downloadingDate = runDate;
+                              });
+
+                              final jobId = await bloc.repo.createExportJob(
+                                branchName: bloc.state.branchName,
+                                runDate: runDate,
+                              );
+                              Timer.periodic(const Duration(seconds: 1), (
+                                timer,
+                              ) async {
+                                final job = await bloc.repo.fetchExportJob(
+                                  jobId: jobId,
+                                );
+                                print('Checking Export Job...');
+                                print(job);
+                                if (job == null) return;
+
+                                final status = (job['status'] ?? '').toString();
+
+                                if (status == 'completed') {
+                                  timer.cancel();
+
+                                  final fileUrl = (job['file_url'] ?? '')
+                                      .toString();
+
+                                  if (fileUrl.isNotEmpty) {
+                                    html.window.open(fileUrl, '_blank');
+                                  }
+
+                                  if (dialogContext.mounted) {
+                                    Navigator.pop(dialogContext);
+                                  }
+                                }
+                              });
+                            },
+                    );
+                  },
+                ),
+              ),
+
+              actions: [
+                TextButton.icon(
+                  icon: const Icon(Icons.close),
+                  label: const Text('Close'),
+                  onPressed: () {
+                    Navigator.pop(dialogContext);
+                  },
+                ),
+              ],
+            );
           },
         );
       },
