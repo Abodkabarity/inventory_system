@@ -166,6 +166,7 @@ abstract class OrdersRepository {
     required String itemName,
     required num qty,
     required String reason,
+    required String requestedBy,
   });
 
   Future<List<Map<String, dynamic>>> fetchItemsToOrder({

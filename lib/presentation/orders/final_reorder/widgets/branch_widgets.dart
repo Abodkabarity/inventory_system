@@ -530,7 +530,7 @@ class MiniStats extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Container(
-        width: 250.w,
+        width: 300.w,
         height: 30.h,
         padding: EdgeInsets.symmetric(horizontal: 10.w),
         decoration: BoxDecoration(

@@ -13,6 +13,7 @@ class ItemToOrder extends Equatable {
   final String status;
 
   final String? createdBy;
+  final String? requestedBy;
 
   final DateTime createdAt;
 
@@ -25,6 +26,7 @@ class ItemToOrder extends Equatable {
     required this.status,
     required this.createdAt,
     this.createdBy,
+    this.requestedBy,
   });
 
   factory ItemToOrder.fromMap(Map<String, dynamic> map) {
@@ -36,10 +38,19 @@ class ItemToOrder extends Equatable {
       reason: (map['reason'] ?? '').toString(),
       status: (map['status'] ?? 'pending').toString(),
       createdBy: map['created_by']?.toString(),
+      requestedBy: map['requested_by']?.toString(),
+
       createdAt:
           DateTime.tryParse((map['created_at'] ?? '').toString()) ??
           DateTime.now(),
     );
+  }
+  String get createdAtFormatted {
+    return '${createdAt.day.toString().padLeft(2, '0')}/'
+        '${createdAt.month.toString().padLeft(2, '0')}/'
+        '${createdAt.year} '
+        '${createdAt.hour.toString().padLeft(2, '0')}:'
+        '${createdAt.minute.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -51,6 +62,7 @@ class ItemToOrder extends Equatable {
     reason,
     status,
     createdBy,
+    requestedBy,
     createdAt,
   ];
 }
