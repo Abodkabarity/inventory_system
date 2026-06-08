@@ -616,9 +616,30 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                       ),
                                     ),
                                   ),
-
                                   const SizedBox(width: 10),
 
+                                  /*  FilledButton.icon(
+                                    onPressed: () {
+                                      BranchOrdersActions.openHistoryExportDialog(
+                                        context,
+                                      );
+                                    },
+                                    icon: const Icon(Icons.history),
+                                    label: const Text(
+                                      'History',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.deepPurple,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),*/
                                   _StatusChip(
                                     isSubmitted: s.isSubmitted,
                                     isOrderDay: s.isOrderDay,

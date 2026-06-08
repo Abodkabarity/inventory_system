@@ -190,4 +190,17 @@ abstract class OrdersRepository {
     required String status,
   });
   Future<void> deleteUiSettings({required String branchName});
+  Future<List<String>> fetchHistoryRunDates({required String branchName});
+
+  Future<List<Map<String, dynamic>>> fetchHistoryOrders({
+    required String runDate,
+    required String branchName,
+  });
+
+  Future<String> createExportJob({
+    required String branchName,
+    required String runDate,
+  });
+
+  Future<Map<String, dynamic>?> fetchExportJob({required String jobId});
 }

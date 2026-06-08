@@ -453,4 +453,30 @@ class OrdersRepositoryImpl implements OrdersRepository {
   Future<void> deleteUiSettings({required String branchName}) {
     return remote.deleteUiSettings(branchName: branchName);
   }
+
+  @override
+  Future<List<String>> fetchHistoryRunDates({required String branchName}) {
+    return remote.fetchHistoryRunDates(branchName: branchName);
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchHistoryOrders({
+    required String runDate,
+    required String branchName,
+  }) {
+    return remote.fetchHistoryOrders(runDate: runDate, branchName: branchName);
+  }
+
+  @override
+  Future<String> createExportJob({
+    required String branchName,
+    required String runDate,
+  }) {
+    return remote.createExportJob(branchName: branchName, runDate: runDate);
+  }
+
+  @override
+  Future<Map<String, dynamic>?> fetchExportJob({required String jobId}) {
+    return remote.fetchExportJob(jobId: jobId);
+  }
 }
