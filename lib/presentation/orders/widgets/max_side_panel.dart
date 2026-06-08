@@ -544,111 +544,123 @@ class _AddMaxFormState extends State<_AddMaxForm> {
                     child: Center(
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: isFull
-                              ? Colors.grey
-                              : AppColors.primaryColor,
+                          backgroundColor: AppColors.primaryColor,
                           minimumSize: const Size(300, 40),
                         ),
-                        onPressed: isFull
-                            ? null
-                            : () {
-                                setState(() {
-                                  submitted = true;
-                                });
+                        onPressed: () {
+                          setState(() {
+                            submitted = true;
+                          });
 
-                                if (!_formKey.currentState!.validate()) {
-                                  return;
-                                }
-                                final state = context.read<OrdersBloc>().state;
+                          if (!_formKey.currentState!.validate()) {
+                            return;
+                          }
+                          final state = context.read<OrdersBloc>().state;
 
-                                final alreadyExists = state.maxAdjItems.any(
-                                  (e) =>
-                                      e['item_code'] == code.text &&
-                                      e['status'] != 'removed',
-                                );
+                          final alreadyExists = state.maxAdjItems.any(
+                            (e) =>
+                                e['item_code'] == code.text &&
+                                e['status'] != 'removed',
+                          );
 
-                                if (alreadyExists) {
-                                  showDialog(
-                                    context: context,
-                                    builder: (_) => AlertDialog(
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(16),
-                                      ),
-                                      title: const Row(
-                                        children: [
-                                          Icon(
-                                            Icons.info_outline,
-                                            color: Colors.orange,
-                                          ),
-                                          SizedBox(width: 8),
-                                          Text('Already Exists'),
-                                        ],
-                                      ),
-                                      content: const Text(
-                                        'This item already exists in Max list.',
-                                      ),
-                                      actions: [
-                                        TextButton.icon(
-                                          icon: const Icon(
-                                            Icons.close,
-                                            color: AppColors.secondaryColor,
-                                          ),
-                                          label: const Text(
-                                            'Close',
-                                            style: TextStyle(
-                                              color: AppColors.secondaryColor,
-                                            ),
-                                          ),
-                                          onPressed: () =>
-                                              Navigator.pop(context),
-                                        ),
-                                      ],
+                          if (alreadyExists) {
+                            showDialog(
+                              context: context,
+                              builder: (_) => AlertDialog(
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                title: const Row(
+                                  children: [
+                                    Icon(
+                                      Icons.info_outline,
+                                      color: Colors.orange,
                                     ),
-                                  );
+                                    SizedBox(width: 8),
+                                    Text('Already Exists'),
+                                  ],
+                                ),
+                                content: const Text(
+                                  'This item already exists in Max list.',
+                                ),
+                                actions: [
+                                  TextButton.icon(
+                                    icon: const Icon(
+                                      Icons.close,
+                                      color: AppColors.secondaryColor,
+                                    ),
+                                    label: const Text(
+                                      'Close',
+                                      style: TextStyle(
+                                        color: AppColors.secondaryColor,
+                                      ),
+                                    ),
+                                    onPressed: () => Navigator.pop(context),
+                                  ),
+                                ],
+                              ),
+                            );
 
-                                  return;
-                                }
-                                final demandVal =
-                                    num.tryParse(demand.text) ?? 0;
-                                final maxVal = num.tryParse(maxQty.text) ?? 0;
-                                final type = maxVal < demandVal
-                                    ? "DECREASE"
-                                    : "INCREASE";
-                                context.read<OrdersBloc>().add(
-                                  OrdersAddMaxAdj({
-                                    'branch_name': context
-                                        .read<OrdersBloc>()
-                                        .state
-                                        .branchName,
-                                    'item_code': code.text,
-                                    'item_name': name.text,
-                                    'current_demand_30d': demandVal,
-                                    'max_adjustment_30d': maxVal,
-                                    'qty': maxVal,
-                                    'adjustment_type': type,
-                                    'reason': reason.text,
-                                    'added_by': 'branch',
-                                  }),
-                                );
-                                context.read<OrdersBloc>().add(
-                                  const OrdersClearSelectedDemand(),
-                                );
-                                _formKey.currentState!.reset();
+                            return;
+                          }
+                          final demandVal = num.tryParse(demand.text) ?? 0;
+                          final maxVal = num.tryParse(maxQty.text) ?? 0;
+                          final type = maxVal < demandVal
+                              ? "DECREASE"
+                              : "INCREASE";
+                          if (type == 'INCREASE' && isFull) {
+                            showDialog(
+                              context: context,
+                              builder: (_) => AlertDialog(
+                                title: const Text('Limit Reached'),
+                                content: Text(
+                                  'You reached the maximum allowed Max Adjustments '
+                                  '(${state.maxAdjLimit}).',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context),
+                                    child: const Text('OK'),
+                                  ),
+                                ],
+                              ),
+                            );
 
-                                code.clear();
-                                name.clear();
-                                demand.clear();
-                                maxQty.clear();
-                                reason.clear();
+                            return;
+                          }
+                          context.read<OrdersBloc>().add(
+                            OrdersAddMaxAdj({
+                              'branch_name': context
+                                  .read<OrdersBloc>()
+                                  .state
+                                  .branchName,
+                              'item_code': code.text,
+                              'item_name': name.text,
+                              'current_demand_30d': demandVal,
+                              'max_adjustment_30d': maxVal,
+                              'qty': maxVal,
+                              'adjustment_type': type,
+                              'reason': reason.text,
+                              'added_by': 'branch',
+                            }),
+                          );
+                          context.read<OrdersBloc>().add(
+                            const OrdersClearSelectedDemand(),
+                          );
+                          _formKey.currentState!.reset();
 
-                                setState(() {
-                                  submitted = false;
-                                });
-                              },
-                        child: Text(
-                          isFull
-                              ? "Limit Reached (${state.maxAdjLimit})"
-                              : "Add Max",
+                          code.clear();
+                          name.clear();
+                          demand.clear();
+                          maxQty.clear();
+                          reason.clear();
+
+                          setState(() {
+                            submitted = false;
+                          });
+                        },
+                        child: const Text(
+                          "Add Max",
                           style: TextStyle(color: Colors.white),
                         ),
                       ),
