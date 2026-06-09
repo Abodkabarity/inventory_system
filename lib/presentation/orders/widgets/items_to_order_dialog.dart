@@ -24,7 +24,6 @@ class _ItemsToOrderDialogState extends State<ItemsToOrderDialog> {
   final _qtyController = TextEditingController(text: '1');
 
   final _reasonController = TextEditingController();
-
   Timer? _debounce;
 
   Map<String, dynamic>? selectedItem;
@@ -99,12 +98,14 @@ class _ItemsToOrderDialogState extends State<ItemsToOrderDialog> {
       ).showSnackBar(const SnackBar(content: Text('Reason required')));
       return;
     }
+
     if (_requestedByController.text.trim().isEmpty) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Requested By required')));
       return;
     }
+
     context.read<OrdersBloc>().add(
       OrdersAddItemToOrder(
         itemCode: selectedItem!['item_code'].toString(),
@@ -119,11 +120,11 @@ class _ItemsToOrderDialogState extends State<ItemsToOrderDialog> {
     _qtyController.text = '1';
     _reasonController.clear();
     _requestedByController.clear();
-    selectedItem = null;
 
-    context.read<OrdersBloc>().add(const OrdersLoadItemsToOrder());
-
-    setState(() {});
+    setState(() {
+      selectedItem = null;
+      suggestions = [];
+    });
   }
 
   @override
@@ -290,19 +291,19 @@ class _ItemsToOrderDialogState extends State<ItemsToOrderDialog> {
                       const SizedBox(width: 12),
 
                       Expanded(
-                        child: Column(
+                        child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            Text(
+                              selectedItem!['item_code'],
+                              style: const TextStyle(color: Colors.grey),
+                            ),
+                            SizedBox(width: 15),
                             Text(
                               selectedItem!['item_name'],
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                               ),
-                            ),
-
-                            Text(
-                              selectedItem!['item_code'],
-                              style: const TextStyle(color: Colors.grey),
                             ),
                           ],
                         ),
@@ -311,7 +312,7 @@ class _ItemsToOrderDialogState extends State<ItemsToOrderDialog> {
                   ),
                 ),
 
-              const SizedBox(height: 5),
+              const SizedBox(height: 12),
 
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -713,23 +714,40 @@ class _ItemsToOrderDialogState extends State<ItemsToOrderDialog> {
                   const SizedBox(width: 14),
 
                   Expanded(
-                    child: FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(56),
-                        backgroundColor: AppColors.primaryColor,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      onPressed: _addItem,
-                      icon: const Icon(Icons.add),
-                      label: const Text(
-                        'Add Request',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+                    child: BlocBuilder<OrdersBloc, OrdersState>(
+                      builder: (context, state) {
+                        return FilledButton(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.primaryColor,
+                          ),
+                          onPressed: state.isAddingItemToOrder
+                              ? null
+                              : _addItem,
+                          child: state.isAddingItemToOrder
+                              ? const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.add, color: Colors.white),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'Add Request',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                        );
+                      },
                     ),
                   ),
                 ],

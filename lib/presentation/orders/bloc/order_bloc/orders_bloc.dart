@@ -1588,6 +1588,8 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     OrdersAddItemToOrder event,
     Emitter<OrdersState> emit,
   ) async {
+    emit(state.copyWith(isAddingItemToOrder: true));
+
     try {
       await repo.createItemToOrder(
         runDate: state.runDate,
@@ -1599,8 +1601,17 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         requestedBy: event.requestedBy,
       );
 
-      add(const OrdersLoadItemsToOrder());
-    } catch (_) {}
+      final raw = await repo.fetchItemsToOrder(
+        runDate: state.runDate,
+        branchName: state.branchName,
+      );
+
+      final items = raw.map(ItemToOrder.fromMap).toList();
+
+      emit(state.copyWith(itemsToOrder: items, isAddingItemToOrder: false));
+    } catch (e) {
+      emit(state.copyWith(isAddingItemToOrder: false));
+    }
   }
 
   Future<void> _onDeleteItemToOrder(

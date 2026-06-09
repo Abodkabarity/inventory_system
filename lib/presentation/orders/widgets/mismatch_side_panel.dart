@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/mismatch_export.dart';
 import '../bloc/order_bloc/orders_bloc.dart';
 import '../bloc/order_bloc/orders_event.dart';
 import '../bloc/order_bloc/orders_state.dart';
@@ -58,13 +59,41 @@ class _MismatchSidePanelState extends State<MismatchSidePanel> {
                           ),
 
                           const Spacer(),
+
+                          IconButton(
+                            tooltip: 'Export Mismatch',
+                            icon: const Icon(
+                              Icons.download,
+                              color: Colors.white,
+                            ),
+                            onPressed: () async {
+                              final rows = state.mismatchItems;
+
+                              if (rows.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('No mismatch records found'),
+                                  ),
+                                );
+                                return;
+                              }
+
+                              await MismatchExcelExporter.export(
+                                rows: rows,
+                                includeHistory: false,
+                              );
+                            },
+                          ),
+
                           IconButton(
                             icon: const Icon(Icons.close, color: Colors.white),
                             onPressed: () {
                               context.read<OrdersBloc>().add(
                                 OrdersSearchMismatchList(''),
                               );
+
                               searchController.clear();
+
                               Navigator.pop(context);
                             },
                           ),
@@ -132,12 +161,35 @@ class _MismatchSidePanelState extends State<MismatchSidePanel> {
                       return Stack(
                         children: [
                           /// LIST
-                          ListView.builder(
-                            itemCount: filtered.length,
-                            itemBuilder: (_, i) {
-                              return _Row(index: i, item: filtered[i]);
-                            },
-                          ),
+                          if (filtered.isEmpty)
+                            const Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.inventory_2_outlined,
+                                    size: 60,
+                                    color: Colors.grey,
+                                  ),
+                                  SizedBox(height: 12),
+                                  Text(
+                                    'No Mismatch Record',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else
+                            ListView.builder(
+                              itemCount: filtered.length,
+                              itemBuilder: (_, i) {
+                                return _Row(index: i, item: filtered[i]);
+                              },
+                            ),
 
                           if (isLoading)
                             Positioned.fill(

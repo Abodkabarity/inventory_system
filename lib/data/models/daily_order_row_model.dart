@@ -57,6 +57,7 @@ class DailyOrderRowModel extends DailyOrderRow {
     super.totalSoldQtyCashLast90,
     super.totalSoldQtyOnlineLast90,
     super.totalSoldQtyInsuranceLast90,
+    super.totalSalesLast90Days,
   });
 
   static String _s(dynamic v) => (v ?? '').toString();
@@ -159,6 +160,7 @@ class DailyOrderRowModel extends DailyOrderRow {
       totalSoldQtyCashLast90: _nn(m['total_sold_qty_cash_last_90']),
       totalSoldQtyOnlineLast90: _nn(m['total_sold_qty_online_last_90']),
       totalSoldQtyInsuranceLast90: _nn(m['total_sold_qty_insurance_last_90']),
+      totalSalesLast90Days: _nn(m['total_sales_last_90_days']),
     );
   }
 }

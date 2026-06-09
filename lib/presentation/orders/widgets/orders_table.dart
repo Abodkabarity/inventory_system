@@ -90,6 +90,8 @@ class OrdersTable extends StatefulWidget {
     'total_sold_qty_cash_last_90',
     'total_sold_qty_online_last_90',
     'total_sold_qty_insurance_last_90',
+    'total_sales_last_90_days',
+
     'qty_30_days_from_last_45d',
     'branch_formulary',
     'assortment_qty_base_stock',
@@ -148,6 +150,7 @@ class OrdersTable extends StatefulWidget {
     'total_sold_qty_cash_last_90': 'TOTAL SOLD QTY\nCASH (LAST 90)',
     'total_sold_qty_online_last_90': 'TOTAL SOLD QTY\nONLINE (LAST 90)',
     'total_sold_qty_insurance_last_90': 'TOTAL SOLD QTY\nINSURANCE (LAST 90)',
+    'total_sales_last_90_days': 'TOTAL SALES\n(LAST 90)',
     'qty_30_days_from_last_45d': '30 DAYS QTY\n(FROM LAST 45D)',
     'branch_formulary': 'BRANCH\nFORMULARY',
     'assortment_qty_base_stock': 'ASSORTMENT QTY /\nBASE STOCK',
@@ -297,6 +300,7 @@ class _OrdersTableState extends State<OrdersTable> {
       'total_sold_qty_cash_last_90',
       'total_sold_qty_online_last_90',
       'total_sold_qty_insurance_last_90',
+      'total_sales_last_90_days',
     }.contains(key)) {
       return _ColGroup.sales;
     }
@@ -610,7 +614,8 @@ class _OrdersDataSource extends DataGridSource {
         return r.totalSoldQtyOnlineLast90 ?? '';
       case 'total_sold_qty_insurance_last_90':
         return r.totalSoldQtyInsuranceLast90 ?? '';
-
+      case 'total_sales_last_90_days':
+        return r.totalSalesLast90Days ?? '';
       case 'qty_30_days_from_last_45d':
         return r.qty30DaysFromLast45d;
 
