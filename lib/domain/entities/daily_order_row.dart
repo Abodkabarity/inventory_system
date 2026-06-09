@@ -76,7 +76,7 @@ class DailyOrderRow {
   final num? totalSoldQtyCashLast90;
   final num? totalSoldQtyOnlineLast90;
   final num? totalSoldQtyInsuranceLast90;
-
+  final num? totalSalesLast90Days;
   const DailyOrderRow({
     required this.branch,
     required this.itemCode,
@@ -131,6 +131,7 @@ class DailyOrderRow {
     this.totalSoldQtyOnlineLast90,
     this.totalSoldQtyInsuranceLast90,
     this.totalReorderToday,
+    this.totalSalesLast90Days,
   });
 
   DailyOrderRow copyWith({
@@ -158,6 +159,7 @@ class DailyOrderRow {
     String? subCategory,
     bool? isUpp,
     bool? uppThiqa,
+    num? totalSalesLast90Days,
     bool? uppBasic,
     String? tier,
     String? minOrderUnit,
@@ -210,6 +212,7 @@ class DailyOrderRow {
       assortmentQtyBaseStock:
           assortmentQtyBaseStock ?? this.assortmentQtyBaseStock,
       assortmentBy: assortmentBy ?? this.assortmentBy,
+      totalSalesLast90Days: totalSalesLast90Days ?? this.totalSalesLast90Days,
       itemPurchaseType: itemPurchaseType ?? this.itemPurchaseType,
       salesOrientation: salesOrientation ?? this.salesOrientation,
       category: category ?? this.category,
@@ -337,6 +340,15 @@ class DailyOrderRow {
 
       /// 🔹 GOODS RECEIVED
       goodsReceivedLast7Days: (map['goods_received_last_7_days'] ?? ''),
+      totalSoldQtyCashLast90: parseNum(map['total_sold_qty_cash_last_90']),
+
+      totalSoldQtyOnlineLast90: parseNum(map['total_sold_qty_online_last_90']),
+
+      totalSoldQtyInsuranceLast90: parseNum(
+        map['total_sold_qty_insurance_last_90'],
+      ),
+
+      totalSalesLast90Days: parseNum(map['total_sales_last_90_days']),
     );
   }
 }

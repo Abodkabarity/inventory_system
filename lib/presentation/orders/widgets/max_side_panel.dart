@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/max_adj_export.dart';
 import '../bloc/order_bloc/orders_bloc.dart';
 import '../bloc/order_bloc/orders_event.dart';
 import '../bloc/order_bloc/orders_state.dart';
@@ -60,6 +61,52 @@ class _MaxSidePanelState extends State<MaxSidePanel> {
                           ),
 
                           const Spacer(),
+
+                          IconButton(
+                            tooltip: 'Export Max Adjustment',
+                            icon: const Icon(
+                              Icons.download,
+                              color: Colors.white,
+                            ),
+                            onPressed: () async {
+                              final query = state.maxAdjSearch.toLowerCase();
+
+                              final rows = state.maxAdjItems.where((e) {
+                                final code = (e['item_code'] ?? '')
+                                    .toString()
+                                    .toLowerCase();
+
+                                final name = (e['item_name'] ?? '')
+                                    .toString()
+                                    .toLowerCase();
+
+                                final matchSearch =
+                                    code.contains(query) ||
+                                    name.contains(query);
+
+                                if (state.onlyBranchMaxAdj) {
+                                  return matchSearch &&
+                                      e['added_by'] == 'branch';
+                                }
+
+                                return matchSearch;
+                              }).toList();
+
+                              if (rows.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('No Max Adjustment Records'),
+                                  ),
+                                );
+                                return;
+                              }
+
+                              await MaxAdjExcelExporter.export(
+                                rows: List<Map<String, dynamic>>.from(rows),
+                                includeHistory: false,
+                              );
+                            },
+                          ),
 
                           IconButton(
                             icon: const Icon(Icons.close, color: Colors.white),
@@ -137,12 +184,35 @@ class _MaxSidePanelState extends State<MaxSidePanel> {
 
                       return Stack(
                         children: [
-                          ListView.builder(
-                            itemCount: filtered.length,
-                            itemBuilder: (_, i) {
-                              return _MaxRow(index: i, item: filtered[i]);
-                            },
-                          ),
+                          if (filtered.isEmpty)
+                            const Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.inventory_2_outlined,
+                                    size: 60,
+                                    color: Colors.grey,
+                                  ),
+                                  SizedBox(height: 12),
+                                  Text(
+                                    'No Max Adjustment Record',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else
+                            ListView.builder(
+                              itemCount: filtered.length,
+                              itemBuilder: (_, i) {
+                                return _MaxRow(index: i, item: filtered[i]);
+                              },
+                            ),
 
                           if (isLoading)
                             const Center(
@@ -518,7 +588,7 @@ class _AddMaxFormState extends State<_AddMaxForm> {
               Row(
                 children: [
                   Container(
-                    width: 175.w,
+                    width: 200.w,
                     height: 50.h,
                     decoration: BoxDecoration(
                       color: AppColors.backgroundWidget,

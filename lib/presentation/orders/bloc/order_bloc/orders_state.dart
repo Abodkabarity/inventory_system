@@ -213,6 +213,7 @@ class OrdersState extends Equatable {
   final bool isRemovingFilters;
   final String categoryFilter;
   final String formularyFilter;
+  final bool isAddingItemToOrder;
   final bool nonWithSales45Only;
   final bool numericFinalOnly;
   final bool? lastActionSuccess;
@@ -268,6 +269,7 @@ class OrdersState extends Equatable {
     this.selectedItemCode,
     this.progressMessage,
     this.error,
+    this.isAddingItemToOrder = false,
     this.submitStartHour = 21,
     this.submitEndHour = 9,
     required this.mismatchItems,
@@ -357,6 +359,7 @@ class OrdersState extends Equatable {
     'total_sold_qty_cash_last_90',
     'total_sold_qty_online_last_90',
     'total_sold_qty_insurance_last_90',
+    'total_sales_last_90_days',
   ];
 
   // ✅ FIX: needed by other files that reference OrdersState.defaultMinWidth
@@ -521,6 +524,7 @@ class OrdersState extends Equatable {
     bool? orderLoadedOnce,
     String? loadedOperationalDate,
     int? submitEndHour,
+    bool? isAddingItemToOrder,
     String? nextAvailableDate,
     int? daysUntilNextSlot,
     bool? showCreate,
@@ -578,7 +582,7 @@ class OrdersState extends Equatable {
           this.sentAdditionalHistoryByItemCode,
       usedMaxAdjSlots: usedMaxAdjSlots ?? this.usedMaxAdjSlots,
       orderLoadedOnce: orderLoadedOnce ?? this.orderLoadedOnce,
-
+      isAddingItemToOrder: isAddingItemToOrder ?? this.isAddingItemToOrder,
       loadedOperationalDate:
           loadedOperationalDate ?? this.loadedOperationalDate,
       remainingMaxAdjSlots: remainingMaxAdjSlots ?? this.remainingMaxAdjSlots,
@@ -654,6 +658,7 @@ class OrdersState extends Equatable {
     lastActionSuccess,
     showMismatchResult,
     isMismatchLoading,
+    isAddingItemToOrder,
     maxAdjItems,
     isMaxAdjLoading,
     maxAdjSearch,
