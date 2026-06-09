@@ -342,14 +342,15 @@ class _OrdersTableState extends State<OrdersTable> {
           child: SfDataGridTheme(
             data: SfDataGridThemeData(
               headerColor: const Color(0xFFF7F8FC),
-              gridLineColor: AppColors.border.withOpacity(.8),
+              gridLineColor: AppColors.border.withValues(alpha: .8),
               selectionColor: const Color(0xFFEAF2FF),
             ),
             child: SfDataGrid(
               controller: widget.controller,
               source: _source,
               allowFiltering: true,
-              allowSorting: false,
+              allowSorting: true,
+              allowMultiColumnSorting: true,
               gridLinesVisibility: GridLinesVisibility.both,
               headerGridLinesVisibility: GridLinesVisibility.both,
               allowColumnsResizing: true,
