@@ -26,6 +26,14 @@ class OrdersRepositoryImpl implements OrdersRepository {
   }
 
   @override
+  Future<String?> fetchHistoryFileUrl({
+    required String branchName,
+    required String runDate,
+  }) {
+    return remote.fetchHistoryFileUrl(branchName: branchName, runDate: runDate);
+  }
+
+  @override
   Future<Map<String, ProductInfo>> fetchProductInfoBatch({
     required List<String> itemCodes,
     required String branchName,
@@ -467,18 +475,5 @@ class OrdersRepositoryImpl implements OrdersRepository {
     required String branchName,
   }) {
     return remote.fetchHistoryOrders(runDate: runDate, branchName: branchName);
-  }
-
-  @override
-  Future<String> createExportJob({
-    required String branchName,
-    required String runDate,
-  }) {
-    return remote.createExportJob(branchName: branchName, runDate: runDate);
-  }
-
-  @override
-  Future<Map<String, dynamic>?> fetchExportJob({required String jobId}) {
-    return remote.fetchExportJob(jobId: jobId);
   }
 }

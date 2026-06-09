@@ -405,12 +405,3 @@ class OrdersLoadUiSettings extends OrdersEvent {
 class OrdersDeleteUiSettings extends OrdersEvent {
   const OrdersDeleteUiSettings();
 }
-
-class OrdersExportHistoryPressed extends OrdersEvent {
-  final String runDate;
-
-  const OrdersExportHistoryPressed(this.runDate);
-
-  @override
-  List<Object?> get props => [runDate];
-}

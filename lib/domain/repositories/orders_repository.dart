@@ -197,11 +197,8 @@ abstract class OrdersRepository {
     required String runDate,
     required String branchName,
   });
-
-  Future<String> createExportJob({
+  Future<String?> fetchHistoryFileUrl({
     required String branchName,
     required String runDate,
   });
-
-  Future<Map<String, dynamic>?> fetchExportJob({required String jobId});
 }

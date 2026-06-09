@@ -129,6 +129,7 @@ class BranchOrdersActions {
       context: context,
       barrierDismissible: false,
       builder: (_) => const AlertDialog(
+        backgroundColor: Colors.white,
         content: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -165,13 +166,15 @@ class BranchOrdersActions {
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
+              backgroundColor: Colors.white,
+
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(24),
               ),
 
               title: Row(
                 children: [
-                  const Icon(Icons.history, color: Colors.deepPurple),
+                  const Icon(Icons.history, color: AppColors.primaryColor),
 
                   const SizedBox(width: 10),
 
@@ -200,7 +203,6 @@ class BranchOrdersActions {
                   ),
                 ],
               ),
-
               content: SizedBox(
                 width: 450,
                 height: 500,
@@ -213,61 +215,73 @@ class BranchOrdersActions {
 
                     final isLoading = downloadingDate == runDate;
 
-                    return ListTile(
-                      leading: const Icon(Icons.calendar_month),
-
-                      title: Text(
-                        runDate,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+                    return Card(
+                      margin: EdgeInsets.only(top: 15),
+                      color: AppColors.white,
+                      elevation: 15,
+                      shape: RoundedRectangleBorder(
+                        side: BorderSide(color: AppColors.primaryColor),
+                        borderRadius: BorderRadius.circular(16),
                       ),
+                      shadowColor: AppColors.primaryColor,
+                      child: ListTile(
+                        leading: const Icon(Icons.calendar_month),
 
-                      trailing: isLoading
-                          ? const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.download),
+                        title: Text(
+                          runDate,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
 
-                      onTap: downloadingDate != null
-                          ? null
-                          : () async {
-                              setState(() {
-                                downloadingDate = runDate;
-                              });
+                        trailing: isLoading
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.download,
+                                color: AppColors.secondaryColor,
+                              ),
 
-                              final jobId = await bloc.repo.createExportJob(
-                                branchName: bloc.state.branchName,
-                                runDate: runDate,
-                              );
-                              Timer.periodic(const Duration(seconds: 1), (
-                                timer,
-                              ) async {
-                                final job = await bloc.repo.fetchExportJob(
-                                  jobId: jobId,
-                                );
-                                print('Checking Export Job...');
-                                print(job);
-                                if (job == null) return;
+                        onTap: downloadingDate != null
+                            ? null
+                            : () async {
+                                setState(() {
+                                  downloadingDate = runDate;
+                                });
 
-                                final status = (job['status'] ?? '').toString();
-
-                                if (status == 'completed') {
-                                  timer.cancel();
-
-                                  final fileUrl = (job['file_url'] ?? '')
-                                      .toString();
-
-                                  if (fileUrl.isNotEmpty) {
-                                    html.window.open(fileUrl, '_blank');
+                                try {
+                                  final fileUrl = await bloc.repo
+                                      .fetchHistoryFileUrl(
+                                        branchName: bloc.state.branchName,
+                                        runDate: runDate,
+                                      );
+                                  if (fileUrl == null) {
+                                    throw Exception('History file not found');
                                   }
+
+                                  html.window.open(fileUrl, '_blank');
 
                                   if (dialogContext.mounted) {
                                     Navigator.pop(dialogContext);
                                   }
+                                } catch (e) {
+                                  if (dialogContext.mounted) {
+                                    ScaffoldMessenger.of(
+                                      dialogContext,
+                                    ).showSnackBar(
+                                      SnackBar(content: Text(e.toString())),
+                                    );
+                                  }
+
+                                  setState(() {
+                                    downloadingDate = null;
+                                  });
                                 }
-                              });
-                            },
+                              },
+                      ),
                     );
                   },
                 ),
@@ -275,8 +289,14 @@ class BranchOrdersActions {
 
               actions: [
                 TextButton.icon(
-                  icon: const Icon(Icons.close),
-                  label: const Text('Close'),
+                  icon: const Icon(
+                    Icons.close,
+                    color: AppColors.secondaryColor,
+                  ),
+                  label: const Text(
+                    'Close',
+                    style: TextStyle(color: AppColors.secondaryColor),
+                  ),
                   onPressed: () {
                     Navigator.pop(dialogContext);
                   },

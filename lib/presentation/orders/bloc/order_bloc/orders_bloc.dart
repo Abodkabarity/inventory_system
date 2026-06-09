@@ -80,7 +80,6 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     on<OrdersClearMismatchResult>((event, emit) {
       emit(state.copyWith(showMismatchResult: false));
     });
-    on<OrdersExportHistoryPressed>(_onExportHistoryPressed);
     on<OrdersLoadItemsToOrder>(_onLoadItemsToOrder);
 
     on<OrdersAddItemToOrder>(_onAddItemToOrder);
@@ -1721,31 +1720,5 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         viewRows: state.viewRows,
       ),
     );
-  }
-
-  Future<void> _onExportHistoryPressed(
-    OrdersExportHistoryPressed event,
-    Emitter<OrdersState> emit,
-  ) async {
-    emit(state.copyWith(isExporting: true));
-    try {
-      final rows = await repo.fetchHistoryOrders(
-        runDate: event.runDate,
-        branchName: state.branchName,
-      );
-
-      if (rows.isEmpty) {
-        emit(state.copyWith(isExporting: false));
-        return;
-      }
-      await Future.delayed(const Duration(milliseconds: 100));
-      await ExcelExporter.exportOrdersWeb(
-        rows: rows,
-        columns: rows.first.keys.toList(),
-      );
-      emit(state.copyWith(isExporting: false));
-    } catch (e) {
-      emit(state.copyWith(isExporting: false));
-    }
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
+import '../../../core/theme/app_colors.dart';
 import '../../../data/models/item_to_order_model.dart';
 
 class PendingItemsToOrderDialog extends StatefulWidget {
@@ -282,12 +283,16 @@ class _PendingItemsToOrderDialogState extends State<PendingItemsToOrderDialog> {
                                 height: 40.h,
                                 child: FilledButton.icon(
                                   icon: const Icon(Icons.add),
-                                  label: const Text('Add To Order'),
+                                  label: const Text(
+                                    'Add To Order',
+                                    style: TextStyle(color: Colors.white),
+                                  ),
                                   style: FilledButton.styleFrom(
                                     minimumSize: const Size.fromHeight(50),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(14),
                                     ),
+                                    backgroundColor: AppColors.primaryColor,
                                   ),
                                   onPressed: () async {
                                     final result = await widget.onAddPressed(
@@ -312,13 +317,20 @@ class _PendingItemsToOrderDialogState extends State<PendingItemsToOrderDialog> {
                                 width: 250.w,
                                 height: 40.h,
                                 child: OutlinedButton.icon(
-                                  icon: const Icon(Icons.close),
-                                  label: const Text('Ignore'),
+                                  icon: const Icon(
+                                    Icons.close,
+                                    color: Colors.white,
+                                  ),
+                                  label: const Text(
+                                    'Ignore',
+                                    style: TextStyle(color: Colors.white),
+                                  ),
                                   style: OutlinedButton.styleFrom(
                                     minimumSize: const Size.fromHeight(50),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(14),
                                     ),
+                                    backgroundColor: Colors.red,
                                   ),
                                   onPressed: () async {
                                     await widget.onIgnorePressed(item);
@@ -351,6 +363,7 @@ class _PendingItemsToOrderDialogState extends State<PendingItemsToOrderDialog> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
                       ),
+                      side: BorderSide(color: AppColors.primaryColor),
                     ),
                     onPressed: () {
                       Navigator.pop(context);
@@ -360,6 +373,7 @@ class _PendingItemsToOrderDialogState extends State<PendingItemsToOrderDialog> {
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
+                        color: AppColors.secondaryColor,
                       ),
                     ),
                   ),
@@ -374,13 +388,15 @@ class _PendingItemsToOrderDialogState extends State<PendingItemsToOrderDialog> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
                       ),
+                      backgroundColor: AppColors.primaryColor,
                     ),
-                    icon: const Icon(Icons.arrow_forward),
+                    icon: const Icon(Icons.arrow_forward, color: Colors.white),
                     label: const Text(
                       'Next',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
+                        color: Colors.white,
                       ),
                     ),
                     onPressed: allReviewed

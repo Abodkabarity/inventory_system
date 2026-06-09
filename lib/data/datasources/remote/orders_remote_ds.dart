@@ -1059,17 +1059,39 @@ class OrdersRemoteDs {
     required String branchName,
   }) async {
     final res = await client
-        .from('daily_order_history')
+        .from('history_exports')
         .select('run_date')
-        .eq('branch', branchName)
+        .eq('branch_name', branchName)
         .order('run_date', ascending: false);
 
-    final dates = (res as List)
-        .map((e) => e['run_date'].toString())
-        .toSet()
-        .toList();
+    return (res as List).map((e) => e['run_date'].toString()).toSet().toList();
+  }
 
-    return dates;
+  Future<String?> fetchHistoryFileUrl({
+    required String branchName,
+    required String runDate,
+  }) async {
+    final row = await client
+        .from('history_exports')
+        .select('storage_path')
+        .eq('branch_name', branchName)
+        .eq('run_date', runDate)
+        .maybeSingle();
+
+    if (row == null) {
+      return null;
+    }
+
+    final storagePath = row['storage_path']?.toString();
+
+    if (storagePath == null || storagePath.isEmpty) {
+      return null;
+    }
+
+    final signedUrl = await client.storage
+        .from('history-exports')
+        .createSignedUrl(storagePath, 60);
+    return signedUrl;
   }
 
   Future<List<Map<String, dynamic>>> fetchHistoryOrders({
@@ -1084,26 +1106,6 @@ class OrdersRemoteDs {
         .order('item_code');
 
     return (res as List).cast<Map<String, dynamic>>();
-  }
-
-  Future<String> createExportJob({
-    required String branchName,
-    required String runDate,
-  }) async {
-    final result = await client.rpc(
-      'create_export_job',
-      params: {'p_branch_name': branchName, 'p_run_date': runDate},
-    );
-
-    return result.toString();
-  }
-
-  Future<Map<String, dynamic>?> fetchExportJob({required String jobId}) async {
-    return await client
-        .from('export_jobs')
-        .select()
-        .eq('id', jobId)
-        .maybeSingle();
   }
 
   Future<List<Map<String, dynamic>>> fetchPendingExportJobs() async {

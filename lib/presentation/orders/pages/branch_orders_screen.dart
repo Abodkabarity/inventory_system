@@ -619,15 +619,15 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                   ),
                                   const SizedBox(width: 10),
 
-                                  /*  FilledButton.icon(
+                                  FilledButton.icon(
                                     onPressed: () {
                                       BranchOrdersActions.openHistoryExportDialog(
                                         context,
                                       );
                                     },
-                                    icon: const Icon(Icons.history),
+                                    icon: const Icon(Icons.download, size: 18),
                                     label: const Text(
-                                      'History',
+                                      'Order History',
                                       style: TextStyle(
                                         fontWeight: FontWeight.bold,
                                       ),
@@ -640,7 +640,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(width: 10),*/
+                                  const SizedBox(width: 10),
                                   _StatusChip(
                                     isSubmitted: s.isSubmitted,
                                     isOrderDay: s.isOrderDay,
@@ -1212,6 +1212,8 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                                           context,
                                                                       builder: (_) {
                                                                         return AlertDialog(
+                                                                          backgroundColor:
+                                                                              Colors.white,
                                                                           title: const Text(
                                                                             'Already In Daily Order',
                                                                           ),
@@ -1222,18 +1224,26 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                                             'Final Qty : $newQty',
                                                                           ),
                                                                           actions: [
-                                                                            TextButton(
+                                                                            FilledButton(
                                                                               onPressed: () {
                                                                                 Navigator.pop(
                                                                                   context,
                                                                                   'ignore',
                                                                                 );
                                                                               },
+                                                                              style: FilledButton.styleFrom(
+                                                                                backgroundColor: Colors.red,
+                                                                              ),
                                                                               child: const Text(
                                                                                 'Ignore',
+                                                                                style: TextStyle(
+                                                                                  color: Colors.white,
+                                                                                ),
                                                                               ),
                                                                             ),
-
+                                                                            SizedBox(
+                                                                              width: 10,
+                                                                            ),
                                                                             FilledButton(
                                                                               onPressed: () {
                                                                                 Navigator.pop(
@@ -1241,8 +1251,14 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                                                   'add',
                                                                                 );
                                                                               },
+                                                                              style: FilledButton.styleFrom(
+                                                                                backgroundColor: AppColors.primaryColor,
+                                                                              ),
                                                                               child: const Text(
                                                                                 'Add Anyway',
+                                                                                style: TextStyle(
+                                                                                  color: Colors.white,
+                                                                                ),
                                                                               ),
                                                                             ),
                                                                           ],
