@@ -300,12 +300,34 @@ class _AdditionalPanelState extends State<AdditionalPanel> {
             ),
 
             Expanded(
-              child: ListView.builder(
-                itemCount: list.length,
-                itemBuilder: (context, i) {
-                  return AdditionalRequestTile(request: list[i]);
-                },
-              ),
+              child: list.isEmpty
+                  ? const Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.playlist_remove,
+                            size: 70,
+                            color: Colors.grey,
+                          ),
+                          SizedBox(height: 12),
+                          Text(
+                            'No Additional Requests',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: list.length,
+                      itemBuilder: (context, i) {
+                        return AdditionalRequestTile(request: list[i]);
+                      },
+                    ),
             ),
           ],
         ),

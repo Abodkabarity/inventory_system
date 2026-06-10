@@ -5,9 +5,7 @@ import '../entities/store_order_item.dart';
 abstract class StoreRepository {
   Future<List<Map<String, dynamic>>> fetchAllBranches();
 
-  Future<List<Map<String, dynamic>>> fetchSubmittedBranches(
-      String runDate,
-      );
+  Future<List<Map<String, dynamic>>> fetchSubmittedBranches(String runDate);
 
   Future<List<StoreOrderItem>> fetchBranchItems({
     required String runDate,
@@ -35,5 +33,9 @@ abstract class StoreRepository {
   Future<List<ProductMovement>> fetchProductMovement({
     required String branch,
     required String itemCode,
+  });
+  Future<List<Map<String, dynamic>>> fetchDailyOrderForBranch({
+    required String branch,
+    required String runDate,
   });
 }

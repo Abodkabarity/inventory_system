@@ -41,23 +41,22 @@ class StoreRepositoryImpl implements StoreRepository {
   Future<List<Map<String, dynamic>>> fetchAllBranches() async {
     return await remote.fetchAllBranches();
   }
+
   @override
   Future<void> markBranchPrinted({
     required String runDate,
     required String branch,
   }) {
-    return remote.markBranchPrinted(
-      runDate: runDate,
-      branch: branch,
-    );
+    return remote.markBranchPrinted(runDate: runDate, branch: branch);
   }
+
   /// ================================
   /// SUBMITTED BRANCHES
   /// ================================
   @override
   Future<List<Map<String, dynamic>>> fetchSubmittedBranches(
-      String runDate,
-      ) async {
+    String runDate,
+  ) async {
     return await remote.fetchSubmittedBranches(runDate);
   }
 
@@ -106,7 +105,6 @@ class StoreRepositoryImpl implements StoreRepository {
     final List<AdditionalRequestGroup> result = [];
 
     grouped.forEach((groupId, items) {
-
       final first = items.first;
 
       DateTime created;
@@ -128,13 +126,9 @@ class StoreRepositoryImpl implements StoreRepository {
       if (validItems.isEmpty) {
         return;
       }
-      final hasPending = validItems.any(
-            (e) => e['status'] == 'sent_to_store',
-      );
+      final hasPending = validItems.any((e) => e['status'] == 'sent_to_store');
 
-      final allRejected = validItems.every(
-            (e) => e['status'] == 'rejected',
-      );
+      final allRejected = validItems.every((e) => e['status'] == 'rejected');
 
       String status;
 
@@ -147,7 +141,9 @@ class StoreRepositoryImpl implements StoreRepository {
         status = 'done';
       }
       final isUrgent = validItems.any((e) => e['contact_logistic'] == 'urgent');
-      final isProcessing = validItems.any((e) => e['store_status'] == 'processing');
+      final isProcessing = validItems.any(
+        (e) => e['store_status'] == 'processing',
+      );
       result.add(
         AdditionalRequestGroup(
           groupId: groupId,
@@ -217,13 +213,9 @@ class StoreRepositoryImpl implements StoreRepository {
       if (validItems.isEmpty) {
         return;
       }
-      final hasPending = validItems.any(
-            (e) => e['status'] == 'sent_to_store',
-      );
+      final hasPending = validItems.any((e) => e['status'] == 'sent_to_store');
 
-      final allRejected = validItems.every(
-            (e) => e['status'] == 'rejected',
-      );
+      final allRejected = validItems.every((e) => e['status'] == 'rejected');
 
       String status;
 
@@ -235,7 +227,9 @@ class StoreRepositoryImpl implements StoreRepository {
         // done OR mixed(done + rejected)
         status = 'done';
       }
-      final isProcessing = validItems.any((e) => e['store_status'] == 'processing');
+      final isProcessing = validItems.any(
+        (e) => e['store_status'] == 'processing',
+      );
       result.add(
         AdditionalRequestGroup(
           groupId: groupId,
@@ -300,5 +294,13 @@ class StoreRepositoryImpl implements StoreRepository {
         createdAt: DateTime.parse(e['created_at']).toLocal(),
       );
     }).toList();
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchDailyOrderForBranch({
+    required String branch,
+    required String runDate,
+  }) {
+    return remote.fetchDailyOrderForBranch(branch: branch, runDate: runDate);
   }
 }
