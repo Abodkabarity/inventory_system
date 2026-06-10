@@ -1,7 +1,14 @@
 import 'package:daily_order/presentation/store_dashboard/page/store_dashboard_page.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../data/datasources/remote/store_remote_ds.dart';
+import '../../../data/repositories/store_repository_impl.dart';
+import '../../../domain/repositories/store_repository.dart';
+import '../transfer_report/bloc/transfer_report_bloc.dart';
+import '../transfer_report/transfer_report_page.dart';
 import 'product_movement_page.dart';
 
 class StoreShellPage extends StatefulWidget {
@@ -18,10 +25,21 @@ class _StoreShellPageState extends State<StoreShellPage> {
 
   @override
   Widget build(BuildContext context) {
+    final client = Supabase.instance.client;
+
+    final remote = StoreRemoteDs(client);
+
+    final StoreRepository repo = StoreRepositoryImpl(remote);
+
     final pages = [
       StoreDashboardPage(runDate: widget.runDate),
 
       const ProductMovementPage(),
+
+      BlocProvider(
+        create: (_) => TransferReportBloc(repo),
+        child: TransferReportPage(runDate: widget.runDate),
+      ),
     ];
 
     return Scaffold(
@@ -152,6 +170,14 @@ class _StoreShellPageState extends State<StoreShellPage> {
                   icon: Icons.move_down,
 
                   title: "Product Movement",
+                ),
+
+                const SizedBox(height: 8),
+
+                _buildMenuItem(
+                  index: 2,
+                  icon: Icons.compare_arrows_rounded,
+                  title: "Transfer Report",
                 ),
 
                 const Spacer(),

@@ -28,8 +28,8 @@ class StoreRemoteDs {
 
   /// SUBMITTED BRANCHES
   Future<List<Map<String, dynamic>>> fetchSubmittedBranches(
-      String runDate,
-      ) async {
+    String runDate,
+  ) async {
     final res = await client
         .from('order_submissions')
         .select('branch_name,submitted_at,printed')
@@ -43,9 +43,7 @@ class StoreRemoteDs {
   Future<List<Map<String, dynamic>>> fetchAllBranches() async {
     final res = await client
         .from('branches')
-        .select(
-      'branch_name,submit_start_hour,submit_end_hour',
-    )
+        .select('branch_name,submit_start_hour,submit_end_hour')
         .eq('is_active', true);
 
     return List<Map<String, dynamic>>.from(res);
@@ -276,6 +274,7 @@ class StoreRemoteDs {
       res,
     ).map((e) => e['branch_name'].toString()).toList();
   }
+
   Future<void> markBranchPrinted({
     required String runDate,
     required String branch,
@@ -283,10 +282,46 @@ class StoreRemoteDs {
     await client
         .from('order_submissions')
         .update({
-      'printed': true,
-      'printed_at': DateTime.now().toIso8601String(),
-    })
+          'printed': true,
+          'printed_at': DateTime.now().toIso8601String(),
+        })
         .eq('run_date', runDate)
         .eq('branch_name', branch);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchDailyOrderForBranch({
+    required String branch,
+    required String runDate,
+  }) async {
+    final res = await client
+        .from('daily_order')
+        .select('''
+item_code,
+item_name,
+total_final_reorder_today
+''')
+        .eq('branch', branch)
+        .eq('run_date', runDate)
+        .gt('total_final_reorder_today', 0);
+
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchDailyOrdersForBranches({
+    required List<String> branches,
+    required String runDate,
+  }) async {
+    final res = await client
+        .from('daily_order')
+        .select('''
+branch,
+item_code,
+item_name,
+total_final_reorder_today
+''')
+        .eq('run_date', runDate)
+        .inFilter('branch', branches);
+
+    return List<Map<String, dynamic>>.from(res);
   }
 }

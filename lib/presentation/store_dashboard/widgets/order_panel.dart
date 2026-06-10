@@ -9,13 +9,14 @@ class OrdersPanel extends StatelessWidget {
   final String? branch;
   final bool isSubmitted;
   final bool isLoading;
-
+  final VoidCallback? onClose;
   const OrdersPanel({
     super.key,
     required this.items,
     required this.branch,
     required this.isSubmitted,
     required this.isLoading,
+    this.onClose,
   });
 
   @override
@@ -35,14 +36,28 @@ class OrdersPanel extends StatelessWidget {
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              "Branch: $branch",
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: AppColors.secondaryColor,
-              ),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                const Spacer(),
+
+                Text(
+                  "Branch: $branch",
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.secondaryColor,
+                  ),
+                ),
+
+                const Spacer(),
+
+                IconButton(
+                  tooltip: 'Close',
+                  icon: const Icon(Icons.close, color: Colors.black, size: 34),
+                  onPressed: onClose,
+                ),
+              ],
             ),
           ),
 

@@ -62,26 +62,23 @@ class BranchGrid extends StatelessWidget {
                 final isSubmitted = submitted.contains(branch);
                 final isSelected = selectedBranch == branch;
 
-                final isPrinted =
-                context.read<StoreBloc>()
+                final isPrinted = context
+                    .read<StoreBloc>()
                     .state
                     .printedBranches
                     .contains(branch);
-                final blocState =
-                    context.read<StoreBloc>().state;
+                final blocState = context.read<StoreBloc>().state;
 
-                final startHour =
-                    blocState.submitStartHours[branch] ?? 0;
+                final startHour = blocState.submitStartHours[branch] ?? 0;
 
-                final endHour =
-                    blocState.submitEndHours[branch] ?? 24;
+                final endHour = blocState.submitEndHours[branch] ?? 24;
 
                 final isLate =
                     OperationalDateHelper.isMissingWindowForBranch(
                       startHour: startHour,
                       endHour: endHour,
                     ) &&
-                        !isSubmitted;
+                    !isSubmitted;
                 return GestureDetector(
                   onTap: () {
                     final bloc = context.read<StoreBloc>();
@@ -138,6 +135,9 @@ class BranchGrid extends StatelessWidget {
                                     isSubmitted: isSubmitted,
 
                                     isLoading: state.isLoading,
+                                    onClose: () {
+                                      Navigator.of(context).pop();
+                                    },
                                   ),
                                 ),
                               );
@@ -235,16 +235,13 @@ class BranchGrid extends StatelessWidget {
                                   if (isPrinted) {
                                     statusText = "PRINTED";
                                     statusColor = Colors.green.shade800;
-                                  }
-                                  else if (isSubmitted) {
+                                  } else if (isSubmitted) {
                                     statusText = "SUBMITTED";
                                     statusColor = Colors.deepOrange;
-                                  }
-                                  else if (isLate) {
+                                  } else if (isLate) {
                                     statusText = "BRANCH NOT SUBMIT THE ORDER";
                                     statusColor = Colors.red.shade900;
-                                  }
-                                  else {
+                                  } else {
                                     statusText = "NOT SUBMITTED YET";
                                     statusColor = Colors.grey;
                                   }
