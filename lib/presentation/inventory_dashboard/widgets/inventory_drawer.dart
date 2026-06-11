@@ -82,6 +82,13 @@ class InventoryDrawer extends StatelessWidget {
                 InventoryPageType.tma,
                 state,
               ),
+              _item(
+                context,
+                "Additional Analysis",
+                Icons.analytics_outlined,
+                InventoryPageType.additionalOrderAnalysis,
+                state,
+              ),
             ],
           ),
         );

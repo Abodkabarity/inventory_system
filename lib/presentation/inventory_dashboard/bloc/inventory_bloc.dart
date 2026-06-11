@@ -46,6 +46,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     on<UpdateMismatchColumnWidth>(_onUpdateMismatchColumnWidth);
     on<StoreApproveRequests>(_onStoreApprove);
     on<ApproveAllInventoryRequests>(_onApproveAllInventory);
+    on<LoadAdditionalOrderAnalysis>(_onLoadAdditionalOrderAnalysis);
     on<ExportMaxAdjCurrent>(_onExportCurrent);
     on<ExportMaxAdjWithHistory>(_onExportWithHistory);
     on<ImportAssortmentExcel>(_onImportAssortment);
@@ -2559,5 +2560,25 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         isOrdersLoading: false,
       ),
     );
+  }
+
+  Future<void> _onLoadAdditionalOrderAnalysis(
+    LoadAdditionalOrderAnalysis event,
+    Emitter<InventoryState> emit,
+  ) async {
+    try {
+      print("START ANALYSIS");
+
+      final data = await repo.fetchAdditionalOrderAnalysis(
+        from: event.from,
+        to: event.to,
+      );
+
+      print(data);
+
+      emit(state.copyWith(additionalAnalysis: data));
+    } catch (e) {
+      print("ANALYSIS ERROR = $e");
+    }
   }
 }
