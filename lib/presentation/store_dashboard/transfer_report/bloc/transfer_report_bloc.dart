@@ -24,8 +24,6 @@ class TransferReportBloc
     emit(state.copyWith(loading: true));
 
     try {
-      print('FILE = ${event.bytes.length}');
-      print(event.bytes.take(20).toList());
       String csvText;
 
       try {
@@ -33,7 +31,7 @@ class TransferReportBloc
       } catch (_) {
         csvText = latin1.decode(event.bytes);
       }
-      print(event.bytes.take(20).toList());
+
       final csvRows = const CsvToListConverter().convert(csvText);
 
       final Map<String, double> transfers = {};

@@ -317,8 +317,11 @@ class InventoryRemoteDs {
     await client.rpc('store_approve_requests', params: {'p_items': items});
   }
 
+  /// Streams ALL rows using parallel batches.
+  /// [onProgress] is called after each round with (loaded, estimated total).
   Future<List<Map<String, dynamic>>> fetchOrdersAllInventory({
     required String runDate,
+    void Function(int loaded)? onProgress,
   }) async {
     const cols = '''
 run_date, branch, item_code, item_name,
@@ -328,56 +331,55 @@ extra_qty_more_than_month, max_adjustment_30d, demand_for_30_days,
 reorder_point_min, reorder_max, reorder_qty_num, reorder_qty,
 final_reorder_qty_store_stock_gt_0, date_of_last_qty_received_in_branch,
 qty_30_days_from_last_45d,
-branch_formulary, assortment_qty_base_stock, assortment_by, reason, assortment_start, assortment_end,
+branch_formulary, assortment_qty_base_stock, assortment_by, reason,
+assortment_start, assortment_end,
 tma_qty, tma_start, tma_end,
-item_purchase_type, sales_orientation, category, sub_category, company, supplier, indication, active_ingredient,
-pack_size, concentration, product_type_form, retail_price, vat,
-is_upp,
-max_type,
-item_minimum_order_unit,
-barcode,
-store_item_classifications
+item_purchase_type, sales_orientation, category, sub_category, company,
+supplier, indication, active_ingredient, pack_size, concentration,
+product_type_form, retail_price, vat, is_upp, max_type,
+item_minimum_order_unit, barcode, store_item_classifications
 ''';
 
-    List<Map<String, dynamic>> allData = [];
+    const int batchSize = 10000; // rows per request
+    const int concurrent = 8; // simultaneous requests per round
 
-    /*String? lastItemCode;
-    const batchSize = 20000;
+    final all = <Map<String, dynamic>>[];
+    int offset = 0;
 
     while (true) {
-      var query = client
-          .from('daily_order')
-          .select(cols)
-          .eq('run_date', runDate);
+      // Fire `concurrent` requests at the same time
+      final offsets = List.generate(concurrent, (i) => offset + i * batchSize);
 
-      if (lastItemCode != null) {
-        query = query.filter('item_code', 'gt', lastItemCode);
+      final results = await Future.wait(
+        offsets.map(
+          (from) => client
+              .from('daily_order')
+              .select(cols)
+              .eq('run_date', runDate)
+              .range(from, from + batchSize - 1),
+        ),
+      );
+
+      bool anyData = false;
+
+      for (final res in results) {
+        final batch = List<Map<String, dynamic>>.from(res);
+        if (batch.isEmpty) continue;
+        anyData = true;
+        all.addAll(batch);
       }
 
-      final res = await query
-          .order('item_code', ascending: true)
-          .limit(batchSize);
+      onProgress?.call(all.length);
 
-      final batch = List<Map<String, dynamic>>.from(res);
+      // Stop when the last batch in this round returned fewer rows than batchSize
+      // (means we reached the end of the table)
+      final lastBatch = List<Map<String, dynamic>>.from(results.last);
+      if (!anyData || lastBatch.length < batchSize) break;
 
-      if (batch.isEmpty) break;
+      offset += concurrent * batchSize;
+    }
 
-      allData.addAll(batch);
-
-      lastItemCode = batch.last['item_code'].toString();
-
-      print("Loaded ${allData.length}");
-
-      if (batch.length < batchSize) break;
-    }*/
-    final res = await client
-        .from('daily_order')
-        .select(cols)
-        .eq('run_date', runDate)
-        .limit(50000);
-
-    return List<Map<String, dynamic>>.from(res);
-    return allData;
+    return all;
   }
 
   Future<List<Map<String, dynamic>>> fetchBranchAllChanges({
@@ -465,26 +467,46 @@ store_item_classifications
         .from('daily_order')
         .select(cols)
         .eq('run_date', runDate)
+        .order('item_code', ascending: true)
+        .order('branch', ascending: true)
         .range(from, to);
 
     return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<void> importAssortmentBulk(List<Map<String, dynamic>> rows) async {
+    await client.rpc('import_assortment_bulk', params: {'p_rows': rows});
+  }
+
+  Future<void> deleteAssortmentBulk(List<Map<String, dynamic>> rows) async {
+    await client.rpc('delete_assortment_bulk', params: {'p_rows': rows});
+  }
+
+  Future<void> importTmaBulk(List<Map<String, dynamic>> rows) async {
+    await client.rpc('import_tma_bulk', params: {'p_rows': rows});
+  }
+
+  Future<void> deleteTmaBulk(List<Map<String, dynamic>> rows) async {
+    await client.rpc('delete_tma_bulk', params: {'p_rows': rows});
+  }
+
+  Future<void> importMaxAdjBulk(List<Map<String, dynamic>> rows) async {
+    await client.rpc('import_max_adj_bulk', params: {'p_rows': rows});
+  }
+
+  Future<void> deleteMaxAdjBulk(List<Map<String, dynamic>> rows) async {
+    await client.rpc('delete_max_adj_bulk', params: {'p_rows': rows});
   }
 
   Future<List<Map<String, dynamic>>> searchOrders({
     required String runDate,
     required String query,
   }) async {
-    final res = await client
-        .from('daily_order')
-        .select()
-        .eq('run_date', runDate)
-        .or(
-          'item_name.ilike.%$query%,'
-          'item_code.ilike.%$query%,'
-          'barcode.ilike.%$query%',
-        )
-        .limit(200);
+    final result = await client.rpc(
+      'search_daily_orders',
+      params: {'p_run_date': runDate, 'p_query': query},
+    );
 
-    return List<Map<String, dynamic>>.from(res);
+    return List<Map<String, dynamic>>.from(result);
   }
 }

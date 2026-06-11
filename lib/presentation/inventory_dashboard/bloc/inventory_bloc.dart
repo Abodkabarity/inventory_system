@@ -393,159 +393,172 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
       final cacheKey = event.runDate;
 
-      // =====================================
-      // CACHE
-      // =====================================
-
+      // CACHE HIT
       if (ordersCache.containsKey(cacheKey)) {
-        final cached = ordersCache[cacheKey]!;
-
-        final firstPage = cached.take(50000).toList();
-
         emit(
           state.copyWith(
-            allOrders: firstPage,
-            cachedOrders: cached,
-            loadedCount: cached.length,
+            cachedOrders: ordersCache[cacheKey]!,
+            allOrders: ordersCache[cacheKey]!,
+            loadedCount: ordersCache[cacheKey]!.length,
             currentOrdersPage: 0,
-            hasMorePages: cached.length > 50000,
+            hasMorePages: false,
             isOrdersLoading: false,
             allDataLoaded: true,
           ),
         );
-
         return;
       }
 
-      // =====================================
-      // FIRST 50000
-      // =====================================
+      try {
+        // FIRST 10K
+        final firstBatch = await repo.fetchOrdersPage(
+          runDate: event.runDate,
+          from: 0,
+          to: 9999,
+        );
 
-      final firstBatch = await repo.fetchOrdersPage(
-        runDate: event.runDate,
+        final firstRows = firstBatch.map(DailyOrderRow.fromMap).toList();
 
-        from: 0,
+        emit(
+          state.copyWith(
+            cachedOrders: firstRows,
+            allOrders: firstRows,
+            loadedCount: firstRows.length,
+            isOrdersLoading: false,
+          ),
+        );
 
-        to: 49999,
-      );
-
-      final firstRows = firstBatch
-          .map((e) => DailyOrderRow.fromMap(e))
-          .toList();
-
-      emit(
-        state.copyWith(
-          allOrders: firstRows,
-          cachedOrders: firstRows,
-          loadedCount: firstRows.length,
-          isOrdersLoading: false,
-        ),
-      );
-
-      // =====================================
-      // BACKGROUND LOADING
-      // =====================================
-
-      Future(() async {
+        // LOAD REMAINING DATA
         List<DailyOrderRow> all = List.from(firstRows);
 
-        int from = 50000;
+        int offset = 10000;
 
-        const batch = 50000;
+        const int batchSize = 10000;
+        const int concurrent = 8;
 
         while (true) {
-          final data = await repo.fetchOrdersPage(
-            runDate: event.runDate,
+          if (emit.isDone) return;
 
-            from: from,
-
-            to: from + batch - 1,
+          final offsets = List.generate(
+            concurrent,
+            (i) => offset + i * batchSize,
           );
 
-          if (data.isEmpty) break;
+          final results = await Future.wait(
+            offsets.map(
+              (from) => repo.fetchOrdersPage(
+                runDate: event.runDate,
+                from: from,
+                to: from + batchSize - 1,
+              ),
+            ),
+          );
 
-          final mapped = data.map((e) => DailyOrderRow.fromMap(e)).toList();
+          bool anyData = false;
+          bool lastWasShort = false;
 
-          all.addAll(mapped);
+          for (final batch in results) {
+            if (batch.isEmpty) {
+              lastWasShort = true;
+              break;
+            }
 
-          from += batch;
+            anyData = true;
+
+            all.addAll(batch.map(DailyOrderRow.fromMap));
+
+            if (batch.length < batchSize) {
+              lastWasShort = true;
+              break;
+            }
+          }
+
+          if (emit.isDone) return;
 
           emit(
             state.copyWith(
               cachedOrders: all,
+              allOrders: all,
               loadedCount: all.length,
               isBackgroundLoading: true,
             ),
           );
 
-          if (data.length < batch) {
+          if (!anyData || lastWasShort) {
             break;
           }
+
+          offset += concurrent * batchSize;
         }
 
         ordersCache[cacheKey] = all;
 
+        if (emit.isDone) return;
+
         emit(
           state.copyWith(
             cachedOrders: all,
+            allOrders: all,
+            loadedCount: all.length,
             isBackgroundLoading: false,
             allDataLoaded: true,
           ),
         );
-      });
+      } catch (e) {
+        if (emit.isDone) return;
+
+        emit(
+          state.copyWith(isOrdersLoading: false, isBackgroundLoading: false),
+        );
+
+        print("LOAD ORDERS ERROR = $e");
+      }
     });
     on<SearchInventoryOrders>((event, emit) async {
       final q = event.query.trim();
 
+      // ── CLEAR → restore page 0 from cache ─────────────────────
       if (q.isEmpty) {
-        emit(state.copyWith(allOrders: state.cachedOrders));
-
+        const pageSize = 1000;
+        final total = state.cachedOrders.length;
+        final pageRows = total == 0
+            ? <DailyOrderRow>[]
+            : state.cachedOrders.sublist(0, total.clamp(0, pageSize));
+        emit(state.copyWith(allOrders: pageRows, currentOrdersPage: 0));
         return;
       }
 
-      // =====================================
-      // SEARCH LOCAL FIRST
-      // =====================================
-
+      // ── LOCAL SEARCH — search everything in cache ──────────────
+      final ql = q.toLowerCase();
       final local = state.cachedOrders.where((e) {
-        return e.itemName.toLowerCase().contains(q.toLowerCase()) ||
-            e.itemCode.toLowerCase().contains(q.toLowerCase()) ||
-            e.barcode!.toLowerCase().contains(q.toLowerCase());
+        return e.itemName.toLowerCase().contains(ql) ||
+            e.itemCode.toLowerCase().contains(ql) ||
+            e.branch.toLowerCase().contains(ql) ||
+            (e.barcode?.toLowerCase().contains(ql) ?? false);
       }).toList();
 
-      // =====================================
-      // FOUND LOCAL
-      // =====================================
-
-      if (local.isNotEmpty) {
-        emit(state.copyWith(allOrders: local));
-
+      // If we have local results OR all data is loaded → return local
+      if (local.isNotEmpty || state.allDataLoaded) {
+        emit(state.copyWith(allOrders: local, currentOrdersPage: 0));
         return;
       }
 
-      // =====================================
-      // SEARCH SERVER
-      // =====================================
-
+      // ── SERVER FALLBACK — only when cache is still loading ─────
       emit(state.copyWith(isSearching: true));
 
-      final remote = await repo.searchOrders(runDate: runDate, query: q);
-
-      final rows = remote.map((e) => DailyOrderRow.fromMap(e)).toList();
-
-      // add to cache
-
-      final updated = List<DailyOrderRow>.from(state.cachedOrders);
-
-      updated.addAll(rows);
-
-      emit(
-        state.copyWith(
-          allOrders: rows,
-          cachedOrders: updated,
-          isSearching: false,
-        ),
-      );
+      try {
+        final remote = await repo.searchOrders(runDate: runDate, query: q);
+        final rows = remote.map(DailyOrderRow.fromMap).toList();
+        emit(
+          state.copyWith(
+            allOrders: rows,
+            currentOrdersPage: 0,
+            isSearching: false,
+          ),
+        );
+      } catch (_) {
+        emit(state.copyWith(allOrders: local, isSearching: false));
+      }
     });
     on<StartAssortmentRealtime>((event, emit) {
       assortmentChannel = Supabase.instance.client
@@ -953,16 +966,29 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       }
 
       final file = result.files.single;
-      final content = String.fromCharCodes(file.bytes!);
 
-      final rows = const CsvToListConverter().convert(content);
+      String csvText;
+      try {
+        csvText = utf8.decode(file.bytes!);
+      } catch (_) {
+        csvText = latin1.decode(file.bytes!);
+      }
+
+      final rows = const CsvToListConverter().convert(csvText);
+
+      if (rows.isEmpty) {
+        emit(
+          state.copyWith(isImporting: false, importMessage: "CSV is empty ❌"),
+        );
+        return;
+      }
 
       // ===============================
-      // ✅ HEADER VALIDATION
+      // HEADER VALIDATION
       // ===============================
       final header = rows.first.map((e) => e.toString().trim()).toList();
 
-      final expected = [
+      const expected = [
         "action",
         "branch_name",
         "item_code",
@@ -986,63 +1012,126 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
             importSuccess: false,
           ),
         );
-
         return;
       }
 
-      if (rows.length <= 1) {
+      // ===============================
+      // FAST FETCH — branches + existing data at the same time
+      // ===============================
+      emit(state.copyWith(importMessage: "Validating..."));
+
+      final fetchResults = await Future.wait([
+        Supabase.instance.client
+            .from('branches')
+            .select('branch_name')
+            .eq('is_active', true),
+        Supabase.instance.client
+            .from('max_adj')
+            .select(
+              'branch_name, item_code, item_name, '
+              'current_demand_30d, max_adjustment_30d, '
+              'adjustment_type, reason, update_date, end_date, added_by',
+            ),
+      ]);
+
+      final branchesResult = fetchResults[0] as List;
+      final existingRaw = fetchResults[1] as List;
+
+      // ===============================
+      // BRANCH VALIDATION (memory only — instant)
+      // ===============================
+      final validBranches = branchesResult
+          .map((e) => (e['branch_name'] ?? '').toString().trim().toUpperCase())
+          .toSet();
+
+      final invalidBranches = <Map<String, dynamic>>[];
+
+      for (int r = 1; r < rows.length; r++) {
+        final row = rows[r];
+        if (row.length < 2) continue;
+        final branch = (row[1] ?? '').toString().trim();
+        if (!validBranches.contains(branch.toUpperCase())) {
+          invalidBranches.add({
+            'branch_name': branch,
+            'error': 'Branch not found',
+          });
+        }
+      }
+
+      if (invalidBranches.isNotEmpty) {
+        final exportRows = [
+          ['branch_name', 'error'],
+        ];
+        for (final e in invalidBranches) {
+          exportRows.add([e['branch_name'], e['error']]);
+        }
+        final csv = const ListToCsvConverter().convert(exportRows);
+        final bytes = Uint8List.fromList(utf8.encode(csv));
+        final blob = html.Blob([bytes]);
+        final url = html.Url.createObjectUrlFromBlob(blob);
+        html.AnchorElement(href: url)
+          ..setAttribute("download", "invalid_branches.csv")
+          ..click();
+        html.Url.revokeObjectUrl(url);
+
         emit(
-          state.copyWith(isImporting: false, importMessage: "CSV is empty ❌"),
+          state.copyWith(
+            isImporting: false,
+            importSuccess: false,
+            importMessage: "${invalidBranches.length} invalid branches found",
+          ),
         );
-
         return;
       }
 
-      final List<Map<String, dynamic>> conflicts = [];
-      final List<Map<String, dynamic>> errors = [];
+      // ===============================
+      // BUILD EXISTING MAP (existingRaw already in memory — no wait)
+      // ===============================
+      final Map<String, Map<String, dynamic>> existingMap = {
+        for (final e in existingRaw)
+          '${e['branch_name']}|${e['item_code']}': Map<String, dynamic>.from(e),
+      };
 
-      final total = rows.length - 1;
-
+      // ===============================
+      // BUILD LISTS
+      // ===============================
+      final rowsToImport = <Map<String, dynamic>>[];
+      final rowsToDelete = <Map<String, dynamic>>[];
+      final conflicts = <Map<String, dynamic>>[];
+      final errors = <Map<String, dynamic>>[];
       final updatedList = List<Map<String, dynamic>>.from(state.maxAdjustment);
+      final total = rows.length - 1;
 
       for (int i = 1; i < rows.length; i++) {
         final row = rows[i];
 
-        // ===============================
-        // VALIDATE COLUMN COUNT
-        // ===============================
-        if (row.length < 9) {
-          errors.add({"row": row, "error": "Invalid columns count"});
-
-          continue;
-        }
-
-        // ===============================
-        // ACTION
-        // ===============================
-        final action = (row[0]?.toString() ?? 'ADD').trim().toUpperCase();
-
-        // ===============================
-        // VALIDATE ACTION
-        // ===============================
-        if (!['ADD', 'UPDATE', 'DELETE'].contains(action)) {
-          errors.add({"row": row, "error": "Invalid action: $action"});
-
-          continue;
-        }
-
         try {
-          // ===============================
-          // READ DATA
-          // ===============================
-          final branch = (row[1]?.toString() ?? '').trim();
+          if (row.length < 9) {
+            errors.add({"row": row, "error": "Invalid columns count"});
+            continue;
+          }
 
-          final itemCode = (row[2]?.toString() ?? '').trim();
+          final action = (row[0] ?? '').toString().trim().toUpperCase();
+
+          if (!['ADD', 'UPDATE', 'DELETE'].contains(action)) {
+            errors.add({"row": row, "error": "Invalid action: $action"});
+            continue;
+          }
+
+          final branch = (row[1] ?? '').toString().trim();
+          final itemCode = (row[2] ?? '').toString().trim();
+          final key = '$branch|$itemCode';
+
+          if (action == 'DELETE') {
+            rowsToDelete.add({'branch_name': branch, 'item_code': itemCode});
+            updatedList.removeWhere(
+              (e) => e['item_code'] == itemCode && e['branch_name'] == branch,
+            );
+            continue;
+          }
 
           final current = num.tryParse("${row[4]}") ?? 0;
-
           final max = num.tryParse("${row[5]}") ?? 0;
-
           final type = max > current
               ? 'INCREASE'
               : max < current
@@ -1063,95 +1152,52 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
             'added_by': 'inventory',
           };
 
-          // ===============================
-          // DELETE
-          // ===============================
-          if (action == 'DELETE') {
-            await repo.deleteMaxAdjRow(itemCode: itemCode, branch: branch);
+          final existing = existingMap[key];
 
-            updatedList.removeWhere(
-              (e) => e['item_code'] == itemCode && e['branch_name'] == branch,
-            );
-
+          if (existing != null && !event.forceApply) {
+            conflicts.add({
+              'branch_name': branch,
+              'item_code': itemCode,
+              'item_name': data['item_name'],
+              'old_current_demand': existing['current_demand_30d'],
+              'old_max_adj': existing['max_adjustment_30d'],
+              'old_reason': existing['reason'],
+              'old_adjustment_type': existing['adjustment_type'],
+              'old_update_date': existing['update_date'],
+              'old_added_by': existing['added_by'],
+              'old_end_date': existing['end_date'],
+              'new_current_demand': data['current_demand_30d'],
+              'new_max_adj': data['max_adjustment_30d'],
+              'new_reason': data['reason'],
+              'new_adjustment_type': data['adjustment_type'],
+              'new_update_date': data['update_date'],
+              'new_added_by': data['added_by'],
+              'new_end_date': data['end_date'],
+            });
             continue;
           }
 
-          // ===============================
-          // CHECK EXIST
-          // ===============================
-          final exists = await repo.checkIfExists(
-            itemCode: itemCode,
-            branch: branch,
+          rowsToImport.add(data);
+
+          final index = updatedList.indexWhere(
+            (e) => e['item_code'] == itemCode && e['branch_name'] == branch,
           );
-
-          if (exists) {
-            final old = await repo.getMaxAdj(
-              itemCode: itemCode,
-              branch: branch,
-            );
-
-            conflicts.add({
-              "branch_name": branch,
-              "item_code": itemCode,
-              "item_name": data['item_name'],
-
-              /// OLD
-              "old_current_demand": old['current_demand_30d'],
-              "old_max_adj": old['max_adjustment_30d'],
-              "old_reason": old['reason'],
-              "old_adjustment_type": old['adjustment_type'],
-              "old_update_date": old['update_date'],
-              "old_added_by": old['added_by'],
-              "old_end_date": old['end_date'],
-
-              /// NEW
-              "new_current_demand": data['current_demand_30d'],
-              "new_max_adj": data['max_adjustment_30d'],
-              "new_reason": data['reason'],
-              "new_adjustment_type": data['adjustment_type'],
-              "new_update_date": data['update_date'],
-              "new_added_by": data['added_by'],
-              "new_end_date": data['end_date'],
-            });
-          }
-
-          // ===============================
-          // IMPORT
-          // ===============================
-          if (!exists || event.forceApply) {
-            final ok = await repo.importMaxAdjRow(
-              data: data,
-              forceApply: event.forceApply,
-            );
-
-            if (!ok) {
-              errors.add(data);
-            } else {
-              final index = updatedList.indexWhere(
-                (e) => e['item_code'] == itemCode && e['branch_name'] == branch,
-              );
-
-              if (index != -1) {
-                updatedList[index] = {...updatedList[index], ...data};
-              } else {
-                updatedList.add(data);
-              }
-            }
+          if (index != -1) {
+            updatedList[index] = {...updatedList[index], ...data};
+          } else {
+            updatedList.add(data);
           }
         } catch (e) {
           errors.add({"row": row, "error": e.toString()});
         }
 
-        emit(
-          state.copyWith(
-            importProgress: i / total,
-            importMessage: state.importMessage,
-          ),
-        );
+        if (i % 100 == 0) {
+          emit(state.copyWith(importProgress: i / total));
+        }
       }
 
       // ===============================
-      // EXPORT CONFLICTS
+      // EXPORT DUPLICATES
       // ===============================
       if (conflicts.isNotEmpty && !event.forceApply) {
         await MaxAdjExcelExporter.export(
@@ -1167,7 +1213,6 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
             importSuccess: false,
           ),
         );
-
         return;
       }
 
@@ -1178,17 +1223,27 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         await MaxAdjExcelExporter.export(rows: errors, includeHistory: false);
       }
 
-      final hasErrors = errors.isNotEmpty;
+      // ===============================
+      // FAST UPLOAD — delete + import at the same time
+      // ===============================
+      emit(state.copyWith(importMessage: "Uploading..."));
 
+      await Future.wait([
+        if (rowsToDelete.isNotEmpty) repo.deleteMaxAdjBulk(rowsToDelete),
+        if (rowsToImport.isNotEmpty) repo.importMaxAdjBulk(rowsToImport),
+      ]);
+
+      // ===============================
+      // FINISH
+      // ===============================
       emit(
         state.copyWith(
           isImporting: false,
           importProgress: 1,
-          importSuccess: !hasErrors,
-          importMessage: hasErrors
-              ? "Completed with ${errors.length} errors ❌"
-              : "Import completed successfully ✅",
-
+          importSuccess: errors.isEmpty,
+          importMessage: errors.isEmpty
+              ? "Import completed successfully ✅"
+              : "Completed with ${errors.length} errors ❌",
           maxAdjustment: updatedList,
           filteredMaxAdjustment: updatedList,
         ),
@@ -1327,18 +1382,26 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       }
 
       final file = result.files.single;
-      final content = String.fromCharCodes(file.bytes!);
 
-      final rows = const CsvToListConverter().convert(content);
+      String csvText;
 
-      /// ===============================
-      /// HEADER VALIDATION
-      /// ===============================
+      try {
+        csvText = utf8.decode(file.bytes!);
+      } catch (_) {
+        csvText = latin1.decode(file.bytes!);
+      }
+
+      final rows = const CsvToListConverter().convert(csvText);
+
+      if (rows.isEmpty) {
+        emit(state.copyWith(isImporting: false, importMessage: "CSV is empty"));
+        return;
+      }
+
       final header = rows.first.map((e) => e.toString().trim()).toList();
 
-      final expected = [
+      const expected = [
         "action",
-
         "branch_name",
         "item_code",
         "item_name",
@@ -1364,105 +1427,197 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         return;
       }
 
+      /// ==================================
+      /// VALIDATE BRANCHES
+      /// ==================================
+
+      final branchesResult = await Supabase.instance.client
+          .from('branches')
+          .select('branch_name')
+          .eq('is_active', true);
+
+      final validBranches = branchesResult
+          .map((e) => (e['branch_name'] ?? '').toString().trim().toUpperCase())
+          .toSet();
+
+      final invalidBranches = <Map<String, dynamic>>[];
+
+      for (int r = 1; r < rows.length; r++) {
+        final row = rows[r];
+
+        if (row.length < 2) continue;
+
+        final branch = (row[1] ?? '').toString().trim();
+
+        if (!validBranches.contains(branch.toUpperCase())) {
+          invalidBranches.add({
+            'branch_name': branch,
+            'error': 'Branch not found',
+          });
+        }
+      }
+
+      if (invalidBranches.isNotEmpty) {
+        final exportRows = [
+          ['branch_name', 'error'],
+        ];
+
+        for (final e in invalidBranches) {
+          exportRows.add([e['branch_name'], e['error']]);
+        }
+
+        final csv = const ListToCsvConverter().convert(exportRows);
+
+        final bytes = Uint8List.fromList(utf8.encode(csv));
+
+        final blob = html.Blob([bytes]);
+
+        final url = html.Url.createObjectUrlFromBlob(blob);
+
+        html.AnchorElement(href: url)
+          ..setAttribute("download", "invalid_branches.csv")
+          ..click();
+
+        html.Url.revokeObjectUrl(url);
+
+        emit(
+          state.copyWith(
+            isImporting: false,
+            importSuccess: false,
+            importMessage: "${invalidBranches.length} invalid branches found",
+          ),
+        );
+
+        return;
+      }
+
+      /// ==================================
+      /// LOAD CURRENT ASSORTMENT
+      /// ==================================
+
+      final existingRows = await repo.fetchAssortment();
+
+      final Map<String, Map<String, dynamic>> existingMap = {
+        for (final e in existingRows)
+          '${e['branch_name']}|${e['item_code']}': e,
+      };
+
+      /// ==================================
+      /// BUILD LISTS
+      /// ==================================
+
+      final rowsToImport = <Map<String, dynamic>>[];
+
+      final rowsToDelete = <Map<String, dynamic>>[];
+
+      final conflicts = <Map<String, dynamic>>[];
+
+      final errors = <Map<String, dynamic>>[];
+
+      final updatedList = List<Map<String, dynamic>>.from(state.assortment);
+
       final total = rows.length - 1;
 
-      final List<Map<String, dynamic>> conflicts = [];
-      final List<Map<String, dynamic>> errors = [];
-
-      final List<Map<String, dynamic>> updatedList = List.from(
-        state.assortment,
-      );
+      /// ==================================
+      /// LOOP
+      /// ==================================
 
       for (int i = 1; i < rows.length; i++) {
         final row = rows[i];
-        if (row.length < 9) {
-          errors.add({"row": row, "error": "Invalid columns count"});
 
-          continue;
-        }
-        final action = (row[0]?.toString() ?? 'ADD').trim().toUpperCase();
-        if (!['ADD', 'UPDATE', 'DELETE'].contains(action)) {
-          errors.add({"row": row, "error": "Invalid action: $action"});
-
-          continue;
-        }
         try {
-          final branch = (row[1]?.toString() ?? '').trim();
-          final itemCode = (row[2]?.toString() ?? '').trim();
+          if (row.length < 9) {
+            errors.add({"row": row, "error": "Invalid columns count"});
+            continue;
+          }
+
+          final action = (row[0] ?? '').toString().trim().toUpperCase();
+
+          if (!['ADD', 'UPDATE', 'DELETE'].contains(action)) {
+            errors.add({"row": row, "error": "Invalid action: $action"});
+            continue;
+          }
+
+          final branch = (row[1] ?? '').toString().trim();
+
+          final itemCode = (row[2] ?? '').toString().trim();
+
+          final itemName = row[3]?.toString() ?? '';
+
+          final key = '$branch|$itemCode';
+
+          /// ==========================
+          /// DELETE
+          /// ==========================
+
+          if (action == 'DELETE') {
+            rowsToDelete.add({'branch_name': branch, 'item_code': itemCode});
+
+            updatedList.removeWhere(
+              (e) => e['item_code'] == itemCode && e['branch_name'] == branch,
+            );
+
+            continue;
+          }
 
           final data = {
             'branch_name': branch,
             'item_code': itemCode,
-            'item_name': row[3]?.toString(),
-            'reason': row[4]?.toString(),
+            'item_name': itemName,
+            'reason': row[4]?.toString() ?? '',
             'assortment_qty': num.tryParse("${row[5]}") ?? 0,
-            'assortment_by': row[6]?.toString(),
+            'assortment_by': row[6]?.toString() ?? '',
             'assortment_start': _parseDate(row[7]),
             'assortment_end': _parseDate(row[8]),
           };
-          if (action == 'DELETE') {
-            await repo.deleteAssortmentRow(itemCode: itemCode, branch: branch);
-            updatedList.removeWhere(
-              (e) => e['item_code'] == itemCode && e['branch_name'] == branch,
-            );
+
+          /// ==========================
+          /// DUPLICATES
+          /// ==========================
+
+          final existing = existingMap[key];
+
+          if (existing != null && !event.forceApply) {
+            conflicts.add({
+              'branch_name': branch,
+              'item_code': itemCode,
+              'item_name': itemName,
+
+              /// OLD
+              'old_qty': existing['assortment_qty'],
+              'old_reason': existing['reason'],
+
+              /// NEW
+              'new_qty': data['assortment_qty'],
+              'new_reason': data['reason'],
+            });
+
             continue;
           }
 
-          /// 🔥 CHECK EXIST
-          final existing = await Supabase.instance.client
-              .from('assortment')
-              .select()
-              .eq('item_code', itemCode)
-              .eq('branch_name', branch);
+          rowsToImport.add(data);
 
-          if (existing.isNotEmpty) {
-            conflicts.add({
-              "branch_name": branch,
-              "item_code": itemCode,
-              "item_name": data['item_name'],
+          final index = updatedList.indexWhere(
+            (e) => e['item_code'] == itemCode && e['branch_name'] == branch,
+          );
 
-              /// 🔴 OLD
-              "old_qty": existing.first['assortment_qty'],
-              "old_reason": existing.first['reason'],
-              "old_by": existing.first['assortment_by'],
-              "old_start": existing.first['assortment_start'],
-              "old_end": existing.first['assortment_end'],
-
-              /// 🟢 NEW
-              "new_qty": data['assortment_qty'],
-              "new_reason": data['reason'],
-              "new_by": data['assortment_by'],
-              "new_start": data['assortment_start'],
-              "new_end": data['assortment_end'],
-            });
-          }
-
-          if (existing.isEmpty || event.forceApply) {
-            final ok = await repo.importAssortmentRow(
-              data: data,
-              forceApply: event.forceApply,
-            );
-
-            if (!ok) {
-              errors.add(data);
-            } else {
-              final index = updatedList.indexWhere(
-                (e) => e['item_code'] == itemCode && e['branch_name'] == branch,
-              );
-
-              if (index != -1) {
-                updatedList[index] = {...updatedList[index], ...data};
-              } else {
-                updatedList.add(data);
-              }
-            }
+          if (index != -1) {
+            updatedList[index] = {...updatedList[index], ...data};
+          } else {
+            updatedList.add(data);
           }
         } catch (e) {
           errors.add({"row": row, "error": e.toString()});
         }
 
-        emit(state.copyWith(importProgress: i / total));
+        if (i % 100 == 0) {
+          emit(state.copyWith(importProgress: i / total));
+        }
       }
+
+      /// ==================================
+      /// EXPORT DUPLICATES
+      /// ==================================
 
       if (conflicts.isNotEmpty && !event.forceApply) {
         await AssortmentExcelExporter.export(
@@ -1473,31 +1628,45 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         emit(
           state.copyWith(
             isImporting: false,
+            importSuccess: false,
             importMessage:
                 "Found ${conflicts.length} duplicates ⚠️ (file downloaded)",
-            importSuccess: false,
           ),
         );
 
         return;
       }
 
-      if (errors.isNotEmpty) {
-        await AssortmentExcelExporter.export(
-          rows: errors,
-          includeHistory: false,
-        );
+      emit(state.copyWith(importMessage: "Uploading..."));
+
+      /// ==================================
+      /// DELETE
+      /// ==================================
+
+      if (rowsToDelete.isNotEmpty) {
+        await repo.deleteAssortmentBulk(rowsToDelete);
       }
+
+      /// ==================================
+      /// IMPORT
+      /// ==================================
+
+      if (rowsToImport.isNotEmpty) {
+        await repo.importAssortmentBulk(rowsToImport);
+      }
+
+      /// ==================================
+      /// FINISH
+      /// ==================================
 
       emit(
         state.copyWith(
           isImporting: false,
           importProgress: 1,
           importSuccess: errors.isEmpty,
-          importMessage: errors.isNotEmpty
-              ? "Completed with ${errors.length} errors ❌"
-              : "Import completed successfully ✅",
-
+          importMessage: errors.isEmpty
+              ? "Import completed successfully ✅"
+              : "Completed with ${errors.length} errors ❌",
           assortment: updatedList,
           filteredAssortment: updatedList,
         ),
@@ -1506,8 +1675,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       emit(
         state.copyWith(
           isImporting: false,
-          importMessage: "Error: $e",
           importSuccess: false,
+          importMessage: "Error: $e",
         ),
       );
     }
@@ -1635,18 +1804,28 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       }
 
       final file = result.files.single;
-      final content = String.fromCharCodes(file.bytes!);
 
-      final rows = const CsvToListConverter().convert(content);
+      String csvText;
+      try {
+        csvText = utf8.decode(file.bytes!);
+      } catch (_) {
+        csvText = latin1.decode(file.bytes!);
+      }
 
-      /// ===============================
-      /// HEADER VALIDATION
-      /// ===============================
+      final rows = const CsvToListConverter().convert(csvText);
+
+      if (rows.isEmpty) {
+        emit(state.copyWith(isImporting: false, importMessage: "CSV is empty"));
+        return;
+      }
+
+      // ===============================
+      // HEADER VALIDATION
+      // ===============================
       final header = rows.first.map((e) => e.toString().trim()).toList();
 
-      final expected = [
+      const expected = [
         "action",
-
         "branch_name",
         "item_code",
         "item_name",
@@ -1670,130 +1849,215 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         return;
       }
 
-      final total = rows.length - 1;
+      // ===============================
+      // VALIDATE BRANCHES
+      // ===============================
+      final branchesResult = await Supabase.instance.client
+          .from('branches')
+          .select('branch_name')
+          .eq('is_active', true);
 
-      final List<Map<String, dynamic>> conflicts = [];
-      final List<Map<String, dynamic>> errors = [];
+      final validBranches = branchesResult
+          .map((e) => (e['branch_name'] ?? '').toString().trim().toUpperCase())
+          .toSet();
 
+      final invalidBranches = <Map<String, dynamic>>[];
+
+      for (int r = 1; r < rows.length; r++) {
+        final row = rows[r];
+        if (row.length < 2) continue;
+        final branch = (row[1] ?? '').toString().trim();
+        if (!validBranches.contains(branch.toUpperCase())) {
+          invalidBranches.add({
+            'branch_name': branch,
+            'error': 'Branch not found',
+          });
+        }
+      }
+
+      if (invalidBranches.isNotEmpty) {
+        final exportRows = [
+          ['branch_name', 'error'],
+        ];
+        for (final e in invalidBranches) {
+          exportRows.add([e['branch_name'], e['error']]);
+        }
+
+        final csv = const ListToCsvConverter().convert(exportRows);
+        final bytes = Uint8List.fromList(utf8.encode(csv));
+        final blob = html.Blob([bytes]);
+        final url = html.Url.createObjectUrlFromBlob(blob);
+
+        html.AnchorElement(href: url)
+          ..setAttribute("download", "invalid_branches.csv")
+          ..click();
+        html.Url.revokeObjectUrl(url);
+
+        emit(
+          state.copyWith(
+            isImporting: false,
+            importSuccess: false,
+            importMessage: "${invalidBranches.length} invalid branches found",
+          ),
+        );
+        return;
+      }
+
+      // ===============================
+      // LOAD EXISTING TMA — only needed columns (faster than SELECT *)
+      // ===============================
+      final existingRaw = await Supabase.instance.client
+          .from('tma')
+          .select(
+            'branch_name, item_code, qty_per_duration, start_date, end_date',
+          );
+
+      final Map<String, Map<String, dynamic>> existingMap = {
+        for (final e in existingRaw)
+          '${e['branch_name']}|${e['item_code']}': Map<String, dynamic>.from(e),
+      };
+
+      // ===============================
+      // BUILD LISTS
+      // ===============================
+      final rowsToImport = <Map<String, dynamic>>[];
+      final rowsToDelete = <Map<String, dynamic>>[];
+      final conflicts = <Map<String, dynamic>>[];
+      final errors = <Map<String, dynamic>>[];
       final updatedList = List<Map<String, dynamic>>.from(state.tma);
+      final total = rows.length - 1;
 
       for (int i = 1; i < rows.length; i++) {
         final row = rows[i];
-        if (row.length < 7) {
-          errors.add({"row": row, "error": "Invalid columns count"});
-
-          continue;
-        }
-        final action = (row[0]?.toString() ?? 'ADD').trim().toUpperCase();
-
-        if (!['ADD', 'UPDATE', 'DELETE'].contains(action)) {
-          errors.add({"row": row, "error": "Invalid action: $action"});
-
-          continue;
-        }
 
         try {
-          final branch = (row[1]?.toString() ?? '').trim();
-          final itemCode = (row[2]?.toString() ?? '').trim();
+          if (row.length < 7) {
+            errors.add({"row": row, "error": "Invalid columns count"});
+            continue;
+          }
 
-          final data = {
-            'branch_name': branch,
-            'item_code': itemCode,
-            'item_name': row[3]?.toString(),
-            'qty_per_duration': num.tryParse("${row[4]}") ?? 0,
-            'start_date': _parseDate(row[5]),
-            'end_date': _parseDate(row[6]),
-          };
+          final action = (row[0] ?? '').toString().trim().toUpperCase();
+
+          if (!['ADD', 'UPDATE', 'DELETE'].contains(action)) {
+            errors.add({"row": row, "error": "Invalid action: $action"});
+            continue;
+          }
+
+          final branch = (row[1] ?? '').toString().trim();
+          final itemCode = (row[2] ?? '').toString().trim();
+          final key = '$branch|$itemCode';
+
+          // ==========================
+          // DELETE
+          // ==========================
           if (action == 'DELETE') {
-            await repo.deleteTmaRow(itemCode: itemCode, branch: branch);
+            rowsToDelete.add({'branch_name': branch, 'item_code': itemCode});
             updatedList.removeWhere(
               (e) => e['item_code'] == itemCode && e['branch_name'] == branch,
             );
             continue;
           }
 
-          /// 🔥 CHECK EXIST
-          final existing = await Supabase.instance.client
-              .from('tma')
-              .select()
-              .eq('item_code', itemCode)
-              .eq('branch_name', branch);
+          final data = {
+            'branch_name': branch,
+            'item_code': itemCode,
+            'item_name': row[3]?.toString() ?? '',
+            'qty_per_duration': num.tryParse("${row[4]}") ?? 0,
+            'start_date': _parseDate(row[5]),
+            'end_date': _parseDate(row[6]),
+          };
 
-          if (existing.isNotEmpty) {
+          // ==========================
+          // DUPLICATES
+          // ==========================
+          final existing = existingMap[key];
+
+          if (existing != null && !event.forceApply) {
             conflicts.add({
-              "branch_name": branch,
-              "item_code": itemCode,
-              "item_name": data['item_name'],
-
-              /// OLD
-              "old_qty": existing.first['qty_per_duration'],
-              "old_start": existing.first['start_date'],
-              "old_end": existing.first['end_date'],
-
-              /// NEW
-              "new_qty": data['qty_per_duration'],
-              "new_start": data['start_date'],
-              "new_end": data['end_date'],
+              'branch_name': branch,
+              'item_code': itemCode,
+              'item_name': data['item_name'],
+              'old_qty': existing['qty_per_duration'],
+              'old_start': existing['start_date'],
+              'old_end': existing['end_date'],
+              'new_qty': data['qty_per_duration'],
+              'new_start': data['start_date'],
+              'new_end': data['end_date'],
             });
+            continue;
           }
 
-          if (existing.isEmpty || event.forceApply) {
-            final ok = await repo.importTmaRow(
-              data: data,
-              forceApply: event.forceApply,
-            );
+          rowsToImport.add(data);
 
-            if (!ok) {
-              errors.add(data);
-            } else {
-              final index = updatedList.indexWhere(
-                (e) => e['item_code'] == itemCode && e['branch_name'] == branch,
-              );
+          final index = updatedList.indexWhere(
+            (e) => e['item_code'] == itemCode && e['branch_name'] == branch,
+          );
 
-              if (index != -1) {
-                updatedList[index] = {...updatedList[index], ...data};
-              } else {
-                updatedList.add(data);
-              }
-            }
+          if (index != -1) {
+            updatedList[index] = {...updatedList[index], ...data};
+          } else {
+            updatedList.add(data);
           }
         } catch (e) {
           errors.add({"row": row, "error": e.toString()});
         }
 
-        emit(state.copyWith(importProgress: i / total));
+        if (i % 100 == 0) {
+          emit(state.copyWith(importProgress: i / total));
+        }
       }
 
-      /// 🔥 conflicts
+      // ===============================
+      // EXPORT DUPLICATES
+      // ===============================
       if (conflicts.isNotEmpty && !event.forceApply) {
         await TmaExcelExporter.export(rows: conflicts, includeHistory: false);
 
         emit(
           state.copyWith(
             isImporting: false,
+            importSuccess: false,
             importMessage:
                 "Found ${conflicts.length} duplicates ⚠️ (file downloaded)",
-            importSuccess: false,
           ),
         );
-
         return;
       }
 
-      /// 🔥 errors
+      // ===============================
+      // EXPORT ERRORS
+      // ===============================
       if (errors.isNotEmpty) {
         await TmaExcelExporter.export(rows: errors, includeHistory: false);
       }
 
+      emit(state.copyWith(importMessage: "Uploading..."));
+
+      // ===============================
+      // DELETE
+      // ===============================
+      if (rowsToDelete.isNotEmpty) {
+        await repo.deleteTmaBulk(rowsToDelete);
+      }
+
+      // ===============================
+      // IMPORT
+      // ===============================
+      if (rowsToImport.isNotEmpty) {
+        await repo.importTmaBulk(rowsToImport);
+      }
+
+      // ===============================
+      // FINISH
+      // ===============================
       emit(
         state.copyWith(
           isImporting: false,
           importProgress: 1,
           importSuccess: errors.isEmpty,
-          importMessage: errors.isNotEmpty
-              ? "Completed with ${errors.length} errors ❌"
-              : "Import completed successfully ✅",
-
+          importMessage: errors.isEmpty
+              ? "Import completed successfully ✅"
+              : "Completed with ${errors.length} errors ❌",
           tma: updatedList,
           filteredTma: updatedList,
         ),
@@ -1843,13 +2107,10 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     try {
       emit(state.copyWith(isExporting: true));
 
-      /// 🔥 CSV فقط (خفيف جداً)
       final csv = await repo.fetchFormularyLogExportCsv();
 
-      /// 🔥 تحويل CSV → rows
       final lines = csv.split('\n');
 
-      /// حذف header
       if (lines.isNotEmpty) {
         lines.removeAt(0);
       }
@@ -2275,61 +2536,26 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     LoadOrdersPage event,
     Emitter<InventoryState> emit,
   ) async {
-    const pageSize = 50000;
+    // Pure local slice — zero network calls, instant page flip
+    const pageSize = 1000;
 
-    final start = event.page * pageSize;
-
-    final end = start + pageSize;
-
-    // =====================================
-    // LOADING OVERLAY ONLY
-    // =====================================
-
-    emit(state.copyWith(isOrdersLoading: true));
-
-    // =====================================
-    // CACHE AVAILABLE
-    // =====================================
-
-    if (state.cachedOrders.length >= end) {
-      final rows = state.cachedOrders.sublist(
-        start,
-        end > state.cachedOrders.length ? state.cachedOrders.length : end,
-      );
-
-      emit(
-        state.copyWith(
-          allOrders: rows,
-          currentOrdersPage: event.page,
-          hasMorePages: end < state.cachedOrders.length || !state.allDataLoaded,
-          isOrdersLoading: false,
-        ),
-      );
-
-      return;
-    }
-
-    // =====================================
-    // SERVER FETCH
-    // =====================================
-
-    final data = await repo.fetchOrdersPage(
-      runDate: event.runDate,
-      from: start,
-      to: end - 1,
+    final total = state.cachedOrders.length;
+    final page = event.page.clamp(
+      0,
+      ((total / pageSize).ceil() - 1).clamp(0, 999999),
     );
 
-    final rows = data.map((e) => DailyOrderRow.fromMap(e)).toList();
+    final start = page * pageSize;
+    final end = (start + pageSize).clamp(0, total);
 
-    final updatedCache = List<DailyOrderRow>.from(state.cachedOrders)
-      ..addAll(rows);
+    final pageRows = total == 0
+        ? <DailyOrderRow>[]
+        : state.cachedOrders.sublist(start, end);
 
     emit(
       state.copyWith(
-        cachedOrders: updatedCache,
-        allOrders: rows,
-        currentOrdersPage: event.page,
-        hasMorePages: rows.length == pageSize,
+        currentOrdersPage: page,
+        hasMorePages: false,
         isOrdersLoading: false,
       ),
     );
