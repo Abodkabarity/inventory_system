@@ -6,4 +6,6 @@ enum InventoryPageType {
   assortment,
   dailyOrder,
   tma,
+
+  additionalOrderAnalysis,
 }

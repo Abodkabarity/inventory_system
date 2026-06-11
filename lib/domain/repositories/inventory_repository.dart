@@ -138,4 +138,8 @@ abstract class InventoryRepository {
   Future<void> deleteTmaBulk(List<Map<String, dynamic>> rows);
   Future<void> importMaxAdjBulk(List<Map<String, dynamic>> rows);
   Future<void> deleteMaxAdjBulk(List<Map<String, dynamic>> rows);
+  Future<Map<String, dynamic>> fetchAdditionalOrderAnalysis({
+    required DateTime from,
+    required DateTime to,
+  });
 }

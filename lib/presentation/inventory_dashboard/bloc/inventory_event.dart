@@ -309,3 +309,13 @@ class LoadOrdersPage extends InventoryEvent {
   @override
   List<Object?> get props => [runDate, page];
 }
+
+class LoadAdditionalOrderAnalysis extends InventoryEvent {
+  final DateTime from;
+  final DateTime to;
+
+  LoadAdditionalOrderAnalysis({required this.from, required this.to});
+
+  @override
+  List<Object?> get props => [from, to];
+}

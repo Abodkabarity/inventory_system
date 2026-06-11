@@ -509,4 +509,18 @@ store_item_classifications
 
     return List<Map<String, dynamic>>.from(result);
   }
+
+  Future<Map<String, dynamic>> fetchAdditionalOrderAnalysis({
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final result = await client.rpc(
+      'get_additional_order_analysis',
+      params: {'p_from': from.toIso8601String(), 'p_to': to.toIso8601String()},
+    );
+
+    if (result == null) return {};
+
+    return Map<String, dynamic>.from(result as Map);
+  }
 }

@@ -948,4 +948,12 @@ class InventoryRepositoryImpl implements InventoryRepository {
   }) {
     return remote.searchOrders(runDate: runDate, query: query);
   }
+
+  @override
+  Future<Map<String, dynamic>> fetchAdditionalOrderAnalysis({
+    required DateTime from,
+    required DateTime to,
+  }) {
+    return remote.fetchAdditionalOrderAnalysis(from: from, to: to);
+  }
 }

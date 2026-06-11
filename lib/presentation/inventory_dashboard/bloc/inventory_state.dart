@@ -18,7 +18,7 @@ class InventoryState extends Equatable {
   final Map<String, int> additionalTodayBranchExactCount;
 
   final List<AdditionalRequestGroup> additionalRequests;
-
+  final Map<String, dynamic> additionalAnalysis;
   final Map<String, double> mismatchColumnWidths;
 
   final int submittedCount;
@@ -213,6 +213,7 @@ class InventoryState extends Equatable {
     this.bulkSuccess,
     required this.isLoading,
     required this.hasMorePages,
+    required this.additionalAnalysis,
   });
 
   factory InventoryState.initial() {
@@ -234,6 +235,7 @@ class InventoryState extends Equatable {
         'history': 140,
       },
       submittedCount: 0,
+      additionalAnalysis: {},
       isHistoryLoading: false,
       isMismatchRealtimeStarted: false,
       formulary: [],
@@ -323,6 +325,7 @@ class InventoryState extends Equatable {
     List<Map<String, dynamic>>? tmaHistory,
     String? mismatchSearch,
     bool? isImporting,
+    Map<String, dynamic>? additionalAnalysis,
     bool? hasMorePages,
     double? importProgress,
     bool? isExporting,
@@ -432,6 +435,7 @@ class InventoryState extends Equatable {
       maxAdjustment: maxAdjustment ?? this.maxAdjustment,
       filteredMaxAdjustment:
           filteredMaxAdjustment ?? this.filteredMaxAdjustment,
+      additionalAnalysis: additionalAnalysis ?? this.additionalAnalysis,
       maxAdjSearch: maxAdjSearch ?? this.maxAdjSearch,
       maxAdjHistory: maxAdjHistory ?? this.maxAdjHistory,
       additionalMonthCount: additionalMonthCount ?? this.additionalMonthCount,
@@ -514,6 +518,7 @@ class InventoryState extends Equatable {
     allChanges,
     trackerSearch,
     trackerBranch,
+    additionalAnalysis,
     editsCount,
     additionalTodayBranchCount,
     isBulkLoading,
