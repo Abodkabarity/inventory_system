@@ -40,7 +40,10 @@ abstract class InventoryRepository {
   });
   Future<void> approveAllInventory(List<Map<String, dynamic>> items);
   Future<void> storeApprove(List<Map<String, dynamic>> items);
-  Future<List<Map<String, dynamic>>> fetchAllOrders(String runDate);
+  Future<List<Map<String, dynamic>>> fetchAllOrders(
+    String runDate, {
+    void Function(int loaded)? onProgress,
+  });
   Future<List<Map<String, dynamic>>> fetchBranchAllChanges(String branch);
   Future<List<Map<String, dynamic>>> fetchMaxAdjustment();
   Future<List<Map<String, dynamic>>> fetchMaxAdjustmentHistory(
@@ -128,4 +131,11 @@ abstract class InventoryRepository {
     required String runDate,
     required String query,
   });
+  Future<void> importAssortmentBulk(List<Map<String, dynamic>> rows);
+  Future<void> deleteAssortmentBulk(List<Map<String, dynamic>> rows);
+  Future<void> importTmaBulk(List<Map<String, dynamic>> rows);
+
+  Future<void> deleteTmaBulk(List<Map<String, dynamic>> rows);
+  Future<void> importMaxAdjBulk(List<Map<String, dynamic>> rows);
+  Future<void> deleteMaxAdjBulk(List<Map<String, dynamic>> rows);
 }

@@ -217,8 +217,14 @@ class InventoryRepositoryImpl implements InventoryRepository {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> fetchAllOrders(String runDate) {
-    return remote.fetchOrdersAllInventory(runDate: runDate);
+  Future<List<Map<String, dynamic>>> fetchAllOrders(
+    String runDate, {
+    void Function(int loaded)? onProgress,
+  }) {
+    return remote.fetchOrdersAllInventory(
+      runDate: runDate,
+      onProgress: onProgress,
+    );
   }
 
   @override
@@ -515,10 +521,15 @@ class InventoryRepositoryImpl implements InventoryRepository {
         'item_code': itemCode,
         'branch_name': branch,
       });
-
+      print("INSERTING ASSORTMENT");
+      print(data);
       return true;
     } catch (e) {
-      print("ImportAssortment ERROR: $e");
+      print("=================================");
+      print("IMPORT ASSORTMENT ERROR");
+      print(e);
+      print("DATA = $data");
+      print("=================================");
       return false;
     }
   }
@@ -531,6 +542,16 @@ class InventoryRepositoryImpl implements InventoryRepository {
         .order('created_at', ascending: false);
 
     return List<Map<String, dynamic>>.from(res);
+  }
+
+  @override
+  Future<void> importAssortmentBulk(List<Map<String, dynamic>> rows) {
+    return remote.importAssortmentBulk(rows);
+  }
+
+  @override
+  Future<void> deleteAssortmentBulk(List<Map<String, dynamic>> rows) {
+    return remote.deleteAssortmentBulk(rows);
   }
 
   @override
@@ -614,6 +635,16 @@ class InventoryRepositoryImpl implements InventoryRepository {
     print("TOTAL tma_log: ${all.length}");
 
     return all;
+  }
+
+  @override
+  Future<void> importTmaBulk(List<Map<String, dynamic>> rows) {
+    return remote.importTmaBulk(rows);
+  }
+
+  @override
+  Future<void> deleteTmaBulk(List<Map<String, dynamic>> rows) {
+    return remote.deleteTmaBulk(rows);
   }
 
   @override
@@ -898,6 +929,16 @@ class InventoryRepositoryImpl implements InventoryRepository {
     required int to,
   }) {
     return remote.fetchOrdersPage(runDate: runDate, from: from, to: to);
+  }
+
+  @override
+  Future<void> importMaxAdjBulk(List<Map<String, dynamic>> rows) {
+    return remote.importMaxAdjBulk(rows);
+  }
+
+  @override
+  Future<void> deleteMaxAdjBulk(List<Map<String, dynamic>> rows) {
+    return remote.deleteMaxAdjBulk(rows);
   }
 
   @override
