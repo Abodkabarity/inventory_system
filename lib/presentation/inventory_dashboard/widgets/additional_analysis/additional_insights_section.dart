@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'glass_container.dart';
 
@@ -28,7 +29,7 @@ class AdditionalInsightsSection extends StatelessWidget {
         const Text(
           'Additional Insights',
           style: TextStyle(
-            color: Colors.white,
+            color: Color(0xff1E293B), // was: Colors.white
             fontSize: 20,
             fontWeight: FontWeight.bold,
           ),
@@ -58,10 +59,10 @@ class AdditionalInsightsSection extends StatelessWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(flex: 1, child: _TopUsersCard(users: topUsers)),
-            const SizedBox(width: 24),
-            Expanded(
-              flex: 2,
+            /* Expanded(flex: 1, child: _TopUsersCard(users: topUsers)),
+            const SizedBox(width: 24),*/
+            SizedBox(
+              width: 800.w,
               child: _BranchPerformanceCard(branches: branchPerf),
             ),
           ],
@@ -107,7 +108,7 @@ class _ReasonsCard extends StatelessWidget {
                           child: Text(
                             r['reason']?.toString() ?? 'Unknown',
                             style: const TextStyle(
-                              color: Colors.white,
+                              color: Color(0xff1E293B), // was: Colors.white
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -116,7 +117,7 @@ class _ReasonsCard extends StatelessWidget {
                         Text(
                           '${r['count']}  •  ${pct.toStringAsFixed(1)}%',
                           style: const TextStyle(
-                            color: Colors.white54,
+                            color: Color(0xff64748B), // was: Colors.white54
                             fontSize: 12,
                           ),
                         ),
@@ -128,7 +129,9 @@ class _ReasonsCard extends StatelessWidget {
                       child: LinearProgressIndicator(
                         value: (pct / 100).clamp(0.0, 1.0),
                         minHeight: 6,
-                        backgroundColor: const Color(0xff374151),
+                        backgroundColor: const Color(
+                          0xffE2E8F0,
+                        ), // was: Color(0xff374151)
                         color: const Color(0xffF59E0B),
                       ),
                     ),
@@ -208,7 +211,7 @@ class _StatusCard extends StatelessWidget {
                           child: Text(
                             label,
                             style: const TextStyle(
-                              color: Colors.white,
+                              color: Color(0xff1E293B), // was: Colors.white
                               fontSize: 13,
                             ),
                           ),
@@ -227,7 +230,7 @@ class _StatusCard extends StatelessWidget {
                           child: Text(
                             '${pct.toStringAsFixed(1)}%',
                             style: const TextStyle(
-                              color: Colors.white38,
+                              color: Color(0xff94A3B8), // was: Colors.white38
                               fontSize: 12,
                             ),
                             textAlign: TextAlign.right,
@@ -241,7 +244,9 @@ class _StatusCard extends StatelessWidget {
                       child: LinearProgressIndicator(
                         value: (pct / 100).clamp(0.0, 1.0),
                         minHeight: 5,
-                        backgroundColor: const Color(0xff374151),
+                        backgroundColor: const Color(
+                          0xffE2E8F0,
+                        ), // was: Color(0xff374151)
                         color: color,
                       ),
                     ),
@@ -286,7 +291,7 @@ class _ZoneCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xff1F2937),
+                color: const Color(0xffF1F5F9), // was: Color(0xff1F2937)
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Row(
@@ -296,7 +301,7 @@ class _ZoneCard extends StatelessWidget {
                     child: Text(
                       'Zone',
                       style: TextStyle(
-                        color: Colors.white60,
+                        color: Color(0xff64748B), // was: Colors.white60
                         fontWeight: FontWeight.bold,
                         fontSize: 12,
                       ),
@@ -306,7 +311,7 @@ class _ZoneCard extends StatelessWidget {
                     child: Text(
                       'Requests',
                       style: TextStyle(
-                        color: Colors.white60,
+                        color: Color(0xff64748B), // was: Colors.white60
                         fontWeight: FontWeight.bold,
                         fontSize: 12,
                       ),
@@ -317,7 +322,7 @@ class _ZoneCard extends StatelessWidget {
                     child: Text(
                       'Qty',
                       style: TextStyle(
-                        color: Colors.white60,
+                        color: Color(0xff64748B), // was: Colors.white60
                         fontWeight: FontWeight.bold,
                         fontSize: 12,
                       ),
@@ -328,7 +333,7 @@ class _ZoneCard extends StatelessWidget {
                     child: Text(
                       'Approval %',
                       style: TextStyle(
-                        color: Colors.white60,
+                        color: Color(0xff64748B), // was: Colors.white60
                         fontWeight: FontWeight.bold,
                         fontSize: 12,
                       ),
@@ -354,8 +359,9 @@ class _ZoneCard extends StatelessWidget {
                 ),
                 margin: const EdgeInsets.only(bottom: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xff111827),
+                  color: const Color(0xffF8FAFC), // was: Color(0xff111827)
                   borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xffE2E8F0)), // added
                 ),
                 child: Row(
                   children: [
@@ -364,7 +370,7 @@ class _ZoneCard extends StatelessWidget {
                       child: Text(
                         z['zone']?.toString() ?? '—',
                         style: const TextStyle(
-                          color: Colors.white,
+                          color: Color(0xff1E293B), // was: Colors.white
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -470,7 +476,7 @@ class _PurchaseTypeCard extends StatelessWidget {
                 ),
                 margin: const EdgeInsets.only(bottom: 8),
                 decoration: BoxDecoration(
-                  color: const Color(0xff111827),
+                  color: const Color(0xffF8FAFC), // was: Color(0xff111827)
                   borderRadius: BorderRadius.circular(10),
                   border: Border(left: BorderSide(color: color, width: 3)),
                 ),
@@ -480,7 +486,7 @@ class _PurchaseTypeCard extends StatelessWidget {
                       child: Text(
                         t['type']?.toString() ?? 'Unknown',
                         style: const TextStyle(
-                          color: Colors.white,
+                          color: Color(0xff1E293B), // was: Colors.white
                           fontWeight: FontWeight.w500,
                         ),
                         overflow: TextOverflow.ellipsis,
@@ -522,7 +528,7 @@ class _PurchaseTypeCard extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // TOP USERS CARD
 // ─────────────────────────────────────────────────────────────────────────────
-class _TopUsersCard extends StatelessWidget {
+/*class _TopUsersCard extends StatelessWidget {
   final List<Map<String, dynamic>> users;
   const _TopUsersCard({required this.users});
 
@@ -552,7 +558,7 @@ class _TopUsersCard extends StatelessWidget {
                   ? const Color(0xff9CA3AF)
                   : i == 2
                   ? const Color(0xffB45309)
-                  : const Color(0xff4B5563);
+                  : const Color(0xff94A3B8); // was: Color(0xff4B5563)
 
               return Container(
                 padding: const EdgeInsets.symmetric(
@@ -561,8 +567,9 @@ class _TopUsersCard extends StatelessWidget {
                 ),
                 margin: const EdgeInsets.only(bottom: 6),
                 decoration: BoxDecoration(
-                  color: const Color(0xff111827),
+                  color: const Color(0xffF8FAFC), // was: Color(0xff111827)
                   borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xffE2E8F0)), // added
                 ),
                 child: Row(
                   children: [
@@ -588,7 +595,7 @@ class _TopUsersCard extends StatelessWidget {
                       child: Text(
                         u['user']?.toString() ?? '—',
                         style: const TextStyle(
-                          color: Colors.white,
+                          color: Color(0xff1E293B), // was: Colors.white
                           fontWeight: FontWeight.w500,
                         ),
                         overflow: TextOverflow.ellipsis,
@@ -623,7 +630,7 @@ class _TopUsersCard extends StatelessWidget {
       ),
     );
   }
-}
+}*/
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BRANCH PERFORMANCE CARD
@@ -674,7 +681,7 @@ class _BranchPerformanceCardState extends State<_BranchPerformanceCard> {
                 child: Text(
                   'Branch Performance',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: Color(0xff1E293B), // was: Colors.white
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
                   ),
@@ -687,12 +694,13 @@ class _BranchPerformanceCardState extends State<_BranchPerformanceCard> {
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: const Color(0xff1F2937),
+                  color: const Color(0xffF1F5F9), // was: Color(0xff1F2937)
                   borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xffE2E8F0)), // added
                 ),
                 child: DropdownButton<String>(
                   value: _sortBy,
-                  dropdownColor: const Color(0xff1F2937),
+                  dropdownColor: Colors.white, // was: Color(0xff1F2937)
                   underline: const SizedBox(),
                   isDense: true,
                   style: const TextStyle(
@@ -713,7 +721,6 @@ class _BranchPerformanceCardState extends State<_BranchPerformanceCard> {
                       child: Text('Sort: Rejected'),
                     ),
                     DropdownMenuItem(value: 'done', child: Text('Sort: Done')),
-
                     DropdownMenuItem(
                       value: 'completion_rate',
                       child: Text('Sort: Completion %'),
@@ -731,8 +738,9 @@ class _BranchPerformanceCardState extends State<_BranchPerformanceCard> {
                 child: Container(
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
-                    color: const Color(0xff1F2937),
+                    color: const Color(0xffF1F5F9), // was: Color(0xff1F2937)
                     borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xffE2E8F0)), // added
                   ),
                   child: Icon(
                     _ascending ? Icons.arrow_upward : Icons.arrow_downward,
@@ -747,20 +755,25 @@ class _BranchPerformanceCardState extends State<_BranchPerformanceCard> {
                 width: 180,
                 child: TextField(
                   onChanged: (v) => setState(() => _search = v),
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  style: const TextStyle(
+                    color: Color(0xff1E293B), // was: Colors.white
+                    fontSize: 13,
+                  ),
                   decoration: InputDecoration(
                     hintText: 'Filter branch...',
                     hintStyle: const TextStyle(
-                      color: Colors.white38,
+                      color: Color(0xff94A3B8), // was: Colors.white38
                       fontSize: 13,
                     ),
                     prefixIcon: const Icon(
                       Icons.search,
-                      color: Colors.white38,
+                      color: Color(0xff94A3B8), // was: Colors.white38
                       size: 16,
                     ),
                     filled: true,
-                    fillColor: const Color(0xff1F2937),
+                    fillColor: const Color(
+                      0xffF1F5F9,
+                    ), // was: Color(0xff1F2937)
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                       borderSide: BorderSide.none,
@@ -778,85 +791,93 @@ class _BranchPerformanceCardState extends State<_BranchPerformanceCard> {
           else
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
-              child: DataTable(
-                headingRowColor: WidgetStatePropertyAll(
-                  const Color(0xff1F2937),
-                ),
-                dataRowColor: WidgetStatePropertyAll(const Color(0xff111827)),
-                dividerThickness: 1,
-                horizontalMargin: 16,
-                columnSpacing: 32,
-                headingTextStyle: const TextStyle(
-                  color: Colors.white60,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
-                columns: const [
-                  DataColumn(label: Text('Branch')),
-                  DataColumn(label: Text('Total'), numeric: true),
-                  DataColumn(label: Text('Approved'), numeric: true),
-                  DataColumn(label: Text('Rejected'), numeric: true),
-                  DataColumn(label: Text('Done'), numeric: true),
-                  DataColumn(label: Text('Approval %'), numeric: true),
-                  DataColumn(label: Text('Completion %'), numeric: true),
-                ],
-                rows: list.map((b) {
-                  final approvalRate = (b['approval_rate'] ?? 0.0) as num;
-                  final completionRate = (b['completion_rate'] ?? 0.0) as num;
+              child: SizedBox(
+                width: 700.w,
+                child: DataTable(
+                  headingRowColor: const WidgetStatePropertyAll(
+                    Color(0xffF1F5F9), // was: Color(0xff1F2937)
+                  ),
+                  dataRowColor: const WidgetStatePropertyAll(
+                    Color(0xffF8FAFC), // was: Color(0xff111827)
+                  ),
+                  dividerThickness: 1,
+                  horizontalMargin: 16,
+                  columnSpacing: 32,
 
-                  return DataRow(
-                    cells: [
-                      DataCell(
-                        Text(
-                          b['branch_name']?.toString() ?? '',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w500,
+                  headingTextStyle: const TextStyle(
+                    color: Color(0xff64748B), // was: Colors.white60
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                  columns: const [
+                    DataColumn(label: Text('Branch')),
+                    DataColumn(label: Text('Total'), numeric: true),
+                    DataColumn(label: Text('Approved'), numeric: true),
+                    DataColumn(label: Text('Rejected'), numeric: true),
+                    DataColumn(label: Text('Done'), numeric: true),
+                    DataColumn(label: Text('Approval %'), numeric: true),
+                    DataColumn(label: Text('Completion %'), numeric: true),
+                  ],
+                  rows: list.map((b) {
+                    final approvalRate = (b['approval_rate'] ?? 0.0) as num;
+                    final completionRate = (b['completion_rate'] ?? 0.0) as num;
+
+                    return DataRow(
+                      cells: [
+                        DataCell(
+                          Text(
+                            b['branch_name']?.toString() ?? '',
+                            style: const TextStyle(
+                              color: Color(0xff1E293B), // was: Colors.white
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
-                      ),
-                      DataCell(
-                        Text(
-                          '${b['total']}',
-                          style: const TextStyle(color: Colors.white70),
-                        ),
-                      ),
-                      DataCell(
-                        Text(
-                          '${b['approved']}',
-                          style: const TextStyle(
-                            color: Color(0xff10B981),
-                            fontWeight: FontWeight.bold,
+                        DataCell(
+                          Text(
+                            '${b['total']}',
+                            style: const TextStyle(
+                              color: Color(0xff64748B), // was: Colors.white70
+                            ),
                           ),
                         ),
-                      ),
-                      DataCell(
-                        Text(
-                          '${b['rejected']}',
-                          style: const TextStyle(
-                            color: Color(0xffEF4444),
-                            fontWeight: FontWeight.bold,
+                        DataCell(
+                          Text(
+                            '${b['approved']}',
+                            style: const TextStyle(
+                              color: Color(0xff10B981),
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                      ),
-                      DataCell(
-                        Text(
-                          '${b['done']}',
-                          style: const TextStyle(
-                            color: Color(0xff06B6D4),
-                            fontWeight: FontWeight.bold,
+                        DataCell(
+                          Text(
+                            '${b['rejected']}',
+                            style: const TextStyle(
+                              color: Color(0xffEF4444),
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                      ),
-                      DataCell(
-                        _pctBadge(approvalRate, const Color(0xff10B981)),
-                      ),
-                      DataCell(
-                        _pctBadge(completionRate, const Color(0xff3B82F6)),
-                      ),
-                    ],
-                  );
-                }).toList(),
+                        DataCell(
+                          Text(
+                            '${b['done']}',
+                            style: const TextStyle(
+                              color: Color(0xff06B6D4),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        DataCell(
+                          _pctBadge(approvalRate, const Color(0xff10B981)),
+                        ),
+                        DataCell(
+                          _pctBadge(completionRate, const Color(0xff3B82F6)),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                ),
               ),
             ),
         ],
@@ -901,7 +922,7 @@ Widget _sectionHeader(IconData icon, String title, Color color) {
       Text(
         title,
         style: const TextStyle(
-          color: Colors.white,
+          color: Color(0xff1E293B), // was: Colors.white
           fontSize: 15,
           fontWeight: FontWeight.bold,
         ),
@@ -920,11 +941,18 @@ class _EmptyState extends StatelessWidget {
       child: Center(
         child: Column(
           children: [
-            Icon(Icons.inbox_outlined, color: Colors.white12, size: 36),
+            Icon(
+              Icons.inbox_outlined,
+              color: Color(0xffCBD5E1), // was: Colors.white12
+              size: 36,
+            ),
             SizedBox(height: 8),
             Text(
               'No data available',
-              style: TextStyle(color: Colors.white24, fontSize: 13),
+              style: TextStyle(
+                color: Color(0xff94A3B8), // was: Colors.white24
+                fontSize: 13,
+              ),
             ),
           ],
         ),
