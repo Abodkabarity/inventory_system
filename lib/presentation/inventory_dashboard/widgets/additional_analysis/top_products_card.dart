@@ -53,13 +53,12 @@ class _TopProductsCardState extends State<TopProductsCard> {
                 child: Text(
                   'Most Requested Products',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: Color(0xff1E293B),
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
-              // Sort mode
               GestureDetector(
                 onTap: () => setState(() => _sortByQty = !_sortByQty),
                 child: Container(
@@ -68,7 +67,7 @@ class _TopProductsCardState extends State<TopProductsCard> {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xff1F2937),
+                    color: const Color(0xffF1F5F9),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -81,13 +80,12 @@ class _TopProductsCardState extends State<TopProductsCard> {
                 ),
               ),
               const SizedBox(width: 8),
-              // Asc/Desc
               GestureDetector(
                 onTap: () => setState(() => _ascending = !_ascending),
                 child: Container(
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
-                    color: const Color(0xff1F2937),
+                    color: const Color(0xffF1F5F9),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
@@ -104,13 +102,13 @@ class _TopProductsCardState extends State<TopProductsCard> {
           // Search
           TextField(
             onChanged: (v) => setState(() => _search = v),
-            style: const TextStyle(color: Colors.white),
+            style: const TextStyle(color: Color(0xff1E293B)),
             decoration: InputDecoration(
               hintText: 'Search by code or name...',
-              hintStyle: const TextStyle(color: Colors.white38),
-              prefixIcon: const Icon(Icons.search, color: Colors.white38),
+              hintStyle: const TextStyle(color: Color(0xff94A3B8)),
+              prefixIcon: const Icon(Icons.search, color: Color(0xff94A3B8)),
               filled: true,
-              fillColor: const Color(0xff1F2937),
+              fillColor: const Color(0xffF1F5F9),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
                 borderSide: BorderSide.none,
@@ -126,7 +124,7 @@ class _TopProductsCardState extends State<TopProductsCard> {
                 ? const Center(
                     child: Text(
                       'No products found',
-                      style: TextStyle(color: Colors.white38),
+                      style: TextStyle(color: Color(0xff94A3B8)),
                     ),
                   )
                 : ListView.builder(
@@ -149,8 +147,9 @@ class _TopProductsCardState extends State<TopProductsCard> {
                           margin: const EdgeInsets.only(bottom: 8),
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: const Color(0xff1F2937),
+                            color: const Color(0xffF8FAFC),
                             borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xffE2E8F0)),
                           ),
                           child: Row(
                             children: [
@@ -159,7 +158,7 @@ class _TopProductsCardState extends State<TopProductsCard> {
                                 decoration: BoxDecoration(
                                   color: const Color(
                                     0xff8B5CF6,
-                                  ).withOpacity(0.12),
+                                  ).withOpacity(0.10),
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: const Icon(
@@ -176,7 +175,7 @@ class _TopProductsCardState extends State<TopProductsCard> {
                                     Text(
                                       row['item_name']?.toString() ?? '',
                                       style: const TextStyle(
-                                        color: Colors.white,
+                                        color: Color(0xff1E293B),
                                         fontWeight: FontWeight.w600,
                                         fontSize: 13,
                                       ),
@@ -184,7 +183,7 @@ class _TopProductsCardState extends State<TopProductsCard> {
                                     Text(
                                       row['item_code']?.toString() ?? '',
                                       style: const TextStyle(
-                                        color: Colors.white38,
+                                        color: Color(0xff94A3B8),
                                         fontSize: 11,
                                       ),
                                     ),
@@ -208,7 +207,7 @@ class _TopProductsCardState extends State<TopProductsCard> {
                               const SizedBox(width: 6),
                               const Icon(
                                 Icons.chevron_right,
-                                color: Colors.white24,
+                                color: Color(0xffCBD5E1),
                                 size: 18,
                               ),
                             ],
@@ -227,9 +226,9 @@ class _TopProductsCardState extends State<TopProductsCard> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
+        color: color.withOpacity(0.12),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.4)),
+        border: Border.all(color: color.withOpacity(0.3)),
       ),
       child: Text(text, style: TextStyle(color: color, fontSize: 11)),
     );

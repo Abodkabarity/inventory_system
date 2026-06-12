@@ -13,7 +13,7 @@ class ProductBranchDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      backgroundColor: const Color(0xff111827),
+      backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: SizedBox(
         width: 900,
@@ -24,8 +24,9 @@ class ProductBranchDialog extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: const BoxDecoration(
-                color: Color(0xff0D1117),
+                color: Color(0xffF8FAFC),
                 borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                border: Border(bottom: BorderSide(color: Color(0xffE2E8F0))),
               ),
               child: Row(
                 children: [
@@ -35,7 +36,7 @@ class ProductBranchDialog extends StatelessWidget {
                     child: Text(
                       itemName,
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: Color(0xff1E293B),
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
@@ -43,7 +44,7 @@ class ProductBranchDialog extends StatelessWidget {
                   ),
                   IconButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close, color: Colors.white54),
+                    icon: const Icon(Icons.close, color: Color(0xff64748B)),
                   ),
                 ],
               ),
@@ -55,17 +56,17 @@ class ProductBranchDialog extends StatelessWidget {
                   ? const Center(
                       child: Text(
                         'No branch data',
-                        style: TextStyle(color: Colors.white38),
+                        style: TextStyle(color: Color(0xff94A3B8)),
                       ),
                     )
                   : SingleChildScrollView(
                       padding: const EdgeInsets.all(16),
                       child: DataTable(
-                        headingRowColor: WidgetStatePropertyAll(
-                          const Color(0xff1F2937),
+                        headingRowColor: const WidgetStatePropertyAll(
+                          Color(0xffF1F5F9),
                         ),
-                        dataRowColor: WidgetStatePropertyAll(
-                          const Color(0xff111827),
+                        dataRowColor: const WidgetStatePropertyAll(
+                          Colors.white,
                         ),
                         dividerThickness: 1,
                         columns: const [
@@ -73,7 +74,7 @@ class ProductBranchDialog extends StatelessWidget {
                             label: Text(
                               '#',
                               style: TextStyle(
-                                color: Colors.white60,
+                                color: Color(0xff64748B),
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -82,7 +83,7 @@ class ProductBranchDialog extends StatelessWidget {
                             label: Text(
                               'Branch',
                               style: TextStyle(
-                                color: Colors.white60,
+                                color: Color(0xff64748B),
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -91,7 +92,7 @@ class ProductBranchDialog extends StatelessWidget {
                             label: Text(
                               'Requests',
                               style: TextStyle(
-                                color: Colors.white60,
+                                color: Color(0xff64748B),
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -100,7 +101,7 @@ class ProductBranchDialog extends StatelessWidget {
                             label: Text(
                               'Total Qty',
                               style: TextStyle(
-                                color: Colors.white60,
+                                color: Color(0xff64748B),
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -109,7 +110,7 @@ class ProductBranchDialog extends StatelessWidget {
                             label: Text(
                               'Approved %',
                               style: TextStyle(
-                                color: Colors.white60,
+                                color: Color(0xff64748B),
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -118,7 +119,7 @@ class ProductBranchDialog extends StatelessWidget {
                             label: Text(
                               'Rejected %',
                               style: TextStyle(
-                                color: Colors.white60,
+                                color: Color(0xff64748B),
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -137,14 +138,16 @@ class ProductBranchDialog extends StatelessWidget {
                               DataCell(
                                 Text(
                                   '#${i + 1}',
-                                  style: const TextStyle(color: Colors.white38),
+                                  style: const TextStyle(
+                                    color: Color(0xff94A3B8),
+                                  ),
                                 ),
                               ),
                               DataCell(
                                 Text(
                                   e['branch_name']?.toString() ?? '',
                                   style: const TextStyle(
-                                    color: Colors.white,
+                                    color: Color(0xff1E293B),
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
@@ -195,7 +198,7 @@ class ProductBranchDialog extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withOpacity(0.10),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
