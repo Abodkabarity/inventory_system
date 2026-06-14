@@ -139,7 +139,16 @@ class LoadBranchAllChanges extends InventoryEvent {
   LoadBranchAllChanges(this.branch);
 }
 
-class LoadMaxAdjustment extends InventoryEvent {}
+class LoadMaxAdjustment extends InventoryEvent {
+  final int page;
+  final String query;
+  final bool silent;
+
+  LoadMaxAdjustment({this.page = 0, this.query = '', this.silent = false});
+
+  @override
+  List<Object?> get props => [page, query, silent];
+}
 
 class SearchMaxAdjustment extends InventoryEvent {
   final String query;
@@ -230,16 +239,6 @@ class ImportTmaExcel extends InventoryEvent {
   ImportTmaExcel({required this.forceApply});
 }
 
-class LoadFormulary extends InventoryEvent {
-  final bool silent;
-  LoadFormulary({this.silent = false});
-}
-
-class SearchFormulary extends InventoryEvent {
-  final String query;
-  SearchFormulary(this.query);
-}
-
 class LoadFormularyHistory extends InventoryEvent {
   final String itemCode;
   final String branch;
@@ -318,4 +317,35 @@ class LoadAdditionalOrderAnalysis extends InventoryEvent {
 
   @override
   List<Object?> get props => [from, to];
+}
+
+class LoadRequestEffectiveness extends InventoryEvent {
+  final DateTime from;
+  final DateTime to;
+  final String? branch;
+
+  LoadRequestEffectiveness({required this.from, required this.to, this.branch});
+
+  @override
+  List<Object?> get props => [from, to, branch];
+}
+
+class LoadFormulary extends InventoryEvent {
+  final bool silent;
+  final int page;
+  final String query;
+
+  LoadFormulary({this.silent = false, this.page = 0, this.query = ''});
+
+  @override
+  List<Object?> get props => [silent, page, query];
+}
+
+class SearchFormulary extends InventoryEvent {
+  final String query;
+
+  SearchFormulary(this.query);
+
+  @override
+  List<Object?> get props => [query];
 }

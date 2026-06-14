@@ -322,7 +322,7 @@ class BranchOrdersActions {
 
     final limitReached = state.finalEdits.length >= state.orderEditLimit;
     final initialQty = edit?.newQty ?? oldQty;
-    final compareQty = oldQty;
+    final compareQty = edit?.newQty ?? oldQty;
     final initialReason = edit?.reason ?? '';
     if (!alreadyEdited && limitReached) {
       await showDialog(
@@ -364,15 +364,23 @@ class BranchOrdersActions {
             onSave: (newQty, reason) async {
               final bloc = context.read<OrdersBloc>();
 
-              await bloc.repo.upsertFinalReorderDraft(
-                runDate: state.runDate,
-                branchName: state.branchName,
-                itemCode: row.itemCode,
-                itemName: row.itemName,
-                oldQty: oldQty,
-                newQty: newQty,
-                reason: reason,
-              );
+              if (newQty == oldQty) {
+                await bloc.repo.deleteFinalReorderDraft(
+                  runDate: state.runDate,
+                  branchName: state.branchName,
+                  itemCode: row.itemCode,
+                );
+              } else {
+                await bloc.repo.upsertFinalReorderDraft(
+                  runDate: state.runDate,
+                  branchName: state.branchName,
+                  itemCode: row.itemCode,
+                  itemName: row.itemName,
+                  oldQty: oldQty,
+                  newQty: newQty,
+                  reason: reason,
+                );
+              }
               print('BEFORE POP');
 
               if (navigator.canPop()) {

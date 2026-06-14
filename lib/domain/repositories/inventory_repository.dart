@@ -46,6 +46,11 @@ abstract class InventoryRepository {
   });
   Future<List<Map<String, dynamic>>> fetchBranchAllChanges(String branch);
   Future<List<Map<String, dynamic>>> fetchMaxAdjustment();
+  Future<Map<String, dynamic>> fetchMaxAdjustmentPage({
+    required int from,
+    required int to,
+    String query = '',
+  });
   Future<List<Map<String, dynamic>>> fetchMaxAdjustmentHistory(
     String itemCode,
     String branch,
@@ -141,5 +146,15 @@ abstract class InventoryRepository {
   Future<Map<String, dynamic>> fetchAdditionalOrderAnalysis({
     required DateTime from,
     required DateTime to,
+  });
+  Future<Map<String, dynamic>> fetchRequestEffectiveness({
+    required DateTime from,
+    required DateTime to,
+    String? branch,
+  });
+  Future<Map<String, dynamic>> fetchFormularyPage({
+    required int from,
+    required int to,
+    String query = '',
   });
 }

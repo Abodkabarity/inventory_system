@@ -242,6 +242,15 @@ class InventoryRepositoryImpl implements InventoryRepository {
   }
 
   @override
+  Future<Map<String, dynamic>> fetchMaxAdjustmentPage({
+    required int from,
+    required int to,
+    String query = '',
+  }) {
+    return remote.fetchMaxAdjustmentPage(from: from, to: to, query: query);
+  }
+
+  @override
   Future<List<Map<String, dynamic>>> fetchMaxAdjustmentHistory(
     String itemCode,
     String branch,
@@ -955,5 +964,23 @@ class InventoryRepositoryImpl implements InventoryRepository {
     required DateTime to,
   }) {
     return remote.fetchAdditionalOrderAnalysis(from: from, to: to);
+  }
+
+  @override
+  Future<Map<String, dynamic>> fetchRequestEffectiveness({
+    required DateTime from,
+    required DateTime to,
+    String? branch,
+  }) {
+    return remote.fetchRequestEffectiveness(from: from, to: to, branch: branch);
+  }
+
+  @override
+  Future<Map<String, dynamic>> fetchFormularyPage({
+    required int from,
+    required int to,
+    String query = '',
+  }) {
+    return remote.fetchFormularyPage(from: from, to: to, query: query);
   }
 }

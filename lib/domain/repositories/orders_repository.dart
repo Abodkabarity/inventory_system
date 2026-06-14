@@ -201,4 +201,9 @@ abstract class OrdersRepository {
     required String branchName,
     required String runDate,
   });
+  Future<void> deleteFinalReorderDraft({
+    required String runDate,
+    required String branchName,
+    required String itemCode,
+  });
 }

@@ -498,6 +498,66 @@ store_item_classifications
     await client.rpc('delete_max_adj_bulk', params: {'p_rows': rows});
   }
 
+  Future<Map<String, dynamic>> fetchMaxAdjustmentPage({
+    required int from,
+    required int to,
+    String query = '',
+  }) async {
+    const cols = '''
+id,
+branch_name,
+item_code,
+item_name,
+current_demand_30d,
+max_adjustment_30d,
+adjustment_type,
+reason,
+update_date,
+qty,
+created_at,
+added_by,
+end_date
+''';
+
+    final search = query.trim();
+    final hasSearch = search.isNotEmpty;
+    final safe = search.replaceAll(',', ' ');
+
+    if (hasSearch) {
+      final filter =
+          'item_code.ilike.%$safe%,item_name.ilike.%$safe%,branch_name.ilike.%$safe%,adjustment_type.ilike.%$safe%,reason.ilike.%$safe%';
+
+      final rowsRes = await client
+          .from('max_adj')
+          .select(cols)
+          .or(filter)
+          .order('created_at', ascending: false)
+          .order('item_code', ascending: true)
+          .range(from, to);
+
+      final countRes = await client.from('max_adj').select('id').or(filter);
+
+      return {
+        'rows': List<Map<String, dynamic>>.from(rowsRes),
+        'total': (countRes as List).length,
+      };
+    }
+
+    final rowsRes = await client
+        .from('max_adj')
+        .select(cols)
+        .order('created_at', ascending: false)
+        .order('item_code', ascending: true)
+        .range(from, to);
+
+    final countRes = await client.from('max_adj').select('id');
+
+    return {
+      'rows': List<Map<String, dynamic>>.from(rowsRes),
+      'total': (countRes as List).length,
+    };
+  }
+
   Future<List<Map<String, dynamic>>> searchOrders({
     required String runDate,
     required String query,
@@ -522,5 +582,80 @@ store_item_classifications
     if (result == null) return {};
 
     return Map<String, dynamic>.from(result as Map);
+  }
+
+  Future<Map<String, dynamic>> fetchRequestEffectiveness({
+    required DateTime from,
+    required DateTime to,
+    String? branch,
+  }) async {
+    final result = await client.rpc(
+      'get_request_effectiveness',
+      params: {
+        'p_from': from.toIso8601String(),
+        'p_to': to.toIso8601String(),
+        'p_branch': branch,
+      },
+    );
+
+    if (result == null) return {};
+    return Map<String, dynamic>.from(result as Map);
+  }
+
+  Future<Map<String, dynamic>> fetchFormularyPage({
+    required int from,
+    required int to,
+    String query = '',
+  }) async {
+    const cols = '''
+branch_name,
+item_code,
+item_name,
+revised_branch_formulary,
+revised_date,
+reason
+''';
+
+    final search = query.trim();
+    final hasSearch = search.isNotEmpty;
+    final safe = search.replaceAll(',', ' ');
+
+    if (hasSearch) {
+      final rowsRes = await client
+          .from('branch_formulary')
+          .select(cols)
+          .or(
+            'item_code.ilike.%$safe%,item_name.ilike.%$safe%,branch_name.ilike.%$safe%',
+          )
+          .order('revised_date', ascending: false)
+          .order('item_code', ascending: true)
+          .range(from, to);
+
+      final countRes = await client
+          .from('branch_formulary')
+          .select('id')
+          .or(
+            'item_code.ilike.%$safe%,item_name.ilike.%$safe%,branch_name.ilike.%$safe%',
+          );
+
+      return {
+        'rows': List<Map<String, dynamic>>.from(rowsRes),
+        'total': (countRes as List).length,
+      };
+    }
+
+    final rowsRes = await client
+        .from('branch_formulary')
+        .select(cols)
+        .order('revised_date', ascending: false)
+        .order('item_code', ascending: true)
+        .range(from, to);
+
+    final countRes = await client.from('branch_formulary').select('id');
+
+    return {
+      'rows': List<Map<String, dynamic>>.from(rowsRes),
+      'total': (countRes as List).length,
+    };
   }
 }

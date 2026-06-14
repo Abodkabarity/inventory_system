@@ -1135,4 +1135,17 @@ total_sales_last_90_days,
         })
         .eq('id', id);
   }
+
+  Future<void> deleteFinalReorderDraft({
+    required String runDate,
+    required String branchName,
+    required String itemCode,
+  }) async {
+    await client
+        .from('order_edits_draft')
+        .delete()
+        .eq('run_date', runDate)
+        .eq('branch_name', branchName)
+        .eq('item_code', itemCode);
+  }
 }

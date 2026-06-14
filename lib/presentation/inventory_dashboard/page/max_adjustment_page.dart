@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -20,10 +22,18 @@ class MaxAdjustmentPage extends StatefulWidget {
 }
 
 class _MaxAdjustmentPageState extends State<MaxAdjustmentPage> {
+  Timer? _searchDebounce;
+
   @override
   void initState() {
     super.initState();
     context.read<InventoryBloc>().add(LoadMaxAdjustment());
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    super.dispose();
   }
 
   @override
@@ -52,8 +62,15 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage> {
                   Expanded(
                     child: TextField(
                       onChanged: (v) {
-                        context.read<InventoryBloc>().add(
-                          SearchMaxAdjustment(v),
+                        _searchDebounce?.cancel();
+                        _searchDebounce = Timer(
+                          const Duration(milliseconds: 350),
+                          () {
+                            if (!mounted) return;
+                            context.read<InventoryBloc>().add(
+                              SearchMaxAdjustment(v),
+                            );
+                          },
                         );
                       },
                       decoration: InputDecoration(
@@ -133,7 +150,13 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage> {
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: _buildTable(state),
+                child: Column(
+                  children: [
+                    Expanded(child: _buildTable(state)),
+                    const SizedBox(height: 10),
+                    _buildPager(state),
+                  ],
+                ),
               ),
             ),
           ],
@@ -146,7 +169,9 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage> {
   /// TABLE
   /// ===============================
   Widget _buildTable(InventoryState state) {
-    if (state.isLoading) {
+    final data = state.filteredMaxAdjustment;
+
+    if (state.isLoading && data.isEmpty) {
       return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -158,10 +183,9 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage> {
         ),
       );
     }
-    final data = state.filteredMaxAdjustment;
-
     final source = MaxAdjDataSource(
       data: data,
+      pageOffset: state.maxAdjPage * state.maxAdjPageSize,
       onHistory: (e) {
         context.read<InventoryBloc>().add(
           LoadMaxAdjustmentHistory(e['item_code'], e['branch_name']),
@@ -227,6 +251,77 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildPager(InventoryState state) {
+    final totalPages = state.maxAdjTotalRows == 0
+        ? 1
+        : (state.maxAdjTotalRows / state.maxAdjPageSize).ceil();
+    final currentPage = state.maxAdjPage + 1;
+    final bloc = context.read<InventoryBloc>();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Row(
+        children: [
+          Text(
+            "Page $currentPage of $totalPages",
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(width: 16),
+          Text(
+            "${state.maxAdjTotalRows} total / ${state.maxAdjPageSize} per page",
+            style: TextStyle(color: Colors.grey.shade600),
+          ),
+          const Spacer(),
+          if (state.isMaxAdjLoading)
+            const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          const SizedBox(width: 12),
+          OutlinedButton.icon(
+            onPressed: state.maxAdjPage == 0 || state.isMaxAdjLoading
+                ? null
+                : () {
+                    bloc.add(
+                      LoadMaxAdjustment(
+                        page: state.maxAdjPage - 1,
+                        query: state.maxAdjSearch,
+                      ),
+                    );
+                  },
+            icon: const Icon(Icons.chevron_left),
+            label: const Text("Previous"),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton.icon(
+            onPressed: !state.maxAdjHasMore || state.isMaxAdjLoading
+                ? null
+                : () {
+                    bloc.add(
+                      LoadMaxAdjustment(
+                        page: state.maxAdjPage + 1,
+                        query: state.maxAdjSearch,
+                      ),
+                    );
+                  },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primaryColor,
+              foregroundColor: Colors.white,
+            ),
+            icon: const Icon(Icons.chevron_right),
+            label: const Text("Next"),
+          ),
+        ],
       ),
     );
   }

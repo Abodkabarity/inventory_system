@@ -2,27 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 class FormularyDataSource extends DataGridSource {
-  final List<Map<String, dynamic>> _allData;
+  final List<Map<String, dynamic>> data;
+  final int pageOffset;
   final Function(Map<String, dynamic>) onHistory;
 
-  static const int rowsPerPage = 1000;
-
-  List<DataGridRow> _rows = [];
+  late final List<DataGridRow> _rows;
 
   FormularyDataSource({
-    required List<Map<String, dynamic>> data,
+    required this.data,
     required this.onHistory,
-  }) : _allData = data {
-    _buildPage(0);
-  }
-
-  void _buildPage(int pageIndex) {
-    final start = pageIndex * rowsPerPage;
-
-    final pageData = _allData.skip(start).take(rowsPerPage).toList();
-
-    _rows = pageData.asMap().entries.map((entry) {
-      final index = start + entry.key;
+    this.pageOffset = 0,
+  }) {
+    _rows = data.asMap().entries.map((entry) {
+      final index = pageOffset + entry.key;
       final e = entry.value;
 
       return DataGridRow(
@@ -41,15 +33,6 @@ class FormularyDataSource extends DataGridSource {
         ],
       );
     }).toList();
-
-    notifyListeners();
-  }
-
-  /// 🔥 مهم جداً (هذا سبب مشكلتك)
-  @override
-  Future<bool> handlePageChange(int oldPageIndex, int newPageIndex) async {
-    _buildPage(newPageIndex);
-    return true;
   }
 
   @override
@@ -62,26 +45,31 @@ class FormularyDataSource extends DataGridSource {
         if (cell.columnName == 'action') {
           return Center(
             child: IconButton(
-              icon: const Icon(Icons.history),
+              tooltip: 'History',
+              icon: const Icon(Icons.history_rounded),
               onPressed: () => onHistory(cell.value),
             ),
           );
         }
 
+        final align = cell.columnName == 'name' || cell.columnName == 'reason'
+            ? Alignment.centerLeft
+            : Alignment.center;
+
         return Container(
-          alignment: Alignment.center,
-          padding: const EdgeInsets.all(8),
+          alignment: align,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Text(
             cell.value?.toString() ?? '',
-            softWrap: true,
-            overflow: TextOverflow.visible,
+            maxLines: cell.columnName == 'name' ? 2 : 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Color(0xff1E293B),
+              fontWeight: FontWeight.w600,
+            ),
           ),
         );
       }).toList(),
     );
   }
-
-  double get totalPages => (_allData.length / rowsPerPage).ceilToDouble();
-
-  int get totalRows => _allData.length;
 }

@@ -5,10 +5,12 @@ class MaxAdjDataSource extends DataGridSource {
   List<DataGridRow> _rows = [];
 
   final Function(Map<String, dynamic>) onHistory;
+  final int pageOffset;
 
   MaxAdjDataSource({
     required List<Map<String, dynamic>> data,
     required this.onHistory,
+    this.pageOffset = 0,
   }) {
     _rows = data.asMap().entries.map<DataGridRow>((entry) {
       final index = entry.key;
@@ -16,7 +18,7 @@ class MaxAdjDataSource extends DataGridSource {
 
       return DataGridRow(
         cells: [
-          DataGridCell(columnName: 'index', value: index + 1),
+          DataGridCell(columnName: 'index', value: pageOffset + index + 1),
 
           DataGridCell(columnName: 'branch', value: e['branch_name']),
           DataGridCell(columnName: 'code', value: e['item_code']),
@@ -25,7 +27,7 @@ class MaxAdjDataSource extends DataGridSource {
           DataGridCell(columnName: 'max', value: e['max_adjustment_30d']),
           DataGridCell(columnName: 'type', value: e['adjustment_type']),
           DataGridCell(columnName: 'qty', value: e['qty']),
-          DataGridCell(columnName: 'added', value: e['added_by']),
+          DataGridCell(columnName: 'added_by', value: e['added_by']),
           DataGridCell(columnName: 'date', value: e['update_date']),
           DataGridCell(columnName: 'action', value: e),
         ],
@@ -49,7 +51,7 @@ class MaxAdjDataSource extends DataGridSource {
           'max',
           'qty',
           'type',
-          'added',
+          'added_by',
           'date',
         ].contains(cell.columnName);
 

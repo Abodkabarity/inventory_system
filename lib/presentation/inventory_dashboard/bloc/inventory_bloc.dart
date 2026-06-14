@@ -57,6 +57,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     on<ExportFormularyWithHistory>(_onExportFormularyHistory);
     on<ExportInventoryOrders>(_onExportInventoryOrders);
     on<ExportFormularyTemplate>(_onExportFormularyTemplate);
+    on<LoadRequestEffectiveness>(_onLoadRequestEffectiveness);
     on<ImportFormularyExcel>(_onImportFormulary);
     on<LoadOrdersPage>(_onLoadOrdersPage);
     on<ImportTmaExcel>(_onImportTma);
@@ -64,6 +65,49 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     on<ExportTmaCurrent>(_onExportTmaCurrent);
     on<ExportTmaWithHistory>(_onExportTmaHistory);
     on<ExportMaxAdjTemplate>(_onExportTemplate);
+    on<LoadFormulary>((event, emit) async {
+      const pageSize = 10000;
+
+      if (!event.silent) {
+        emit(state.copyWith(isFormularyLoading: true, isLoading: true));
+      }
+
+      try {
+        final from = event.page * pageSize;
+        final to = from + pageSize;
+
+        final result = await repo.fetchFormularyPage(
+          from: from,
+          to: to,
+          query: event.query,
+        );
+
+        final pageData = List<Map<String, dynamic>>.from(result['rows'] ?? []);
+        final totalRows = (result['total'] ?? 0) as int;
+        final totalPages = totalRows == 0 ? 1 : (totalRows / pageSize).ceil();
+        final hasMore = event.page < totalPages - 1;
+
+        emit(
+          state.copyWith(
+            formulary: pageData,
+            filteredFormulary: pageData,
+            formularySearch: event.query,
+            formularyTotalRows: totalRows,
+            formularyPage: event.page,
+            formularyPageSize: pageSize,
+            formularyHasMore: hasMore,
+            isFormularyLoading: false,
+            isLoading: false,
+          ),
+        );
+      } catch (e) {
+        emit(state.copyWith(isFormularyLoading: false, isLoading: false));
+      }
+    });
+
+    on<SearchFormulary>((event, emit) async {
+      add(LoadFormulary(page: 0, query: event.query));
+    });
     on<StartFormularyRealtime>((event, emit) {
       formularyChannel = Supabase.instance.client
           .channel('formulary_live')
@@ -162,37 +206,6 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         ),
       );
     });
-    on<LoadFormulary>((event, emit) async {
-      if (!event.silent) {
-        emit(state.copyWith(isLoading: true));
-      }
-
-      final data = await repo.fetchFormulary();
-
-      emit(
-        state.copyWith(
-          formulary: data,
-          filteredFormulary: data,
-          isLoading: false,
-        ),
-      );
-    });
-
-    on<SearchFormulary>((event, emit) {
-      final q = event.query.toLowerCase();
-
-      final filtered = state.formulary.where((e) {
-        return (e['item_name'] ?? '').toLowerCase().contains(q) ||
-            (e['item_code'] ?? '').toLowerCase().contains(q);
-      }).toList();
-
-      emit(
-        state.copyWith(
-          formularySearch: event.query,
-          filteredFormulary: filtered,
-        ),
-      );
-    });
 
     on<LoadFormularyHistory>((event, emit) async {
       emit(state.copyWith(isHistoryLoading: true, formularyHistory: []));
@@ -247,18 +260,52 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     });
 
     on<LoadMaxAdjustment>((event, emit) async {
-      emit(state.copyWith(isLoading: true, importMessage: state.importMessage));
+      const pageSize = 10000;
 
-      final data = await repo.fetchMaxAdjustment();
+      if (!event.silent) {
+        emit(
+          state.copyWith(
+            isLoading: true,
+            isMaxAdjLoading: true,
+            importMessage: state.importMessage,
+          ),
+        );
+      } else {
+        emit(state.copyWith(isMaxAdjLoading: true));
+      }
 
-      emit(
-        state.copyWith(
-          maxAdjustment: data,
-          filteredMaxAdjustment: data,
-          isLoading: false,
-          importMessage: state.importMessage,
-        ),
-      );
+      try {
+        final page = event.page < 0 ? 0 : event.page;
+        final from = page * pageSize;
+        final to = from + pageSize - 1;
+
+        final result = await repo.fetchMaxAdjustmentPage(
+          from: from,
+          to: to,
+          query: event.query,
+        );
+
+        final rows = List<Map<String, dynamic>>.from(result['rows'] ?? []);
+        final total = (result['total'] ?? 0) as int;
+        final totalPages = total == 0 ? 1 : (total / pageSize).ceil();
+
+        emit(
+          state.copyWith(
+            maxAdjustment: rows,
+            filteredMaxAdjustment: rows,
+            maxAdjSearch: event.query,
+            maxAdjPage: page,
+            maxAdjPageSize: pageSize,
+            maxAdjTotalRows: total,
+            maxAdjHasMore: page < totalPages - 1,
+            isLoading: false,
+            isMaxAdjLoading: false,
+            importMessage: state.importMessage,
+          ),
+        );
+      } catch (e) {
+        emit(state.copyWith(isLoading: false, isMaxAdjLoading: false));
+      }
     });
     on<StartMaxAdjRealtime>((event, emit) {
       maxAdjChannel = Supabase.instance.client
@@ -269,7 +316,13 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
             table: 'max_adj',
             callback: (payload) {
               if (!state.isImporting) {
-                add(LoadMaxAdjustment());
+                add(
+                  LoadMaxAdjustment(
+                    page: state.maxAdjPage,
+                    query: state.maxAdjSearch,
+                    silent: true,
+                  ),
+                );
               }
             },
           )
@@ -317,19 +370,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           .subscribe();
     });
     on<SearchMaxAdjustment>((event, emit) {
-      final q = event.query.toLowerCase();
-
-      final filtered = state.maxAdjustment.where((e) {
-        return (e['item_name'] ?? '').toString().toLowerCase().contains(q) ||
-            (e['item_code'] ?? '').toString().toLowerCase().contains(q);
-      }).toList();
-
-      emit(
-        state.copyWith(
-          maxAdjSearch: event.query,
-          filteredMaxAdjustment: filtered,
-        ),
-      );
+      add(LoadMaxAdjustment(page: 0, query: event.query));
     });
     on<LoadMaxAdjustmentHistory>((event, emit) async {
       emit(state.copyWith(isHistoryLoading: true, maxAdjHistory: []));
@@ -2579,6 +2620,31 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       emit(state.copyWith(additionalAnalysis: data));
     } catch (e) {
       print("ANALYSIS ERROR = $e");
+    }
+  }
+
+  Future<void> _onLoadRequestEffectiveness(
+    LoadRequestEffectiveness event,
+    Emitter<InventoryState> emit,
+  ) async {
+    try {
+      emit(state.copyWith(isEffectivenessLoading: true));
+
+      final data = await repo.fetchRequestEffectiveness(
+        from: event.from,
+        to: event.to,
+        branch: event.branch,
+      );
+
+      emit(
+        state.copyWith(
+          requestEffectiveness: data,
+          isEffectivenessLoading: false,
+        ),
+      );
+    } catch (e) {
+      emit(state.copyWith(isEffectivenessLoading: false));
+      print('LoadRequestEffectiveness error: $e');
     }
   }
 }
