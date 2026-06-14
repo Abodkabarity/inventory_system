@@ -476,4 +476,17 @@ class OrdersRepositoryImpl implements OrdersRepository {
   }) {
     return remote.fetchHistoryOrders(runDate: runDate, branchName: branchName);
   }
+
+  @override
+  Future<void> deleteFinalReorderDraft({
+    required String runDate,
+    required String branchName,
+    required String itemCode,
+  }) {
+    return remote.deleteFinalReorderDraft(
+      runDate: runDate,
+      branchName: branchName,
+      itemCode: itemCode,
+    );
+  }
 }

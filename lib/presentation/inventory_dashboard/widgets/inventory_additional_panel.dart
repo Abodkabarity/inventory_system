@@ -209,7 +209,7 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
     });
 
     return Container(
-      margin:  EdgeInsets.symmetric(vertical: 6.h, horizontal: 5.w),
+      margin: EdgeInsets.symmetric(vertical: 6.h, horizontal: 5.w),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -256,10 +256,7 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
 
               Container(
                 margin: const EdgeInsets.only(left: 6),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: _getStatusColor(group.first.status),
                   borderRadius: BorderRadius.circular(6),
@@ -277,6 +274,7 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
           ),
 
           const SizedBox(height: 10),
+
           /// ITEMS
           Column(
             children: group.map((e) {
@@ -521,7 +519,6 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
                             ),
                           ),
                         ],
-
                       ],
                     ),
 
@@ -633,11 +630,27 @@ Widget _infoBox(String title, dynamic value) {
         ),
         const SizedBox(height: 3),
         Text(
-          value.toString(),
+          _formatInfoValue(title, value),
           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
           textAlign: TextAlign.center,
         ),
       ],
     ),
   );
+}
+
+String _formatInfoValue(String title, dynamic value) {
+  if (value == null) return '-';
+
+  if (title == 'Sales') {
+    final n = value is num
+        ? value
+        : num.tryParse(value.toString().replaceAll(',', ''));
+
+    if (n == null) return value.toString();
+
+    return n.toStringAsFixed(2);
+  }
+
+  return value.toString();
 }

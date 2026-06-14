@@ -1,3 +1,5 @@
+// lib/presentation/inventory/pages/additional_order_analysis_page.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -6,8 +8,13 @@ import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
 import '../widgets/additional_analysis/additional_analysis_header.dart';
 import '../widgets/additional_analysis/additional_insights_section.dart';
+import '../widgets/additional_analysis/request_effectiveness_tab.dart';
 import '../widgets/additional_analysis/top_branches_card.dart';
 import '../widgets/additional_analysis/top_products_card.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN PAGE
+// ─────────────────────────────────────────────────────────────────────────────
 
 class AdditionalOrderAnalysisPage extends StatefulWidget {
   const AdditionalOrderAnalysisPage({super.key});
@@ -18,32 +25,76 @@ class AdditionalOrderAnalysisPage extends StatefulWidget {
 }
 
 class _AdditionalOrderAnalysisPageState
-    extends State<AdditionalOrderAnalysisPage> {
+    extends State<AdditionalOrderAnalysisPage>
+    with SingleTickerProviderStateMixin {
+  // ── Date range ────────────────────────────────────────────────────────────
   late DateTime _from;
   late DateTime _to;
+
+  // ── Loading flags ─────────────────────────────────────────────────────────
   bool _isAnalysisLoading = false;
+
+  // ── Tab controller ────────────────────────────────────────────────────────
+  late final TabController _tabController;
+  int _tabIndex = 0;
+
+  static const _tabs = [
+    _TabDef(Icons.bar_chart_rounded, 'Overview'),
+    _TabDef(Icons.track_changes_rounded, 'Sales Performance'),
+  ];
+
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
+
+    _tabController = TabController(length: _tabs.length, vsync: this)
+      ..addListener(() {
+        if (_tabController.index != _tabIndex) {
+          setState(() => _tabIndex = _tabController.index);
+          // Lazy-load effectiveness data on first visit to that tab
+          if (_tabIndex == 1) _loadEffectiveness();
+        }
+      });
+
     final now = DateTime.now();
     _from = DateTime(now.year, now.month, 1);
     _to = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
 
-    // ✅ Check if data already exists — if so, skip the loading state entirely
-    final existingData = context.read<InventoryBloc>().state.additionalAnalysis;
-    if (existingData.isEmpty) {
-      _load();
+    final bloc = context.read<InventoryBloc>();
+    if (bloc.state.additionalAnalysis.isEmpty) {
+      _loadOverview();
     }
-    // If data exists, _isAnalysisLoading stays false and we render immediately
   }
 
-  void _load() {
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  // ── Loaders ───────────────────────────────────────────────────────────────
+
+  void _loadOverview() {
     setState(() => _isAnalysisLoading = true);
     context.read<InventoryBloc>().add(
       LoadAdditionalOrderAnalysis(from: _from, to: _to),
     );
   }
+
+  void _loadEffectiveness() {
+    context.read<InventoryBloc>().add(
+      LoadRequestEffectiveness(from: _from, to: _to),
+    );
+  }
+
+  void _loadAll() {
+    _loadOverview();
+    if (_tabIndex == 1) _loadEffectiveness();
+  }
+
+  // ── Date picker ───────────────────────────────────────────────────────────
 
   Future<void> _pickDateRange() async {
     final result = await showDialog<DateTimeRange>(
@@ -64,107 +115,39 @@ class _AdditionalOrderAnalysisPageState
           59,
           59,
         );
+        _isAnalysisLoading = true;
       });
-      _load();
+      _loadAll();
     }
   }
 
-  String _formatDate(DateTime d) =>
+  String _fmt(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     return BlocListener<InventoryBloc, InventoryState>(
-      listenWhen: (prev, curr) =>
-          prev.additionalAnalysis != curr.additionalAnalysis,
+      listenWhen: (p, c) => p.additionalAnalysis != c.additionalAnalysis,
       listener: (_, __) => setState(() => _isAnalysisLoading = false),
       child: Container(
         color: const Color(0xffF0F4F8),
         child: Column(
           children: [
             _buildTopBar(),
+            _buildTabBar(),
             Expanded(
-              child: BlocBuilder<InventoryBloc, InventoryState>(
-                builder: (context, state) {
-                  if (_isAnalysisLoading) {
-                    return const Center(
-                      child: CircularProgressIndicator(
-                        color: Color(0xff06B6D4),
-                      ),
-                    );
-                  }
+              child: TabBarView(
+                controller: _tabController,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  // ── TAB 0: Overview ──────────────────────────────────────
+                  _buildOverviewTab(),
 
-                  final data = state.additionalAnalysis;
-
-                  if (data.isEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.analytics_outlined,
-                            color: Color(0xffCBD5E1),
-                            size: 64,
-                          ),
-                          const SizedBox(height: 16),
-                          const Text(
-                            'No data for the selected period',
-                            style: TextStyle(
-                              color: Color(0xff94A3B8),
-                              fontSize: 16,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          TextButton.icon(
-                            onPressed: _load,
-                            icon: const Icon(
-                              Icons.refresh,
-                              color: Color(0xff06B6D4),
-                            ),
-                            label: const Text(
-                              'Reload',
-                              style: TextStyle(color: Color(0xff06B6D4)),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-
-                  final branches = List<Map<String, dynamic>>.from(
-                    data['top_branches'] ?? [],
-                  );
-                  final products = List<Map<String, dynamic>>.from(
-                    data['top_products'] ?? [],
-                  );
-
-                  return SingleChildScrollView(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        AdditionalKpiCards(data: data),
-                        const SizedBox(height: 24),
-                        SizedBox(
-                          height: 480,
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: TopBranchesCard(branches: branches),
-                              ),
-                              const SizedBox(width: 24),
-                              Expanded(
-                                child: TopProductsCard(products: products),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        AdditionalInsightsSection(data: data),
-                      ],
-                    ),
-                  );
-                },
+                  // ── TAB 1: Effectiveness ─────────────────────────────────
+                  RequestEffectivenessTab(from: _from, to: _to),
+                ],
               ),
             ),
           ],
@@ -173,9 +156,11 @@ class _AdditionalOrderAnalysisPageState
     );
   }
 
+  // ── Top bar ───────────────────────────────────────────────────────────────
+
   Widget _buildTopBar() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(bottom: BorderSide(color: Color(0xffE2E8F0))),
@@ -202,7 +187,7 @@ class _AdditionalOrderAnalysisPageState
               border: Border.all(color: const Color(0xffE2E8F0)),
             ),
             child: Text(
-              '${_formatDate(_from)}  →  ${_formatDate(_to)}',
+              '${_fmt(_from)}  →  ${_fmt(_to)}',
               style: const TextStyle(color: Color(0xff64748B), fontSize: 13),
             ),
           ),
@@ -223,7 +208,7 @@ class _AdditionalOrderAnalysisPageState
           ),
           const SizedBox(width: 8),
           IconButton(
-            onPressed: _load,
+            onPressed: _loadAll,
             tooltip: 'Refresh',
             icon: const Icon(Icons.refresh, color: Color(0xff64748B)),
           ),
@@ -231,10 +216,127 @@ class _AdditionalOrderAnalysisPageState
       ),
     );
   }
+
+  // ── Tab bar ───────────────────────────────────────────────────────────────
+
+  Widget _buildTabBar() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 0),
+      child: TabBar(
+        controller: _tabController,
+        indicatorColor: const Color(0xff06B6D4),
+        indicatorWeight: 3,
+        labelColor: const Color(0xff06B6D4),
+        unselectedLabelColor: const Color(0xff94A3B8),
+        labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+        isScrollable: true,
+        tabs: _tabs
+            .map(
+              (t) => Tab(
+                child: Row(
+                  children: [
+                    Icon(t.icon, size: 16),
+                    const SizedBox(width: 6),
+                    Text(t.label),
+                  ],
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  // ── Overview tab body ─────────────────────────────────────────────────────
+
+  Widget _buildOverviewTab() {
+    return BlocBuilder<InventoryBloc, InventoryState>(
+      buildWhen: (p, c) => p.additionalAnalysis != c.additionalAnalysis,
+      builder: (context, state) {
+        if (_isAnalysisLoading) {
+          return const Center(
+            child: CircularProgressIndicator(color: Color(0xff06B6D4)),
+          );
+        }
+
+        final data = state.additionalAnalysis;
+
+        if (data.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.analytics_outlined,
+                  color: Color(0xffCBD5E1),
+                  size: 64,
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'No data for the selected period',
+                  style: TextStyle(color: Color(0xff94A3B8), fontSize: 16),
+                ),
+                const SizedBox(height: 16),
+                TextButton.icon(
+                  onPressed: _loadOverview,
+                  icon: const Icon(Icons.refresh, color: Color(0xff06B6D4)),
+                  label: const Text(
+                    'Reload',
+                    style: TextStyle(color: Color(0xff06B6D4)),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final branches = List<Map<String, dynamic>>.from(
+          data['top_branches'] ?? [],
+        );
+        final products = List<Map<String, dynamic>>.from(
+          data['top_products'] ?? [],
+        );
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AdditionalKpiCards(data: data),
+              const SizedBox(height: 24),
+              SizedBox(
+                height: 480,
+                child: Row(
+                  children: [
+                    Expanded(child: TopBranchesCard(branches: branches)),
+                    const SizedBox(width: 24),
+                    Expanded(child: TopProductsCard(products: products)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              AdditionalInsightsSection(data: data),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SMALL DATA CLASS
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _TabDef {
+  final IconData icon;
+  final String label;
+  const _TabDef(this.icon, this.label);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CUSTOM DATE RANGE PICKER DIALOG
+// DATE RANGE PICKER DIALOG  (unchanged — kept here for self-containment)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class _DateRangePickerDialog extends StatefulWidget {
@@ -391,7 +493,6 @@ class _DateRangePickerDialogState extends State<_DateRangePickerDialog> {
     );
   }
 
-  // ── Sidebar ──────────────────────────────────────────────────────────────
   Widget _buildSidebar() {
     final now = DateTime.now();
     final today = _d(now);
@@ -471,7 +572,6 @@ class _DateRangePickerDialogState extends State<_DateRangePickerDialog> {
     );
   }
 
-  // ── Header ───────────────────────────────────────────────────────────────
   Widget _buildHeader() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -588,7 +688,6 @@ class _DateRangePickerDialogState extends State<_DateRangePickerDialog> {
     );
   }
 
-  // ── Month grid ────────────────────────────────────────────────────────────
   Widget _buildMonth(DateTime month) {
     final days = DateUtils.getDaysInMonth(month.year, month.month);
     final offset = DateTime(month.year, month.month, 1).weekday % 7;
@@ -651,7 +750,6 @@ class _DateRangePickerDialogState extends State<_DateRangePickerDialog> {
     final isFuture = day.isAfter(DateTime.now());
     final isEdge = isStart || isEnd;
 
-    // Strip halves
     final endRef = _end ?? (_selectingEnd ? _hoverDay : null);
     bool stripLeft = false;
     bool stripRight = false;
@@ -665,11 +763,10 @@ class _DateRangePickerDialogState extends State<_DateRangePickerDialog> {
     }
 
     Color textColor = isFuture ? const Color(0xffCBD5E1) : _textPri;
-    if (isEdge) {
+    if (isEdge)
       textColor = Colors.white;
-    } else if (inRange) {
+    else if (inRange)
       textColor = _accent;
-    }
 
     return MouseRegion(
       onEnter: (_) => _onHover(day),
@@ -719,7 +816,6 @@ class _DateRangePickerDialogState extends State<_DateRangePickerDialog> {
     );
   }
 
-  // ── Footer ────────────────────────────────────────────────────────────────
   Widget _buildFooter() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),

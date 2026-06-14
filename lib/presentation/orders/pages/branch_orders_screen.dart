@@ -1098,22 +1098,18 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                                 OrdersBloc
                                                               >();
 
-                                                          while (true) {
-                                                            final pendingItems = bloc
-                                                                .state
-                                                                .itemsToOrder
-                                                                .where(
-                                                                  (e) =>
-                                                                      e.status ==
-                                                                      'pending',
-                                                                )
-                                                                .toList();
+                                                          final pendingItems = bloc
+                                                              .state
+                                                              .itemsToOrder
+                                                              .where(
+                                                                (e) =>
+                                                                    e.status ==
+                                                                    'pending',
+                                                              )
+                                                              .toList();
 
-                                                            if (pendingItems
-                                                                .isEmpty) {
-                                                              break;
-                                                            }
-
+                                                          if (pendingItems
+                                                              .isNotEmpty) {
                                                             final result = await showDialog(
                                                               context: context,
                                                               barrierDismissible:
@@ -1121,6 +1117,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                               builder: (_) => PendingItemsToOrderDialog(
                                                                 items:
                                                                     pendingItems,
+
                                                                 onIgnorePressed: (item) async {
                                                                   await bloc
                                                                       .repo
@@ -1131,6 +1128,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                                             'ignored',
                                                                       );
                                                                 },
+
                                                                 onAddPressed: (item) async {
                                                                   final row = bloc
                                                                       .state
@@ -1426,11 +1424,9 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                                 },
                                                               ),
                                                             );
-                                                            bloc.add(
-                                                              const OrdersLoadItemsToOrder(),
-                                                            );
-                                                            if (result ==
-                                                                null) {
+
+                                                            if (result !=
+                                                                true) {
                                                               return;
                                                             }
 
@@ -1440,8 +1436,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
 
                                                             await Future.delayed(
                                                               const Duration(
-                                                                milliseconds:
-                                                                    300,
+                                                                seconds: 1,
                                                               ),
                                                             );
                                                           }

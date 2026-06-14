@@ -15,6 +15,7 @@ import '../widgets/inventory_dashboard_body.dart';
 import '../widgets/inventory_drawer.dart';
 import 'additional_order_analysis_page.dart';
 import 'assortment_page.dart';
+import 'branches_tracker_page.dart';
 import 'formulary_page.dart';
 import 'inventory_daily_order_page.dart';
 import 'max_adjustment_page.dart';
@@ -182,5 +183,7 @@ Widget _buildPage(InventoryState state, bool isSubmitted, String runDate) {
       return InventoryDailyOrderPage(runDate: runDate);
     case InventoryPageType.additionalOrderAnalysis:
       return const AdditionalOrderAnalysisPage();
+    case InventoryPageType.branchesTracker:
+      return const BranchesTrackerPage();
   }
 }

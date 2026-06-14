@@ -34,11 +34,15 @@ class InventoryState extends Equatable {
   final String formularySearch;
 
   final List<Map<String, dynamic>> formularyHistory;
-
+  final Map<String, dynamic> requestEffectiveness;
+  final bool isEffectivenessLoading;
   final List<MismatchItem> mismatch;
-
+  final int formularyTotalRows;
   final List<MismatchItem> filteredMismatch;
-
+  final int formularyPage;
+  final int formularyPageSize;
+  final bool formularyHasMore;
+  final bool isFormularyLoading;
   final int mismatchTodayCount;
 
   final int mismatchMonthCount;
@@ -118,6 +122,16 @@ class InventoryState extends Equatable {
   final String maxAdjSearch;
 
   final List<Map<String, dynamic>> maxAdjHistory;
+
+  final int maxAdjPage;
+
+  final int maxAdjPageSize;
+
+  final int maxAdjTotalRows;
+
+  final bool maxAdjHasMore;
+
+  final bool isMaxAdjLoading;
 
   final int additionalMonthCount;
 
@@ -200,6 +214,11 @@ class InventoryState extends Equatable {
     required this.filteredMaxAdjustment,
     required this.maxAdjSearch,
     required this.maxAdjHistory,
+    required this.maxAdjPage,
+    required this.maxAdjPageSize,
+    required this.maxAdjTotalRows,
+    required this.maxAdjHasMore,
+    required this.isMaxAdjLoading,
     required this.additionalMonthCount,
     required this.mismatchTracker,
     required this.allChanges,
@@ -214,6 +233,13 @@ class InventoryState extends Equatable {
     required this.isLoading,
     required this.hasMorePages,
     required this.additionalAnalysis,
+    required this.requestEffectiveness,
+    required this.isEffectivenessLoading,
+    required this.formularyPage,
+    required this.formularyPageSize,
+    required this.formularyHasMore,
+    required this.isFormularyLoading,
+    required this.formularyTotalRows,
   });
 
   factory InventoryState.initial() {
@@ -236,6 +262,7 @@ class InventoryState extends Equatable {
       },
       submittedCount: 0,
       additionalAnalysis: {},
+      formularyTotalRows: 0,
       isHistoryLoading: false,
       isMismatchRealtimeStarted: false,
       formulary: [],
@@ -248,7 +275,13 @@ class InventoryState extends Equatable {
       mismatchMonthCount: 0,
       hasMorePages: true,
       tma: [],
+      formularyPage: 0,
+      formularyPageSize: 1000,
+      formularyHasMore: true,
+      isFormularyLoading: false,
       filteredTma: [],
+      requestEffectiveness: {},
+      isEffectivenessLoading: false,
       tmaSearch: '',
       tmaHistory: [],
       mismatchSearch: '',
@@ -285,6 +318,11 @@ class InventoryState extends Equatable {
       filteredMaxAdjustment: [],
       maxAdjSearch: '',
       maxAdjHistory: [],
+      maxAdjPage: 0,
+      maxAdjPageSize: 10000,
+      maxAdjTotalRows: 0,
+      maxAdjHasMore: true,
+      isMaxAdjLoading: false,
       additionalMonthCount: 0,
       mismatchTracker: [],
       allChanges: [],
@@ -321,15 +359,22 @@ class InventoryState extends Equatable {
     int? mismatchMonthCount,
     List<Map<String, dynamic>>? tma,
     List<Map<String, dynamic>>? filteredTma,
+    Map<String, dynamic>? requestEffectiveness,
+    bool? isEffectivenessLoading,
     String? tmaSearch,
     List<Map<String, dynamic>>? tmaHistory,
     String? mismatchSearch,
     bool? isImporting,
     Map<String, dynamic>? additionalAnalysis,
+    int? formularyPage,
+    int? formularyPageSize,
+    bool? formularyHasMore,
+    bool? isFormularyLoading,
     bool? hasMorePages,
     double? importProgress,
     bool? isExporting,
     String? exportMessage,
+    int? formularyTotalRows,
     String? importMessage,
     bool? importSuccess,
     List<Map<String, dynamic>>? assortment,
@@ -359,6 +404,11 @@ class InventoryState extends Equatable {
     List<Map<String, dynamic>>? filteredMaxAdjustment,
     String? maxAdjSearch,
     List<Map<String, dynamic>>? maxAdjHistory,
+    int? maxAdjPage,
+    int? maxAdjPageSize,
+    int? maxAdjTotalRows,
+    bool? maxAdjHasMore,
+    bool? isMaxAdjLoading,
     int? additionalMonthCount,
     List<Map<String, dynamic>>? mismatchTracker,
     List<Map<String, dynamic>>? allChanges,
@@ -399,6 +449,10 @@ class InventoryState extends Equatable {
       filteredTma: filteredTma ?? this.filteredTma,
       tmaSearch: tmaSearch ?? this.tmaSearch,
       hasMorePages: hasMorePages ?? this.hasMorePages,
+      formularyTotalRows: formularyTotalRows ?? this.formularyTotalRows,
+      requestEffectiveness: requestEffectiveness ?? this.requestEffectiveness,
+      isEffectivenessLoading:
+          isEffectivenessLoading ?? this.isEffectivenessLoading,
       tmaHistory: tmaHistory ?? this.tmaHistory,
       mismatchSearch: mismatchSearch ?? this.mismatchSearch,
       isImporting: isImporting ?? this.isImporting,
@@ -410,6 +464,10 @@ class InventoryState extends Equatable {
       assortment: assortment ?? this.assortment,
       filteredAssortment: filteredAssortment ?? this.filteredAssortment,
       assortmentSearch: assortmentSearch ?? this.assortmentSearch,
+      formularyPage: formularyPage ?? this.formularyPage,
+      formularyPageSize: formularyPageSize ?? this.formularyPageSize,
+      formularyHasMore: formularyHasMore ?? this.formularyHasMore,
+      isFormularyLoading: isFormularyLoading ?? this.isFormularyLoading,
       assortmentHistory: assortmentHistory ?? this.assortmentHistory,
       allOrders: allOrders ?? this.allOrders,
       isOrdersLoading: isOrdersLoading ?? this.isOrdersLoading,
@@ -438,6 +496,11 @@ class InventoryState extends Equatable {
       additionalAnalysis: additionalAnalysis ?? this.additionalAnalysis,
       maxAdjSearch: maxAdjSearch ?? this.maxAdjSearch,
       maxAdjHistory: maxAdjHistory ?? this.maxAdjHistory,
+      maxAdjPage: maxAdjPage ?? this.maxAdjPage,
+      maxAdjPageSize: maxAdjPageSize ?? this.maxAdjPageSize,
+      maxAdjTotalRows: maxAdjTotalRows ?? this.maxAdjTotalRows,
+      maxAdjHasMore: maxAdjHasMore ?? this.maxAdjHasMore,
+      isMaxAdjLoading: isMaxAdjLoading ?? this.isMaxAdjLoading,
       additionalMonthCount: additionalMonthCount ?? this.additionalMonthCount,
       mismatchTracker: mismatchTracker ?? this.mismatchTracker,
       allChanges: allChanges ?? this.allChanges,
@@ -488,6 +551,7 @@ class InventoryState extends Equatable {
     importSuccess,
     assortment,
     filteredAssortment,
+    formularyTotalRows,
     assortmentSearch,
     assortmentHistory,
     allOrders,
@@ -513,6 +577,11 @@ class InventoryState extends Equatable {
     filteredMaxAdjustment,
     maxAdjSearch,
     maxAdjHistory,
+    maxAdjPage,
+    maxAdjPageSize,
+    maxAdjTotalRows,
+    maxAdjHasMore,
+    isMaxAdjLoading,
     additionalMonthCount,
     mismatchTracker,
     allChanges,
@@ -523,6 +592,12 @@ class InventoryState extends Equatable {
     additionalTodayBranchCount,
     isBulkLoading,
     submittedBranches,
+    requestEffectiveness,
+    formularyPage,
+    formularyPageSize,
+    formularyHasMore,
+    isFormularyLoading,
+    isEffectivenessLoading,
     bulkMessage,
     bulkSuccess,
     isLoading,
