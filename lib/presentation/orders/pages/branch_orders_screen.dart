@@ -830,7 +830,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
 
                                   LayoutBuilder(
                                     builder: (context, constraints) {
-                                      final double cardWidth = 300.w;
+                                      final double cardWidth = 360.w;
 
                                       return Row(
                                         mainAxisAlignment:
@@ -2029,7 +2029,7 @@ class _KpiCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 98,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
@@ -2161,8 +2161,7 @@ class _FiltersBar extends StatelessWidget {
         builder: (context, constraints) {
           double itemWidth;
 
-          itemWidth = 260.w;
-
+          itemWidth = 310.w;
           return Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
@@ -2281,7 +2280,7 @@ class _ModernDropdown extends StatelessWidget {
         fillColor: AppColors.backgroundWidget,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 12,
-          vertical: 12,
+          vertical: 16,
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
@@ -2333,7 +2332,7 @@ class _SwitchTile extends StatelessWidget {
       onTap: onChanged == null ? null : () => onChanged!(!value),
 
       child: Container(
-        height: 56.h,
+        height: 80.h,
         padding: const EdgeInsets.symmetric(horizontal: 12),
 
         decoration: BoxDecoration(
@@ -2361,7 +2360,7 @@ class _SwitchTile extends StatelessWidget {
                     title,
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
-                      fontSize: 11.sp,
+                      fontSize: 14.sp,
                       color: AppColors.secondaryColor,
                     ),
                   ),
@@ -2371,7 +2370,7 @@ class _SwitchTile extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 10.sp,
+                      fontSize: 12.sp,
                       color: const Color(0xFF6B7280),
                     ),
                   ),

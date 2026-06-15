@@ -77,7 +77,7 @@ Future<void> main() async {
 
 class MyApp extends StatelessWidget {
   final GoRouter router;
-  static const double _appUiScale = 0.9;
+  static const double _appUiScale = 0.81;
 
   const MyApp({super.key, required this.router});
 
