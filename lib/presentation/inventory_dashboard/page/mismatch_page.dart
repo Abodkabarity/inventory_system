@@ -9,7 +9,6 @@ import '../../../domain/entities/mismatch_item.dart';
 import '../bloc/inventory_bloc.dart';
 import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
-import '../widgets/mismatch_tracker_dialog.dart';
 
 class MismatchPage extends StatelessWidget {
   const MismatchPage({super.key});
@@ -255,7 +254,8 @@ class MismatchPage extends StatelessWidget {
           icon: const Icon(Icons.download, color: Colors.white),
           label: const Text("Export", style: TextStyle(color: Colors.white)),
         ),
-        const SizedBox(width: 10),
+
+        /* const SizedBox(width: 10),
 
         /// 🔥 TRACKER BUTTON
         Stack(
@@ -301,8 +301,7 @@ class MismatchPage extends StatelessWidget {
                 ),
               ),
           ],
-        ),
-
+        ),*/
         const SizedBox(width: 10),
 
         /// 🔥 BRANCH FILTER

@@ -28,18 +28,18 @@ class InventoryBranchGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final submittedSet = submitted.toSet();
+    final submittedSet = submitted.map(_branchKey).toSet();
     final sortedBranches = [...branches]..sort((a, b) {
-      final aSubmitted = submittedSet.contains(a);
-      final bSubmitted = submittedSet.contains(b);
+      final aSubmitted = submittedSet.contains(_branchKey(a));
+      final bSubmitted = submittedSet.contains(_branchKey(b));
 
       if (aSubmitted != bSubmitted) {
         return aSubmitted ? -1 : 1;
       }
 
       if (aSubmitted && bSubmitted) {
-        final aTime = submittedBranchTimes[a];
-        final bTime = submittedBranchTimes[b];
+        final aTime = _submittedAtFor(a);
+        final bTime = _submittedAtFor(b);
 
         if (aTime != null && bTime != null) {
           return aTime.compareTo(bTime);
@@ -85,7 +85,7 @@ class InventoryBranchGrid extends StatelessWidget {
               itemBuilder: (context, i) {
                 final branch = sortedBranches[i];
 
-                final isSubmitted = submittedSet.contains(branch);
+                final isSubmitted = submittedSet.contains(_branchKey(branch));
                 final isSelected = selectedBranch == branch;
 
                 final edits = editsCount[branch] ?? 0;
@@ -226,5 +226,20 @@ class InventoryBranchGrid extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _branchKey(String value) {
+    return value.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+  }
+
+  DateTime? _submittedAtFor(String branch) {
+    final exact = submittedBranchTimes[branch];
+    if (exact != null) return exact;
+
+    final key = _branchKey(branch);
+    for (final entry in submittedBranchTimes.entries) {
+      if (_branchKey(entry.key) == key) return entry.value;
+    }
+    return null;
   }
 }

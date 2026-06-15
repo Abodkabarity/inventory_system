@@ -3,7 +3,7 @@ import '../entities/inventory_edit_item.dart';
 import '../entities/mismatch_item.dart';
 
 abstract class InventoryRepository {
-  Future<List<String>> fetchBranchesToday();
+  Future<List<String>> fetchBranchesToday([String? runDate]);
 
   Future<List<String>> fetchSubmittedBranches(String runDate);
 

@@ -6,8 +6,9 @@ class InventoryRemoteDs {
 
   InventoryRemoteDs(this.client);
 
-  Future<List<String>> fetchBranchesToday() async {
-    final today = DateFormat('EEEE').format(DateTime.now());
+  Future<List<String>> fetchBranchesToday([String? runDate]) async {
+    final orderDate = DateTime.tryParse(runDate ?? '') ?? DateTime.now();
+    final today = DateFormat('EEEE').format(orderDate);
 
     final res = await client
         .from('branches')

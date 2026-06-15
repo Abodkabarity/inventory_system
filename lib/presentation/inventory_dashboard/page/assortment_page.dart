@@ -231,7 +231,7 @@ class _AssortmentPageState extends State<AssortmentPage> {
               _col('index', '#', width: 70.w, center: true),
               _col('branch', 'Branch', width: 150.w, center: true),
               _col('code', 'Item Code', width: 140.w, center: true),
-              _col('name', 'Item Name', width: 300.w, center: true),
+              _col('name', 'Item Name', width: 600.w, center: true),
               _col('qty', 'Qty', width: 120.w, center: true),
               _col('by', 'Added By', width: 140.w, center: true),
               _col('start', 'Start', width: 130.w, center: true),

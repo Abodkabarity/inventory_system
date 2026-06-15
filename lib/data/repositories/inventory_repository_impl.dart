@@ -13,8 +13,8 @@ class InventoryRepositoryImpl implements InventoryRepository {
   /// BRANCHES TODAY
   /// ================================
   @override
-  Future<List<String>> fetchBranchesToday() async {
-    final rows = await remote.fetchBranchesToday();
+  Future<List<String>> fetchBranchesToday([String? runDate]) async {
+    final rows = await remote.fetchBranchesToday(runDate);
     return rows;
   }
 

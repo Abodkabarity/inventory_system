@@ -256,12 +256,12 @@ class InventoryState extends Equatable {
       mismatchColumnWidths: {
         'branch': 160,
         'code': 150,
-        'name': 260,
+        'name': 450,
         'system': 140,
 
-        'actual': 120,
-        'diff': 120,
-        'history': 140,
+        'actual': 130,
+        'diff': 130,
+        'history': 150,
       },
       submittedCount: 0,
       additionalAnalysis: {},
@@ -516,8 +516,7 @@ class InventoryState extends Equatable {
           additionalTodayBranchCount ?? this.additionalTodayBranchCount,
       isBulkLoading: isBulkLoading ?? this.isBulkLoading,
       submittedBranches: submittedBranches ?? this.submittedBranches,
-      submittedBranchTimes:
-          submittedBranchTimes ?? this.submittedBranchTimes,
+      submittedBranchTimes: submittedBranchTimes ?? this.submittedBranchTimes,
       bulkMessage: bulkMessage ?? this.bulkMessage,
       bulkSuccess: bulkSuccess ?? this.bulkSuccess,
       isLoading: isLoading ?? this.isLoading,

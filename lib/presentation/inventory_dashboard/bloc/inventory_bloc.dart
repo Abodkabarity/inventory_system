@@ -752,7 +752,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     }
 
     try {
-      final branches = await repo.fetchBranchesToday();
+      final branches = await repo.fetchBranchesToday(runDate);
 
       final submitted = await repo.fetchSubmittedBranches(runDate);
       final submittedTimes = await repo.fetchSubmittedBranchTimes(runDate);
