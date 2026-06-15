@@ -3,10 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/operational_date_helper.dart';
+import '../../auth/bloc/auth_bloc.dart';
+import '../../auth/bloc/auth_event.dart';
+import '../../auth/bloc/auth_state.dart';
 import '../bloc/order_bloc/orders_bloc.dart';
 import '../bloc/order_bloc/orders_event.dart';
 import '../bloc/order_bloc/orders_state.dart';
@@ -663,6 +667,8 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                   const SizedBox(width: 10),
 
                                   _ZoneChip(zone: zs.zone),
+
+                                  const SizedBox(width: 10),
                                 ],
                               ),
                             );
@@ -1895,7 +1901,7 @@ class _TopHeader extends StatelessWidget {
           child: Row(
             children: [
               Container(
-                width: 80.w,
+                width: 90.w,
                 height: 50.h,
                 decoration: BoxDecoration(
                   image: DecorationImage(
@@ -1923,7 +1929,7 @@ class _TopHeader extends StatelessWidget {
                     child: Text(
                       title,
                       style: TextStyle(
-                        fontSize: 18.sp,
+                        fontSize: 20.sp,
                         fontWeight: FontWeight.w900,
                         color: AppColors.white,
                       ),
@@ -1933,13 +1939,15 @@ class _TopHeader extends StatelessWidget {
                   Text(
                     subtitle,
                     style: TextStyle(
-                      fontSize: 12.sp,
+                      fontSize: 14.sp,
                       color: Color(0xFF6B7280),
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                 ],
               ),
+              //   SizedBox(width: 20.w),
+              //  _LogoutIconButton(),
             ],
           ),
         ),
@@ -2224,7 +2232,7 @@ class _FiltersBar extends StatelessWidget {
                 ),
               ),
               SizedBox(
-                width: 140.w,
+                width: 160.w,
                 height: 45.h,
                 child: ElevatedButton.icon(
                   onPressed: onClearAll,
@@ -2402,6 +2410,71 @@ class _TableTitle extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _LogoutIconButton extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return BlocConsumer<AuthBloc, AuthState>(
+      listenWhen: (previous, current) =>
+          previous.status != current.status &&
+          (previous.isSigningOut || current.status == AuthStatus.failure),
+      listener: (context, state) {
+        if (state.status == AuthStatus.failure) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(state.error ?? 'Logout failed. Please try again.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+
+        if (!state.isSigningOut) {
+          context.go('/login');
+        }
+      },
+      builder: (context, state) {
+        final loading = state.isSigningOut;
+
+        return Tooltip(
+          message: loading ? 'Signing out...' : 'Logout',
+          child: Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEF2F2),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFFECACA)),
+            ),
+            child: IconButton(
+              padding: EdgeInsets.zero,
+              splashRadius: 22,
+              onPressed: loading
+                  ? null
+                  : () {
+                      context.read<AuthBloc>().add(AuthLogoutRequested());
+                    },
+              icon: loading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.4,
+                        color: Color(0xFFDC2626),
+                      ),
+                    )
+                  : const Icon(
+                      Icons.logout_rounded,
+                      size: 20,
+                      color: Color(0xFFDC2626),
+                    ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

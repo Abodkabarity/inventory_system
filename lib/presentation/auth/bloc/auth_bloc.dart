@@ -24,6 +24,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<AuthPageOpened>((event, emit) {
       emit(AuthState.initial());
     });
+
+    on<AuthLogoutRequested>(_onLogout);
   }
 
   Future<void> _onLogin(AuthLoginSubmitted e, Emitter<AuthState> emit) async {
@@ -52,6 +54,39 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         state.copyWith(
           status: AuthStatus.failure,
           error: 'Invalid email or password',
+          clearMessage: true,
+        ),
+      );
+    }
+  }
+
+  Future<void> _onLogout(
+    AuthLogoutRequested e,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(
+      state.copyWith(
+        status: AuthStatus.signingOut,
+        message: 'Signing out...',
+        error: null,
+        clearError: true,
+      ),
+    );
+
+    try {
+      await signOut();
+      emit(
+        state.copyWith(
+          status: AuthStatus.idle,
+          clearMessage: true,
+          clearError: true,
+        ),
+      );
+    } catch (err) {
+      emit(
+        state.copyWith(
+          status: AuthStatus.failure,
+          error: 'Logout failed. Please try again.',
           clearMessage: true,
         ),
       );

@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-enum AuthStatus { idle, authenticating, success, failure }
+enum AuthStatus { idle, authenticating, signingOut, success, failure }
 
 class AuthState extends Equatable {
   final AuthStatus status;
@@ -18,7 +18,10 @@ class AuthState extends Equatable {
     this.navToHome = false,
   });
 
-  bool get isLoading => status == AuthStatus.authenticating;
+  bool get isLoading =>
+      status == AuthStatus.authenticating || status == AuthStatus.signingOut;
+
+  bool get isSigningOut => status == AuthStatus.signingOut;
 
   factory AuthState.initial() => const AuthState();
 

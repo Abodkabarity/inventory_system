@@ -22,3 +22,5 @@ class AuthTogglePasswordVisibility extends AuthEvent {}
 class AuthNavConsumed extends AuthEvent {}
 
 class AuthPageOpened extends AuthEvent {}
+
+class AuthLogoutRequested extends AuthEvent {}

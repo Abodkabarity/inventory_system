@@ -77,6 +77,7 @@ Future<void> main() async {
 
 class MyApp extends StatelessWidget {
   final GoRouter router;
+  static const double _appUiScale = 0.9;
 
   const MyApp({super.key, required this.router});
 
@@ -90,6 +91,12 @@ class MyApp extends StatelessWidget {
         return MaterialApp.router(
           debugShowCheckedModeBanner: false,
           routerConfig: router,
+          builder: (context, child) {
+            return _ScaledAppShell(
+              scale: _appUiScale,
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
           theme: ThemeData(
             useMaterial3: true,
 
@@ -97,6 +104,55 @@ class MyApp extends StatelessWidget {
               selectionColor: AppColors.primaryColor,
               selectionHandleColor: AppColors.primaryColor,
               cursorColor: AppColors.primaryColor,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ScaledAppShell extends StatelessWidget {
+  final double scale;
+  final Widget child;
+
+  const _ScaledAppShell({required this.scale, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    if (scale == 1) return child;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) {
+          return Transform.scale(
+            scale: scale,
+            alignment: Alignment.topLeft,
+            child: child,
+          );
+        }
+
+        final width = constraints.maxWidth / scale;
+        final height = constraints.maxHeight / scale;
+        final media = MediaQuery.maybeOf(context);
+        final scaledChild = media == null
+            ? child
+            : MediaQuery(
+                data: media.copyWith(size: Size(width, height)),
+                child: child,
+              );
+
+        return ClipRect(
+          child: OverflowBox(
+            alignment: Alignment.topLeft,
+            minWidth: width,
+            maxWidth: width,
+            minHeight: height,
+            maxHeight: height,
+            child: Transform.scale(
+              scale: scale,
+              alignment: Alignment.topLeft,
+              child: SizedBox(width: width, height: height, child: scaledChild),
             ),
           ),
         );
