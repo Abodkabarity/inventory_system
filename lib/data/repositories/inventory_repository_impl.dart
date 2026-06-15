@@ -27,6 +27,11 @@ class InventoryRepositoryImpl implements InventoryRepository {
     return rows;
   }
 
+  @override
+  Future<Map<String, DateTime>> fetchSubmittedBranchTimes(String runDate) {
+    return remote.fetchSubmittedBranchTimes(runDate);
+  }
+
   /// ================================
   /// ORDER EDITS
   /// ================================

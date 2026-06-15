@@ -86,8 +86,9 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
     final Map<String, List<AdditionalRequestGroup>> grouped = {};
 
     for (var r in list) {
-      grouped.putIfAbsent(r.itemCodes, () => []);
-      grouped[r.itemCodes]!.add(r);
+      final key = '${r.itemCodes}_${_statusBucket(r)}';
+      grouped.putIfAbsent(key, () => []);
+      grouped[key]!.add(r);
     }
 
     final groupedList = grouped.values.toList();
@@ -99,12 +100,12 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
       if (minA != minB) return minA.compareTo(minB);
 
       DateTime latestA = a
-          .where((e) => e.status == 'pending')
+          .where(_isPending)
           .map((e) => e.createdAt)
           .fold(DateTime(2000), (prev, e) => e.isAfter(prev) ? e : prev);
 
       DateTime latestB = b
-          .where((e) => e.status == 'pending')
+          .where(_isPending)
           .map((e) => e.createdAt)
           .fold(DateTime(2000), (prev, e) => e.isAfter(prev) ? e : prev);
 
@@ -183,7 +184,7 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
   }
 
   int _statusPriority(AdditionalRequestGroup e) {
-    if (e.status == 'pending_inventory' || e.status == 'pending') {
+    if (_isPending(e)) {
       if (e.contactLogistic == 'urgent') return 0;
       return 1;
     }
@@ -192,6 +193,22 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
     if (e.status == 'done') return 3;
 
     return 4;
+  }
+
+  bool _isPending(AdditionalRequestGroup e) {
+    final status = e.status.toLowerCase().trim();
+    return status == 'pending_inventory' || status == 'pending';
+  }
+
+  String _statusBucket(AdditionalRequestGroup e) {
+    final status = e.status.toLowerCase().trim();
+    if (status == 'pending_inventory' || status == 'pending') {
+      return 'pending';
+    }
+    if (status == 'sent_to_store') return 'sent_to_store';
+    if (status == 'done') return 'done';
+    if (status == 'rejected') return 'rejected';
+    return 'other';
   }
 
   Widget _buildProductCard(List<AdditionalRequestGroup> group) {

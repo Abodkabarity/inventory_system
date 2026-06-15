@@ -38,6 +38,29 @@ class InventoryRemoteDs {
         .toList();
   }
 
+  Future<Map<String, DateTime>> fetchSubmittedBranchTimes(String runDate) async {
+    final res = await client
+        .from('order_submissions')
+        .select('branch_name, submitted_at')
+        .eq('run_date', runDate)
+        .eq('status', 'submitted')
+        .order('submitted_at', ascending: true);
+
+    final result = <String, DateTime>{};
+    for (final row in List<Map<String, dynamic>>.from(res)) {
+      final branch = (row['branch_name'] ?? '').toString();
+      if (branch.isEmpty) continue;
+
+      final submittedAt = DateTime.tryParse(
+        (row['submitted_at'] ?? '').toString(),
+      );
+      if (submittedAt == null) continue;
+
+      result.putIfAbsent(branch, () => submittedAt);
+    }
+    return result;
+  }
+
   /// ===============================
   /// ORDER EDITS
   /// ===============================

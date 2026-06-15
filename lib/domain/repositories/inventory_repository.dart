@@ -7,6 +7,8 @@ abstract class InventoryRepository {
 
   Future<List<String>> fetchSubmittedBranches(String runDate);
 
+  Future<Map<String, DateTime>> fetchSubmittedBranchTimes(String runDate);
+
   Future<List<InventoryEditItem>> fetchBranchEdits({
     required String runDate,
     required String branch,

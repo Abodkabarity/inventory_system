@@ -151,6 +151,8 @@ class InventoryState extends Equatable {
 
   final List<String> submittedBranches;
 
+  final Map<String, DateTime> submittedBranchTimes;
+
   final String? bulkMessage;
 
   final bool? bulkSuccess;
@@ -228,6 +230,7 @@ class InventoryState extends Equatable {
     required this.additionalTodayBranchCount,
     required this.isBulkLoading,
     required this.submittedBranches,
+    required this.submittedBranchTimes,
     this.bulkMessage,
     this.bulkSuccess,
     required this.isLoading,
@@ -332,6 +335,7 @@ class InventoryState extends Equatable {
       additionalTodayBranchCount: {},
       isBulkLoading: false,
       submittedBranches: [],
+      submittedBranchTimes: {},
       bulkMessage: null,
       bulkSuccess: null,
       isLoading: false,
@@ -418,6 +422,7 @@ class InventoryState extends Equatable {
     Map<String, int>? additionalTodayBranchCount,
     bool? isBulkLoading,
     List<String>? submittedBranches,
+    Map<String, DateTime>? submittedBranchTimes,
     String? bulkMessage,
     bool? bulkSuccess,
     bool? isLoading,
@@ -511,6 +516,8 @@ class InventoryState extends Equatable {
           additionalTodayBranchCount ?? this.additionalTodayBranchCount,
       isBulkLoading: isBulkLoading ?? this.isBulkLoading,
       submittedBranches: submittedBranches ?? this.submittedBranches,
+      submittedBranchTimes:
+          submittedBranchTimes ?? this.submittedBranchTimes,
       bulkMessage: bulkMessage ?? this.bulkMessage,
       bulkSuccess: bulkSuccess ?? this.bulkSuccess,
       isLoading: isLoading ?? this.isLoading,
@@ -592,6 +599,7 @@ class InventoryState extends Equatable {
     additionalTodayBranchCount,
     isBulkLoading,
     submittedBranches,
+    submittedBranchTimes,
     requestEffectiveness,
     formularyPage,
     formularyPageSize,

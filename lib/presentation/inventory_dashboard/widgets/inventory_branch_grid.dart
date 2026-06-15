@@ -8,6 +8,7 @@ import 'branch_analytics_dialog.dart';
 class InventoryBranchGrid extends StatelessWidget {
   final List<String> branches;
   final List<String> submitted;
+  final Map<String, DateTime> submittedBranchTimes;
   final Map<String, int> editsCount;
 
   /// NEW
@@ -19,6 +20,7 @@ class InventoryBranchGrid extends StatelessWidget {
     super.key,
     required this.branches,
     required this.submitted,
+    required this.submittedBranchTimes,
     required this.editsCount,
     required this.additionalTodayBranchCount,
     required this.selectedBranch,
@@ -26,6 +28,29 @@ class InventoryBranchGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final submittedSet = submitted.toSet();
+    final sortedBranches = [...branches]..sort((a, b) {
+      final aSubmitted = submittedSet.contains(a);
+      final bSubmitted = submittedSet.contains(b);
+
+      if (aSubmitted != bSubmitted) {
+        return aSubmitted ? -1 : 1;
+      }
+
+      if (aSubmitted && bSubmitted) {
+        final aTime = submittedBranchTimes[a];
+        final bTime = submittedBranchTimes[b];
+
+        if (aTime != null && bTime != null) {
+          return aTime.compareTo(bTime);
+        }
+        if (aTime != null) return -1;
+        if (bTime != null) return 1;
+      }
+
+      return branches.indexOf(a).compareTo(branches.indexOf(b));
+    });
+
     return Container(
       margin: const EdgeInsets.only(left: 10),
       decoration: BoxDecoration(
@@ -55,12 +80,12 @@ class InventoryBranchGrid extends StatelessWidget {
                 crossAxisSpacing: 14,
                 childAspectRatio: 2.4,
               ),
-              itemCount: branches.length,
+              itemCount: sortedBranches.length,
 
               itemBuilder: (context, i) {
-                final branch = branches[i];
+                final branch = sortedBranches[i];
 
-                final isSubmitted = submitted.contains(branch);
+                final isSubmitted = submittedSet.contains(branch);
                 final isSelected = selectedBranch == branch;
 
                 final edits = editsCount[branch] ?? 0;

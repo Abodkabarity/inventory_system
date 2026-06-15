@@ -55,16 +55,8 @@ class _AdditionalRequestSidePanelState
   late final TextEditingController _qty;
   String? _selectedReason;
   String? _error;
-  final List<String> reasons = [
-    'Availability',
-    'RX Demand',
-    'High Demand',
-    'For Shelf',
-    'Stand',
-    'RX',
-    'Customer Request',
-    'Urgent Customer Request',
-  ];
+  static const String _defaultReason = 'Urgent cutomer request';
+  final List<String> reasons = const [_defaultReason];
   bool isUrgent = false;
   @override
   void initState() {
@@ -72,9 +64,9 @@ class _AdditionalRequestSidePanelState
     _qty = TextEditingController(
       text: widget.initialQty == null ? '' : widget.initialQty.toString(),
     );
-    _selectedReason = widget.initialReason.isEmpty
-        ? null
-        : widget.initialReason;
+    _selectedReason = reasons.contains(widget.initialReason)
+        ? widget.initialReason
+        : _defaultReason;
     isUrgent = widget.initialIsUrgent;
   }
 

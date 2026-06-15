@@ -82,19 +82,19 @@ class _InventoryDailyOrderPageState extends State<InventoryDailyOrderPage> {
 
         final isSearching = searchController.text.trim().isNotEmpty;
         final isGridFiltering = _hasGridFilters;
-        final sourceRows = isGridFiltering && !isSearching
-            ? state.cachedOrders
-            : state.allOrders;
+        final sourceRows = isSearching ? state.allOrders : state.cachedOrders;
         final allRows = isGridFiltering
             ? _applyGridFilters(sourceRows, _gridFilters)
             : sourceRows;
         final total = allRows.length;
         final totalCached = state.cachedOrders.length;
 
-        // When searching: show all results without pagination
-        // When browsing: paginate cachedOrders
-        final int page = isSearching ? 0 : state.currentOrdersPage;
-        final int totalPages = isSearching
+        // The grid receives every cached row so column filters work on the
+        // whole Hive cache, not just the visible 1000-row page.
+        final int page = isSearching || isGridFiltering
+            ? 0
+            : state.currentOrdersPage;
+        final int totalPages = isSearching || isGridFiltering
             ? 1
             : (totalCached == 0 ? 1 : (totalCached / _pageSize).ceil());
         final int safePage = page.clamp(0, totalPages - 1);

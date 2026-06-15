@@ -755,6 +755,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       final branches = await repo.fetchBranchesToday();
 
       final submitted = await repo.fetchSubmittedBranches(runDate);
+      final submittedTimes = await repo.fetchSubmittedBranchTimes(runDate);
 
       final additional = await repo.fetchAdditionalRequests();
 
@@ -782,6 +783,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         state.copyWith(
           branches: branches,
           submittedBranches: submitted,
+          submittedBranchTimes: submittedTimes,
           additionalRequests: additional,
           editsCount: editsCount,
           additionalTodayBranchCount: additionalBranchToday,

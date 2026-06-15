@@ -77,6 +77,7 @@ class InventoryDashboardBody extends StatelessWidget {
                 child: InventoryBranchGrid(
                   branches: state.branches,
                   submitted: state.submittedBranches,
+                  submittedBranchTimes: state.submittedBranchTimes,
                   editsCount: state.editsCount,
                   selectedBranch: state.selectedBranch,
                   additionalTodayBranchCount: state.additionalTodayBranchCount,
