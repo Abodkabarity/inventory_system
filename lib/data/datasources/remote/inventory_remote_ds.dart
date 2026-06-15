@@ -570,6 +570,42 @@ end_date
     return List<Map<String, dynamic>>.from(result);
   }
 
+  Future<List<String>> fetchDailyOrderExportDates() async {
+    final res = await client
+        .from('daily_order_exports')
+        .select('run_date')
+        .eq('status', 'done')
+        .order('run_date', ascending: false);
+
+    return (res as List)
+        .map((e) => (e['run_date'] ?? '').toString())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList();
+  }
+
+  Future<String?> fetchDailyOrderExportFileUrl({
+    required String runDate,
+  }) async {
+    final row = await client
+        .from('daily_order_exports')
+        .select('storage_path')
+        .eq('run_date', runDate)
+        .eq('status', 'done')
+        .order('created_at', ascending: false)
+        .limit(1)
+        .maybeSingle();
+
+    if (row == null) return null;
+
+    final storagePath = row['storage_path']?.toString().trim();
+    if (storagePath == null || storagePath.isEmpty) return null;
+
+    return client.storage
+        .from('daily-order-exports')
+        .createSignedUrl(storagePath, 60);
+  }
+
   Future<Map<String, dynamic>> fetchAdditionalOrderAnalysis({
     required DateTime from,
     required DateTime to,

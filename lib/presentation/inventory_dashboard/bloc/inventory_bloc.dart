@@ -15,6 +15,7 @@ import '../../../core/utils/tma_export.dart';
 import '../../../domain/entities/daily_order_row.dart';
 import '../../../domain/entities/mismatch_item.dart';
 import '../../../domain/repositories/inventory_repository.dart';
+import '../../orders/bloc/order_bloc/orders_state.dart' as orders_state;
 import '../../orders/widgets/orders_table.dart';
 import 'inventory_event.dart';
 import 'inventory_state.dart';
@@ -404,10 +405,19 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       emit(state.copyWith(allChanges: data));
     });
     on<InventorySetColumnVisible>((event, emit) {
-      final updated = List<String>.from(state.visibleColumns);
+      if ((event.columnKey == 'item_code' || event.columnKey == 'item_name') &&
+          !event.visible) {
+        return;
+      }
+
+      final updated = state.visibleColumns.isEmpty
+          ? List<String>.from(orders_state.OrdersState.defaultVisibleInTable)
+          : List<String>.from(state.visibleColumns);
 
       if (event.visible) {
-        updated.add(event.columnKey);
+        if (!updated.contains(event.columnKey)) {
+          updated.add(event.columnKey);
+        }
       } else {
         updated.remove(event.columnKey);
       }
@@ -415,18 +425,30 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       emit(state.copyWith(visibleColumns: updated));
     });
     on<InventoryReorderColumns>((event, emit) {
-      final list = List<String>.from(state.columnOrder);
+      final list = state.columnOrder.isEmpty
+          ? List<String>.from(orders_state.OrdersState.defaultColumnOrder)
+          : List<String>.from(state.columnOrder);
 
-      final item = list.removeAt(event.oldIndex);
-      list.insert(event.newIndex, item);
+      final filtered = list.where((e) => e != 'additional_request').toList();
 
-      emit(state.copyWith(columnOrder: list));
+      final oldIndex = event.oldIndex.clamp(0, filtered.length - 1);
+      final newIndex = event.newIndex.clamp(0, filtered.length);
+
+      final item = filtered.removeAt(oldIndex);
+      filtered.insert(newIndex, item);
+
+      if (list.contains('additional_request')) {
+        filtered.add('additional_request');
+      }
+
+      emit(state.copyWith(columnOrder: filtered));
     });
     on<InventoryResetColumns>((event, emit) {
       emit(
         state.copyWith(
-          visibleColumns: OrdersTable.allColumns.toList(),
-          columnOrder: OrdersTable.allColumns.toList(),
+          visibleColumns: orders_state.OrdersState.defaultVisibleInTable
+              .toList(),
+          columnOrder: orders_state.OrdersState.defaultColumnOrder.toList(),
         ),
       );
     });
@@ -452,11 +474,14 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       }
 
       try {
-        // FIRST 10K
-        final firstBatch = await repo.fetchOrdersPage(
+        const int batchSize = 3000;
+        const int concurrent = 2;
+
+        // FIRST BATCH
+        final firstBatch = await _fetchOrdersPageSafe(
           runDate: event.runDate,
           from: 0,
-          to: 9999,
+          to: batchSize - 1,
         );
 
         final firstRows = firstBatch.map(DailyOrderRow.fromMap).toList();
@@ -473,10 +498,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         // LOAD REMAINING DATA
         List<DailyOrderRow> all = List.from(firstRows);
 
-        int offset = 10000;
-
-        const int batchSize = 10000;
-        const int concurrent = 8;
+        int offset = batchSize;
 
         while (true) {
           if (emit.isDone) return;
@@ -488,7 +510,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
           final results = await Future.wait(
             offsets.map(
-              (from) => repo.fetchOrdersPage(
+              (from) => _fetchOrdersPageSafe(
                 runDate: event.runDate,
                 from: from,
                 to: from + batchSize - 1,
@@ -2574,6 +2596,55 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     }
   }
 
+  Future<List<Map<String, dynamic>>> _fetchOrdersPageSafe({
+    required String runDate,
+    required int from,
+    required int to,
+    int attempt = 0,
+  }) async {
+    try {
+      return await repo.fetchOrdersPage(runDate: runDate, from: from, to: to);
+    } catch (e) {
+      final isTimeout =
+          e is PostgrestException &&
+          (e.code == '57014' ||
+              e.message.toLowerCase().contains('statement timeout'));
+
+      if (!isTimeout) rethrow;
+
+      final size = to - from + 1;
+
+      if (size > 1000) {
+        final mid = from + (size ~/ 2) - 1;
+        final left = await _fetchOrdersPageSafe(
+          runDate: runDate,
+          from: from,
+          to: mid,
+          attempt: 0,
+        );
+        final right = await _fetchOrdersPageSafe(
+          runDate: runDate,
+          from: mid + 1,
+          to: to,
+          attempt: 0,
+        );
+        return [...left, ...right];
+      }
+
+      if (attempt < 3) {
+        await Future.delayed(Duration(milliseconds: 450 * (attempt + 1)));
+        return _fetchOrdersPageSafe(
+          runDate: runDate,
+          from: from,
+          to: to,
+          attempt: attempt + 1,
+        );
+      }
+
+      rethrow;
+    }
+  }
+
   Future<void> _onLoadOrdersPage(
     LoadOrdersPage event,
     Emitter<InventoryState> emit,
@@ -2596,6 +2667,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
     emit(
       state.copyWith(
+        allOrders: pageRows,
         currentOrdersPage: page,
         hasMorePages: false,
         isOrdersLoading: false,

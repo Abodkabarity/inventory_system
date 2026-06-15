@@ -1,8 +1,12 @@
+import 'dart:html' as html;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
+import '../../../domain/entities/daily_order_row.dart';
 import '../../orders/widgets/orders_grid_controller.dart';
-import '../../orders/widgets/orders_table.dart';
+import '../../orders/bloc/order_bloc/orders_state.dart' as orders_state;
 import '../bloc/inventory_bloc.dart';
 import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
@@ -21,6 +25,7 @@ class InventoryDailyOrderPage extends StatefulWidget {
 class _InventoryDailyOrderPageState extends State<InventoryDailyOrderPage> {
   final OrdersGridController controller = OrdersGridController();
   final TextEditingController searchController = TextEditingController();
+  Map<String, List<FilterCondition>> _gridFilters = {};
 
   static const int _pageSize = 1000;
 
@@ -44,24 +49,45 @@ class _InventoryDailyOrderPageState extends State<InventoryDailyOrderPage> {
     setState(() {});
   }
 
+  void _clearAllFilters() {
+    searchController.clear();
+    controller.resetGridUi();
+    _gridFilters = {};
+
+    context.read<InventoryBloc>().add(SearchInventoryOrders(''));
+
+    setState(() {});
+  }
+
+  bool get _hasGridFilters => _gridFilters.values.any((e) => e.isNotEmpty);
+
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<InventoryBloc, InventoryState>(
       builder: (context, state) {
         final columns = state.columnOrder.isEmpty
-            ? OrdersTable.allColumns
+            ? orders_state.OrdersState.defaultColumnOrder
             : state.columnOrder;
 
         final visible = state.visibleColumns.isEmpty
-            ? OrdersTable.allColumns
+            ? orders_state.OrdersState.defaultVisibleInTable
             : state.visibleColumns;
 
         final finalColumns = columns
             .where((c) => visible.contains(c) && c != 'additional_request')
             .toList();
+        finalColumns.remove('branch');
+        final itemCodeIndex = finalColumns.indexOf('item_code');
+        finalColumns.insert(itemCodeIndex < 0 ? 0 : itemCodeIndex, 'branch');
 
         final isSearching = searchController.text.trim().isNotEmpty;
-        final allRows = state.allOrders;
+        final isGridFiltering = _hasGridFilters;
+        final sourceRows = isGridFiltering && !isSearching
+            ? state.cachedOrders
+            : state.allOrders;
+        final allRows = isGridFiltering
+            ? _applyGridFilters(sourceRows, _gridFilters)
+            : sourceRows;
         final total = allRows.length;
         final totalCached = state.cachedOrders.length;
 
@@ -96,6 +122,7 @@ class _InventoryDailyOrderPageState extends State<InventoryDailyOrderPage> {
                     searchController: searchController,
                     state: state,
                     onClearSearch: _clearSearch,
+                    onClearFilters: _clearAllFilters,
                   ),
 
                   const SizedBox(height: 12),
@@ -107,12 +134,19 @@ class _InventoryDailyOrderPageState extends State<InventoryDailyOrderPage> {
                       isLoading: state.isOrdersLoading,
                       orderedColumns: finalColumns,
                       columnWidths: {},
+                      gridController: controller,
+                      controller: controller.controller,
                       onColumnResized: (_, __) {},
+                      onFilterChanged: (filters) {
+                        setState(() {
+                          _gridFilters = filters;
+                        });
+                      },
                     ),
                   ),
 
                   // PAGINATION — hidden while searching
-                  if (!isSearching)
+                  if (!isSearching && !isGridFiltering)
                     _PaginationBar(
                       page: safePage,
                       totalPages: totalPages,
@@ -128,11 +162,13 @@ class _InventoryDailyOrderPageState extends State<InventoryDailyOrderPage> {
                     ),
 
                   // SEARCH RESULT FOOTER
-                  if (isSearching)
+                  if (isSearching || isGridFiltering)
                     _SearchFooter(
-                      query: searchController.text.trim(),
+                      query: isSearching
+                          ? searchController.text.trim()
+                          : 'table filters',
                       resultCount: total,
-                      onClear: _clearSearch,
+                      onClear: _clearAllFilters,
                     ),
                 ],
               ),
@@ -144,6 +180,206 @@ class _InventoryDailyOrderPageState extends State<InventoryDailyOrderPage> {
         );
       },
     );
+  }
+
+  List<DailyOrderRow> _applyGridFilters(
+    List<DailyOrderRow> rows,
+    Map<String, List<FilterCondition>> filters,
+  ) {
+    final active = Map<String, List<FilterCondition>>.fromEntries(
+      filters.entries.where((e) => e.value.isNotEmpty),
+    );
+    if (active.isEmpty) return rows;
+
+    return rows.where((row) {
+      for (final entry in active.entries) {
+        if (!_matchesConditions(_filterValue(row, entry.key), entry.value)) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+  }
+
+  Object? _filterValue(DailyOrderRow r, String key) {
+    switch (key) {
+      case 'branch':
+        return r.branch;
+      case 'item_code':
+        return r.itemCode;
+      case 'item_name':
+        return r.itemName;
+      case 'goods_received_last_7_days':
+        return r.goodsReceivedLast7Days ?? '';
+      case 'branch_stock':
+        return r.branchStock;
+      case 'mismatch_stock':
+        return r.mismatchStock;
+      case 'store_stock':
+        return r.storeStock;
+      case 'pending_stock_received':
+        return r.pendingStockReceived;
+      case 'extra_qty_more_than_month':
+        return r.extraQtyMoreThanMonth;
+      case 'max_adjustment_30d':
+        return r.maxAdjustment30d;
+      case 'reason_for_max_adjustment_30d':
+      case 'reason':
+        return r.reason ?? '';
+      case 'demand_for_30_days':
+        return r.demandFor30Days;
+      case 'reorder_point_min':
+        return r.reorderPointMin ?? 0;
+      case 'reorder_max':
+        return r.reorderMax ?? 0;
+      case 'reorder_qty':
+        return r.reorderQtyNum;
+      case 'final_reorder_qty_store_stock_gt_0':
+        return r.finalReorderQtyStoreStockGt0;
+      case 'date_of_last_qty_received_in_branch':
+        return r.dateOfLastQtyReceivedInBranch ?? '';
+      case 'total_sold_qty_cash_last_90':
+        return r.totalSoldQtyCashLast90 ?? 0;
+      case 'total_sold_qty_online_last_90':
+        return r.totalSoldQtyOnlineLast90 ?? 0;
+      case 'total_sold_qty_insurance_last_90':
+        return r.totalSoldQtyInsuranceLast90 ?? 0;
+      case 'total_sales_last_90_days':
+        return r.totalSalesLast90Days ?? 0;
+      case 'qty_30_days_from_last_45d':
+        return r.qty30DaysFromLast45d;
+      case 'branch_formulary':
+        return r.branchFormulary ?? '';
+      case 'assortment_qty_base_stock':
+        return r.assortmentQtyBaseStock ?? '';
+      case 'assortment_by':
+        return r.assortmentBy ?? '';
+      case 'assortment_start':
+        return r.assortmentStart ?? '';
+      case 'assortment_end':
+        return r.assortmentEnd ?? '';
+      case 'tma_qty':
+        return r.tmaQty ?? 0;
+      case 'tma_start':
+        return r.tmaStart ?? '';
+      case 'tma_end':
+        return r.tmaEnd ?? '';
+      case 'item_purchase_type':
+        return r.itemPurchaseType ?? '';
+      case 'sales_orientation':
+        return r.salesOrientation ?? '';
+      case 'category':
+        return r.category ?? '';
+      case 'sub_category':
+        return r.subCategory ?? '';
+      case 'company':
+        return r.company ?? '';
+      case 'supplier':
+        return r.supplier ?? '';
+      case 'indication':
+        return r.indication ?? '';
+      case 'active_ingredient':
+        return r.activeIngredient ?? '';
+      case 'pack_size':
+        return r.packSize ?? '';
+      case 'concentration':
+        return r.concentration ?? '';
+      case 'product_type_form':
+        return r.productTypeForm ?? '';
+      case 'retail_price':
+        return r.retailPrice ?? 0;
+      case 'vat':
+        return r.vat ?? 0;
+      case 'is_upp':
+        return r.isUpp == true ? 'YES' : 'NO';
+      case 'upp_thiqa':
+        return r.uppThiqa == true ? 'YES' : 'NO';
+      case 'upp_basic':
+        return r.uppBasic == true ? 'YES' : 'NO';
+      case 'tier':
+        return r.tier ?? '';
+      case 'item_minimum_order_unit':
+        return r.minOrderUnit ?? '';
+      case 'barcode':
+        return r.barcode ?? '';
+      case 'store_item_classifications':
+        return r.storeItemClassifications ?? '';
+      default:
+        return '';
+    }
+  }
+
+  bool _matchesConditions(Object? value, List<FilterCondition> conditions) {
+    if (conditions.isEmpty) return true;
+
+    bool? result;
+    for (final condition in conditions) {
+      final matched = _matchesCondition(value, condition);
+      result = result == null
+          ? matched
+          : condition.filterOperator == FilterOperator.and
+          ? result && matched
+          : result || matched;
+    }
+    return result ?? true;
+  }
+
+  bool _matchesCondition(Object? value, FilterCondition condition) {
+    final rawNum = num.tryParse((value ?? '').toString());
+    final compareNum = num.tryParse((condition.value ?? '').toString());
+
+    if (rawNum != null && compareNum != null) {
+      switch (condition.type) {
+        case FilterType.equals:
+          return rawNum == compareNum;
+        case FilterType.notEqual:
+          return rawNum != compareNum;
+        case FilterType.greaterThan:
+          return rawNum > compareNum;
+        case FilterType.greaterThanOrEqual:
+          return rawNum >= compareNum;
+        case FilterType.lessThan:
+          return rawNum < compareNum;
+        case FilterType.lessThanOrEqual:
+          return rawNum <= compareNum;
+        default:
+          break;
+      }
+    }
+
+    final left = condition.isCaseSensitive
+        ? (value ?? '').toString()
+        : (value ?? '').toString().toLowerCase();
+    final right = condition.isCaseSensitive
+        ? (condition.value ?? '').toString()
+        : (condition.value ?? '').toString().toLowerCase();
+
+    switch (condition.type) {
+      case FilterType.contains:
+        return left.contains(right);
+      case FilterType.doesNotContain:
+        return !left.contains(right);
+      case FilterType.beginsWith:
+        return left.startsWith(right);
+      case FilterType.doesNotBeginWith:
+        return !left.startsWith(right);
+      case FilterType.endsWith:
+        return left.endsWith(right);
+      case FilterType.doesNotEndsWith:
+        return !left.endsWith(right);
+      case FilterType.equals:
+        return left == right;
+      case FilterType.notEqual:
+        return left != right;
+      case FilterType.greaterThan:
+        return left.compareTo(right) > 0;
+      case FilterType.greaterThanOrEqual:
+        return left.compareTo(right) >= 0;
+      case FilterType.lessThan:
+        return left.compareTo(right) < 0;
+      case FilterType.lessThanOrEqual:
+        return left.compareTo(right) <= 0;
+    }
   }
 }
 
@@ -162,6 +398,7 @@ class _TopBar extends StatelessWidget {
   final TextEditingController searchController;
   final InventoryState state;
   final VoidCallback onClearSearch;
+  final VoidCallback onClearFilters;
 
   const _TopBar({
     required this.runDate,
@@ -175,135 +412,389 @@ class _TopBar extends StatelessWidget {
     required this.searchController,
     required this.state,
     required this.onClearSearch,
+    required this.onClearFilters,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        // ── SEARCH FIELD ────────────────────────────────────
-        Expanded(
-          child: SizedBox(
-            height: 42,
-            child: TextField(
-              controller: searchController,
-              decoration: InputDecoration(
-                hintText: 'Search item name / code / branch / barcode…',
-                hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 13),
-                prefixIcon: IconButton(
-                  icon: const Icon(Icons.search, size: 18),
-                  onPressed: () {
-                    context.read<InventoryBloc>().add(
-                      SearchInventoryOrders(searchController.text.trim()),
-                    );
-                  },
-                ),
-                suffixIcon: searchController.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.close, size: 16),
-                        color: Colors.grey.shade500,
-                        tooltip: 'Clear search',
-                        onPressed: onClearSearch,
-                        splashRadius: 16,
-                      )
-                    : null,
-                contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(
-                    color: Color(0xFF1E3A5F),
-                    width: 1.5,
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE4EAF2)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .04),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // ── SEARCH FIELD ────────────────────────────────────
+          Expanded(
+            child: SizedBox(
+              height: 42,
+              child: TextField(
+                controller: searchController,
+                decoration: InputDecoration(
+                  hintText: 'Search item name / code / branch / barcode…',
+                  hintStyle: TextStyle(
+                    color: Colors.grey.shade500,
+                    fontSize: 13,
+                  ),
+                  prefixIcon: IconButton(
+                    icon: const Icon(Icons.search, size: 18),
+                    onPressed: () {
+                      context.read<InventoryBloc>().add(
+                        SearchInventoryOrders(searchController.text.trim()),
+                      );
+                    },
+                  ),
+                  suffixIcon: searchController.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.close, size: 16),
+                          color: Colors.grey.shade500,
+                          tooltip: 'Clear search',
+                          onPressed: onClearSearch,
+                          splashRadius: 16,
+                        )
+                      : null,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFD),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xFFDCE6F2)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xFFDCE6F2)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(
+                      color: Color(0xFF0EA5C6),
+                      width: 1.5,
+                    ),
                   ),
                 ),
+                onSubmitted: (_) {
+                  context.read<InventoryBloc>().add(
+                    SearchInventoryOrders(searchController.text.trim()),
+                  );
+                },
               ),
-              onSubmitted: (_) {
-                context.read<InventoryBloc>().add(
-                  SearchInventoryOrders(searchController.text.trim()),
-                );
-              },
             ),
           ),
-        ),
 
-        const SizedBox(width: 10),
+          const SizedBox(width: 10),
 
-        // ── STATUS BADGE ────────────────────────────────────
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 250),
-          child: _buildBadge(),
-        ),
+          // ── STATUS BADGE ────────────────────────────────────
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            child: _buildBadge(),
+          ),
 
-        const SizedBox(width: 8),
+          const SizedBox(width: 8),
 
-        // ── EXPORT ──────────────────────────────────────────
-        SizedBox(
-          height: 42,
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF0D7377),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+          SizedBox(
+            height: 42,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFF4D57),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                elevation: 0,
               ),
-              elevation: 0,
+              onPressed: onClearFilters,
+              icon: const Icon(Icons.filter_alt_off_rounded, size: 18),
+              label: const Text(
+                'Clear Filters',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              ),
             ),
-            onPressed: state.isExporting
-                ? null
-                : () {
-                    context.read<InventoryBloc>().add(
-                      ExportInventoryOrders(
-                        runDate: runDate,
-                        visibleColumns: finalColumns,
+          ),
+
+          const SizedBox(width: 8),
+
+          // ── EXPORT ──────────────────────────────────────────
+          SizedBox(
+            height: 42,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0D7377),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                elevation: 0,
+              ),
+              onPressed: state.isExporting
+                  ? null
+                  : () {
+                      _openDailyOrderExportDialog(context);
+                    },
+              icon: const Icon(Icons.download, size: 18),
+              label: const Text('Export', style: TextStyle(fontSize: 13)),
+            ),
+          ),
+
+          const SizedBox(width: 8),
+
+          // ── COLUMNS ─────────────────────────────────────────
+          SizedBox(
+            height: 42,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.deepPurple,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                elevation: 0,
+              ),
+              onPressed: () {
+                showGeneralDialog(
+                  context: context,
+                  barrierDismissible: true,
+                  barrierLabel: 'Columns',
+                  barrierColor: Colors.black.withValues(alpha: .35),
+                  transitionDuration: const Duration(milliseconds: 220),
+                  pageBuilder: (dialogContext, animation, secondaryAnimation) {
+                    final bloc = context.read<InventoryBloc>();
+                    return Align(
+                      alignment: Alignment.centerRight,
+                      child: BlocProvider.value(
+                        value: bloc,
+                        child: const Material(
+                          color: Colors.transparent,
+                          child: InventoryColumnsPanel(),
+                        ),
                       ),
                     );
                   },
-            icon: const Icon(Icons.download, size: 18),
-            label: const Text('Export', style: TextStyle(fontSize: 13)),
-          ),
-        ),
+                  transitionBuilder:
+                      (context, animation, secondaryAnimation, child) {
+                        final offset =
+                            Tween<Offset>(
+                              begin: const Offset(1, 0),
+                              end: Offset.zero,
+                            ).animate(
+                              CurvedAnimation(
+                                parent: animation,
+                                curve: Curves.easeOutCubic,
+                              ),
+                            );
 
-        const SizedBox(width: 8),
-
-        // ── COLUMNS ─────────────────────────────────────────
-        SizedBox(
-          height: 42,
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: const Color(0xFF1E3A5F),
-              side: BorderSide(color: Colors.grey.shade300),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+                        return SlideTransition(position: offset, child: child);
+                      },
+                );
+              },
+              icon: const Icon(Icons.view_column_outlined, size: 18),
+              label: const Text(
+                'Add Columns',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
               ),
-              elevation: 0,
             ),
-            onPressed: () {
-              showModalBottomSheet(
-                context: context,
-                builder: (ctx) {
-                  final bloc = context.read<InventoryBloc>();
-                  return BlocProvider.value(
-                    value: bloc,
-                    child: const InventoryColumnsPanel(),
-                  );
-                },
-              );
-            },
-            icon: const Icon(Icons.view_column_outlined, size: 18),
-            label: const Text('Columns', style: TextStyle(fontSize: 13)),
           ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openDailyOrderExportDialog(BuildContext context) async {
+    final bloc = context.read<InventoryBloc>();
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        backgroundColor: Colors.white,
+        content: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 16),
+            Text('Loading export dates...'),
+          ],
         ),
-      ],
+      ),
+    );
+
+    List<String> dates = [];
+    Object? loadError;
+
+    try {
+      dates = await bloc.repo.fetchDailyOrderExportDates();
+    } catch (e) {
+      loadError = e;
+    }
+
+    if (context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+
+    if (!context.mounted) return;
+
+    if (loadError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load export dates: $loadError')),
+      );
+      return;
+    }
+
+    String? downloadingDate;
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(22),
+              ),
+              title: Row(
+                children: [
+                  const Icon(Icons.download_rounded, color: Color(0xFF0D7377)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Daily Order Exports'),
+                        Text(
+                          '${dates.length} available files',
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(dialogContext),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 460,
+                height: 520,
+                child: dates.isEmpty
+                    ? const Center(child: Text('No exported files found'))
+                    : ListView.separated(
+                        itemCount: dates.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (_, i) {
+                          final date = dates[i];
+                          final isLoading = downloadingDate == date;
+
+                          return Card(
+                            margin: const EdgeInsets.only(top: 12),
+                            color: Colors.white,
+                            elevation: 6,
+                            shadowColor: const Color(
+                              0xFF0D7377,
+                            ).withOpacity(0.18),
+                            shape: RoundedRectangleBorder(
+                              side: BorderSide(color: Colors.grey.shade200),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: ListTile(
+                              leading: const Icon(
+                                Icons.calendar_month_rounded,
+                                color: Color(0xFF0D7377),
+                              ),
+                              title: Text(
+                                date,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              subtitle: const Text('Daily order export file'),
+                              trailing: isLoading
+                                  ? const SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.file_download_outlined),
+                              onTap: downloadingDate != null
+                                  ? null
+                                  : () async {
+                                      setState(() {
+                                        downloadingDate = date;
+                                      });
+
+                                      try {
+                                        final url = await bloc.repo
+                                            .fetchDailyOrderExportFileUrl(
+                                              runDate: date,
+                                            );
+
+                                        if (url == null || url.isEmpty) {
+                                          throw Exception(
+                                            'Export file not found',
+                                          );
+                                        }
+
+                                        html.AnchorElement(href: url)
+                                          ..setAttribute(
+                                            'download',
+                                            'daily_order_$date.xlsx',
+                                          )
+                                          ..click();
+
+                                        if (dialogContext.mounted) {
+                                          Navigator.pop(dialogContext);
+                                        }
+                                      } catch (e) {
+                                        if (dialogContext.mounted) {
+                                          ScaffoldMessenger.of(
+                                            dialogContext,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(e.toString()),
+                                            ),
+                                          );
+                                        }
+
+                                        setState(() {
+                                          downloadingDate = null;
+                                        });
+                                      }
+                                    },
+                            ),
+                          );
+                        },
+                      ),
+              ),
+              actions: [
+                TextButton.icon(
+                  icon: const Icon(Icons.close),
+                  label: const Text('Close'),
+                  onPressed: () => Navigator.pop(dialogContext),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 

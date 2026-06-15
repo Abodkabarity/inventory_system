@@ -136,6 +136,8 @@ abstract class InventoryRepository {
     required String runDate,
     required String query,
   });
+  Future<List<String>> fetchDailyOrderExportDates();
+  Future<String?> fetchDailyOrderExportFileUrl({required String runDate});
   Future<void> importAssortmentBulk(List<Map<String, dynamic>> rows);
   Future<void> deleteAssortmentBulk(List<Map<String, dynamic>> rows);
   Future<void> importTmaBulk(List<Map<String, dynamic>> rows);

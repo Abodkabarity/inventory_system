@@ -54,6 +54,7 @@ class _InventoryDashboardViewState extends State<InventoryDashboardView> {
   RealtimeChannel? channel;
 
   bool firstLoad = true;
+  bool _drawerCollapsed = false;
 
   @override
   void initState() {
@@ -133,12 +134,36 @@ class _InventoryDashboardViewState extends State<InventoryDashboardView> {
                 children: [
                   Row(
                     children: [
-                      const InventoryDrawer(),
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 240),
+                        curve: Curves.easeOutCubic,
+                        width: _drawerCollapsed ? 0 : 270,
+                        child: ClipRect(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            widthFactor: _drawerCollapsed ? 0 : 1,
+                            child: const InventoryDrawer(),
+                          ),
+                        ),
+                      ),
 
                       Expanded(
                         child: _buildPage(state, isSubmitted, widget.runDate),
                       ),
                     ],
+                  ),
+
+                  Positioned(
+                    top: 16,
+                    left: _drawerCollapsed ? 10 : 252,
+                    child: _DrawerToggleButton(
+                      collapsed: _drawerCollapsed,
+                      onPressed: () {
+                        setState(() {
+                          _drawerCollapsed = !_drawerCollapsed;
+                        });
+                      },
+                    ),
                   ),
 
                   if (firstLoad)
@@ -153,6 +178,45 @@ class _InventoryDashboardViewState extends State<InventoryDashboardView> {
                 ],
               );
             },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DrawerToggleButton extends StatelessWidget {
+  final bool collapsed;
+  final VoidCallback onPressed;
+
+  const _DrawerToggleButton({required this.collapsed, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: collapsed ? 'Show menu' : 'Hide menu',
+      child: Material(
+        color: Colors.white,
+        elevation: 8,
+        shadowColor: Colors.black.withValues(alpha: .14),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Icon(
+              collapsed
+                  ? Icons.keyboard_double_arrow_right_rounded
+                  : Icons.keyboard_double_arrow_left_rounded,
+              color: AppColors.primaryColor,
+              size: 22,
+            ),
           ),
         ),
       ),

@@ -959,6 +959,16 @@ class InventoryRepositoryImpl implements InventoryRepository {
   }
 
   @override
+  Future<List<String>> fetchDailyOrderExportDates() {
+    return remote.fetchDailyOrderExportDates();
+  }
+
+  @override
+  Future<String?> fetchDailyOrderExportFileUrl({required String runDate}) {
+    return remote.fetchDailyOrderExportFileUrl(runDate: runDate);
+  }
+
+  @override
   Future<Map<String, dynamic>> fetchAdditionalOrderAnalysis({
     required DateTime from,
     required DateTime to,

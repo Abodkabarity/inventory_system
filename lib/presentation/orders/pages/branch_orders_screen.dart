@@ -349,7 +349,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
       builder: (context, s) {
         final isBusy = s.isBusy;
 
-        final statsAll = BranchOrdersSelectors.calcStats(s.rows);
+        final visibleStats = BranchOrdersSelectors.calcStats(s.viewRows);
         final categories = BranchOrdersSelectors.extractCategories(s.rows);
 
         final orderedColumns = s.isOrderDay
@@ -833,10 +833,14 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                           SizedBox(
                                             width: cardWidth,
                                             child: _KpiCard(
-                                              title: 'Total Products',
-                                              value: statsAll.totalProducts
+                                              title: 'Visible Products',
+                                              value: visibleStats.totalProducts
                                                   .toString(),
-                                              subtitle: 'All APG Items',
+                                              subtitle:
+                                                  s.viewRows.length ==
+                                                      s.rows.length
+                                                  ? 'All APG Items'
+                                                  : 'Filtered items',
                                               icon: Icons.list_alt_outlined,
                                               isSelected: false,
                                             ),
@@ -854,7 +858,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                               },
                                               child: _KpiCard(
                                                 title: 'Items in Order',
-                                                value: statsAll
+                                                value: visibleStats
                                                     .finalReorderCount
                                                     .round()
                                                     .toString(),
@@ -870,7 +874,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                             width: cardWidth,
                                             child: _KpiCard(
                                               title: 'Non',
-                                              value: '${statsAll.non}',
+                                              value: '${visibleStats.non}',
                                               subtitle: '',
                                               icon: Icons.layers_outlined,
                                               isSelected: false,

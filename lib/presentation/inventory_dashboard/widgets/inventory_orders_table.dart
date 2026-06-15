@@ -4,6 +4,8 @@ import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../domain/entities/daily_order_row.dart';
+import '../../orders/widgets/orders_grid_controller.dart';
+import '../../orders/widgets/orders_table.dart';
 
 // ─────────────────────────────────────────────
 // COLUMN GROUPS  — identical palette to OrdersTable
@@ -59,7 +61,14 @@ _ColGroup _groupFor(String key) {
   }.contains(key)) {
     return _ColGroup.stock;
   }
-  if (const {'demand_for_30_days', 'qty_30_days_from_last_45d'}.contains(key)) {
+  if (const {
+    'demand_for_30_days',
+    'qty_30_days_from_last_45d',
+    'total_sold_qty_cash_last_90',
+    'total_sold_qty_online_last_90',
+    'total_sold_qty_insurance_last_90',
+    'total_sales_last_90_days',
+  }.contains(key)) {
     return _ColGroup.sales;
   }
   if (const {
@@ -73,6 +82,7 @@ _ColGroup _groupFor(String key) {
     'tma_start',
     'tma_end',
     'max_adjustment_30d',
+    'reason_for_max_adjustment_30d',
   }.contains(key)) {
     return _ColGroup.rules;
   }
@@ -138,8 +148,10 @@ class InventoryOrdersTable extends StatefulWidget {
   final bool isLoading;
   final List<String> orderedColumns;
   final Map<String, double> columnWidths;
+  final OrdersGridController gridController;
   final DataGridController? controller;
   final void Function(String columnKey, double width) onColumnResized;
+  final ValueChanged<Map<String, List<FilterCondition>>>? onFilterChanged;
 
   const InventoryOrdersTable({
     super.key,
@@ -147,48 +159,15 @@ class InventoryOrdersTable extends StatefulWidget {
     required this.isLoading,
     required this.orderedColumns,
     required this.columnWidths,
+    required this.gridController,
     required this.onColumnResized,
+    this.onFilterChanged,
     this.controller,
   });
 
-  static const List<String> allColumns = [
-    'row_no',
-    'branch',
-    'item_code',
-    'item_name',
-    'goods_received_last_7_days',
-    'branch_stock',
-    'mismatch_stock',
-    'store_stock',
-    'pending_stock_received',
-    'demand_for_30_days',
-    'reorder_qty',
-    'final_reorder_qty_store_stock_gt_0',
-    'branch_formulary',
-    'category',
-    'supplier',
-    'barcode',
-  ];
+  static List<String> get allColumns => OrdersTable.allColumns;
 
-  static const Map<String, String> titles = {
-    'row_no': '#',
-    'branch': 'BRANCH',
-    'item_code': 'ITEM CODE',
-    'item_name': 'ITEM NAME',
-    'goods_received_last_7_days': 'GOODS RECEIVED\n(LAST 7 DAYS)',
-    'branch_stock': 'BRANCH STOCK',
-    'mismatch_stock': 'MISMATCH STOCK',
-    'store_stock': 'STORE STOCK',
-    'pending_stock_received': 'PENDING STOCK\nRECEIVED',
-    'demand_for_30_days': 'DEMAND FOR\n30 DAYS',
-    'reorder_qty': 'REORDER QTY',
-    'final_reorder_qty_store_stock_gt_0':
-        'FINAL REORDER QTY\n(STORE STOCK > 0)',
-    'branch_formulary': 'BRANCH\nFORMULARY',
-    'category': 'CATEGORY',
-    'supplier': 'SUPPLIER',
-    'barcode': 'BARCODE',
-  };
+  static Map<String, String> get titles => OrdersTable.titles;
 
   @override
   State<InventoryOrdersTable> createState() => _InventoryOrdersTableState();
@@ -204,6 +183,7 @@ class _InventoryOrdersTableState extends State<InventoryOrdersTable> {
       rows: widget.rows,
       columns: widget.orderedColumns,
     );
+    widget.gridController.attachSource(_source);
   }
 
   @override
@@ -346,9 +326,16 @@ class _InventoryOrdersTableState extends State<InventoryOrdersTable> {
                 );
                 return true;
               },
+              onFilterChanged: (_) {
+                widget.onFilterChanged?.call(
+                  Map<String, List<FilterCondition>>.from(
+                    _source.filterConditions,
+                  ),
+                );
+              },
               columns: widget.orderedColumns.map((key) {
                 final group = _groupFor(key);
-                final title = InventoryOrdersTable.titles[key] ?? key;
+                final title = OrdersTable.titles[key] ?? key;
                 return GridColumn(
                   columnName: key,
                   width: _widthFor(key),
@@ -400,10 +387,8 @@ class _InventoryOrdersTableState extends State<InventoryOrdersTable> {
 // DATA SOURCE
 // ─────────────────────────────────────────────
 class _InventoryOrdersDataSource extends DataGridSource {
-  List<DailyOrderRow> _rows = [];
   List<String> _columns = [];
   List<DataGridRow> _gridRows = [];
-  final Map<DataGridRow, int> _rowToIndex = {};
 
   _InventoryOrdersDataSource({
     required List<DailyOrderRow> rows,
@@ -416,7 +401,6 @@ class _InventoryOrdersDataSource extends DataGridSource {
     required List<DailyOrderRow> rows,
     required List<String> columns,
   }) {
-    _rows = rows;
     _columns = columns;
     _gridRows = rows.asMap().entries.map((entry) {
       final idx = entry.key;
@@ -427,11 +411,6 @@ class _InventoryOrdersDataSource extends DataGridSource {
         }).toList(),
       );
     }).toList();
-
-    _rowToIndex.clear();
-    for (var i = 0; i < _gridRows.length; i++) {
-      _rowToIndex[_gridRows[i]] = i;
-    }
 
     notifyListeners();
   }
@@ -456,20 +435,96 @@ class _InventoryOrdersDataSource extends DataGridSource {
         return r.storeStock;
       case 'pending_stock_received':
         return r.pendingStockReceived;
+      case 'extra_qty_more_than_month':
+        return r.extraQtyMoreThanMonth;
+      case 'max_adjustment_30d':
+        return r.maxAdjustment30d;
+      case 'reason_for_max_adjustment_30d':
+        return r.reason ?? '';
       case 'demand_for_30_days':
         return _fmt(r.demandFor30Days);
+      case 'reorder_point_min':
+        return r.reorderPointMin ?? '';
+      case 'reorder_max':
+        return r.reorderMax ?? '';
       case 'reorder_qty':
         return r.reorderQtyNum;
       case 'final_reorder_qty_store_stock_gt_0':
         return r.finalReorderQtyStoreStockGt0;
+      case 'date_of_last_qty_received_in_branch':
+        return r.dateOfLastQtyReceivedInBranch ?? '';
+      case 'total_sold_qty_cash_last_90':
+        return r.totalSoldQtyCashLast90 ?? '';
+      case 'total_sold_qty_online_last_90':
+        return r.totalSoldQtyOnlineLast90 ?? '';
+      case 'total_sold_qty_insurance_last_90':
+        return r.totalSoldQtyInsuranceLast90 ?? '';
+      case 'total_sales_last_90_days':
+        return r.totalSalesLast90Days ?? '';
+      case 'qty_30_days_from_last_45d':
+        return _fmtFixed2(r.qty30DaysFromLast45d);
       case 'branch_formulary':
         return r.branchFormulary ?? '';
+      case 'assortment_qty_base_stock':
+        return r.assortmentQtyBaseStock ?? '';
+      case 'assortment_by':
+        return r.assortmentBy ?? '';
+      case 'reason':
+        return r.reason ?? '';
+      case 'assortment_start':
+        return r.assortmentStart ?? '';
+      case 'assortment_end':
+        return r.assortmentEnd ?? '';
+      case 'tma_qty':
+        return r.tmaQty ?? 0;
+      case 'tma_start':
+        return r.tmaStart ?? '';
+      case 'tma_end':
+        return r.tmaEnd ?? '';
+      case 'item_purchase_type':
+        return r.itemPurchaseType ?? '';
+      case 'sales_orientation':
+        return r.salesOrientation ?? '';
       case 'category':
         return r.category ?? '';
+      case 'sub_category':
+        return r.subCategory ?? '';
+      case 'company':
+        return r.company ?? '';
       case 'supplier':
         return r.supplier ?? '';
+      case 'indication':
+        return r.indication ?? '';
+      case 'active_ingredient':
+        return r.activeIngredient ?? '';
+      case 'pack_size':
+        return r.packSize ?? '';
+      case 'concentration':
+        return r.concentration ?? '';
+      case 'product_type_form':
+        return r.productTypeForm ?? '';
+      case 'retail_price':
+        return r.retailPrice ?? '';
+      case 'vat':
+        return r.vat ?? '';
+      case 'is_upp':
+        return (r.isUpp == true) ? 'YES' : ((r.isUpp == false) ? 'NO' : '');
+      case 'upp_thiqa':
+        return (r.uppThiqa == true)
+            ? 'YES'
+            : ((r.uppThiqa == false) ? 'NO' : '');
+      case 'upp_basic':
+        return (r.uppBasic == true)
+            ? 'YES'
+            : ((r.uppBasic == false) ? 'NO' : '');
+      case 'tier':
+        return r.tier ?? '';
+      case 'item_minimum_order_unit':
+        return r.minOrderUnit ?? '';
       case 'barcode':
         return r.barcode ?? '';
+      case 'store_item_classifications':
+        return r.storeItemClassifications ?? '';
       default:
         return '';
     }
@@ -480,6 +535,13 @@ class _InventoryOrdersDataSource extends DataGridSource {
     final n = num.tryParse(v.toString());
     if (n == null) return v.toString();
     if (n == n.roundToDouble()) return n.toInt().toString();
+    return n.toStringAsFixed(2);
+  }
+
+  String _fmtFixed2(dynamic v) {
+    if (v == null) return '';
+    final n = num.tryParse(v.toString());
+    if (n == null) return v.toString();
     return n.toStringAsFixed(2);
   }
 
@@ -524,9 +586,6 @@ class _InventoryOrdersDataSource extends DataGridSource {
 
   @override
   DataGridRowAdapter buildRow(DataGridRow row) {
-    final idx = _rowToIndex[row] ?? -1;
-    final daily = (idx >= 0 && idx < _rows.length) ? _rows[idx] : null;
-
     return DataGridRowAdapter(
       cells: row.getCells().map((cell) {
         final key = cell.columnName;
