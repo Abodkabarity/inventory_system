@@ -444,7 +444,7 @@ class _MismatchDataSource extends DataGridSource {
 
           return OutlinedButton.icon(
             icon: const Icon(
-              Icons.history,
+              Icons.visibility_rounded,
               size: 16,
               color: AppColors.secondaryColor,
             ),
@@ -453,76 +453,32 @@ class _MismatchDataSource extends DataGridSource {
               style: TextStyle(color: AppColors.secondaryColor),
             ),
             style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              backgroundColor: const Color(0xFFF8FBFF),
+              side: BorderSide(
+                color: AppColors.secondaryColor.withValues(alpha: .35),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(12),
               ),
             ),
             onPressed: () async {
               final ctx = context;
 
-              final res = await context
+              final raw = await context
                   .read<InventoryBloc>()
                   .repo
                   .fetchMismatchHistory(item.branchName, item.itemCode);
+              final res = raw.where((e) {
+                final action = (e['action'] ?? '').toString().toLowerCase();
+                return action == 'update' || action == 'delete';
+              }).toList();
+
               if (!ctx.mounted) return;
 
               showDialog(
                 context: ctx,
-                builder: (_) => AlertDialog(
-                  backgroundColor: Colors.white,
-                  title: const Text("History Log"),
-                  content: SizedBox(
-                    width: 600,
-                    child: Column(
-                      children: [
-                        Expanded(
-                          child: ListView(
-                            children: res.map((e) {
-                              return Card(
-                                color: AppColors.white,
-                                elevation: 5,
-                                shadowColor: AppColors.primaryColor,
-                                child: ListTile(
-                                  title: Text(e['item_name'] ?? ''),
-                                  subtitle: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text("Action: ${e['action']}"),
-                                      Text(
-                                        "Old System: ${e['old_system_stock']}",
-                                      ),
-                                      Text(
-                                        "Old Actual: ${e['old_actual_stock']}",
-                                      ),
-                                      Text("Diff: ${e['old_diff']}"),
-                                      Text("Note: ${e['note'] ?? ''}"),
-                                      Text("Time: ${e['changed_at']}"),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                            padding: EdgeInsets.symmetric(horizontal: 75.w),
-                          ),
-                          onPressed: () {
-                            Navigator.pop(context);
-                          },
-                          child: Text(
-                            "Close",
-                            style: TextStyle(color: Colors.white),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                builder: (_) => _MismatchHistoryDialog(item: item, logs: res),
               );
             },
           );
@@ -536,4 +492,362 @@ class _MismatchDataSource extends DataGridSource {
       }).toList(),
     );
   }
+}
+
+class _MismatchHistoryDialog extends StatelessWidget {
+  final MismatchItem item;
+  final List<Map<String, dynamic>> logs;
+
+  const _MismatchHistoryDialog({required this.item, required this.logs});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
+      child: Container(
+        width: 780,
+        constraints: const BoxConstraints(maxHeight: 720),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: .16),
+              blurRadius: 28,
+              offset: const Offset(0, 14),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.fromLTRB(22, 18, 14, 18),
+              decoration: const BoxDecoration(
+                color: Color(0xFFF4FAFF),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryColor.withValues(alpha: .14),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(
+                      Icons.manage_history_rounded,
+                      color: AppColors.primaryColor,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.itemName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF102033),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${item.branchName} • ${item.itemCode}',
+                          style: const TextStyle(
+                            color: Color(0xFF6B7A90),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: logs.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.all(36),
+                      child: Text('No update/delete history found'),
+                    )
+                  : ListView.separated(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.all(20),
+                      itemCount: logs.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final log = logs[index];
+                        final action = (log['action'] ?? '')
+                            .toString()
+                            .toLowerCase();
+                        return _HistoryLogCard(log: log, action: action);
+                      },
+                    ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primaryColor,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 14,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.check_rounded),
+                    label: const Text('Done'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HistoryLogCard extends StatelessWidget {
+  final Map<String, dynamic> log;
+  final String action;
+
+  const _HistoryLogCard({required this.log, required this.action});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDelete = action == 'delete';
+    final color = isDelete ? const Color(0xFFFF4D57) : AppColors.primaryColor;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDelete ? const Color(0xFFFFF6F6) : const Color(0xFFF7FBFF),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: color.withValues(alpha: .22)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  action.toUpperCase(),
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                _formatDate(log['changed_at']),
+                style: const TextStyle(
+                  color: Color(0xFF728198),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (isDelete)
+            Row(
+              children: [
+                Expanded(
+                  child: _ValueBox(
+                    label: 'Old System',
+                    value: log['old_system_stock'],
+                    color: const Color(0xFFFF4D57),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _ValueBox(
+                    label: 'Old Actual',
+                    value: log['old_actual_stock'],
+                    color: const Color(0xFFFF4D57),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _ValueBox(
+                    label: 'Old Diff',
+                    value: log['old_diff'],
+                    color: const Color(0xFFFF4D57),
+                  ),
+                ),
+              ],
+            )
+          else ...[
+            _CompareLine(
+              title: 'System Stock',
+              oldValue: log['old_system_stock'],
+              newValue: log['new_system_stock'],
+            ),
+            const SizedBox(height: 10),
+            _CompareLine(
+              title: 'Actual Stock',
+              oldValue: log['old_actual_stock'],
+              newValue: log['new_actual_stock'],
+            ),
+            const SizedBox(height: 10),
+            _CompareLine(
+              title: 'Diff',
+              oldValue: log['old_diff'],
+              newValue: log['new_diff'],
+            ),
+          ],
+          if ((log['note'] ?? '').toString().trim().isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE5EAF2)),
+              ),
+              child: Text(
+                'Note: ${log['note']}',
+                style: const TextStyle(color: Color(0xFF46556A)),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _CompareLine extends StatelessWidget {
+  final String title;
+  final dynamic oldValue;
+  final dynamic newValue;
+
+  const _CompareLine({
+    required this.title,
+    required this.oldValue,
+    required this.newValue,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 120,
+          child: Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF334155),
+            ),
+          ),
+        ),
+        Expanded(
+          child: _ValueBox(
+            label: 'Old',
+            value: oldValue,
+            color: const Color(0xFFFF4D57),
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 10),
+          child: Icon(Icons.arrow_forward_rounded, color: Color(0xFF8AA0B8)),
+        ),
+        Expanded(
+          child: _ValueBox(
+            label: 'New',
+            value: newValue,
+            color: const Color(0xFF24A148),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ValueBox extends StatelessWidget {
+  final String label;
+  final dynamic value;
+  final Color color;
+
+  const _ValueBox({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: .18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            (value ?? '-').toString(),
+            style: TextStyle(
+              color: color,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _formatDate(dynamic value) {
+  final parsed = DateTime.tryParse((value ?? '').toString());
+  if (parsed == null) return (value ?? '').toString();
+  final y = parsed.year.toString().padLeft(4, '0');
+  final m = parsed.month.toString().padLeft(2, '0');
+  final d = parsed.day.toString().padLeft(2, '0');
+  final hh = parsed.hour.toString().padLeft(2, '0');
+  final mm = parsed.minute.toString().padLeft(2, '0');
+  return '$y-$m-$d  $hh:$mm';
 }

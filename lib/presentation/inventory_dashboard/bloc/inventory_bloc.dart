@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/cache/daily_order_cache_service.dart';
 import '../../../core/utils/assortment_export.dart';
 import '../../../core/utils/formulary_export.dart';
 import '../../../core/utils/max_adj_export.dart';
@@ -27,6 +28,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   late final RealtimeChannel assortmentChannel;
   late final RealtimeChannel formularyChannel;
   static final Map<String, List<DailyOrderRow>> ordersCache = {};
+  String? _ordersLoadingRunDate;
+  int _ordersLoadToken = 0;
   String runDate = '';
   late final RealtimeChannel mismatchChannel;
   InventoryBloc(this.repo) : super(InventoryState.initial()) {
@@ -453,17 +456,32 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       );
     });
     on<LoadInventoryOrders>((event, emit) async {
-      emit(state.copyWith(isOrdersLoading: true));
-
       final cacheKey = event.runDate;
+
+      if (_ordersLoadingRunDate == cacheKey) {
+        final rows = state.cachedOrders;
+        emit(
+          state.copyWith(
+            allOrders: rows.take(1000).toList(),
+            loadedCount: rows.length,
+            isOrdersLoading: false,
+            isBackgroundLoading: true,
+          ),
+        );
+        return;
+      }
+
+      emit(state.copyWith(isOrdersLoading: true));
 
       // CACHE HIT
       if (ordersCache.containsKey(cacheKey)) {
+        const pageSize = 1000;
+        final rows = ordersCache[cacheKey]!;
         emit(
           state.copyWith(
-            cachedOrders: ordersCache[cacheKey]!,
-            allOrders: ordersCache[cacheKey]!,
-            loadedCount: ordersCache[cacheKey]!.length,
+            cachedOrders: rows,
+            allOrders: rows.take(pageSize).toList(),
+            loadedCount: rows.length,
             currentOrdersPage: 0,
             hasMorePages: false,
             isOrdersLoading: false,
@@ -474,8 +492,33 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       }
 
       try {
-        const int batchSize = 3000;
-        const int concurrent = 2;
+        final diskRows = await DailyOrderCacheService.instance.readRows(
+          event.runDate,
+        );
+
+        if (diskRows != null && diskRows.isNotEmpty) {
+          const pageSize = 1000;
+          ordersCache[cacheKey] = diskRows;
+
+          emit(
+            state.copyWith(
+              cachedOrders: diskRows,
+              allOrders: diskRows.take(pageSize).toList(),
+              loadedCount: diskRows.length,
+              currentOrdersPage: 0,
+              hasMorePages: false,
+              isOrdersLoading: false,
+              isBackgroundLoading: false,
+              allDataLoaded: true,
+            ),
+          );
+          return;
+        }
+
+        const int batchSize = 10000;
+        const int concurrent = 3;
+        _ordersLoadingRunDate = cacheKey;
+        final loadToken = ++_ordersLoadToken;
 
         // FIRST BATCH
         final firstBatch = await _fetchOrdersPageSafe(
@@ -483,15 +526,24 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           from: 0,
           to: batchSize - 1,
         );
+        if (!_isCurrentOrdersLoad(cacheKey, loadToken) || emit.isDone) return;
 
         final firstRows = firstBatch.map(DailyOrderRow.fromMap).toList();
+        await DailyOrderCacheService.instance.startWrite(event.runDate);
+        if (!_isCurrentOrdersLoad(cacheKey, loadToken) || emit.isDone) return;
+        await DailyOrderCacheService.instance.appendBatch(
+          event.runDate,
+          firstBatch,
+        );
+        if (!_isCurrentOrdersLoad(cacheKey, loadToken) || emit.isDone) return;
 
         emit(
           state.copyWith(
             cachedOrders: firstRows,
-            allOrders: firstRows,
+            allOrders: firstRows.take(1000).toList(),
             loadedCount: firstRows.length,
             isOrdersLoading: false,
+            isBackgroundLoading: firstRows.length >= batchSize,
           ),
         );
 
@@ -501,7 +553,9 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         int offset = batchSize;
 
         while (true) {
-          if (emit.isDone) return;
+          if (!_isCurrentOrdersLoad(cacheKey, loadToken) || emit.isDone) {
+            return;
+          }
 
           final offsets = List.generate(
             concurrent,
@@ -517,6 +571,9 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
               ),
             ),
           );
+          if (!_isCurrentOrdersLoad(cacheKey, loadToken) || emit.isDone) {
+            return;
+          }
 
           bool anyData = false;
           bool lastWasShort = false;
@@ -530,6 +587,13 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
             anyData = true;
 
             all.addAll(batch.map(DailyOrderRow.fromMap));
+            await DailyOrderCacheService.instance.appendBatch(
+              event.runDate,
+              batch,
+            );
+            if (!_isCurrentOrdersLoad(cacheKey, loadToken) || emit.isDone) {
+              return;
+            }
 
             if (batch.length < batchSize) {
               lastWasShort = true;
@@ -537,12 +601,14 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
             }
           }
 
-          if (emit.isDone) return;
+          if (!_isCurrentOrdersLoad(cacheKey, loadToken) || emit.isDone) {
+            return;
+          }
 
           emit(
             state.copyWith(
               cachedOrders: all,
-              allOrders: all,
+              allOrders: all.take(1000).toList(),
               loadedCount: all.length,
               isBackgroundLoading: true,
             ),
@@ -556,20 +622,27 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         }
 
         ordersCache[cacheKey] = all;
+        await DailyOrderCacheService.instance.markComplete(event.runDate);
 
-        if (emit.isDone) return;
+        if (!_isCurrentOrdersLoad(cacheKey, loadToken) || emit.isDone) return;
 
         emit(
           state.copyWith(
             cachedOrders: all,
-            allOrders: all,
+            allOrders: all.take(1000).toList(),
             loadedCount: all.length,
             isBackgroundLoading: false,
             allDataLoaded: true,
           ),
         );
+        if (_isCurrentOrdersLoad(cacheKey, loadToken)) {
+          _ordersLoadingRunDate = null;
+        }
       } catch (e) {
         if (emit.isDone) return;
+        if (_ordersLoadingRunDate == cacheKey) {
+          _ordersLoadingRunDate = null;
+        }
 
         emit(
           state.copyWith(isOrdersLoading: false, isBackgroundLoading: false),
@@ -2596,6 +2669,10 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     }
   }
 
+  bool _isCurrentOrdersLoad(String runDate, int token) {
+    return _ordersLoadingRunDate == runDate && _ordersLoadToken == token;
+  }
+
   Future<List<Map<String, dynamic>>> _fetchOrdersPageSafe({
     required String runDate,
     required int from,
@@ -2650,7 +2727,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     Emitter<InventoryState> emit,
   ) async {
     // Pure local slice — zero network calls, instant page flip
-    const pageSize = 1000;
+    const pageSize = 30000;
 
     final total = state.cachedOrders.length;
     final page = event.page.clamp(

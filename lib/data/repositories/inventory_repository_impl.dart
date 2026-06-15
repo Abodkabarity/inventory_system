@@ -146,7 +146,8 @@ class InventoryRepositoryImpl implements InventoryRepository {
 
     final logs = await remote.client
         .from('mismatch_log')
-        .select('branch_name,item_code');
+        .select('branch_name,item_code,action')
+        .or('action.eq.update,action.eq.delete');
 
     final logSet = logs
         .map((e) => "${e['branch_name']}_${e['item_code']}")

@@ -254,7 +254,7 @@ class InventoryState extends Equatable {
         'branch': 160,
         'code': 150,
         'name': 260,
-        'system': 120,
+        'system': 140,
 
         'actual': 120,
         'diff': 120,

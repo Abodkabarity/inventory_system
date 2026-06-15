@@ -44,10 +44,7 @@ class _BranchesTrackerPageState extends State<BranchesTrackerPage>
   late final TabController _tabController;
   int _tabIndex = 0;
 
-  static const _tabs = [
-    _TabDef(Icons.dashboard_rounded, 'Overview'),
-    _TabDef(Icons.timeline_rounded, 'Change Timeline'),
-  ];
+  static const _tabs = [_TabDef(Icons.timeline_rounded, 'Change Timeline')];
 
   // ── lifecycle ─────────────────────────────────────────────────────────────
 
