@@ -219,6 +219,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
           oldQty: num.tryParse((d['old_qty'] ?? '0').toString())?.toInt() ?? 0,
           newQty: num.tryParse((d['new_qty'] ?? '0').toString())?.toInt() ?? 0,
           reason: (d['reason'] ?? '').toString(),
+          applyMaxAdj: d['apply_max_adj'] == true,
         );
       }
 
@@ -875,6 +876,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       oldQty: e.oldQty,
       newQty: e.newQty,
       reason: reason,
+      applyMaxAdj: e.applyMaxAdj,
     );
 
     emit(state.copyWith(finalEdits: next));
@@ -1180,7 +1182,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       // 🔥 2) APPLY MAX ADJ (AFTER SAVE)
       // ==========================
       for (final edit in state.finalEdits.values) {
-        if (edit.newQty < edit.oldQty) {
+        if (edit.applyMaxAdj && edit.newQty < edit.oldQty) {
           final row = rowsByCode[edit.itemCode];
           if (row == null) continue;
 

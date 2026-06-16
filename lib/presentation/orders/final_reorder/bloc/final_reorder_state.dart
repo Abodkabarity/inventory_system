@@ -30,6 +30,8 @@ class FinalReorderState extends Equatable {
   final bool hasChange;
   final bool reasonOk;
   final bool canSave;
+  final bool canApplyMaxAdj;
+  final bool applyMaxAdj;
 
   final bool isLimitedStockLive;
 
@@ -51,6 +53,8 @@ class FinalReorderState extends Equatable {
     required this.hasChange,
     required this.reasonOk,
     required this.canSave,
+    required this.canApplyMaxAdj,
+    required this.applyMaxAdj,
     required this.isLimitedStockLive,
     required this.dialog,
     required this.totalReorderToday,
@@ -74,6 +78,8 @@ class FinalReorderState extends Equatable {
     bool? reasonOk,
     int? totalReorderToday,
     bool? canSave,
+    bool? canApplyMaxAdj,
+    bool? applyMaxAdj,
     bool? isLimitedStockLive,
     FinalReorderDialogPayload? dialog,
     bool clearDialog = false,
@@ -93,6 +99,8 @@ class FinalReorderState extends Equatable {
       hasChange: hasChange ?? this.hasChange,
       reasonOk: reasonOk ?? this.reasonOk,
       canSave: canSave ?? this.canSave,
+      canApplyMaxAdj: canApplyMaxAdj ?? this.canApplyMaxAdj,
+      applyMaxAdj: applyMaxAdj ?? this.applyMaxAdj,
       isLimitedStockLive: isLimitedStockLive ?? this.isLimitedStockLive,
       dialog: clearDialog ? null : (dialog ?? this.dialog),
       totalReorderToday: totalReorderToday ?? this.totalReorderToday,
@@ -116,6 +124,8 @@ class FinalReorderState extends Equatable {
     hasChange,
     reasonOk,
     canSave,
+    canApplyMaxAdj,
+    applyMaxAdj,
     isLimitedStockLive,
     dialog,
     totalReorderToday,

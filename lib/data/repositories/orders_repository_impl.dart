@@ -306,6 +306,7 @@ class OrdersRepositoryImpl implements OrdersRepository {
     required int oldQty,
     required int newQty,
     required String reason,
+    required bool applyMaxAdj,
   }) {
     return remote.upsertFinalReorderDraft(
       runDate: runDate,
@@ -315,6 +316,7 @@ class OrdersRepositoryImpl implements OrdersRepository {
       oldQty: oldQty,
       newQty: newQty,
       reason: reason,
+      applyMaxAdj: applyMaxAdj,
     );
   }
 

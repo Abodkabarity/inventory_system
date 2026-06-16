@@ -361,7 +361,7 @@ class BranchOrdersActions {
             orderIncreaseLimit: state.orderIncreaseLimit,
             initialReason: initialReason,
             onClose: () => navigator.pop(),
-            onSave: (newQty, reason) async {
+            onSave: (newQty, reason, applyMaxAdj) async {
               final bloc = context.read<OrdersBloc>();
 
               if (newQty == oldQty) {
@@ -379,6 +379,7 @@ class BranchOrdersActions {
                   oldQty: oldQty,
                   newQty: newQty,
                   reason: reason,
+                  applyMaxAdj: applyMaxAdj,
                 );
               }
               print('BEFORE POP');
@@ -397,6 +398,7 @@ class BranchOrdersActions {
                   oldQty: oldQty,
                   newQty: newQty,
                   reason: reason,
+                  applyMaxAdj: applyMaxAdj,
                 ),
               );
             },

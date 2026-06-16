@@ -113,16 +113,18 @@ class OrdersApplyFinalEdit extends OrdersEvent {
   final int oldQty;
   final int newQty;
   final String reason;
+  final bool applyMaxAdj;
 
   const OrdersApplyFinalEdit({
     required this.itemCode,
     required this.oldQty,
     required this.newQty,
     required this.reason,
+    this.applyMaxAdj = false,
   });
 
   @override
-  List<Object?> get props => [itemCode, oldQty, newQty, reason];
+  List<Object?> get props => [itemCode, oldQty, newQty, reason, applyMaxAdj];
 }
 
 class OrdersResetFinalEdit extends OrdersEvent {

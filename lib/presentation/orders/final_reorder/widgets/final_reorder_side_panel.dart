@@ -16,9 +16,11 @@ class FinalReorderSidePanel extends StatefulWidget {
   final int compareQty;
   final int initialQty;
   final String initialReason;
+  final bool initialApplyMaxAdj;
   final num orderIncreaseLimit;
   final VoidCallback onClose;
-  final Future<void> Function(int newQty, String reason) onSave;
+  final Future<void> Function(int newQty, String reason, bool applyMaxAdj)
+      onSave;
   final VoidCallback onReset;
 
   const FinalReorderSidePanel({
@@ -27,6 +29,7 @@ class FinalReorderSidePanel extends StatefulWidget {
     required this.oldQty,
     required this.initialQty,
     required this.initialReason,
+    this.initialApplyMaxAdj = false,
     required this.onClose,
     required this.onSave,
     required this.onReset,
@@ -66,6 +69,7 @@ class _FinalReorderSidePanelState extends State<FinalReorderSidePanel> {
           compareQtyInput: widget.compareQty,
           initialQtyInput: widget.initialQty,
           initialReasonInput: widget.initialReason,
+          initialApplyMaxAdjInput: widget.initialApplyMaxAdj,
 
           orderIncreaseLimit: widget.orderIncreaseLimit,
 
@@ -241,6 +245,22 @@ class _FinalReorderSidePanelState extends State<FinalReorderSidePanel> {
 
                               const SizedBox(height: 18),
 
+                              _ApplyMaxAdjCard(
+                                enabled: s.canApplyMaxAdj,
+                                checked: s.applyMaxAdj,
+                                oldQty: s.oldQty,
+                                newQty: s.qty,
+                                onChanged: (value) => context
+                                    .read<FinalReorderBloc>()
+                                    .add(
+                                      FinalReorderApplyMaxAdjChanged(
+                                        value ?? false,
+                                      ),
+                                    ),
+                              ),
+
+                              const SizedBox(height: 18),
+
                               MiniStats(
                                 row: r,
                                 storeStock: s.storeStock,
@@ -298,6 +318,110 @@ class _FinalReorderSidePanelState extends State<FinalReorderSidePanel> {
               ),
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+class _ApplyMaxAdjCard extends StatelessWidget {
+  final bool enabled;
+  final bool checked;
+  final int oldQty;
+  final int newQty;
+  final ValueChanged<bool?> onChanged;
+
+  const _ApplyMaxAdjCard({
+    required this.enabled,
+    required this.checked,
+    required this.oldQty,
+    required this.newQty,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final active = enabled && checked;
+    final borderColor = active
+        ? AppColors.primaryColor.withValues(alpha: 0.55)
+        : const Color(0xFFDCE7F0);
+    final bgColor = active ? const Color(0xFFEAF8FF) : const Color(0xFFF7FAFD);
+    final textColor = enabled ? const Color(0xFF102A43) : const Color(0xFF8A97A8);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor),
+        boxShadow: [
+          if (active)
+            BoxShadow(
+              color: AppColors.primaryColor.withValues(alpha: 0.12),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+        ],
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: enabled ? () => onChanged(!checked) : null,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: active ? AppColors.primaryColor : const Color(0xFFE8F1F8),
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: Icon(
+                Icons.trending_down_rounded,
+                color: active ? Colors.white : const Color(0xFF60758A),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Apply to Max Adjustment',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: textColor,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    enabled
+                        ? 'When submitted, this item will be sent to Max Adjustment as $newQty. Old value was $oldQty.'
+                        : 'Available only when you decrease the final reorder quantity.',
+                    style: TextStyle(
+                      height: 1.35,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: enabled
+                          ? const Color(0xFF64748B)
+                          : const Color(0xFFA0AEC0),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Checkbox(
+              value: checked,
+              onChanged: enabled ? onChanged : null,
+              activeColor: AppColors.primaryColor,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(6),
+              ),
+            ),
+          ],
         ),
       ),
     );

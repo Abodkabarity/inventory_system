@@ -35,6 +35,14 @@ class FinalReorderReasonChanged extends FinalReorderEvent {
   List<Object?> get props => [text];
 }
 
+class FinalReorderApplyMaxAdjChanged extends FinalReorderEvent {
+  final bool value;
+  const FinalReorderApplyMaxAdjChanged(this.value);
+
+  @override
+  List<Object?> get props => [value];
+}
+
 class FinalReorderResetPressed extends FinalReorderEvent {
   const FinalReorderResetPressed();
 }

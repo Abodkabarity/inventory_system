@@ -1399,6 +1399,8 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                                           newQty,
                                                                       reason:
                                                                           'Items To Order',
+                                                                      applyMaxAdj:
+                                                                          false,
                                                                     ),
                                                                   );
 
@@ -1419,6 +1421,8 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                                         newQty,
                                                                     reason:
                                                                         'Items To Order',
+                                                                    applyMaxAdj:
+                                                                        false,
                                                                   );
 
                                                                   await bloc

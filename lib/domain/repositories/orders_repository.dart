@@ -137,6 +137,7 @@ abstract class OrdersRepository {
     required int oldQty,
     required int newQty,
     required String reason,
+    required bool applyMaxAdj,
   });
 
   Future<List<Map<String, dynamic>>> fetchFinalReorderDrafts({

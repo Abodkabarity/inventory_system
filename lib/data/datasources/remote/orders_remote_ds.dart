@@ -706,11 +706,11 @@ total_sales_last_90_days,
   }) async {
     final now = DateTime.now().toIso8601String();
 
-    /// calculate real decrease amount
-    final adjustment = (oldQty - newQty);
+    /// Branch-selected max value. Old 2 -> new 0 must create max 0, not diff 2.
+    final maxQty = newQty;
 
     /// do nothing if no decrease
-    if (adjustment <= 0) return;
+    if (newQty >= oldQty) return;
 
     /// check if record already exists
     final existing = await client
@@ -751,8 +751,8 @@ total_sales_last_90_days,
           .update({
             /// correct columns
             'current_demand_30d': currentDemand,
-            'max_adjustment_30d': adjustment,
-            'qty': adjustment,
+            'max_adjustment_30d': maxQty,
+            'qty': maxQty,
 
             'adjustment_type': 'DECREASE',
             'reason': reason,
@@ -774,10 +774,10 @@ total_sales_last_90_days,
 
         /// correct columns
         'current_demand_30d': currentDemand,
-        'max_adjustment_30d': adjustment,
+        'max_adjustment_30d': maxQty,
 
         'adjustment_type': 'DECREASE',
-        'qty': adjustment,
+        'qty': maxQty,
 
         'reason': reason,
         'added_by': 'branch',
@@ -796,6 +796,7 @@ total_sales_last_90_days,
     required int oldQty,
     required int newQty,
     required String reason,
+    required bool applyMaxAdj,
   }) async {
     await client.from('order_edits_draft').upsert({
       'run_date': runDate,
@@ -805,6 +806,7 @@ total_sales_last_90_days,
       'old_qty': oldQty,
       'new_qty': newQty,
       'reason': reason,
+      'apply_max_adj': applyMaxAdj,
       'status': 'draft',
       'updated_at': DateTime.now().toIso8601String(),
     }, onConflict: 'run_date,branch_name,item_code');

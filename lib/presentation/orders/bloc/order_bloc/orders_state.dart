@@ -11,18 +11,20 @@ class FinalReorderEdit extends Equatable {
   final int oldQty;
   final int newQty;
   final String reason;
+  final bool applyMaxAdj;
 
   const FinalReorderEdit({
     required this.itemCode,
     required this.oldQty,
     required this.newQty,
     required this.reason,
+    this.applyMaxAdj = false,
   });
 
   int get diff => newQty - oldQty;
 
   @override
-  List<Object?> get props => [itemCode, oldQty, newQty, reason];
+  List<Object?> get props => [itemCode, oldQty, newQty, reason, applyMaxAdj];
 }
 
 class AdditionalRequestEdit extends Equatable {

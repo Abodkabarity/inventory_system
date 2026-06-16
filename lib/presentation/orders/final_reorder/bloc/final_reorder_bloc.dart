@@ -10,8 +10,10 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
   final int compareQtyInput;
   final int initialQtyInput;
   final String initialReasonInput;
+  final bool initialApplyMaxAdjInput;
   final num orderIncreaseLimit;
-  final Future<void> Function(int newQty, String reason) onSave;
+  final Future<void> Function(int newQty, String reason, bool applyMaxAdj)
+      onSave;
   final void Function() onReset;
 
   FinalReorderBloc({
@@ -19,6 +21,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     required this.oldQtyInput,
     required this.initialQtyInput,
     required this.initialReasonInput,
+    required this.initialApplyMaxAdjInput,
     required this.onSave,
     required this.onReset,
     required this.compareQtyInput, required this.orderIncreaseLimit,
@@ -29,6 +32,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
       initialQtyInput: initialQtyInput,
       compareQtyInput: compareQtyInput,
       initialReasonInput: initialReasonInput,
+      initialApplyMaxAdjInput: initialApplyMaxAdjInput,
       orderIncreaseLimit: orderIncreaseLimit,
     ),
        ) {
@@ -37,6 +41,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     on<FinalReorderIncPressed>(_onInc);
     on<FinalReorderDecPressed>(_onDec);
     on<FinalReorderReasonChanged>(_onReasonChanged);
+    on<FinalReorderApplyMaxAdjChanged>(_onApplyMaxAdjChanged);
     on<FinalReorderResetPressed>(_onResetPressed);
     on<FinalReorderSavePressed>(_onSavePressed);
     on<FinalReorderDialogConsumed>(_onDialogConsumed);
@@ -48,6 +53,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     required int initialQtyInput,
     required int compareQtyInput,
     required String initialReasonInput,
+    required bool initialApplyMaxAdjInput,
     required num orderIncreaseLimit,
 
   }) {
@@ -92,6 +98,8 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
       hasTma: hasTma,
       isLocked: isLocked,
       onlyDecrease: onlyDecrease,
+      applyMaxAdj: initialApplyMaxAdjInput,
+      initialApplyMaxAdj: initialApplyMaxAdjInput,
       dialog: null,
       orderIncreaseLimit: orderIncreaseLimit,
     );
@@ -192,6 +200,8 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         isLocked: state.isLocked,
         onlyDecrease: state.onlyDecrease,
         orderIncreaseLimit: orderIncreaseLimit,
+        applyMaxAdj: state.applyMaxAdj,
+        initialApplyMaxAdj: initialApplyMaxAdjInput,
 
         dialog: dialog,
       ),
@@ -239,6 +249,8 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         hasTma: state.hasTma,
         isLocked: state.isLocked,
         orderIncreaseLimit: orderIncreaseLimit,
+        applyMaxAdj: state.applyMaxAdj,
+        initialApplyMaxAdj: initialApplyMaxAdjInput,
 
         onlyDecrease: state.onlyDecrease,
         dialog: state.dialog,
@@ -267,6 +279,8 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         reorderQtyNum: state.reorderQtyNum,
         compareQtyInput: compareQtyInput,
         orderIncreaseLimit: orderIncreaseLimit,
+        applyMaxAdj: state.applyMaxAdj,
+        initialApplyMaxAdj: initialApplyMaxAdjInput,
 
         totalReorderToday: state.totalReorderToday,
         isNonFormulary: state.isNonFormulary,
@@ -296,7 +310,34 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         isLocked: state.isLocked,
         onlyDecrease: state.onlyDecrease,
         orderIncreaseLimit: orderIncreaseLimit,
+        applyMaxAdj: state.applyMaxAdj,
+        initialApplyMaxAdj: initialApplyMaxAdjInput,
 
+        dialog: state.dialog,
+      ),
+    );
+  }
+
+  void _onApplyMaxAdjChanged(
+    FinalReorderApplyMaxAdjChanged e,
+    Emitter<FinalReorderState> emit,
+  ) {
+    emit(
+      _recompute(
+        qty: state.qty,
+        reason: state.reason,
+        oldSafe: state.oldQty,
+        storeStock: state.storeStock,
+        compareQtyInput: compareQtyInput,
+        reorderQtyNum: state.reorderQtyNum,
+        totalReorderToday: state.totalReorderToday,
+        isNonFormulary: state.isNonFormulary,
+        hasTma: state.hasTma,
+        isLocked: state.isLocked,
+        onlyDecrease: state.onlyDecrease,
+        orderIncreaseLimit: orderIncreaseLimit,
+        applyMaxAdj: e.value,
+        initialApplyMaxAdj: initialApplyMaxAdjInput,
         dialog: state.dialog,
       ),
     );
@@ -322,6 +363,8 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         isLocked: state.isLocked,
         onlyDecrease: state.onlyDecrease,
         dialog: state.dialog,
+        applyMaxAdj: false,
+        initialApplyMaxAdj: initialApplyMaxAdjInput,
           orderIncreaseLimit: orderIncreaseLimit
       ),
     );
@@ -333,7 +376,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
   ) async {
     if (!state.canSave) return;
 
-    await onSave(state.qty, state.reason.trim());
+    await onSave(state.qty, state.reason.trim(), state.applyMaxAdj);
   }
 
   void _onDialogConsumed(
@@ -360,6 +403,8 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     required bool hasTma,
     required bool isLocked,
     required bool onlyDecrease,
+    required bool applyMaxAdj,
+    required bool initialApplyMaxAdj,
     required FinalReorderDialogPayload? dialog,
   }) {
     final cap = _capForThisBranch(
@@ -388,6 +433,8 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         hasChange: false,
         reasonOk: true,
         canSave: false,
+        canApplyMaxAdj: false,
+        applyMaxAdj: false,
         isLimitedStockLive: false,
         dialog: dialog,
       );
@@ -396,7 +443,10 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     final canInc = !isLocked && qty < cap;
     final canDec = !isLocked && (hasTma ? qty > oldSafe : qty > 0);
 
-    final hasChange = qty != compareQtyInput;
+    final canApplyMaxAdj = !isLocked && qty < oldSafe;
+    final nextApplyMaxAdj = canApplyMaxAdj ? applyMaxAdj : false;
+    final hasChange =
+        qty != compareQtyInput || nextApplyMaxAdj != initialApplyMaxAdj;
     final reasonOk = reason.trim().isNotEmpty;
 
     final canSave = !isLocked && hasChange && reasonOk && qty <= cap;
@@ -421,6 +471,8 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
       hasChange: hasChange,
       reasonOk: reasonOk,
       canSave: canSave,
+      canApplyMaxAdj: canApplyMaxAdj,
+      applyMaxAdj: nextApplyMaxAdj,
       isLimitedStockLive: isLimitedStockLive,
       dialog: dialog,
     );
