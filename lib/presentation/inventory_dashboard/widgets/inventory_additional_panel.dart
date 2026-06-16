@@ -127,7 +127,7 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
               children: [
                 const Padding(
                   padding: EdgeInsets.only(left: 10),
-                  child: Text(
+                  child: SelectableText(
                     "Inventory Additional Requests",
                     style: TextStyle(
                       fontSize: 20,
@@ -240,13 +240,12 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
           Row(
             children: [
               Expanded(
-                child: Text(
+                child: SelectableText(
                   "${group.first.itemCodes} - ${group.first.itemNames}",
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 14,
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
 
@@ -261,7 +260,7 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
                     color: Colors.red,
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: const Text(
+                  child: const SelectableText(
                     "URGENT",
                     style: TextStyle(
                       color: Colors.white,
@@ -278,7 +277,7 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
                   color: _getStatusColor(group.first.status),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: Text(
+                child: SelectableText(
                   group.first.status.toUpperCase(),
                   style: const TextStyle(
                     color: Colors.white,
@@ -328,13 +327,13 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
+                              SelectableText(
                                 e.branchName,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              Text(
+                              SelectableText(
                                 DateFormat("yyyy-MM-dd HH:mm").format(
                                   e.createdAt.toLocal().add(
                                     const Duration(hours: 0),
@@ -350,8 +349,8 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
                         ),
 
                         /// REQ
-                        const Text("Req: "),
-                        Text(
+                        const SelectableText("Req: "),
+                        SelectableText(
                           e.requestQty.toString(),
                           style: const TextStyle(
                             color: Colors.red,
@@ -640,13 +639,13 @@ Widget _infoBox(String title, dynamic value) {
   return Expanded(
     child: Column(
       children: [
-        Text(
+        SelectableText(
           title,
           style: const TextStyle(fontSize: 10, color: Colors.grey),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 3),
-        Text(
+        SelectableText(
           _formatInfoValue(title, value),
           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
           textAlign: TextAlign.center,

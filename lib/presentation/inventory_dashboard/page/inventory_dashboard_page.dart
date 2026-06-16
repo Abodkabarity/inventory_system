@@ -117,68 +117,66 @@ class _InventoryDashboardViewState extends State<InventoryDashboardView> {
           cursorColor: AppColors.primaryColor,
         ),
       ),
-      child: SelectionArea(
-        child: Scaffold(
-          backgroundColor: const Color(0xffF4F7FB),
-          body: BlocBuilder<InventoryBloc, InventoryState>(
-            builder: (context, state) {
-              final bool isSubmitted =
-                  state.selectedBranch != null &&
-                  state.submittedBranches.contains(state.selectedBranch);
+      child: Scaffold(
+        backgroundColor: const Color(0xffF4F7FB),
+        body: BlocBuilder<InventoryBloc, InventoryState>(
+          builder: (context, state) {
+            final bool isSubmitted =
+                state.selectedBranch != null &&
+                state.submittedBranches.contains(state.selectedBranch);
 
-              if (firstLoad && state.branches.isNotEmpty) {
-                firstLoad = false;
-              }
+            if (firstLoad && state.branches.isNotEmpty) {
+              firstLoad = false;
+            }
 
-              return Stack(
-                children: [
-                  Row(
-                    children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 240),
-                        curve: Curves.easeOutCubic,
-                        width: _drawerCollapsed ? 0 : 270,
-                        child: ClipRect(
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            widthFactor: _drawerCollapsed ? 0 : 1,
-                            child: const InventoryDrawer(),
-                          ),
-                        ),
-                      ),
-
-                      Expanded(
-                        child: _buildPage(state, isSubmitted, widget.runDate),
-                      ),
-                    ],
-                  ),
-
-                  Positioned(
-                    top: 16,
-                    left: _drawerCollapsed ? 10 : 252,
-                    child: _DrawerToggleButton(
-                      collapsed: _drawerCollapsed,
-                      onPressed: () {
-                        setState(() {
-                          _drawerCollapsed = !_drawerCollapsed;
-                        });
-                      },
-                    ),
-                  ),
-
-                  if (firstLoad)
-                    Container(
-                      color: Colors.black12,
-                      child: const Center(
-                        child: CircularProgressIndicator(
-                          color: AppColors.primaryColor,
+            return Stack(
+              children: [
+                Row(
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 240),
+                      curve: Curves.easeOutCubic,
+                      width: _drawerCollapsed ? 0 : 270,
+                      child: ClipRect(
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          widthFactor: _drawerCollapsed ? 0 : 1,
+                          child: const InventoryDrawer(),
                         ),
                       ),
                     ),
-                ],
-              );
-            },
-          ),
+
+                    Expanded(
+                      child: _buildPage(state, isSubmitted, widget.runDate),
+                    ),
+                  ],
+                ),
+
+                Positioned(
+                  top: 16,
+                  left: _drawerCollapsed ? 10 : 252,
+                  child: _DrawerToggleButton(
+                    collapsed: _drawerCollapsed,
+                    onPressed: () {
+                      setState(() {
+                        _drawerCollapsed = !_drawerCollapsed;
+                      });
+                    },
+                  ),
+                ),
+
+                if (firstLoad)
+                  Container(
+                    color: Colors.black12,
+                    child: const Center(
+                      child: CircularProgressIndicator(
+                        color: AppColors.primaryColor,
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
       ),
     );
