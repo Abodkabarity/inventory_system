@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:html' as html;
 import 'dart:typed_data';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -13,6 +14,7 @@ import '../../../core/utils/formulary_export.dart';
 import '../../../core/utils/max_adj_export.dart';
 import '../../../core/utils/mismatch_export.dart';
 import '../../../core/utils/tma_export.dart';
+import '../../../core/utils/web_notification.dart';
 import '../../../domain/entities/daily_order_row.dart';
 import '../../../domain/entities/mismatch_item.dart';
 import '../../../domain/repositories/inventory_repository.dart';
@@ -24,6 +26,7 @@ import 'inventory_state.dart';
 class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   final InventoryRepository repo;
   late final RealtimeChannel additionalChannel;
+  final AudioPlayer _player = AudioPlayer();
   late final RealtimeChannel maxAdjChannel;
   late final RealtimeChannel assortmentChannel;
   late final RealtimeChannel formularyChannel;
@@ -394,10 +397,52 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       additionalChannel = Supabase.instance.client
           .channel('additional_live')
           .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'additional_requests',
+            callback: (payload) async {
+              print('EVENT RECEIVED');
+              print(payload.eventType);
+              print(payload.newRecord);
+              final row = payload.newRecord;
+
+              if ((row['status'] ?? '') != 'pending') {
+                return;
+              }
+
+              final branch = (row['branch_name'] ?? '').toString();
+
+              final item = (row['item_name'] ?? '').toString();
+
+              final qty = (row['request_qty'] ?? 0).toString();
+
+              try {
+                print('BEFORE SOUND');
+
+                await _player.play(AssetSource('sounds/notification.mp3'));
+
+                print('AFTER SOUND');
+              } catch (e) {
+                print(e);
+              }
+
+              print('BEFORE NOTIFICATION');
+
+              WebNotification.show(
+                title: 'New Additional Order',
+                body: '$branch\n$item\nQty: $qty',
+              );
+
+              print('AFTER NOTIFICATION');
+
+              add(LoadInventoryDashboard(runDate, silent: true));
+            },
+          )
+          .onPostgresChanges(
             event: PostgresChangeEvent.update,
             schema: 'public',
             table: 'additional_requests',
-            callback: (payload) {
+            callback: (_) {
               add(LoadInventoryDashboard(runDate, silent: true));
             },
           )
@@ -729,7 +774,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
       emit(state.copyWith(isMismatchRealtimeStarted: true));
     });
-
+    WebNotification.init();
     add(StartMismatchRealtime());
     add(StartAdditionalRealtime());
     add(StartMaxAdjRealtime());

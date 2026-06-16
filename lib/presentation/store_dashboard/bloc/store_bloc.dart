@@ -1,14 +1,19 @@
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/utils/operational_date_helper.dart';
 import '../../../core/utils/print_additional_service.dart';
+import '../../../core/utils/web_notification.dart';
 import '../../../domain/repositories/store_repository.dart';
 import 'store_event.dart';
 import 'store_state.dart';
 
 class StoreBloc extends Bloc<StoreEvent, StoreState> {
   final StoreRepository repo;
+  RealtimeChannel? additionalChannel;
 
+  final AudioPlayer _player = AudioPlayer();
   String runDate = '';
 
   StoreBloc(this.repo) : super(StoreState.initial()) {
@@ -29,6 +34,55 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
     on<OpenProcessingDialog>(_onOpenDialogWithLoading);
     on<PrintAllAdditional>(_onPrintAllWithLoading);
     on<RefreshProcessingList>(_onRefreshProcessingList);
+    on<StartStoreAdditionalRealtime>((event, emit) {
+      additionalChannel = Supabase.instance.client
+          .channel('store_additional_live')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.update,
+            schema: 'public',
+            table: 'additional_requests',
+            callback: (payload) async {
+              final oldStatus = (payload.oldRecord['status'] ?? '')
+                  .toString()
+                  .trim()
+                  .toLowerCase();
+
+              final newStatus = (payload.newRecord['status'] ?? '')
+                  .toString()
+                  .trim()
+                  .toLowerCase();
+
+              if (oldStatus == 'sent_to_store') {
+                return;
+              }
+
+              if (newStatus != 'sent_to_store') {
+                return;
+              }
+
+              final branch = (payload.newRecord['branch_name'] ?? '')
+                  .toString();
+
+              final item = (payload.newRecord['item_name'] ?? '').toString();
+
+              final qty = (payload.newRecord['request_qty'] ?? 0).toString();
+
+              try {
+                await _player.play(AssetSource('sounds/notification.mp3'));
+              } catch (e) {
+                print(e);
+              }
+
+              WebNotification.show(
+                title: 'New Store Request',
+                body: '$branch\n$item\nQty: $qty',
+              );
+
+              add(LoadStoreDashboard(runDate, silent: true));
+            },
+          )
+          .subscribe();
+    });
     on<SearchProcessingItems>((event, emit) async {
       final res = await repo.fetchProcessingRequests();
 
@@ -44,6 +98,17 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
 
       emit(state.copyWith(processingList: res, filteredList: filtered));
     });
+    WebNotification.init();
+
+    add(StartStoreAdditionalRealtime());
+  }
+  @override
+  Future<void> close() {
+    if (additionalChannel != null) {
+      Supabase.instance.client.removeChannel(additionalChannel!);
+    }
+
+    return super.close();
   }
 
   /// ================================
@@ -72,15 +137,12 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
 
         branches.add(branch);
 
-        startHours[branch] =
-            row['submit_start_hour'] ?? 0;
+        startHours[branch] = row['submit_start_hour'] ?? 0;
 
-        endHours[branch] =
-            row['submit_end_hour'] ?? 24;
+        endHours[branch] = row['submit_end_hour'] ?? 24;
       }
 
-      final submittedRows =
-      await repo.fetchSubmittedBranches(runDate);
+      final submittedRows = await repo.fetchSubmittedBranches(runDate);
 
       final additional = await repo.fetchAdditionalRequests();
 
@@ -120,30 +182,26 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
               startHour: startHours[a] ?? 21,
               endHour: endHours[a] ?? 9,
             ) &&
-                !aSubmitted;
+            !aSubmitted;
 
         final bLate =
             OperationalDateHelper.isMissingWindowForBranch(
               startHour: startHours[b] ?? 21,
               endHour: endHours[b] ?? 9,
             ) &&
-                !bSubmitted;
+            !bSubmitted;
 
         if (aLate && !bLate) return 1;
         if (!aLate && bLate) return -1;
 
         if (aSubmitted && bSubmitted) {
-          return submittedMap[a]!.compareTo(
-            submittedMap[b]!,
-          );
+          return submittedMap[a]!.compareTo(submittedMap[b]!);
         }
 
         if (aSubmitted) return -1;
         if (bSubmitted) return 1;
 
-        return a.toLowerCase().compareTo(
-          b.toLowerCase(),
-        );
+        return a.toLowerCase().compareTo(b.toLowerCase());
       });
       emit(
         state.copyWith(
@@ -191,24 +249,11 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
         branch: branch,
       );
 
-      await repo.markBranchPrinted(
-        runDate: runDate,
-        branch: branch,
-      );
+      await repo.markBranchPrinted(runDate: runDate, branch: branch);
 
-      add(
-        LoadStoreDashboard(
-          runDate,
-          silent: true,
-        ),
-      );
+      add(LoadStoreDashboard(runDate, silent: true));
 
-      emit(
-        state.copyWith(
-          items: items,
-          isLoading: false,
-        ),
-      );
+      emit(state.copyWith(items: items, isLoading: false));
     } catch (e) {
       emit(state.copyWith(isLoading: false));
       print("SelectBranch Error: $e");

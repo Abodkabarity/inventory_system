@@ -85,3 +85,5 @@ class OpenProcessingDialog extends StoreEvent {}
 class PrintAllAdditional extends StoreEvent {}
 
 class RefreshProcessingList extends StoreEvent {}
+
+class StartStoreAdditionalRealtime extends StoreEvent {}

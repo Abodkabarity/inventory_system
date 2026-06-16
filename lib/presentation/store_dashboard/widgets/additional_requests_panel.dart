@@ -31,10 +31,37 @@ class _AdditionalPanelState extends State<AdditionalPanel> {
       if (aUrgent && !bUrgent) return -1;
       if (!aUrgent && bUrgent) return 1;
 
-      if (a.storeStatus == 'processing' && b.storeStatus != 'processing')
-        return -1;
-      if (b.storeStatus == 'processing' && a.storeStatus != 'processing')
-        return 1;
+      int getPriority(AdditionalRequestGroup r) {
+        if (r.status == 'sent_to_store' &&
+            (r.storeStatus == null || r.storeStatus!.isEmpty)) {
+          return 1; // Pending
+        }
+
+        if (r.status == 'sent_to_store' && r.storeStatus == 'processing') {
+          return 2; // Processing
+        }
+
+        if (r.status == 'done') {
+          return 3;
+        }
+
+        if (r.status == 'rejected') {
+          return 4;
+        }
+
+        return 99;
+      }
+
+      list.sort((a, b) {
+        final pa = getPriority(a);
+        final pb = getPriority(b);
+
+        if (pa != pb) {
+          return pa.compareTo(pb);
+        }
+
+        return b.createdAt.compareTo(a.createdAt);
+      });
 
       if (a.status == "sent_to_store" && b.status != "sent_to_store") return -1;
       if (b.status == "sent_to_store" && a.status != "sent_to_store") return 1;

@@ -158,7 +158,7 @@ class _TopProductsCardState extends State<TopProductsCard> {
                                 decoration: BoxDecoration(
                                   color: const Color(
                                     0xff8B5CF6,
-                                  ).withOpacity(0.10),
+                                  ).withValues(alpha: 0.10),
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: const Icon(
@@ -226,9 +226,9 @@ class _TopProductsCardState extends State<TopProductsCard> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Text(text, style: TextStyle(color: color, fontSize: 11)),
     );
