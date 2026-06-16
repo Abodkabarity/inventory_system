@@ -71,42 +71,19 @@ class StoreRemoteDs {
 
         final orderRows = List<Map<String, dynamic>>.from(orderRes);
 
-        final editsRes = await client
-            .from('order_edits')
-            .select('item_code,new_qty')
-            .eq('branch_name', branch)
-            .eq('run_date', runDate);
-
-        final edits = List<Map<String, dynamic>>.from(editsRes);
-
-        final Map<String, num> editsMap = {
-          for (var e in edits)
-            e['item_code'].toString():
-                num.tryParse(e['new_qty'].toString()) ?? 0,
-        };
-
         final result = orderRows
             .map((row) {
-              final itemCode = row['item_code'].toString();
-
-              num qty;
-
-              if (editsMap.containsKey(itemCode)) {
-                qty = editsMap[itemCode]!;
-              } else {
-                qty =
-                    num.tryParse(
-                      (row['final_reorder_qty_store_stock_gt_0'] ?? '0')
-                          .toString(),
-                    ) ??
-                    0;
-              }
+              final qty =
+                  num.tryParse(
+                    (row['final_reorder_qty_store_stock_gt_0'] ?? '0')
+                        .toString(),
+                  ) ??
+                  0;
 
               return {...row, 'final_qty': qty};
             })
             .where((row) {
               final qty = row['final_qty'];
-
               return qty != null && qty > 0;
             })
             .toList();
