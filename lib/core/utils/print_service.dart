@@ -67,7 +67,7 @@ class PrintService {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
 
-        margin: const pw.EdgeInsets.fromLTRB(20, 20, 20, 70),
+        margin: const pw.EdgeInsets.fromLTRB(5, 0, 10, 50),
 
         /// HEADER
         header: (context) => _header(branch),
@@ -75,7 +75,7 @@ class PrintService {
         /// FOOTER
         footer: (context) {
           return pw.Container(
-            padding: const pw.EdgeInsets.only(top: 6, bottom: 10),
+            padding: const pw.EdgeInsets.only(top: 6, bottom: 5),
 
             child: pw.Column(
               mainAxisSize: pw.MainAxisSize.min,
@@ -110,19 +110,19 @@ class PrintService {
     final date = DateTime.now().toLocal();
 
     return pw.Container(
-      padding: const pw.EdgeInsets.only(bottom: 10),
+      padding: const pw.EdgeInsets.only(bottom: 5),
 
       child: pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
           pw.Text(
             branch,
-            style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+            style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
           ),
 
           pw.Text(
             "${date.day}/${date.month}/${date.year}",
-            style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+            style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
           ),
         ],
       ),
@@ -152,12 +152,7 @@ class PrintService {
             return pw.Padding(
               padding: const pw.EdgeInsets.all(6),
 
-              child: pw.Center(
-                child: pw.Text(
-                  h,
-                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                ),
-              ),
+              child: pw.Center(child: pw.Text(h)),
             );
           }).toList(),
         ),
