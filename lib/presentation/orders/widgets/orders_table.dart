@@ -834,10 +834,10 @@ class _OrdersDataSource extends DataGridSource {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
+                            SelectableText(
                               text.isEmpty ? '—' : text,
                               maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              //overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontSize: 12.8,
                                 fontWeight: FontWeight.w700,

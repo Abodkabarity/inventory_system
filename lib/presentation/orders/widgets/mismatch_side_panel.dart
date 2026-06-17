@@ -30,185 +30,178 @@ class _MismatchSidePanelState extends State<MismatchSidePanel> {
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
 
-    return SelectionArea(
-      child: Align(
-        alignment: Alignment.centerRight,
-        child: Material(
-          color: Colors.white,
-          elevation: 20,
-          child: SizedBox(
-            width: screenWidth * 0.5,
-            child: Column(
-              children: [
-                /// HEADER
-                BlocBuilder<OrdersBloc, OrdersState>(
-                  builder: (context, state) {
-                    final count = state.mismatchItems.length;
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Material(
+        color: Colors.white,
+        elevation: 20,
+        child: SizedBox(
+          width: screenWidth * 0.5,
+          child: Column(
+            children: [
+              /// HEADER
+              BlocBuilder<OrdersBloc, OrdersState>(
+                builder: (context, state) {
+                  final count = state.mismatchItems.length;
 
-                    return Container(
-                      padding: const EdgeInsets.all(16),
-                      color: AppColors.primaryColor,
-                      child: Row(
-                        children: [
-                          Text(
-                            "Mismatch Items ($count)",
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                            ),
+                  return Container(
+                    padding: const EdgeInsets.all(16),
+                    color: AppColors.primaryColor,
+                    child: Row(
+                      children: [
+                        SelectableText(
+                          "Mismatch Items ($count)",
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
                           ),
+                        ),
 
-                          const Spacer(),
+                        const Spacer(),
 
-                          IconButton(
-                            tooltip: 'Export Mismatch',
-                            icon: const Icon(
-                              Icons.download,
-                              color: Colors.white,
-                            ),
-                            onPressed: () async {
-                              final rows = state.mismatchItems;
+                        IconButton(
+                          tooltip: 'Export Mismatch',
+                          icon: const Icon(Icons.download, color: Colors.white),
+                          onPressed: () async {
+                            final rows = state.mismatchItems;
 
-                              if (rows.isEmpty) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('No mismatch records found'),
-                                  ),
-                                );
-                                return;
-                              }
-
-                              await MismatchExcelExporter.export(
-                                rows: rows,
-                                includeHistory: false,
+                            if (rows.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('No mismatch records found'),
+                                ),
                               );
-                            },
-                          ),
+                              return;
+                            }
 
-                          IconButton(
-                            icon: const Icon(Icons.close, color: Colors.white),
-                            onPressed: () {
-                              context.read<OrdersBloc>().add(
-                                OrdersSearchMismatchList(''),
-                              );
+                            await MismatchExcelExporter.export(
+                              rows: rows,
+                              includeHistory: false,
+                            );
+                          },
+                        ),
 
-                              searchController.clear();
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white),
+                          onPressed: () {
+                            context.read<OrdersBloc>().add(
+                              OrdersSearchMismatchList(''),
+                            );
 
-                              Navigator.pop(context);
-                            },
-                          ),
-                        ],
-                      ),
-                    );
+                            searchController.clear();
+
+                            Navigator.pop(context);
+                          },
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+
+              const _AddForm(),
+              const Divider(
+                color: AppColors.secondaryColor,
+                endIndent: 100,
+                indent: 100,
+              ),
+
+              /// SEARCH
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: TextField(
+                  controller: searchController,
+                  decoration: InputDecoration(
+                    hintText: "Search...",
+                    prefixIcon: const Icon(Icons.search),
+                    filled: true,
+                    fillColor: AppColors.backgroundWidget,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: AppColors.primaryColor),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: AppColors.primaryColor),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: AppColors.primaryColor),
+                    ),
+                  ),
+                  onChanged: (v) {
+                    context.read<OrdersBloc>().add(OrdersSearchMismatchList(v));
                   },
                 ),
+              ),
 
-                const _AddForm(),
-                const Divider(
-                  color: AppColors.secondaryColor,
-                  endIndent: 100,
-                  indent: 100,
-                ),
+              /// LIST + LOADING
+              Expanded(
+                child: BlocBuilder<OrdersBloc, OrdersState>(
+                  builder: (context, state) {
+                    final isLoading = state.isMismatchLoading;
+                    final query = state.mismatchSearch.toLowerCase();
 
-                /// SEARCH
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: TextField(
-                    controller: searchController,
-                    decoration: InputDecoration(
-                      hintText: "Search...",
-                      prefixIcon: const Icon(Icons.search),
-                      filled: true,
-                      fillColor: AppColors.backgroundWidget,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: AppColors.primaryColor),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: AppColors.primaryColor),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: AppColors.primaryColor),
-                      ),
-                    ),
-                    onChanged: (v) {
-                      context.read<OrdersBloc>().add(
-                        OrdersSearchMismatchList(v),
-                      );
-                    },
-                  ),
-                ),
+                    final filtered = state.mismatchItems.where((e) {
+                      final code = (e['item_code'] ?? '')
+                          .toString()
+                          .toLowerCase();
+                      final name = (e['item_name'] ?? '')
+                          .toString()
+                          .toLowerCase();
+                      return code.contains(query) || name.contains(query);
+                    }).toList();
 
-                /// LIST + LOADING
-                Expanded(
-                  child: BlocBuilder<OrdersBloc, OrdersState>(
-                    builder: (context, state) {
-                      final isLoading = state.isMismatchLoading;
-                      final query = state.mismatchSearch.toLowerCase();
-
-                      final filtered = state.mismatchItems.where((e) {
-                        final code = (e['item_code'] ?? '')
-                            .toString()
-                            .toLowerCase();
-                        final name = (e['item_name'] ?? '')
-                            .toString()
-                            .toLowerCase();
-                        return code.contains(query) || name.contains(query);
-                      }).toList();
-
-                      return Stack(
-                        children: [
-                          /// LIST
-                          if (filtered.isEmpty)
-                            const Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.inventory_2_outlined,
-                                    size: 60,
+                    return Stack(
+                      children: [
+                        /// LIST
+                        if (filtered.isEmpty)
+                          const Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.inventory_2_outlined,
+                                  size: 60,
+                                  color: Colors.grey,
+                                ),
+                                SizedBox(height: 12),
+                                Text(
+                                  'No Mismatch Record',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
                                     color: Colors.grey,
                                   ),
-                                  SizedBox(height: 12),
-                                  Text(
-                                    'No Mismatch Record',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                          else
-                            ListView.builder(
-                              itemCount: filtered.length,
-                              itemBuilder: (_, i) {
-                                return _Row(index: i, item: filtered[i]);
-                              },
+                                ),
+                              ],
                             ),
+                          )
+                        else
+                          ListView.builder(
+                            itemCount: filtered.length,
+                            itemBuilder: (_, i) {
+                              return _Row(index: i, item: filtered[i]);
+                            },
+                          ),
 
-                          if (isLoading)
-                            Positioned.fill(
-                              child: Container(
-                                color: Colors.white.withValues(alpha: 0.6),
-                                child: const Center(
-                                  child: CircularProgressIndicator(
-                                    color: AppColors.primaryColor,
-                                  ),
+                        if (isLoading)
+                          Positioned.fill(
+                            child: Container(
+                              color: Colors.white.withValues(alpha: 0.6),
+                              child: const Center(
+                                child: CircularProgressIndicator(
+                                  color: AppColors.primaryColor,
                                 ),
                               ),
                             ),
-                        ],
-                      );
-                    },
-                  ),
+                          ),
+                      ],
+                    );
+                  },
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -743,7 +736,7 @@ class _Row extends StatelessWidget {
             /// 🔢 INDEX
             SizedBox(
               width: 35,
-              child: Text(
+              child: SelectableText(
                 "${index + 1}",
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
@@ -755,7 +748,7 @@ class _Row extends StatelessWidget {
             /// ITEM CODE
             Expanded(
               flex: 2,
-              child: Text(
+              child: SelectableText(
                 item['item_code'].toString(),
                 style: const TextStyle(fontWeight: FontWeight.w500),
               ),
@@ -764,15 +757,15 @@ class _Row extends StatelessWidget {
             /// ITEM NAME
             Expanded(
               flex: 4,
-              child: Text(
+              child: SelectableText(
                 item['item_name'].toString(),
-                overflow: TextOverflow.ellipsis,
+                // overflow: TextOverflow.ellipsis,
               ),
             ),
 
             /// SYSTEM
             Expanded(
-              child: Text(
+              child: SelectableText(
                 "System: ${_format(system)}",
                 style: const TextStyle(fontSize: 13),
               ),
@@ -780,7 +773,7 @@ class _Row extends StatelessWidget {
 
             /// ACTUAL
             Expanded(
-              child: Text(
+              child: SelectableText(
                 "Actual: ${_format(actual)}",
                 style: const TextStyle(fontSize: 13),
               ),
@@ -788,7 +781,7 @@ class _Row extends StatelessWidget {
 
             /// 🔥 DIFF
             Expanded(
-              child: Text(
+              child: SelectableText(
                 "Diff: ${_format(diff)}",
                 style: TextStyle(
                   color: _getDiffColor(diff),
