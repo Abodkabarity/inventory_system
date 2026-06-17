@@ -366,769 +366,943 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
 
         final additionalLimit = s.additionalOrderLimit.toInt();
 
-        return SelectionArea(
-          child: Scaffold(
-            backgroundColor: const Color(0xFFF6F7FB),
-            endDrawer: const ColumnsPanel(),
-            body: Stack(
-              children: [
-                SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: Column(
-                      children: [
-                        BlocBuilder<BranchZoneCubit, BranchZoneState>(
-                          builder: (context, zs) {
-                            return _TopHeader(
-                              title: s.branchName,
-                              subtitle: 'Orders • ${s.runDate}',
-                              right: Row(
-                                children: [
-                                  FilledButton.icon(
-                                    icon: const Icon(Icons.save),
+        return Scaffold(
+          backgroundColor: const Color(0xFFF6F7FB),
+          endDrawer: const ColumnsPanel(),
+          body: Stack(
+            children: [
+              SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    children: [
+                      BlocBuilder<BranchZoneCubit, BranchZoneState>(
+                        builder: (context, zs) {
+                          return _TopHeader(
+                            title: s.branchName,
+                            subtitle: 'Orders • ${s.runDate}',
+                            right: Row(
+                              children: [
+                                FilledButton.icon(
+                                  icon: const Icon(Icons.save),
 
-                                    label: const Text('Save Setting'),
+                                  label: const Text('Save Setting'),
 
-                                    style: FilledButton.styleFrom(
-                                      backgroundColor: Colors.green,
-                                      foregroundColor: Colors.white,
-                                    ),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: Colors.green,
+                                    foregroundColor: Colors.white,
+                                  ),
 
-                                    onPressed: () async {
-                                      final confirm = await showDialog<bool>(
-                                        context: context,
-                                        builder: (_) => AlertDialog(
-                                          backgroundColor: Colors.white,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              18,
+                                  onPressed: () async {
+                                    final confirm = await showDialog<bool>(
+                                      context: context,
+                                      builder: (_) => AlertDialog(
+                                        backgroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            18,
+                                          ),
+                                        ),
+
+                                        title: const Row(
+                                          children: [
+                                            Icon(
+                                              Icons.save_outlined,
+                                              color: AppColors.primaryColor,
                                             ),
-                                          ),
+                                            SizedBox(width: 8),
+                                            Text('Save Layout'),
+                                          ],
+                                        ),
 
-                                          title: const Row(
-                                            children: [
-                                              Icon(
-                                                Icons.save_outlined,
-                                                color: AppColors.primaryColor,
-                                              ),
-                                              SizedBox(width: 8),
-                                              Text('Save Layout'),
-                                            ],
-                                          ),
-
-                                          content: const Column(
-                                            mainAxisSize: MainAxisSize.min,
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                'This will save your personal table layout.',
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-
-                                              SizedBox(height: 12),
-
-                                              Text(
-                                                '✓ Visible / Hidden Columns',
-                                              ),
-
-                                              SizedBox(height: 4),
-
-                                              Text('✓ Column Arrangement'),
-
-                                              SizedBox(height: 4),
-
-                                              Text('✓ Column Widths'),
-
-                                              SizedBox(height: 12),
-
-                                              Text(
-                                                'The layout will be restored automatically after refresh or login.',
-                                              ),
-                                            ],
-                                          ),
-
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () {
-                                                Navigator.pop(context, false);
-                                              },
-                                              child: const Text(
-                                                'Cancel',
-                                                style: TextStyle(
-                                                  color:
-                                                      AppColors.secondaryColor,
-                                                ),
+                                        content: const Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'This will save your personal table layout.',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
                                               ),
                                             ),
 
-                                            OutlinedButton.icon(
-                                              icon: const Icon(
-                                                Icons.restart_alt,
-                                                color: Colors.red,
-                                              ),
+                                            SizedBox(height: 12),
 
-                                              label: const Text(
-                                                'Reset',
-                                                style: TextStyle(
-                                                  color: Colors.red,
-                                                ),
-                                              ),
+                                            Text('✓ Visible / Hidden Columns'),
 
-                                              style: OutlinedButton.styleFrom(
-                                                side: const BorderSide(
-                                                  color: Colors.red,
-                                                ),
-                                              ),
+                                            SizedBox(height: 4),
 
-                                              onPressed: () async {
-                                                final resetConfirm = await showDialog<bool>(
-                                                  context: context,
-                                                  builder: (_) => AlertDialog(
-                                                    backgroundColor:
-                                                        Colors.white,
+                                            Text('✓ Column Arrangement'),
 
-                                                    title: const Row(
-                                                      children: [
-                                                        Icon(
-                                                          Icons
-                                                              .warning_amber_rounded,
-                                                          color: Colors.red,
-                                                        ),
-                                                        SizedBox(width: 8),
-                                                        Text('Reset Layout'),
-                                                      ],
-                                                    ),
+                                            SizedBox(height: 4),
 
-                                                    content: const Text(
-                                                      'This will permanently remove all saved layout settings for this branch and restore the default table layout.\n\nDo you want to continue?',
-                                                    ),
+                                            Text('✓ Column Widths'),
 
-                                                    actions: [
-                                                      TextButton(
-                                                        onPressed: () {
-                                                          Navigator.pop(
-                                                            context,
-                                                            false,
-                                                          );
-                                                        },
-                                                        child: const Text(
-                                                          'Cancel',
-                                                        ),
-                                                      ),
+                                            SizedBox(height: 12),
 
-                                                      FilledButton.icon(
-                                                        icon: const Icon(
-                                                          Icons.delete_forever,
-                                                        ),
-                                                        label: const Text(
-                                                          'Reset',
-                                                        ),
-                                                        style:
-                                                            FilledButton.styleFrom(
-                                                              backgroundColor:
-                                                                  Colors.red,
-                                                            ),
-                                                        onPressed: () {
-                                                          Navigator.pop(
-                                                            context,
-                                                            true,
-                                                          );
-                                                        },
-                                                      ),
-                                                    ],
-                                                  ),
-                                                );
-
-                                                if (resetConfirm != true)
-                                                  return;
-
-                                                if (!context.mounted) return;
-
-                                                context.read<OrdersBloc>().add(
-                                                  const OrdersDeleteUiSettings(),
-                                                );
-
-                                                Navigator.pop(context, false);
-
-                                                ScaffoldMessenger.of(
-                                                  context,
-                                                ).showSnackBar(
-                                                  const SnackBar(
-                                                    content: Text(
-                                                      'Layout Reset Successfully',
-                                                    ),
-                                                  ),
-                                                );
-                                              },
-                                            ),
-
-                                            FilledButton.icon(
-                                              icon: const Icon(Icons.save),
-                                              label: const Text('Confirm'),
-                                              style: FilledButton.styleFrom(
-                                                backgroundColor:
-                                                    AppColors.primaryColor,
-                                              ),
-                                              onPressed: () {
-                                                Navigator.pop(context, true);
-                                              },
+                                            Text(
+                                              'The layout will be restored automatically after refresh or login.',
                                             ),
                                           ],
                                         ),
-                                      );
 
-                                      if (confirm != true) return;
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () {
+                                              Navigator.pop(context, false);
+                                            },
+                                            child: const Text(
+                                              'Cancel',
+                                              style: TextStyle(
+                                                color: AppColors.secondaryColor,
+                                              ),
+                                            ),
+                                          ),
 
-                                      context.read<OrdersBloc>().add(
-                                        const OrdersSaveUiSettings(),
-                                      );
+                                          OutlinedButton.icon(
+                                            icon: const Icon(
+                                              Icons.restart_alt,
+                                              color: Colors.red,
+                                            ),
 
-                                      if (!context.mounted) return;
+                                            label: const Text(
+                                              'Reset',
+                                              style: TextStyle(
+                                                color: Colors.red,
+                                              ),
+                                            ),
 
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                            'Layout Saved Successfully',
+                                            style: OutlinedButton.styleFrom(
+                                              side: const BorderSide(
+                                                color: Colors.red,
+                                              ),
+                                            ),
+
+                                            onPressed: () async {
+                                              final resetConfirm = await showDialog<bool>(
+                                                context: context,
+                                                builder: (_) => AlertDialog(
+                                                  backgroundColor: Colors.white,
+
+                                                  title: const Row(
+                                                    children: [
+                                                      Icon(
+                                                        Icons
+                                                            .warning_amber_rounded,
+                                                        color: Colors.red,
+                                                      ),
+                                                      SizedBox(width: 8),
+                                                      Text('Reset Layout'),
+                                                    ],
+                                                  ),
+
+                                                  content: const Text(
+                                                    'This will permanently remove all saved layout settings for this branch and restore the default table layout.\n\nDo you want to continue?',
+                                                  ),
+
+                                                  actions: [
+                                                    TextButton(
+                                                      onPressed: () {
+                                                        Navigator.pop(
+                                                          context,
+                                                          false,
+                                                        );
+                                                      },
+                                                      child: const Text(
+                                                        'Cancel',
+                                                      ),
+                                                    ),
+
+                                                    FilledButton.icon(
+                                                      icon: const Icon(
+                                                        Icons.delete_forever,
+                                                      ),
+                                                      label: const Text(
+                                                        'Reset',
+                                                      ),
+                                                      style:
+                                                          FilledButton.styleFrom(
+                                                            backgroundColor:
+                                                                Colors.red,
+                                                          ),
+                                                      onPressed: () {
+                                                        Navigator.pop(
+                                                          context,
+                                                          true,
+                                                        );
+                                                      },
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+
+                                              if (resetConfirm != true) return;
+
+                                              if (!context.mounted) return;
+
+                                              context.read<OrdersBloc>().add(
+                                                const OrdersDeleteUiSettings(),
+                                              );
+
+                                              Navigator.pop(context, false);
+
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                    'Layout Reset Successfully',
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                          ),
+
+                                          FilledButton.icon(
+                                            icon: const Icon(Icons.save),
+                                            label: const Text('Confirm'),
+                                            style: FilledButton.styleFrom(
+                                              backgroundColor:
+                                                  AppColors.primaryColor,
+                                            ),
+                                            onPressed: () {
+                                              Navigator.pop(context, true);
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    );
+
+                                    if (confirm != true) return;
+
+                                    context.read<OrdersBloc>().add(
+                                      const OrdersSaveUiSettings(),
+                                    );
+
+                                    if (!context.mounted) return;
+
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Layout Saved Successfully',
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                                const SizedBox(width: 10),
+                                FilledButton.icon(
+                                  onPressed: () {
+                                    context.read<OrdersBloc>().add(
+                                      const OrdersExportPressed(),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.download, size: 18),
+                                  label: const Text(
+                                    'Export',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: Colors.blueGrey,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+
+                                FilledButton.icon(
+                                  onPressed: () {
+                                    BranchOrdersActions.openHistoryExportDialog(
+                                      context,
+                                    );
+                                  },
+                                  icon: const Icon(Icons.download, size: 18),
+                                  label: const Text(
+                                    'Order History',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: Colors.deepPurple,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                _StatusChip(
+                                  isSubmitted: s.isSubmitted,
+                                  isOrderDay: s.isOrderDay,
+                                  isMissingOrder:
+                                      s.isOrderDay &&
+                                      !s.isSubmitted &&
+                                      OperationalDateHelper.isMissingWindowForBranch(
+                                        startHour: s.submitStartHour,
+                                        endHour: s.submitEndHour,
+                                      ),
+                                ),
+
+                                const SizedBox(width: 10),
+
+                                _EditLimitChip(
+                                  used: s.finalEdits.length,
+                                  limit: s.orderEditLimit,
+                                ),
+
+                                const SizedBox(width: 10),
+
+                                _ZoneChip(zone: zs.zone),
+
+                                const SizedBox(width: 10),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+
+                      const SizedBox(height: 5),
+
+                      Expanded(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (s.showCreate)
+                                SizedBox(
+                                  height:
+                                      MediaQuery.of(context).size.height * .7,
+                                  child: Center(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.inventory_2_outlined,
+                                          size: 90,
+                                          color: AppColors.primaryColor,
+                                        ),
+
+                                        const SizedBox(height: 20),
+
+                                        const Text(
+                                          'Daily Order',
+                                          style: TextStyle(
+                                            fontSize: 28,
+                                            fontWeight: FontWeight.bold,
                                           ),
                                         ),
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(width: 10),
-                                  FilledButton.icon(
-                                    onPressed: () {
-                                      context.read<OrdersBloc>().add(
-                                        const OrdersExportPressed(),
-                                      );
-                                    },
-                                    icon: const Icon(Icons.download, size: 18),
-                                    label: const Text(
-                                      'Export',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    style: FilledButton.styleFrom(
-                                      backgroundColor: Colors.blueGrey,
-                                      foregroundColor: Colors.white,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(14),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
 
-                                  FilledButton.icon(
-                                    onPressed: () {
-                                      BranchOrdersActions.openHistoryExportDialog(
-                                        context,
-                                      );
-                                    },
-                                    icon: const Icon(Icons.download, size: 18),
-                                    label: const Text(
-                                      'Order History',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    style: FilledButton.styleFrom(
-                                      backgroundColor: Colors.deepPurple,
-                                      foregroundColor: Colors.white,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(14),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  _StatusChip(
-                                    isSubmitted: s.isSubmitted,
-                                    isOrderDay: s.isOrderDay,
-                                    isMissingOrder:
-                                        s.isOrderDay &&
-                                        !s.isSubmitted &&
-                                        OperationalDateHelper.isMissingWindowForBranch(
-                                          startHour: s.submitStartHour,
-                                          endHour: s.submitEndHour,
+                                        const SizedBox(height: 10),
+
+                                        const Text(
+                                          'Click Create Order to load today order',
                                         ),
+
+                                        const SizedBox(height: 25),
+
+                                        FilledButton.icon(
+                                          icon: const Icon(Icons.create),
+
+                                          style: FilledButton.styleFrom(
+                                            backgroundColor:
+                                                AppColors.primaryColor,
+                                            minimumSize: Size(250.w, 45.h),
+                                            elevation: 20,
+                                            shadowColor:
+                                                AppColors.secondaryColor,
+                                          ),
+                                          label: Text(
+                                            'Create Order',
+                                            style: TextStyle(fontSize: 18.sp),
+                                          ),
+                                          onPressed: () {
+                                            context.read<OrdersBloc>().add(
+                                              const OrdersLoadAll(),
+                                            );
+                                          },
+                                        ),
+                                      ],
+                                    ),
                                   ),
-
-                                  const SizedBox(width: 10),
-
-                                  _EditLimitChip(
-                                    used: s.finalEdits.length,
-                                    limit: s.orderEditLimit,
-                                  ),
-
-                                  const SizedBox(width: 10),
-
-                                  _ZoneChip(zone: zs.zone),
-
-                                  const SizedBox(width: 10),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-
-                        const SizedBox(height: 5),
-
-                        Expanded(
-                          child: SingleChildScrollView(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                if (s.showCreate)
-                                  SizedBox(
-                                    height:
-                                        MediaQuery.of(context).size.height * .7,
-                                    child: Center(
+                                )
+                              else if (s.status == OrdersStatus.loading &&
+                                  s.rows.isEmpty)
+                                SizedBox(
+                                  height:
+                                      MediaQuery.of(context).size.height *
+                                      0.7.h,
+                                  child: Center(
+                                    child: Container(
+                                      width: 520,
+                                      padding: const EdgeInsets.all(22),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(22),
+                                        border: Border.all(
+                                          color: const Color(0xFFE6E8F0),
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(
+                                              alpha: 0.05,
+                                            ),
+                                            blurRadius: 30,
+                                            offset: const Offset(0, 16),
+                                          ),
+                                        ],
+                                      ),
                                       child: Column(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          const Icon(
-                                            Icons.inventory_2_outlined,
-                                            size: 90,
+                                          const CircularProgressIndicator(
                                             color: AppColors.primaryColor,
                                           ),
 
                                           const SizedBox(height: 20),
 
                                           const Text(
-                                            'Daily Order',
+                                            'Generating Order',
                                             style: TextStyle(
-                                              fontSize: 28,
-                                              fontWeight: FontWeight.bold,
+                                              fontSize: 20,
+                                              fontWeight: FontWeight.w900,
                                             ),
                                           ),
 
                                           const SizedBox(height: 10),
 
-                                          const Text(
-                                            'Click Create Order to load today order',
-                                          ),
-
-                                          const SizedBox(height: 25),
-
-                                          FilledButton.icon(
-                                            icon: const Icon(Icons.create),
-
-                                            style: FilledButton.styleFrom(
-                                              backgroundColor:
-                                                  AppColors.primaryColor,
-                                              minimumSize: Size(250.w, 45.h),
-                                              elevation: 20,
-                                              shadowColor:
-                                                  AppColors.secondaryColor,
+                                          Text(
+                                            s.progressMessage ??
+                                                'Please wait...',
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                              color: Colors.grey,
+                                              fontSize: 14,
                                             ),
-                                            label: Text(
-                                              'Create Order',
-                                              style: TextStyle(fontSize: 18.sp),
-                                            ),
-                                            onPressed: () {
-                                              context.read<OrdersBloc>().add(
-                                                const OrdersLoadAll(),
-                                              );
-                                            },
                                           ),
                                         ],
                                       ),
                                     ),
-                                  )
-                                else if (s.status == OrdersStatus.loading &&
-                                    s.rows.isEmpty)
-                                  SizedBox(
-                                    height:
-                                        MediaQuery.of(context).size.height *
-                                        0.7.h,
-                                    child: Center(
-                                      child: Container(
-                                        width: 520,
-                                        padding: const EdgeInsets.all(22),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(
-                                            22,
+                                  ),
+                                )
+                              else ...[
+                                if (s.status == OrdersStatus.generating ||
+                                    s.status == OrdersStatus.loading)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: _ProgressStrip(
+                                      progress: s.progress,
+                                      message:
+                                          s.progressMessage ?? 'Working...',
+                                    ),
+                                  ),
+
+                                if (s.status == OrdersStatus.failure &&
+                                    s.error != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 10),
+                                    child: Text(
+                                      s.error!,
+                                      style: const TextStyle(color: Colors.red),
+                                    ),
+                                  ),
+
+                                LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    final double cardWidth = 360.w;
+
+                                    return Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceEvenly,
+                                      children: [
+                                        SizedBox(
+                                          width: cardWidth,
+                                          child: _KpiCard(
+                                            title: 'Visible Products',
+                                            value: visibleStats.totalProducts
+                                                .toString(),
+                                            subtitle:
+                                                s.viewRows.length ==
+                                                    s.rows.length
+                                                ? 'All APG Items'
+                                                : 'Filtered items',
+                                            icon: Icons.list_alt_outlined,
+                                            isSelected: false,
                                           ),
-                                          border: Border.all(
-                                            color: const Color(0xFFE6E8F0),
-                                          ),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.black.withValues(
-                                                alpha: 0.05,
-                                              ),
-                                              blurRadius: 30,
-                                              offset: const Offset(0, 16),
-                                            ),
-                                          ],
                                         ),
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            const CircularProgressIndicator(
-                                              color: AppColors.primaryColor,
-                                            ),
 
-                                            const SizedBox(height: 20),
-
-                                            const Text(
-                                              'Generating Order',
-                                              style: TextStyle(
-                                                fontSize: 20,
-                                                fontWeight: FontWeight.w900,
-                                              ),
-                                            ),
-
-                                            const SizedBox(height: 10),
-
-                                            Text(
-                                              s.progressMessage ??
-                                                  'Please wait...',
-                                              textAlign: TextAlign.center,
-                                              style: const TextStyle(
-                                                color: Colors.grey,
-                                                fontSize: 14,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  )
-                                else ...[
-                                  if (s.status == OrdersStatus.generating ||
-                                      s.status == OrdersStatus.loading)
-                                    Padding(
-                                      padding: const EdgeInsets.only(
-                                        bottom: 12,
-                                      ),
-                                      child: _ProgressStrip(
-                                        progress: s.progress,
-                                        message:
-                                            s.progressMessage ?? 'Working...',
-                                      ),
-                                    ),
-
-                                  if (s.status == OrdersStatus.failure &&
-                                      s.error != null)
-                                    Padding(
-                                      padding: const EdgeInsets.only(
-                                        bottom: 10,
-                                      ),
-                                      child: Text(
-                                        s.error!,
-                                        style: const TextStyle(
-                                          color: Colors.red,
-                                        ),
-                                      ),
-                                    ),
-
-                                  LayoutBuilder(
-                                    builder: (context, constraints) {
-                                      final double cardWidth = 360.w;
-
-                                      return Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceEvenly,
-                                        children: [
-                                          SizedBox(
-                                            width: cardWidth,
+                                        SizedBox(
+                                          width: cardWidth,
+                                          child: GestureDetector(
+                                            onTap: () {
+                                              context.read<OrdersBloc>().add(
+                                                OrdersNumericFinalOnlyToggled(
+                                                  !s.numericFinalOnly,
+                                                ),
+                                              );
+                                            },
                                             child: _KpiCard(
-                                              title: 'Visible Products',
-                                              value: visibleStats.totalProducts
+                                              title: 'Items in Order',
+                                              value: visibleStats
+                                                  .finalReorderCount
+                                                  .round()
                                                   .toString(),
-                                              subtitle:
-                                                  s.viewRows.length ==
-                                                      s.rows.length
-                                                  ? 'All APG Items'
-                                                  : 'Filtered items',
-                                              icon: Icons.list_alt_outlined,
-                                              isSelected: false,
+                                              subtitle: '',
+                                              icon: Icons.inventory_2_outlined,
+                                              isSelected: s.numericFinalOnly,
                                             ),
                                           ),
+                                        ),
 
-                                          SizedBox(
-                                            width: cardWidth,
-                                            child: GestureDetector(
-                                              onTap: () {
+                                        SizedBox(
+                                          width: cardWidth,
+                                          child: _KpiCard(
+                                            title: 'Non',
+                                            value: '${visibleStats.non}',
+                                            subtitle: '',
+                                            icon: Icons.layers_outlined,
+                                            isSelected: false,
+                                          ),
+                                        ),
+
+                                        SizedBox(
+                                          width: cardWidth,
+                                          child: _KpiCard(
+                                            title: 'Additional Orders Today',
+                                            value:
+                                                '$usedAdditional/$additionalLimit',
+                                            subtitle: '',
+                                            icon: Icons.add_box_outlined,
+                                            isSelected: false,
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                ),
+
+                                const SizedBox(height: 12),
+
+                                _FiltersBar(
+                                  categories: categories,
+                                  selectedCategory: s.categoryFilter,
+                                  selectedFormulary: s.formularyFilter,
+                                  nonWithSales45Only: s.nonWithSales45Only,
+                                  numericFinalOnly: s.isOrderDay
+                                      ? s.numericFinalOnly
+                                      : false,
+                                  receivedLast7DaysOnly:
+                                      s.receivedLast7DaysOnly,
+                                  additionalOnly: s.additionalOnly,
+                                  onReceivedLast7DaysChanged: (v) {
+                                    context.read<OrdersBloc>().add(
+                                      OrdersReceivedLast7DaysToggled(v),
+                                    );
+                                  },
+                                  onCategoryChanged: (v) {
+                                    context.read<OrdersBloc>().add(
+                                      OrdersCategoryChanged(v),
+                                    );
+                                  },
+                                  onFormularyChanged: (v) {
+                                    context.read<OrdersBloc>().add(
+                                      OrdersFormularyChanged(v),
+                                    );
+                                  },
+                                  onNonWithSales45Changed: (v) {
+                                    context.read<OrdersBloc>().add(
+                                      OrdersNonWithSales45Toggled(v),
+                                    );
+                                  },
+                                  onNumericFinalOnlyChanged: s.isOrderDay
+                                      ? (v) {
+                                          context.read<OrdersBloc>().add(
+                                            OrdersNumericFinalOnlyToggled(v),
+                                          );
+                                        }
+                                      : null,
+                                  onAdditionalOnlyChanged: (v) {
+                                    context.read<OrdersBloc>().add(
+                                      OrdersAdditionalOnlyToggled(v),
+                                    );
+                                  },
+                                  isSubmitted: s.isSubmitted,
+                                  onClearAll: () {
+                                    context.read<OrdersBloc>().add(
+                                      const OrdersClearAllFilters(),
+                                    );
+
+                                    _grid.resetGridUi();
+                                  },
+                                ),
+
+                                const SizedBox(height: 12),
+
+                                BlocSelector<OrdersBloc, OrdersState, String>(
+                                  selector: (s) => s.search,
+                                  builder: (context, search) {
+                                    return BlocBuilder<
+                                      BranchZoneCubit,
+                                      BranchZoneState
+                                    >(
+                                      builder: (context, zs) {
+                                        final zoneReady =
+                                            zs.zone != null &&
+                                            zs.zone!.trim().isNotEmpty;
+
+                                        return OrdersToolbar(
+                                          search: search,
+                                          onSearchChanged: (v) {
+                                            context.read<OrdersBloc>().add(
+                                              OrdersSearchChanged(v),
+                                            );
+                                          },
+                                          onOpenColumns: () {
+                                            Scaffold.of(
+                                              context,
+                                            ).openEndDrawer();
+                                          },
+
+                                          onExport: () {
+                                            context.read<OrdersBloc>().add(
+                                              const OrdersExportPressed(),
+                                            );
+                                          },
+                                          statusChip: null,
+                                          actions: [
+                                            OrdersToolbar.actionButton(
+                                              label: 'Items To Order',
+
+                                              icon:
+                                                  Icons.shopping_cart_outlined,
+
+                                              color: Colors.indigo,
+
+                                              badgeCount: s.itemsToOrder.length,
+
+                                              onPressed: () async {
+                                                await showDialog(
+                                                  context: context,
+                                                  builder: (_) =>
+                                                      BlocProvider.value(
+                                                        value: context
+                                                            .read<OrdersBloc>(),
+                                                        child:
+                                                            const ItemsToOrderDialog(),
+                                                      ),
+                                                );
+
+                                                if (!context.mounted) return;
+
                                                 context.read<OrdersBloc>().add(
-                                                  OrdersNumericFinalOnlyToggled(
-                                                    !s.numericFinalOnly,
-                                                  ),
+                                                  const OrdersLoadItemsToOrder(),
                                                 );
                                               },
-                                              child: _KpiCard(
-                                                title: 'Items in Order',
-                                                value: visibleStats
-                                                    .finalReorderCount
-                                                    .round()
-                                                    .toString(),
-                                                subtitle: '',
-                                                icon:
-                                                    Icons.inventory_2_outlined,
-                                                isSelected: s.numericFinalOnly,
-                                              ),
                                             ),
-                                          ),
-
-                                          SizedBox(
-                                            width: cardWidth,
-                                            child: _KpiCard(
-                                              title: 'Non',
-                                              value: '${visibleStats.non}',
-                                              subtitle: '',
-                                              icon: Icons.layers_outlined,
-                                              isSelected: false,
+                                            const SizedBox(width: 6),
+                                            OrdersToolbar.actionButton(
+                                              label: 'Additional Order Track',
+                                              icon:
+                                                  Icons.track_changes_outlined,
+                                              badgeCount: s.trackingPending,
+                                              color: AppColors.primaryColor,
+                                              tooltip:
+                                                  'Track additional requests status',
+                                              onPressed:
+                                                  (!isBusy) || !s.isOrderDay
+                                                  ? () {
+                                                      BranchOrdersActions.openTrackingDialog(
+                                                        context,
+                                                      );
+                                                    }
+                                                  : null,
                                             ),
-                                          ),
+                                            const SizedBox(width: 6),
 
-                                          SizedBox(
-                                            width: cardWidth,
-                                            child: _KpiCard(
-                                              title: 'Additional Orders Today',
-                                              value:
-                                                  '$usedAdditional/$additionalLimit',
-                                              subtitle: '',
+                                            OrdersToolbar.actionButton(
+                                              label: 'Send Additional',
                                               icon: Icons.add_box_outlined,
-                                              isSelected: false,
+                                              badgeCount: draftAddCount,
+                                              color: AppColors.secondaryColor,
+                                              onPressed:
+                                                  (!zoneReady ||
+                                                      s
+                                                          .additionalEdits
+                                                          .isEmpty ||
+                                                      isBusy)
+                                                  ? null
+                                                  : () {
+                                                      context
+                                                          .read<OrdersBloc>()
+                                                          .add(
+                                                            OrdersSendAdditionalRequestsPressed(
+                                                              zone: zs.zone!,
+                                                            ),
+                                                          );
+                                                    },
                                             ),
-                                          ),
-                                        ],
-                                      );
-                                    },
-                                  ),
 
-                                  const SizedBox(height: 12),
-
-                                  _FiltersBar(
-                                    categories: categories,
-                                    selectedCategory: s.categoryFilter,
-                                    selectedFormulary: s.formularyFilter,
-                                    nonWithSales45Only: s.nonWithSales45Only,
-                                    numericFinalOnly: s.isOrderDay
-                                        ? s.numericFinalOnly
-                                        : false,
-                                    receivedLast7DaysOnly:
-                                        s.receivedLast7DaysOnly,
-                                    additionalOnly: s.additionalOnly,
-                                    onReceivedLast7DaysChanged: (v) {
-                                      context.read<OrdersBloc>().add(
-                                        OrdersReceivedLast7DaysToggled(v),
-                                      );
-                                    },
-                                    onCategoryChanged: (v) {
-                                      context.read<OrdersBloc>().add(
-                                        OrdersCategoryChanged(v),
-                                      );
-                                    },
-                                    onFormularyChanged: (v) {
-                                      context.read<OrdersBloc>().add(
-                                        OrdersFormularyChanged(v),
-                                      );
-                                    },
-                                    onNonWithSales45Changed: (v) {
-                                      context.read<OrdersBloc>().add(
-                                        OrdersNonWithSales45Toggled(v),
-                                      );
-                                    },
-                                    onNumericFinalOnlyChanged: s.isOrderDay
-                                        ? (v) {
-                                            context.read<OrdersBloc>().add(
-                                              OrdersNumericFinalOnlyToggled(v),
-                                            );
-                                          }
-                                        : null,
-                                    onAdditionalOnlyChanged: (v) {
-                                      context.read<OrdersBloc>().add(
-                                        OrdersAdditionalOnlyToggled(v),
-                                      );
-                                    },
-                                    isSubmitted: s.isSubmitted,
-                                    onClearAll: () {
-                                      context.read<OrdersBloc>().add(
-                                        const OrdersClearAllFilters(),
-                                      );
-
-                                      _grid.resetGridUi();
-                                    },
-                                  ),
-
-                                  const SizedBox(height: 12),
-
-                                  BlocSelector<OrdersBloc, OrdersState, String>(
-                                    selector: (s) => s.search,
-                                    builder: (context, search) {
-                                      return BlocBuilder<
-                                        BranchZoneCubit,
-                                        BranchZoneState
-                                      >(
-                                        builder: (context, zs) {
-                                          final zoneReady =
-                                              zs.zone != null &&
-                                              zs.zone!.trim().isNotEmpty;
-
-                                          return OrdersToolbar(
-                                            search: search,
-                                            onSearchChanged: (v) {
-                                              context.read<OrdersBloc>().add(
-                                                OrdersSearchChanged(v),
-                                              );
-                                            },
-                                            onOpenColumns: () {
-                                              Scaffold.of(
-                                                context,
-                                              ).openEndDrawer();
-                                            },
-
-                                            onExport: () {
-                                              context.read<OrdersBloc>().add(
-                                                const OrdersExportPressed(),
-                                              );
-                                            },
-                                            statusChip: null,
-                                            actions: [
-                                              OrdersToolbar.actionButton(
-                                                label: 'Items To Order',
-
-                                                icon: Icons
-                                                    .shopping_cart_outlined,
-
-                                                color: Colors.indigo,
-
-                                                badgeCount:
-                                                    s.itemsToOrder.length,
-
-                                                onPressed: () async {
-                                                  await showDialog(
-                                                    context: context,
-                                                    builder: (_) =>
-                                                        BlocProvider.value(
-                                                          value: context
-                                                              .read<
-                                                                OrdersBloc
-                                                              >(),
-                                                          child:
-                                                              const ItemsToOrderDialog(),
-                                                        ),
-                                                  );
-
-                                                  if (!context.mounted) return;
-
-                                                  context.read<OrdersBloc>().add(
-                                                    const OrdersLoadItemsToOrder(),
-                                                  );
-                                                },
-                                              ),
-                                              const SizedBox(width: 6),
-                                              OrdersToolbar.actionButton(
-                                                label: 'Additional Order Track',
-                                                icon: Icons
-                                                    .track_changes_outlined,
-                                                badgeCount: s.trackingPending,
-                                                color: AppColors.primaryColor,
-                                                tooltip:
-                                                    'Track additional requests status',
-                                                onPressed:
-                                                    (!isBusy) || !s.isOrderDay
-                                                    ? () {
-                                                        BranchOrdersActions.openTrackingDialog(
-                                                          context,
-                                                        );
-                                                      }
-                                                    : null,
-                                              ),
+                                            if (!s.isSubmitted &&
+                                                s.isOrderDay &&
+                                                OperationalDateHelper.canSubmitForBranch(
+                                                  startHour: s.submitStartHour,
+                                                  endHour: s.submitEndHour,
+                                                ))
                                               const SizedBox(width: 6),
 
+                                            if (!s.isSubmitted &&
+                                                s.isOrderDay &&
+                                                OperationalDateHelper.canSubmitForBranch(
+                                                  startHour: s.submitStartHour,
+                                                  endHour: s.submitEndHour,
+                                                ))
                                               OrdersToolbar.actionButton(
-                                                label: 'Send Additional',
-                                                icon: Icons.add_box_outlined,
-                                                badgeCount: draftAddCount,
+                                                label:
+                                                    'Submit (${s.editsCount})',
+                                                icon:
+                                                    Icons.check_circle_outline,
                                                 color: AppColors.secondaryColor,
                                                 onPressed:
                                                     (!zoneReady ||
-                                                        s
-                                                            .additionalEdits
-                                                            .isEmpty ||
-                                                        isBusy)
+                                                        s.isSubmitted ||
+                                                        isBusy ||
+                                                        !s.isOrderDay ||
+                                                        !OperationalDateHelper.canSubmitForBranch(
+                                                          startHour:
+                                                              s.submitStartHour,
+                                                          endHour:
+                                                              s.submitEndHour,
+                                                        ))
                                                     ? null
-                                                    : () {
-                                                        context
-                                                            .read<OrdersBloc>()
-                                                            .add(
-                                                              OrdersSendAdditionalRequestsPressed(
-                                                                zone: zs.zone!,
-                                                              ),
-                                                            );
-                                                      },
-                                              ),
+                                                    : () async {
+                                                        final bloc = context
+                                                            .read<OrdersBloc>();
 
-                                              if (!s.isSubmitted &&
-                                                  s.isOrderDay &&
-                                                  OperationalDateHelper.canSubmitForBranch(
-                                                    startHour:
-                                                        s.submitStartHour,
-                                                    endHour: s.submitEndHour,
-                                                  ))
-                                                const SizedBox(width: 6),
+                                                        final pendingItems = bloc
+                                                            .state
+                                                            .itemsToOrder
+                                                            .where(
+                                                              (e) =>
+                                                                  e.status ==
+                                                                  'pending',
+                                                            )
+                                                            .toList();
 
-                                              if (!s.isSubmitted &&
-                                                  s.isOrderDay &&
-                                                  OperationalDateHelper.canSubmitForBranch(
-                                                    startHour:
-                                                        s.submitStartHour,
-                                                    endHour: s.submitEndHour,
-                                                  ))
-                                                OrdersToolbar.actionButton(
-                                                  label:
-                                                      'Submit (${s.editsCount})',
-                                                  icon: Icons
-                                                      .check_circle_outline,
-                                                  color:
-                                                      AppColors.secondaryColor,
-                                                  onPressed:
-                                                      (!zoneReady ||
-                                                          s.isSubmitted ||
-                                                          isBusy ||
-                                                          !s.isOrderDay ||
-                                                          !OperationalDateHelper.canSubmitForBranch(
-                                                            startHour: s
-                                                                .submitStartHour,
-                                                            endHour:
-                                                                s.submitEndHour,
-                                                          ))
-                                                      ? null
-                                                      : () async {
-                                                          final bloc = context
-                                                              .read<
-                                                                OrdersBloc
-                                                              >();
+                                                        if (pendingItems
+                                                            .isNotEmpty) {
+                                                          final result = await showDialog(
+                                                            context: context,
+                                                            barrierDismissible:
+                                                                false,
+                                                            builder: (_) => PendingItemsToOrderDialog(
+                                                              items:
+                                                                  pendingItems,
 
-                                                          final pendingItems = bloc
-                                                              .state
-                                                              .itemsToOrder
-                                                              .where(
-                                                                (e) =>
-                                                                    e.status ==
-                                                                    'pending',
-                                                              )
-                                                              .toList();
+                                                              onIgnorePressed: (item) async {
+                                                                await bloc.repo
+                                                                    .updateItemToOrderStatus(
+                                                                      id: item
+                                                                          .id,
+                                                                      status:
+                                                                          'ignored',
+                                                                    );
+                                                              },
 
-                                                          if (pendingItems
-                                                              .isNotEmpty) {
-                                                            final result = await showDialog(
-                                                              context: context,
-                                                              barrierDismissible:
-                                                                  false,
-                                                              builder: (_) => PendingItemsToOrderDialog(
-                                                                items:
-                                                                    pendingItems,
+                                                              onAddPressed: (item) async {
+                                                                final row = bloc
+                                                                    .state
+                                                                    .rows
+                                                                    .firstWhere(
+                                                                      (e) =>
+                                                                          e.itemCode ==
+                                                                          item.itemCode,
+                                                                    );
 
-                                                                onIgnorePressed: (item) async {
+                                                                final formulary =
+                                                                    (row.branchFormulary ??
+                                                                            '')
+                                                                        .toString()
+                                                                        .toUpperCase()
+                                                                        .trim();
+
+                                                                final storeStock =
+                                                                    (num.tryParse(
+                                                                              row.storeStock.toString(),
+                                                                            ) ??
+                                                                            0)
+                                                                        .toInt();
+
+                                                                final totalReorderToday =
+                                                                    (num.tryParse(
+                                                                              row.totalReorderToday.toString(),
+                                                                            ) ??
+                                                                            0)
+                                                                        .toInt();
+
+                                                                final reorderQtyNum =
+                                                                    (num.tryParse(
+                                                                              row.reorderQtyNum.toString(),
+                                                                            ) ??
+                                                                            0)
+                                                                        .toInt();
+
+                                                                final hasTma =
+                                                                    row.tmaQty !=
+                                                                        null &&
+                                                                    row.tmaQty
+                                                                            .toString() !=
+                                                                        '0';
+
+                                                                final edit =
+                                                                    bloc
+                                                                        .state
+                                                                        .finalEdits[item
+                                                                        .itemCode];
+
+                                                                final int
+                                                                oldQty =
+                                                                    edit?.newQty ??
+                                                                    (num.tryParse(
+                                                                              row.finalReorderQtyStoreStockGt0.toString(),
+                                                                            ) ??
+                                                                            0)
+                                                                        .toInt();
+
+                                                                final int
+                                                                itemQty = item
+                                                                    .qty
+                                                                    .toInt();
+
+                                                                final int
+                                                                newQty =
+                                                                    oldQty +
+                                                                    itemQty;
+
+                                                                // =========================
+                                                                // DAILY ORDER WARNING
+                                                                // =========================
+
+                                                                if (reorderQtyNum >
+                                                                    0) {
+                                                                  final decision = await showDialog<String>(
+                                                                    context:
+                                                                        context,
+                                                                    builder: (_) {
+                                                                      return AlertDialog(
+                                                                        backgroundColor:
+                                                                            Colors.white,
+                                                                        title: const Text(
+                                                                          'Already In Daily Order',
+                                                                        ),
+                                                                        content: Text(
+                                                                          'This item already exists in Daily Order.\n\n'
+                                                                          'Daily Order Qty : $reorderQtyNum\n'
+                                                                          'Suggested Qty : $itemQty\n'
+                                                                          'Final Qty : $newQty',
+                                                                        ),
+                                                                        actions: [
+                                                                          FilledButton(
+                                                                            onPressed: () {
+                                                                              Navigator.pop(
+                                                                                context,
+                                                                                'ignore',
+                                                                              );
+                                                                            },
+                                                                            style: FilledButton.styleFrom(
+                                                                              backgroundColor: Colors.red,
+                                                                            ),
+                                                                            child: const Text(
+                                                                              'Ignore',
+                                                                              style: TextStyle(
+                                                                                color: Colors.white,
+                                                                              ),
+                                                                            ),
+                                                                          ),
+                                                                          SizedBox(
+                                                                            width:
+                                                                                10,
+                                                                          ),
+                                                                          FilledButton(
+                                                                            onPressed: () {
+                                                                              Navigator.pop(
+                                                                                context,
+                                                                                'add',
+                                                                              );
+                                                                            },
+                                                                            style: FilledButton.styleFrom(
+                                                                              backgroundColor: AppColors.primaryColor,
+                                                                            ),
+                                                                            child: const Text(
+                                                                              'Add Anyway',
+                                                                              style: TextStyle(
+                                                                                color: Colors.white,
+                                                                              ),
+                                                                            ),
+                                                                          ),
+                                                                        ],
+                                                                      );
+                                                                    },
+                                                                  );
+
+                                                                  if (decision ==
+                                                                      'ignore') {
+                                                                    await bloc
+                                                                        .repo
+                                                                        .updateItemToOrderStatus(
+                                                                          id: item
+                                                                              .id,
+                                                                          status:
+                                                                              'ignored',
+                                                                        );
+
+                                                                    return 'ignored';
+                                                                  }
+
+                                                                  if (decision !=
+                                                                      'add') {
+                                                                    return 'ignored';
+                                                                  }
+                                                                }
+
+                                                                // =========================
+                                                                // LIMITED STOCK
+                                                                // =========================
+
+                                                                final availableStock =
+                                                                    (storeStock -
+                                                                            totalReorderToday)
+                                                                        .clamp(
+                                                                          0,
+                                                                          999999999,
+                                                                        );
+
+                                                                final cap =
+                                                                    oldQty +
+                                                                    (availableStock *
+                                                                            0.2)
+                                                                        .floor();
+
+                                                                if (newQty >
+                                                                    cap) {
+                                                                  await showDialog(
+                                                                    context:
+                                                                        context,
+                                                                    builder: (_) => LimitDialog(
+                                                                      title:
+                                                                          'Limited Stock',
+                                                                      body:
+                                                                          'Current Qty : $oldQty\n'
+                                                                          'Requested Qty : $itemQty\n'
+                                                                          'Max Allowed : $cap\n'
+                                                                          'Final Qty : $newQty',
+                                                                    ),
+                                                                  );
+
                                                                   await bloc
                                                                       .repo
                                                                       .updateItemToOrderStatus(
@@ -1137,284 +1311,66 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                                         status:
                                                                             'ignored',
                                                                       );
-                                                                },
 
-                                                                onAddPressed: (item) async {
-                                                                  final row = bloc
-                                                                      .state
-                                                                      .rows
-                                                                      .firstWhere(
-                                                                        (e) =>
-                                                                            e.itemCode ==
-                                                                            item.itemCode,
-                                                                      );
+                                                                  return 'ignored';
+                                                                }
 
-                                                                  final formulary =
-                                                                      (row.branchFormulary ??
-                                                                              '')
-                                                                          .toString()
-                                                                          .toUpperCase()
-                                                                          .trim();
+                                                                // =========================
+                                                                // NON FORMULARY
+                                                                // =========================
 
-                                                                  final storeStock =
-                                                                      (num.tryParse(
-                                                                                row.storeStock.toString(),
-                                                                              ) ??
-                                                                              0)
-                                                                          .toInt();
+                                                                if (formulary ==
+                                                                    'NON') {
+                                                                  await showDialog(
+                                                                    context:
+                                                                        context,
+                                                                    builder: (_) =>
+                                                                        const LimitDialog(
+                                                                          title:
+                                                                              'NON Formulary',
+                                                                          body:
+                                                                              'This item is NON formulary and cannot be ordered.',
+                                                                        ),
+                                                                  );
 
-                                                                  final totalReorderToday =
-                                                                      (num.tryParse(
-                                                                                row.totalReorderToday.toString(),
-                                                                              ) ??
-                                                                              0)
-                                                                          .toInt();
-
-                                                                  final reorderQtyNum =
-                                                                      (num.tryParse(
-                                                                                row.reorderQtyNum.toString(),
-                                                                              ) ??
-                                                                              0)
-                                                                          .toInt();
-
-                                                                  final hasTma =
-                                                                      row.tmaQty !=
-                                                                          null &&
-                                                                      row.tmaQty
-                                                                              .toString() !=
-                                                                          '0';
-
-                                                                  final edit =
-                                                                      bloc
-                                                                          .state
-                                                                          .finalEdits[item
-                                                                          .itemCode];
-
-                                                                  final int
-                                                                  oldQty =
-                                                                      edit?.newQty ??
-                                                                      (num.tryParse(
-                                                                                row.finalReorderQtyStoreStockGt0.toString(),
-                                                                              ) ??
-                                                                              0)
-                                                                          .toInt();
-
-                                                                  final int
-                                                                  itemQty = item
-                                                                      .qty
-                                                                      .toInt();
-
-                                                                  final int
-                                                                  newQty =
-                                                                      oldQty +
-                                                                      itemQty;
-
-                                                                  // =========================
-                                                                  // DAILY ORDER WARNING
-                                                                  // =========================
-
-                                                                  if (reorderQtyNum >
-                                                                      0) {
-                                                                    final decision = await showDialog<String>(
-                                                                      context:
-                                                                          context,
-                                                                      builder: (_) {
-                                                                        return AlertDialog(
-                                                                          backgroundColor:
-                                                                              Colors.white,
-                                                                          title: const Text(
-                                                                            'Already In Daily Order',
-                                                                          ),
-                                                                          content: Text(
-                                                                            'This item already exists in Daily Order.\n\n'
-                                                                            'Daily Order Qty : $reorderQtyNum\n'
-                                                                            'Suggested Qty : $itemQty\n'
-                                                                            'Final Qty : $newQty',
-                                                                          ),
-                                                                          actions: [
-                                                                            FilledButton(
-                                                                              onPressed: () {
-                                                                                Navigator.pop(
-                                                                                  context,
-                                                                                  'ignore',
-                                                                                );
-                                                                              },
-                                                                              style: FilledButton.styleFrom(
-                                                                                backgroundColor: Colors.red,
-                                                                              ),
-                                                                              child: const Text(
-                                                                                'Ignore',
-                                                                                style: TextStyle(
-                                                                                  color: Colors.white,
-                                                                                ),
-                                                                              ),
-                                                                            ),
-                                                                            SizedBox(
-                                                                              width: 10,
-                                                                            ),
-                                                                            FilledButton(
-                                                                              onPressed: () {
-                                                                                Navigator.pop(
-                                                                                  context,
-                                                                                  'add',
-                                                                                );
-                                                                              },
-                                                                              style: FilledButton.styleFrom(
-                                                                                backgroundColor: AppColors.primaryColor,
-                                                                              ),
-                                                                              child: const Text(
-                                                                                'Add Anyway',
-                                                                                style: TextStyle(
-                                                                                  color: Colors.white,
-                                                                                ),
-                                                                              ),
-                                                                            ),
-                                                                          ],
-                                                                        );
-                                                                      },
-                                                                    );
-
-                                                                    if (decision ==
-                                                                        'ignore') {
-                                                                      await bloc.repo.updateItemToOrderStatus(
+                                                                  await bloc
+                                                                      .repo
+                                                                      .updateItemToOrderStatus(
                                                                         id: item
                                                                             .id,
                                                                         status:
                                                                             'ignored',
                                                                       );
 
-                                                                      return 'ignored';
-                                                                    }
+                                                                  return 'ignored';
+                                                                }
 
-                                                                    if (decision !=
-                                                                        'add') {
-                                                                      return 'ignored';
-                                                                    }
-                                                                  }
+                                                                // =========================
+                                                                // TMA WARNING
+                                                                // =========================
 
-                                                                  // =========================
-                                                                  // LIMITED STOCK
-                                                                  // =========================
-
-                                                                  final availableStock =
-                                                                      (storeStock -
-                                                                              totalReorderToday)
-                                                                          .clamp(
-                                                                            0,
-                                                                            999999999,
-                                                                          );
-
-                                                                  final cap =
-                                                                      oldQty +
-                                                                      (availableStock *
-                                                                              0.2)
-                                                                          .floor();
-
-                                                                  if (newQty >
-                                                                      cap) {
-                                                                    await showDialog(
-                                                                      context:
-                                                                          context,
-                                                                      builder: (_) => LimitDialog(
-                                                                        title:
-                                                                            'Limited Stock',
-                                                                        body:
-                                                                            'Current Qty : $oldQty\n'
-                                                                            'Requested Qty : $itemQty\n'
-                                                                            'Max Allowed : $cap\n'
-                                                                            'Final Qty : $newQty',
-                                                                      ),
-                                                                    );
-
-                                                                    await bloc
-                                                                        .repo
-                                                                        .updateItemToOrderStatus(
-                                                                          id: item
-                                                                              .id,
-                                                                          status:
-                                                                              'ignored',
-                                                                        );
-
-                                                                    return 'ignored';
-                                                                  }
-
-                                                                  // =========================
-                                                                  // NON FORMULARY
-                                                                  // =========================
-
-                                                                  if (formulary ==
-                                                                      'NON') {
-                                                                    await showDialog(
-                                                                      context:
-                                                                          context,
-                                                                      builder: (_) => const LimitDialog(
-                                                                        title:
-                                                                            'NON Formulary',
-                                                                        body:
-                                                                            'This item is NON formulary and cannot be ordered.',
-                                                                      ),
-                                                                    );
-
-                                                                    await bloc
-                                                                        .repo
-                                                                        .updateItemToOrderStatus(
-                                                                          id: item
-                                                                              .id,
-                                                                          status:
-                                                                              'ignored',
-                                                                        );
-
-                                                                    return 'ignored';
-                                                                  }
-
-                                                                  // =========================
-                                                                  // TMA WARNING
-                                                                  // =========================
-
-                                                                  if (hasTma) {
-                                                                    await showDialog(
-                                                                      context:
-                                                                          context,
-                                                                      builder: (_) => const LimitDialog(
-                                                                        title:
-                                                                            'TMA Item',
-                                                                        body:
-                                                                            'This item contains TMA quantity.\n'
-                                                                            'Please review before ordering.',
-                                                                      ),
-                                                                    );
-                                                                  }
-
-                                                                  // =========================
-                                                                  // APPLY EDIT
-                                                                  // =========================
-
-                                                                  bloc.add(
-                                                                    OrdersApplyFinalEdit(
-                                                                      itemCode:
-                                                                          item.itemCode,
-                                                                      oldQty:
-                                                                          oldQty,
-                                                                      newQty:
-                                                                          newQty,
-                                                                      reason:
-                                                                          'Items To Order',
-                                                                      applyMaxAdj:
-                                                                          false,
+                                                                if (hasTma) {
+                                                                  await showDialog(
+                                                                    context:
+                                                                        context,
+                                                                    builder: (_) => const LimitDialog(
+                                                                      title:
+                                                                          'TMA Item',
+                                                                      body:
+                                                                          'This item contains TMA quantity.\n'
+                                                                          'Please review before ordering.',
                                                                     ),
                                                                   );
+                                                                }
 
-                                                                  await bloc.repo.upsertFinalReorderDraft(
-                                                                    runDate: bloc
-                                                                        .state
-                                                                        .runDate,
-                                                                    branchName: bloc
-                                                                        .state
-                                                                        .branchName,
+                                                                // =========================
+                                                                // APPLY EDIT
+                                                                // =========================
+
+                                                                bloc.add(
+                                                                  OrdersApplyFinalEdit(
                                                                     itemCode: item
                                                                         .itemCode,
-                                                                    itemName: item
-                                                                        .itemName,
                                                                     oldQty:
                                                                         oldQty,
                                                                     newQty:
@@ -1423,362 +1379,364 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                                         'Items To Order',
                                                                     applyMaxAdj:
                                                                         false,
-                                                                  );
+                                                                  ),
+                                                                );
 
-                                                                  await bloc
-                                                                      .repo
-                                                                      .updateItemToOrderStatus(
-                                                                        id: item
-                                                                            .id,
-                                                                        status:
-                                                                            'processed',
-                                                                      );
+                                                                await bloc.repo.upsertFinalReorderDraft(
+                                                                  runDate: bloc
+                                                                      .state
+                                                                      .runDate,
+                                                                  branchName: bloc
+                                                                      .state
+                                                                      .branchName,
+                                                                  itemCode: item
+                                                                      .itemCode,
+                                                                  itemName: item
+                                                                      .itemName,
+                                                                  oldQty:
+                                                                      oldQty,
+                                                                  newQty:
+                                                                      newQty,
+                                                                  reason:
+                                                                      'Items To Order',
+                                                                  applyMaxAdj:
+                                                                      false,
+                                                                );
 
-                                                                  return 'added';
-                                                                },
-                                                              ),
-                                                            );
-
-                                                            if (result !=
-                                                                true) {
-                                                              return;
-                                                            }
-
-                                                            bloc.add(
-                                                              const OrdersLoadItemsToOrder(),
-                                                            );
-
-                                                            await Future.delayed(
-                                                              const Duration(
-                                                                seconds: 1,
-                                                              ),
-                                                            );
-                                                          }
-
-                                                          // =========================
-                                                          // REVIEW CHANGES
-                                                          // =========================
-
-                                                          final confirmed =
-                                                              await BranchOrdersActions.openSubmitReviewDialog(
-                                                                context:
-                                                                    context,
-                                                                state: context
-                                                                    .read<
-                                                                      OrdersBloc
-                                                                    >()
-                                                                    .state,
-                                                                zone: zs.zone!,
-                                                              );
-
-                                                          if (confirmed !=
-                                                              true) {
-                                                            return;
-                                                          }
-
-                                                          if (!context.mounted)
-                                                            return;
-
-                                                          context
-                                                              .read<
-                                                                OrdersBloc
-                                                              >()
-                                                              .add(
-                                                                OrdersSubmitOrderPressed(
-                                                                  zone:
-                                                                      zs.zone!,
-                                                                ),
-                                                              );
-                                                        },
-                                                ),
-                                            ],
-                                            onClearAll: () {
-                                              context.read<OrdersBloc>().add(
-                                                const OrdersClearAllFilters(),
-                                              );
-
-                                              _grid.resetGridUi();
-                                            },
-                                            addMismatch: () {
-                                              BranchOrdersActions.openMismatchPanel(
-                                                context,
-                                              );
-                                            },
-                                            addMax: () {
-                                              BranchOrdersActions.openMaxPanel(
-                                                context,
-                                              );
-                                            },
-                                            isOrderDay: s.isOrderDay,
-                                          );
-                                        },
-                                      );
-                                    },
-                                  ),
-
-                                  const SizedBox(height: 10),
-
-                                  Container(
-                                    constraints: BoxConstraints(
-                                      minHeight:
-                                          MediaQuery.of(context).size.height *
-                                          0.4.h,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(18),
-                                      border: Border.all(
-                                        color: const Color(0xFFE6E8F0),
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black.withValues(
-                                            alpha: 0.04,
-                                          ),
-                                          blurRadius: 18,
-                                          offset: const Offset(0, 10),
-                                        ),
-                                      ],
-                                    ),
-                                    padding: const EdgeInsets.all(14),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const _TableTitle(),
-
-                                        const SizedBox(height: 10),
-
-                                        SizedBox(
-                                          height:
-                                              MediaQuery.of(
-                                                context,
-                                              ).size.height *
-                                              0.72,
-                                          child: Builder(
-                                            builder: (_) {
-                                              final hasActiveFilters =
-                                                  s.categoryFilter != 'ALL' ||
-                                                  s.formularyFilter != 'ALL' ||
-                                                  s.nonWithSales45Only ||
-                                                  s.numericFinalOnly ||
-                                                  s.receivedLast7DaysOnly ||
-                                                  s.additionalOnly;
-
-                                              final noResults =
-                                                  s.viewRows.isEmpty &&
-                                                  s.rows.isNotEmpty;
-
-                                              if (noResults &&
-                                                  hasActiveFilters) {
-                                                return Center(
-                                                  child: Column(
-                                                    mainAxisAlignment:
-                                                        MainAxisAlignment
-                                                            .center,
-                                                    children: [
-                                                      const Icon(
-                                                        Icons
-                                                            .filter_alt_off_outlined,
-                                                        size: 54,
-                                                        color: Colors.grey,
-                                                      ),
-
-                                                      const SizedBox(
-                                                        height: 14,
-                                                      ),
-
-                                                      const Text(
-                                                        'No results found',
-                                                        style: TextStyle(
-                                                          fontSize: 18,
-                                                          fontWeight:
-                                                              FontWeight.w700,
-                                                          color: Colors.black87,
-                                                        ),
-                                                      ),
-
-                                                      const SizedBox(height: 8),
-
-                                                      const Text(
-                                                        'Current filters are hiding all items',
-                                                        style: TextStyle(
-                                                          fontSize: 13,
-                                                          color: Colors.grey,
-                                                        ),
-                                                      ),
-
-                                                      const SizedBox(
-                                                        height: 18,
-                                                      ),
-
-                                                      FilledButton(
-                                                        onPressed:
-                                                            s.isRemovingFilters
-                                                            ? null
-                                                            : () {
-                                                                context
-                                                                    .read<
-                                                                      OrdersBloc
-                                                                    >()
-                                                                    .add(
-                                                                      const OrdersClearFiltersOnly(),
+                                                                await bloc.repo
+                                                                    .updateItemToOrderStatus(
+                                                                      id: item
+                                                                          .id,
+                                                                      status:
+                                                                          'processed',
                                                                     );
 
-                                                                _grid
-                                                                    .resetGridUi();
+                                                                return 'added';
                                                               },
-                                                        style: FilledButton.styleFrom(
-                                                          backgroundColor:
-                                                              Colors.redAccent,
-                                                          foregroundColor:
-                                                              Colors.white,
-                                                          padding:
-                                                              const EdgeInsets.symmetric(
-                                                                horizontal: 18,
-                                                                vertical: 14,
+                                                            ),
+                                                          );
+
+                                                          if (result != true) {
+                                                            return;
+                                                          }
+
+                                                          bloc.add(
+                                                            const OrdersLoadItemsToOrder(),
+                                                          );
+
+                                                          await Future.delayed(
+                                                            const Duration(
+                                                              seconds: 1,
+                                                            ),
+                                                          );
+                                                        }
+
+                                                        // =========================
+                                                        // REVIEW CHANGES
+                                                        // =========================
+
+                                                        final confirmed =
+                                                            await BranchOrdersActions.openSubmitReviewDialog(
+                                                              context: context,
+                                                              state: context
+                                                                  .read<
+                                                                    OrdersBloc
+                                                                  >()
+                                                                  .state,
+                                                              zone: zs.zone!,
+                                                            );
+
+                                                        if (confirmed != true) {
+                                                          return;
+                                                        }
+
+                                                        if (!context.mounted)
+                                                          return;
+
+                                                        context
+                                                            .read<OrdersBloc>()
+                                                            .add(
+                                                              OrdersSubmitOrderPressed(
+                                                                zone: zs.zone!,
                                                               ),
-                                                          shape: RoundedRectangleBorder(
-                                                            borderRadius:
-                                                                BorderRadius.circular(
-                                                                  14,
-                                                                ),
-                                                          ),
-                                                        ),
-                                                        child:
-                                                            s.isRemovingFilters
-                                                            ? const SizedBox(
-                                                                width: 18,
-                                                                height: 18,
-                                                                child: CircularProgressIndicator(
-                                                                  strokeWidth:
-                                                                      2,
-                                                                  color: Colors
-                                                                      .white,
-                                                                ),
-                                                              )
-                                                            : const Row(
-                                                                mainAxisSize:
-                                                                    MainAxisSize
-                                                                        .min,
-                                                                children: [
-                                                                  Icon(
-                                                                    Icons
-                                                                        .restart_alt,
-                                                                  ),
-                                                                  SizedBox(
-                                                                    width: 8,
-                                                                  ),
-                                                                  Text(
-                                                                    'Remove Filters',
-                                                                  ),
-                                                                ],
-                                                              ),
+                                                            );
+                                                      },
+                                              ),
+                                          ],
+                                          onClearAll: () {
+                                            context.read<OrdersBloc>().add(
+                                              const OrdersClearAllFilters(),
+                                            );
+
+                                            _grid.resetGridUi();
+                                          },
+                                          addMismatch: () {
+                                            BranchOrdersActions.openMismatchPanel(
+                                              context,
+                                            );
+                                          },
+                                          addMax: () {
+                                            BranchOrdersActions.openMaxPanel(
+                                              context,
+                                            );
+                                          },
+                                          isOrderDay: s.isOrderDay,
+                                        );
+                                      },
+                                    );
+                                  },
+                                ),
+
+                                const SizedBox(height: 10),
+
+                                Container(
+                                  constraints: BoxConstraints(
+                                    minHeight:
+                                        MediaQuery.of(context).size.height *
+                                        0.4.h,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(18),
+                                    border: Border.all(
+                                      color: const Color(0xFFE6E8F0),
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.04,
+                                        ),
+                                        blurRadius: 18,
+                                        offset: const Offset(0, 10),
+                                      ),
+                                    ],
+                                  ),
+                                  padding: const EdgeInsets.all(14),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const _TableTitle(),
+
+                                      const SizedBox(height: 10),
+
+                                      SizedBox(
+                                        height:
+                                            MediaQuery.of(context).size.height *
+                                            0.72,
+                                        child: Builder(
+                                          builder: (_) {
+                                            final hasActiveFilters =
+                                                s.categoryFilter != 'ALL' ||
+                                                s.formularyFilter != 'ALL' ||
+                                                s.nonWithSales45Only ||
+                                                s.numericFinalOnly ||
+                                                s.receivedLast7DaysOnly ||
+                                                s.additionalOnly;
+
+                                            final noResults =
+                                                s.viewRows.isEmpty &&
+                                                s.rows.isNotEmpty;
+
+                                            if (noResults && hasActiveFilters) {
+                                              return Center(
+                                                child: Column(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.center,
+                                                  children: [
+                                                    const Icon(
+                                                      Icons
+                                                          .filter_alt_off_outlined,
+                                                      size: 54,
+                                                      color: Colors.grey,
+                                                    ),
+
+                                                    const SizedBox(height: 14),
+
+                                                    const Text(
+                                                      'No results found',
+                                                      style: TextStyle(
+                                                        fontSize: 18,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        color: Colors.black87,
                                                       ),
-                                                    ],
+                                                    ),
+
+                                                    const SizedBox(height: 8),
+
+                                                    const Text(
+                                                      'Current filters are hiding all items',
+                                                      style: TextStyle(
+                                                        fontSize: 13,
+                                                        color: Colors.grey,
+                                                      ),
+                                                    ),
+
+                                                    const SizedBox(height: 18),
+
+                                                    FilledButton(
+                                                      onPressed:
+                                                          s.isRemovingFilters
+                                                          ? null
+                                                          : () {
+                                                              context
+                                                                  .read<
+                                                                    OrdersBloc
+                                                                  >()
+                                                                  .add(
+                                                                    const OrdersClearFiltersOnly(),
+                                                                  );
+
+                                                              _grid
+                                                                  .resetGridUi();
+                                                            },
+                                                      style: FilledButton.styleFrom(
+                                                        backgroundColor:
+                                                            Colors.redAccent,
+                                                        foregroundColor:
+                                                            Colors.white,
+                                                        padding:
+                                                            const EdgeInsets.symmetric(
+                                                              horizontal: 18,
+                                                              vertical: 14,
+                                                            ),
+                                                        shape: RoundedRectangleBorder(
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                14,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                      child: s.isRemovingFilters
+                                                          ? const SizedBox(
+                                                              width: 18,
+                                                              height: 18,
+                                                              child:
+                                                                  CircularProgressIndicator(
+                                                                    strokeWidth:
+                                                                        2,
+                                                                    color: Colors
+                                                                        .white,
+                                                                  ),
+                                                            )
+                                                          : const Row(
+                                                              mainAxisSize:
+                                                                  MainAxisSize
+                                                                      .min,
+                                                              children: [
+                                                                Icon(
+                                                                  Icons
+                                                                      .restart_alt,
+                                                                ),
+                                                                SizedBox(
+                                                                  width: 8,
+                                                                ),
+                                                                Text(
+                                                                  'Remove Filters',
+                                                                ),
+                                                              ],
+                                                            ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                            }
+
+                                            return OrdersTable(
+                                              rows: s.viewRows,
+                                              isLoading: isBusy,
+                                              orderedColumns: orderedColumns,
+                                              columnWidths: s.columnWidths,
+                                              finalEdits: s.finalEdits,
+                                              submitStartHour:
+                                                  s.submitStartHour,
+                                              submitEndHour: s.submitEndHour,
+                                              orderEditLimit: s.orderEditLimit,
+
+                                              onTapFinalReorder: (row) {
+                                                final locked =
+                                                    s.isOrderDay &&
+                                                    !s.isSubmitted &&
+                                                    OperationalDateHelper.isMissingWindowForBranch(
+                                                      startHour:
+                                                          s.submitStartHour,
+                                                      endHour: s.submitEndHour,
+                                                    );
+
+                                                if (locked) {
+                                                  return;
+                                                }
+
+                                                BranchOrdersActions.openFinalSidePanel(
+                                                  context: context,
+                                                  state: s,
+                                                  row: row,
+                                                );
+                                              },
+                                              additionalEdits:
+                                                  s.additionalEdits,
+                                              sentAdditionalQtyByItemCode:
+                                                  s.sentAdditionalQtyByItemCode,
+                                              onTapAdditionalRequest: (row) {
+                                                BranchOrdersActions.openAdditionalSidePanel(
+                                                  context: context,
+                                                  state: s,
+                                                  row: row,
+                                                );
+                                              },
+                                              isSubmitted: s.isSubmitted,
+                                              controller: _grid.controller,
+                                              gridController: _grid,
+                                              onColumnResized: (key, width) {
+                                                context.read<OrdersBloc>().add(
+                                                  OrdersColumnResized(
+                                                    columnKey: key,
+                                                    width: width,
                                                   ),
                                                 );
-                                              }
-
-                                              return OrdersTable(
-                                                rows: s.viewRows,
-                                                isLoading: isBusy,
-                                                orderedColumns: orderedColumns,
-                                                columnWidths: s.columnWidths,
-                                                finalEdits: s.finalEdits,
-                                                submitStartHour:
-                                                    s.submitStartHour,
-                                                submitEndHour: s.submitEndHour,
-                                                orderEditLimit:
-                                                    s.orderEditLimit,
-
-                                                onTapFinalReorder: (row) {
-                                                  final locked =
-                                                      s.isOrderDay &&
-                                                      !s.isSubmitted &&
-                                                      OperationalDateHelper.isMissingWindowForBranch(
-                                                        startHour:
-                                                            s.submitStartHour,
-                                                        endHour:
-                                                            s.submitEndHour,
-                                                      );
-
-                                                  if (locked) {
-                                                    return;
-                                                  }
-
-                                                  BranchOrdersActions.openFinalSidePanel(
-                                                    context: context,
-                                                    state: s,
-                                                    row: row,
-                                                  );
-                                                },
-                                                additionalEdits:
-                                                    s.additionalEdits,
-                                                sentAdditionalQtyByItemCode: s
-                                                    .sentAdditionalQtyByItemCode,
-                                                onTapAdditionalRequest: (row) {
-                                                  BranchOrdersActions.openAdditionalSidePanel(
-                                                    context: context,
-                                                    state: s,
-                                                    row: row,
-                                                  );
-                                                },
-                                                isSubmitted: s.isSubmitted,
-                                                controller: _grid.controller,
-                                                gridController: _grid,
-                                                onColumnResized: (key, width) {
-                                                  context
-                                                      .read<OrdersBloc>()
-                                                      .add(
-                                                        OrdersColumnResized(
-                                                          columnKey: key,
-                                                          width: width,
-                                                        ),
-                                                      );
-                                                },
-                                              );
-                                            },
-                                          ),
+                                              },
+                                            );
+                                          },
                                         ),
-                                      ],
-                                    ),
+                                      ),
+                                    ],
                                   ),
-                                ],
+                                ),
                               ],
-                            ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              if (s.isExporting)
+                Container(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(
+                          color: AppColors.primaryColor,
+                        ),
+                        SizedBox(height: 12),
+                        Text(
+                          "Exporting file...",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
                           ),
                         ),
                       ],
                     ),
                   ),
                 ),
-
-                if (s.isExporting)
-                  Container(
-                    color: Colors.black.withValues(alpha: 0.3),
-                    child: const Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CircularProgressIndicator(
-                            color: AppColors.primaryColor,
-                          ),
-                          SizedBox(height: 12),
-                          Text(
-                            "Exporting file...",
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+            ],
           ),
         );
       },
@@ -1930,7 +1888,7 @@ class _TopHeader extends StatelessWidget {
                       ),
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: Text(
+                    child: SelectableText(
                       title,
                       style: TextStyle(
                         fontSize: 20.sp,
@@ -1940,7 +1898,7 @@ class _TopHeader extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Text(
+                  SelectableText(
                     subtitle,
                     style: TextStyle(
                       fontSize: 14.sp,
