@@ -67,7 +67,7 @@ class PrintService {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
 
-        margin: const pw.EdgeInsets.fromLTRB(5, 0, 10, 50),
+        margin: const pw.EdgeInsets.fromLTRB(15, 10, 10, 60),
 
         /// HEADER
         header: (context) => _header(branch),
@@ -98,7 +98,7 @@ class PrintService {
         },
 
         build: (context) {
-          return [pw.SizedBox(height: 10), _table(filtered, isGeneral)];
+          return [pw.SizedBox(height: 0), _table(filtered, isGeneral)];
         },
       ),
     );
@@ -140,7 +140,7 @@ class PrintService {
       columnWidths: {
         0: const pw.FixedColumnWidth(50),
         1: const pw.FlexColumnWidth(),
-        2: const pw.FixedColumnWidth(120),
+        2: const pw.FixedColumnWidth(105),
       },
 
       children: [
@@ -169,12 +169,17 @@ class PrintService {
             children: [
               pw.Padding(
                 padding: const pw.EdgeInsets.all(6),
-                child: pw.Center(child: pw.Text(e.quantity.toString())),
+                child: pw.Center(
+                  child: pw.Text(
+                    e.quantity.toString(),
+                    style: pw.TextStyle(fontSize: 10),
+                  ),
+                ),
               ),
 
               pw.Padding(
                 padding: const pw.EdgeInsets.all(6),
-                child: pw.Text(e.itemName),
+                child: pw.Text(e.itemName, style: pw.TextStyle(fontSize: 10)),
               ),
 
               pw.Padding(
@@ -182,6 +187,7 @@ class PrintService {
                 child: pw.Text(
                   isGeneral ? barcode : supplier,
                   maxLines: 1,
+                  style: pw.TextStyle(fontSize: 10),
                   overflow: pw.TextOverflow.clip,
                   softWrap: false,
                 ),
