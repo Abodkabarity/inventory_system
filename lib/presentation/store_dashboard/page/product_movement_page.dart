@@ -123,10 +123,9 @@ class _ProductMovementPageState extends State<ProductMovementPage> {
     final res = await client
         .from('product_movement_history')
         .select()
-        .eq('branch', selectedBranch!)
+        .ilike('branch', selectedBranch!)
         .eq('item_code', itemCode)
         .order('created_at', ascending: false);
-
     setState(() {
       movements = List<Map<String, dynamic>>.from(res);
 

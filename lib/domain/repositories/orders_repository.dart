@@ -207,4 +207,8 @@ abstract class OrdersRepository {
     required String branchName,
     required String itemCode,
   });
+  Future<num> fetchLiveAvailableStock({
+    required String runDate,
+    required String itemCode,
+  });
 }

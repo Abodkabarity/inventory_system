@@ -355,7 +355,12 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
 
         final visibleStats = BranchOrdersSelectors.calcStats(s.viewRows);
         final categories = BranchOrdersSelectors.extractCategories(s.rows);
-
+        final useLimitedStockMode =
+            !s.isSubmitted &&
+            !OperationalDateHelper.isMissingWindowForBranch(
+              startHour: s.submitStartHour,
+              endHour: s.submitEndHour,
+            );
         final orderedColumns = s.isOrderDay
             ? BranchOrdersSelectors.orderedVisibleColumns(s)
             : ['item_code', 'item_name', 'branch_stock', 'store_stock'];
@@ -896,6 +901,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                   numericFinalOnly: s.isOrderDay
                                       ? s.numericFinalOnly
                                       : false,
+                                  useLimitedStockMode: useLimitedStockMode,
                                   receivedLast7DaysOnly:
                                       s.receivedLast7DaysOnly,
                                   additionalOnly: s.additionalOnly,
@@ -2078,9 +2084,8 @@ class _FiltersBar extends StatelessWidget {
   final ValueChanged<bool> onReceivedLast7DaysChanged;
   final bool additionalOnly;
 
-  /// 🔥 NEW
   final bool isSubmitted;
-
+  final bool useLimitedStockMode;
   final ValueChanged<bool> onAdditionalOnlyChanged;
   final ValueChanged<String> onCategoryChanged;
   final ValueChanged<String> onFormularyChanged;
@@ -2107,6 +2112,7 @@ class _FiltersBar extends StatelessWidget {
     required this.receivedLast7DaysOnly,
     required this.onReceivedLast7DaysChanged,
     required this.onClearAll,
+    required this.useLimitedStockMode,
   });
 
   @override
@@ -2155,10 +2161,9 @@ class _FiltersBar extends StatelessWidget {
                 ),*/
               SizedBox(
                 width: itemWidth,
-                child: _SwitchTile(
-                  title: 'Item Received Last 7 Days',
-                  subtitle: 'Show received items with stock > 0',
+                child: _ReceivedLast7DaysTile(
                   value: receivedLast7DaysOnly,
+                  useLimitedStockMode: useLimitedStockMode,
                   onChanged: onReceivedLast7DaysChanged,
                 ),
               ),
@@ -2481,6 +2486,105 @@ class _EditLimitChip extends StatelessWidget {
             style: TextStyle(fontWeight: FontWeight.w900, color: fg),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ReceivedLast7DaysTile extends StatelessWidget {
+  final bool value;
+  final bool useLimitedStockMode;
+  final ValueChanged<bool> onChanged;
+
+  const _ReceivedLast7DaysTile({
+    required this.value,
+    required this.useLimitedStockMode,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => onChanged(!value),
+
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 500),
+
+        height: 80.h,
+
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+
+        decoration: BoxDecoration(
+          color: value
+              ? AppColors.primaryColor.withValues(alpha: .08)
+              : AppColors.backgroundWidget,
+
+          borderRadius: BorderRadius.circular(14),
+
+          border: Border.all(
+            color: useLimitedStockMode ? Colors.orange : Colors.green,
+            width: 2,
+          ),
+        ),
+
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+
+                children: [
+                  const Text(
+                    'Item Received Last 7 Days',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+
+                  const SizedBox(height: 4),
+
+                  AnimatedSwitcher(
+                    duration: Duration(milliseconds: 400),
+
+                    transitionBuilder: (child, animation) => FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: Offset(0, .2),
+                          end: Offset.zero,
+                        ).animate(animation),
+                        child: child,
+                      ),
+                    ),
+
+                    child: Text(
+                      useLimitedStockMode
+                          ? 'Received + Store Stock + Can Add It'
+                          : 'Received + Store Stock > 0',
+
+                      key: ValueKey(useLimitedStockMode),
+
+                      style: TextStyle(
+                        fontSize: 11.sp,
+                        color: useLimitedStockMode
+                            ? Colors.orange
+                            : Colors.green,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            Switch(
+              value: value,
+              onChanged: onChanged,
+              activeThumbColor: AppColors.primaryColor,
+              inactiveThumbColor: AppColors.secondaryColor,
+            ),
+          ],
+        ),
       ),
     );
   }

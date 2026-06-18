@@ -344,6 +344,16 @@ class BranchOrdersActions {
 
       return;
     }
+    final bloc = context.read<OrdersBloc>();
+
+    final availableStock = await bloc.repo.fetchLiveAvailableStock(
+      runDate: state.runDate,
+      itemCode: row.itemCode,
+    );
+
+    final liveRow = row.copyWith(
+      totalReorderToday: row.storeStock.toInt() - availableStock.toInt(),
+    );
     await showGeneralDialog(
       context: context,
       barrierDismissible: true,
@@ -354,7 +364,7 @@ class BranchOrdersActions {
         return Align(
           alignment: Alignment.centerRight,
           child: FinalReorderSidePanel(
-            row: row,
+            row: liveRow,
             oldQty: oldQty,
             compareQty: compareQty,
             initialQty: initialQty,

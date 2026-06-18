@@ -1150,4 +1150,16 @@ total_sales_last_90_days,
         .eq('branch_name', branchName)
         .eq('item_code', itemCode);
   }
+
+  Future<num> fetchLiveAvailableStock({
+    required String runDate,
+    required String itemCode,
+  }) async {
+    final res = await client.rpc(
+      'get_live_available_stock',
+      params: {'p_run_date': runDate, 'p_item_code': itemCode},
+    );
+
+    return (res as num?) ?? 0;
+  }
 }

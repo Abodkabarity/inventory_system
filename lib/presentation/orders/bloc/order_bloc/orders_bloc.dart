@@ -464,7 +464,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         startHour: submitStartHour,
         endHour: submitEndHour,
       );
-
+      final isOrderWindowClosed = forceOffWindow;
       final forcedNumericFinalOnly = !isOrderDay
           ? false
           : forceOffWindow
@@ -480,6 +480,8 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         additionalOnly: state.additionalOnly,
         additionalEdits: additionalDraftMap,
         receivedLast7DaysOnly: state.receivedLast7DaysOnly,
+        isSubmitted: submissionStatus == 'submitted',
+        isOrderWindowClosed: isOrderWindowClosed,
         sentAdditionalQtyByItemCode: sentAdditional,
       );
 
@@ -572,6 +574,11 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       additionalEdits: state.additionalEdits,
       receivedLast7DaysOnly: state.receivedLast7DaysOnly,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
+      isSubmitted: state.isSubmitted,
+      isOrderWindowClosed: OperationalDateHelper.isMissingWindowForBranch(
+        startHour: state.submitStartHour,
+        endHour: state.submitEndHour,
+      ),
     );
 
     emit(state.copyWith(search: nextSearch, viewRows: view));
@@ -649,6 +656,11 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       additionalEdits: state.additionalEdits,
       receivedLast7DaysOnly: state.receivedLast7DaysOnly,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
+      isSubmitted: state.isSubmitted,
+      isOrderWindowClosed: OperationalDateHelper.isMissingWindowForBranch(
+        startHour: state.submitStartHour,
+        endHour: state.submitEndHour,
+      ),
     );
     emit(state.copyWith(categoryFilter: e.category, viewRows: view));
   }
@@ -667,6 +679,11 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       receivedLast7DaysOnly: state.receivedLast7DaysOnly,
       additionalEdits: state.additionalEdits,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
+      isSubmitted: state.isSubmitted,
+      isOrderWindowClosed: OperationalDateHelper.isMissingWindowForBranch(
+        startHour: state.submitStartHour,
+        endHour: state.submitEndHour,
+      ),
     );
     emit(state.copyWith(formularyFilter: e.formulary, viewRows: view));
   }
@@ -685,6 +702,11 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       additionalEdits: state.additionalEdits,
       receivedLast7DaysOnly: state.receivedLast7DaysOnly,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
+      isSubmitted: state.isSubmitted,
+      isOrderWindowClosed: OperationalDateHelper.isMissingWindowForBranch(
+        startHour: state.submitStartHour,
+        endHour: state.submitEndHour,
+      ),
     );
     emit(state.copyWith(nonWithSales45Only: e.value, viewRows: view));
   }
@@ -703,6 +725,11 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       receivedLast7DaysOnly: state.receivedLast7DaysOnly,
       additionalEdits: state.additionalEdits,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
+      isSubmitted: state.isSubmitted,
+      isOrderWindowClosed: OperationalDateHelper.isMissingWindowForBranch(
+        startHour: state.submitStartHour,
+        endHour: state.submitEndHour,
+      ),
     );
 
     emit(state.copyWith(numericFinalOnly: e.value, viewRows: view));
@@ -722,6 +749,11 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       additionalEdits: state.additionalEdits,
       receivedLast7DaysOnly: state.receivedLast7DaysOnly,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
+      isSubmitted: state.isSubmitted,
+      isOrderWindowClosed: OperationalDateHelper.isMissingWindowForBranch(
+        startHour: state.submitStartHour,
+        endHour: state.submitEndHour,
+      ),
     );
 
     emit(state.copyWith(additionalOnly: e.value, viewRows: view));
@@ -746,6 +778,11 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       additionalEdits: state.additionalEdits,
       receivedLast7DaysOnly: receivedLast7DaysOnly,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
+      isSubmitted: state.isSubmitted,
+      isOrderWindowClosed: OperationalDateHelper.isMissingWindowForBranch(
+        startHour: state.submitStartHour,
+        endHour: state.submitEndHour,
+      ),
     );
     emit(
       state.copyWith(
@@ -769,6 +806,8 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     required bool numericFinalOnly,
     required bool additionalOnly,
     required bool receivedLast7DaysOnly,
+    required bool isSubmitted,
+    required bool isOrderWindowClosed,
     required Map<String, AdditionalRequestEdit> additionalEdits,
     required Map<String, num> sentAdditionalQtyByItemCode,
   }) {
@@ -806,7 +845,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     }
 
     bool matchReceivedLast7Days(DailyOrderRow r) {
-      if (!receivedLast7DaysOnly) return true;
+      if (!receivedLast7DaysOnly) {
+        return true;
+      }
 
       final received = (r.goodsReceivedLast7Days ?? '')
           .toString()
@@ -814,7 +855,29 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
 
       final storeStock = _toNum(r.storeStock);
 
-      return received.contains('received') && storeStock > 0;
+      final totalReorderToday = _toNum(r.totalReorderToday);
+
+      if (!received.contains('received')) {
+        return false;
+      }
+
+      if (storeStock <= 0) {
+        return false;
+      }
+
+      // =========================
+      // AFTER SUBMIT OR WINDOW CLOSED
+      // =========================
+
+      if (isSubmitted || isOrderWindowClosed) {
+        return true;
+      }
+
+      // =========================
+      // ACTIVE ORDER WINDOW
+      // =========================
+
+      return storeStock > totalReorderToday;
     }
 
     return rows.where((r) {
@@ -956,6 +1019,11 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       receivedLast7DaysOnly: state.receivedLast7DaysOnly,
       additionalEdits: next,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
+      isSubmitted: state.isSubmitted,
+      isOrderWindowClosed: OperationalDateHelper.isMissingWindowForBranch(
+        startHour: state.submitStartHour,
+        endHour: state.submitEndHour,
+      ),
     );
 
     emit(
@@ -992,6 +1060,11 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       receivedLast7DaysOnly: state.receivedLast7DaysOnly,
       additionalEdits: next,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
+      isSubmitted: state.isSubmitted,
+      isOrderWindowClosed: OperationalDateHelper.isMissingWindowForBranch(
+        startHour: state.submitStartHour,
+        endHour: state.submitEndHour,
+      ),
     );
 
     emit(
@@ -1096,6 +1169,11 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         additionalOnly: state.additionalOnly,
         additionalEdits: const {},
         sentAdditionalQtyByItemCode: sentAdditionalQty,
+        isSubmitted: state.isSubmitted,
+        isOrderWindowClosed: OperationalDateHelper.isMissingWindowForBranch(
+          startHour: state.submitStartHour,
+          endHour: state.submitEndHour,
+        ),
       );
 
       emit(
@@ -1226,6 +1304,11 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         receivedLast7DaysOnly: state.receivedLast7DaysOnly,
         additionalEdits: state.additionalEdits,
         sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
+        isSubmitted: state.isSubmitted,
+        isOrderWindowClosed: OperationalDateHelper.isMissingWindowForBranch(
+          startHour: state.submitStartHour,
+          endHour: state.submitEndHour,
+        ),
       );
 
       emit(
@@ -1528,6 +1611,11 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       additionalEdits: state.additionalEdits,
       receivedLast7DaysOnly: receivedLast7DaysOnly,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
+      isSubmitted: state.isSubmitted,
+      isOrderWindowClosed: OperationalDateHelper.isMissingWindowForBranch(
+        startHour: state.submitStartHour,
+        endHour: state.submitEndHour,
+      ),
     );
 
     emit(
@@ -1565,6 +1653,11 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       receivedLast7DaysOnly: e.value,
       additionalEdits: state.additionalEdits,
       sentAdditionalQtyByItemCode: state.sentAdditionalQtyByItemCode,
+      isSubmitted: state.isSubmitted,
+      isOrderWindowClosed: OperationalDateHelper.isMissingWindowForBranch(
+        startHour: state.submitStartHour,
+        endHour: state.submitEndHour,
+      ),
     );
 
     emit(state.copyWith(receivedLast7DaysOnly: e.value, viewRows: view));
