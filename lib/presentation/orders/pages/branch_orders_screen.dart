@@ -6,6 +6,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 
+import '../../../core/helper/final_reorder_limit_helper.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/operational_date_helper.dart';
 import '../../auth/bloc/auth_bloc.dart';
@@ -17,6 +18,7 @@ import '../bloc/order_bloc/orders_state.dart';
 import '../final_reorder/widgets/limit_dialog.dart';
 import '../widgets/branch_zone_cubit.dart';
 import '../widgets/items_to_order_dialog.dart';
+import '../widgets/max_allowed_dialog.dart';
 import '../widgets/orders_grid_controller.dart';
 import '../widgets/orders_table.dart';
 import '../widgets/orders_toolbar.dart';
@@ -1279,46 +1281,136 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                                 // LIMITED STOCK
                                                                 // =========================
 
-                                                                final availableStock =
-                                                                    (storeStock -
-                                                                            totalReorderToday)
-                                                                        .clamp(
-                                                                          0,
-                                                                          999999999,
-                                                                        );
-
-                                                                final cap =
-                                                                    oldQty +
-                                                                    (availableStock *
-                                                                            0.2)
-                                                                        .floor();
+                                                                final cap = FinalReorderLimitHelper.capForThisBranch(
+                                                                  oldSafe:
+                                                                      oldQty,
+                                                                  storeStock:
+                                                                      storeStock,
+                                                                  reorderQtyNum:
+                                                                      reorderQtyNum,
+                                                                  totalReorderToday:
+                                                                      totalReorderToday,
+                                                                  orderIncreaseLimit:
+                                                                      bloc
+                                                                          .state
+                                                                          .orderIncreaseLimit,
+                                                                );
 
                                                                 if (newQty >
                                                                     cap) {
-                                                                  await showDialog(
+                                                                  if (cap <=
+                                                                      oldQty) {
+                                                                    await showDialog(
+                                                                      context:
+                                                                          context,
+                                                                      builder: (_) => LimitDialog(
+                                                                        title:
+                                                                            'Limited Stock',
+                                                                        body:
+                                                                            'Current Qty : $oldQty\n'
+                                                                            'Requested Qty : $itemQty\n'
+                                                                            'Max Allowed : $cap\n'
+                                                                            'Final Qty : $newQty',
+                                                                      ),
+                                                                    );
+
+                                                                    await bloc
+                                                                        .repo
+                                                                        .updateItemToOrderStatus(
+                                                                          id: item
+                                                                              .id,
+                                                                          status:
+                                                                              'ignored',
+                                                                        );
+
+                                                                    return 'ignored';
+                                                                  }
+
+                                                                  final result = await showDialog<String>(
                                                                     context:
                                                                         context,
-                                                                    builder: (_) => LimitDialog(
-                                                                      title:
-                                                                          'Limited Stock',
-                                                                      body:
-                                                                          'Current Qty : $oldQty\n'
-                                                                          'Requested Qty : $itemQty\n'
-                                                                          'Max Allowed : $cap\n'
-                                                                          'Final Qty : $newQty',
+                                                                    builder: (_) => MaxAllowedDialog(
+                                                                      currentQty:
+                                                                          oldQty,
+                                                                      requestedQty:
+                                                                          itemQty,
+                                                                      maxAllowed:
+                                                                          cap,
+                                                                      finalQty:
+                                                                          newQty,
                                                                     ),
                                                                   );
 
-                                                                  await bloc
-                                                                      .repo
-                                                                      .updateItemToOrderStatus(
-                                                                        id: item
-                                                                            .id,
-                                                                        status:
-                                                                            'ignored',
-                                                                      );
+                                                                  if (result ==
+                                                                      'ignore') {
+                                                                    await bloc
+                                                                        .repo
+                                                                        .updateItemToOrderStatus(
+                                                                          id: item
+                                                                              .id,
+                                                                          status:
+                                                                              'ignored',
+                                                                        );
 
-                                                                  return 'ignored';
+                                                                    return 'ignored';
+                                                                  }
+
+                                                                  if (result ==
+                                                                      'add_max') {
+                                                                    final correctedQty =
+                                                                        cap;
+
+                                                                    bloc.add(
+                                                                      OrdersApplyFinalEdit(
+                                                                        itemCode:
+                                                                            item.itemCode,
+                                                                        oldQty:
+                                                                            oldQty,
+                                                                        newQty:
+                                                                            correctedQty,
+                                                                        reason:
+                                                                            'Items To Order',
+                                                                        applyMaxAdj:
+                                                                            false,
+                                                                      ),
+                                                                    );
+
+                                                                    await bloc.repo.upsertFinalReorderDraft(
+                                                                      runDate: bloc
+                                                                          .state
+                                                                          .runDate,
+                                                                      branchName: bloc
+                                                                          .state
+                                                                          .branchName,
+                                                                      itemCode:
+                                                                          item.itemCode,
+                                                                      itemName:
+                                                                          item.itemName,
+                                                                      oldQty:
+                                                                          oldQty,
+                                                                      newQty:
+                                                                          correctedQty,
+                                                                      reason:
+                                                                          'Items To Order',
+                                                                      applyMaxAdj:
+                                                                          false,
+                                                                    );
+
+                                                                    await bloc
+                                                                        .repo
+                                                                        .updateItemToOrderStatus(
+                                                                          id: item
+                                                                              .id,
+                                                                          status:
+                                                                              'processed',
+                                                                        );
+                                                                    bloc.add(
+                                                                      const OrdersLoadItemsToOrder(),
+                                                                    );
+                                                                    return 'processed';
+                                                                  }
+
+                                                                  return null;
                                                                 }
 
                                                                 // =========================
@@ -1416,8 +1508,10 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                                       status:
                                                                           'processed',
                                                                     );
-
-                                                                return 'added';
+                                                                bloc.add(
+                                                                  const OrdersLoadItemsToOrder(),
+                                                                );
+                                                                return 'processed';
                                                               },
                                                             ),
                                                           );

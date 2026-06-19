@@ -349,6 +349,7 @@ class BranchOrdersActions {
     final availableStock = await bloc.repo.fetchLiveAvailableStock(
       runDate: state.runDate,
       itemCode: row.itemCode,
+      branchName: state.branchName,
     );
 
     final liveRow = row.copyWith(

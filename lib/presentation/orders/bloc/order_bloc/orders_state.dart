@@ -143,7 +143,7 @@ class AdditionalRequestRow extends Equatable {
 
     final storeNote = map['store_note']?.toString();
 
-    final createdAt = _toDt(map['created_at']) ?? DateTime.now();
+    final createdAt = _toDt(map['created_at']) ?? DateTime.now().toLocal();
     final sentToStoreAt = _toDt(map['sent_to_store_at']);
     final doneAt = _toDt(map['done_at']);
 

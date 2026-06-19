@@ -468,7 +468,7 @@ class _ItemsToOrderDialogState extends State<ItemsToOrderDialog> {
                             border: Border.all(color: const Color(0xffEAEAEA)),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(.03),
+                                color: Colors.black.withValues(alpha: .03),
                                 blurRadius: 10,
                               ),
                             ],

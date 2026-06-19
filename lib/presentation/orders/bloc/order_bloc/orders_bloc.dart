@@ -242,7 +242,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
           extraQtyMoreThanMonth: row.extraQtyMoreThanMonth,
           maxAdjustment30d: row.maxAdjustment30d,
           demandFor30Days: row.demandFor30Days,
-          finalReorderQtyStoreStockGt0: draft.newQty.toString(),
+          finalReorderQtyStoreStockGt0: row.finalReorderQtyStoreStockGt0,
           qty30DaysFromLast45d: row.qty30DaysFromLast45d,
           reorderQtyNum: row.reorderQtyNum,
           totalReorderAllBranches: row.totalReorderAllBranches,

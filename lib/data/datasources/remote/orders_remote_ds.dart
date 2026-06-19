@@ -1154,10 +1154,15 @@ total_sales_last_90_days,
   Future<num> fetchLiveAvailableStock({
     required String runDate,
     required String itemCode,
+    required String branchName,
   }) async {
     final res = await client.rpc(
       'get_live_available_stock',
-      params: {'p_run_date': runDate, 'p_item_code': itemCode},
+      params: {
+        'p_run_date': runDate,
+        'p_item_code': itemCode,
+        'p_branch_name': branchName,
+      },
     );
 
     return (res as num?) ?? 0;

@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/helper/final_reorder_limit_helper.dart';
 import '../../../../domain/entities/daily_order_row.dart';
 import 'final_reorder_event.dart';
 import 'final_reorder_state.dart';
@@ -171,7 +172,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
       if (clamped != nextRaw) {
         dialog = _dialogForExceeded(
           attempted: nextRaw,
-          cap: _capForThisBranch(
+          cap: FinalReorderLimitHelper.capForThisBranch(
             oldSafe: state.oldQty,
             storeStock: state.storeStock,
             reorderQtyNum: state.reorderQtyNum,
@@ -209,7 +210,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
   void _onInc(FinalReorderIncPressed e, Emitter<FinalReorderState> emit) {
     if (state.isNonFormulary) return;
 
-    final cap = _capForThisBranch(
+    final cap = FinalReorderLimitHelper.capForThisBranch(
       oldSafe: state.oldQty,
       storeStock: state.storeStock,
       reorderQtyNum: state.reorderQtyNum,
@@ -404,13 +405,15 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     required bool initialApplyMaxAdj,
     required FinalReorderDialogPayload? dialog,
   }) {
-    final cap = _capForThisBranch(
+    final calculatedCap = FinalReorderLimitHelper.capForThisBranch(
       oldSafe: oldSafe,
       storeStock: storeStock,
       reorderQtyNum: reorderQtyNum,
       totalReorderToday: totalReorderToday,
       orderIncreaseLimit: orderIncreaseLimit,
     );
+
+    final cap = qty > calculatedCap ? qty : calculatedCap;
 
     if (isNonFormulary) {
       return FinalReorderState(
@@ -488,24 +491,6 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     return int.tryParse(s.replaceAll(',', '')) ?? 0;
   }
 
-  static int _capForThisBranch({
-    required int oldSafe,
-    required int storeStock,
-    required int reorderQtyNum,
-    required int totalReorderToday,
-    required num orderIncreaseLimit,
-  }) {
-    if (reorderQtyNum > oldSafe) {
-      return oldSafe;
-    }
-
-    final availableStock = (storeStock - totalReorderToday).clamp(0, 999999999);
-
-    final extra = (availableStock * (orderIncreaseLimit / 100)).ceil();
-
-    return oldSafe + extra;
-  }
-
   static int _clampQty({
     required int v,
     required bool isLocked,
@@ -517,7 +502,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
   }) {
     if (isLocked) return oldSafe;
 
-    final cap = _capForThisBranch(
+    final cap = FinalReorderLimitHelper.capForThisBranch(
       oldSafe: oldSafe,
       storeStock: storeStock,
       reorderQtyNum: reorderQtyNum,

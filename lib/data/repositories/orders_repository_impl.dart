@@ -492,10 +492,16 @@ class OrdersRepositoryImpl implements OrdersRepository {
     );
   }
 
+  @override
   Future<num> fetchLiveAvailableStock({
     required String runDate,
     required String itemCode,
+    required String branchName,
   }) {
-    return remote.fetchLiveAvailableStock(runDate: runDate, itemCode: itemCode);
+    return remote.fetchLiveAvailableStock(
+      runDate: runDate,
+      itemCode: itemCode,
+      branchName: branchName,
+    );
   }
 }

@@ -41,7 +41,7 @@ class ItemToOrder extends Equatable {
       requestedBy: map['requested_by']?.toString(),
 
       createdAt:
-          DateTime.tryParse((map['created_at'] ?? '').toString()) ??
+          DateTime.tryParse((map['created_at'] ?? '').toString())?.toLocal() ??
           DateTime.now(),
     );
   }
