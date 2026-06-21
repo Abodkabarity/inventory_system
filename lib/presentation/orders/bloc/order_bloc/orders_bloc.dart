@@ -1877,7 +1877,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
 
         final missedToday =
             lastEndedTiming != null &&
-            _isSameDate(now, lastEndedTiming.deadlineAt);
+            _isSameDate(now, lastEndedTiming.orderDate);
 
         return timing.copyWith(
           hasMissedOrderWindow:
@@ -1893,7 +1893,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       submitEndHour: submitEndHour,
       hasMissedOrderWindow:
           lastEndedTiming != null &&
-          _isSameDate(now, lastEndedTiming.deadlineAt),
+          _isSameDate(now, lastEndedTiming.orderDate),
     );
   }
 
