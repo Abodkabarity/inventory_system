@@ -3,6 +3,8 @@ import '../entities/product_movement.dart';
 import '../entities/store_order_item.dart';
 
 abstract class StoreRepository {
+  Future<List<String>> fetchActiveBranchNames();
+
   Future<List<Map<String, dynamic>>> fetchAllBranches();
 
   Future<List<Map<String, dynamic>>> fetchSubmittedBranches(String runDate);
@@ -30,12 +32,25 @@ abstract class StoreRepository {
     required String query,
   });
 
+  Future<List<Map<String, dynamic>>> fetchMovementProductSuggestions({
+    required String query,
+  });
+
   Future<List<ProductMovement>> fetchProductMovement({
-    required String branch,
-    required String itemCode,
+    required String query,
+    required String? branch,
+    required DateTime from,
+    required DateTime to,
+    required String movementType,
   });
   Future<List<Map<String, dynamic>>> fetchDailyOrderForBranch({
     required String branch,
     required String runDate,
+  });
+
+  Future<List<Map<String, dynamic>>> fetchBranchOrderMovements({
+    required String branch,
+    required DateTime date,
+    required String query,
   });
 }

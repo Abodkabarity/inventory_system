@@ -7,6 +7,11 @@ import '../../../core/theme/app_colors.dart';
 import '../../../data/datasources/remote/store_remote_ds.dart';
 import '../../../data/repositories/store_repository_impl.dart';
 import '../../../domain/repositories/store_repository.dart';
+import '../branch_order/bloc/branch_order_bloc.dart';
+import '../branch_order/bloc/branch_order_event.dart';
+import '../branch_order/branch_order_page.dart';
+import '../product_movement/bloc/product_movement_bloc.dart';
+import '../product_movement/bloc/product_movement_event.dart';
 import '../transfer_report/bloc/transfer_report_bloc.dart';
 import '../transfer_report/transfer_report_page.dart';
 import 'product_movement_page.dart';
@@ -34,11 +39,20 @@ class _StoreShellPageState extends State<StoreShellPage> {
     final pages = [
       StoreDashboardPage(runDate: widget.runDate),
 
-      const ProductMovementPage(),
+      BlocProvider(
+        create: (_) =>
+            ProductMovementBloc(repo)..add(LoadProductMovementBranches()),
+        child: const ProductMovementPage(),
+      ),
 
       BlocProvider(
         create: (_) => TransferReportBloc(repo),
         child: TransferReportPage(runDate: widget.runDate),
+      ),
+
+      BlocProvider(
+        create: (_) => BranchOrderBloc(repo)..add(LoadBranchOrderBranches()),
+        child: const BranchOrderPage(),
       ),
     ];
 
@@ -165,6 +179,13 @@ class _StoreShellPageState extends State<StoreShellPage> {
                 const SizedBox(height: 8),
 
                 _buildMenuItem(
+                  index: 2,
+                  icon: Icons.compare_arrows_rounded,
+                  title: "Transfer Report",
+                ),
+
+                const SizedBox(height: 8),
+                _buildMenuItem(
                   index: 1,
 
                   icon: Icons.move_down,
@@ -173,11 +194,10 @@ class _StoreShellPageState extends State<StoreShellPage> {
                 ),
 
                 const SizedBox(height: 8),
-
                 _buildMenuItem(
-                  index: 2,
-                  icon: Icons.compare_arrows_rounded,
-                  title: "Transfer Report",
+                  index: 3,
+                  icon: Icons.receipt_long_rounded,
+                  title: "Branch Order",
                 ),
 
                 const Spacer(),

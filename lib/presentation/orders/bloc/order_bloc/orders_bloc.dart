@@ -431,34 +431,25 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       final orderDays = await repo.fetchBranchOrderDays(
         branchName: state.branchName,
       );
-      final now = OperationalDateHelper.nowUae;
-
-      final cutoff = DateTime(
-        now.year,
-        now.month,
-        now.day,
-        21, // 9 PM
+      final orderTiming = _branchOrderTiming(
+        now: OperationalDateHelper.nowUae,
+        orderDays: orderDays,
+        submitStartHour: submitStartHour,
+        submitEndHour: submitEndHour,
       );
+      final statusTiming = submissionStatus == 'submitted'
+          ? _branchOrderTiming(
+              now: orderTiming.deadlineAt.add(const Duration(seconds: 1)),
+              orderDays: orderDays,
+              submitStartHour: submitStartHour,
+              submitEndHour: submitEndHour,
+            )
+          : orderTiming;
+      final isOrderDay = orderTiming.isPreparationWindowActive;
+      final isMissingOrder = orderTiming.hasMissedOrderWindow;
+      final nextOrderDate = _dateKey(statusTiming.orderDate);
 
-      final businessDay = now.isBefore(cutoff)
-          ? now
-          : now.add(const Duration(days: 1));
-
-      const map = {
-        1: 'Monday',
-        2: 'Tuesday',
-        3: 'Wednesday',
-        4: 'Thursday',
-        5: 'Friday',
-        6: 'Saturday',
-        7: 'Sunday',
-      };
-
-      final todayName = map[businessDay.weekday];
-
-      final isOrderDay = orderDays.contains(todayName);
-
-      print('📆 Business Day: $todayName | isOrderDay: $isOrderDay');
+      print('Order date: $nextOrderDate | preparation active: $isOrderDay');
 
       final forceOffWindow = OperationalDateHelper.isMissingWindowForBranch(
         startHour: submitStartHour,
@@ -525,6 +516,10 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
           loadedOperationalDate: state.runDate,
           viewRows: view,
           isOrderDay: isOrderDay,
+          isMissingOrder: isMissingOrder,
+          nextOrderDate: nextOrderDate,
+          nextPreparationAt: statusTiming.preparationAt.toIso8601String(),
+          nextPreparationDeadlineAt: statusTiming.deadlineAt.toIso8601String(),
           visibleColumns: savedVisible,
           columnOrder: savedOrder,
           columnWidths: savedWidths,
@@ -1826,5 +1821,164 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         viewRows: state.viewRows,
       ),
     );
+  }
+
+  _BranchOrderTiming _branchOrderTiming({
+    required DateTime now,
+    required List<String> orderDays,
+    required int submitStartHour,
+    required int submitEndHour,
+  }) {
+    const dayNumbers = {
+      'monday': 1,
+      'tuesday': 2,
+      'wednesday': 3,
+      'thursday': 4,
+      'friday': 5,
+      'saturday': 6,
+      'sunday': 7,
+    };
+
+    final normalized = orderDays
+        .map((e) => e.trim().toLowerCase())
+        .where(dayNumbers.containsKey)
+        .map((e) => dayNumbers[e]!)
+        .toSet();
+
+    final fallbackOrderDate = OperationalDateHelper.operationalNow;
+    if (normalized.isEmpty) {
+      return _BranchOrderTiming.fromOrderDate(
+        fallbackOrderDate,
+        now: now,
+        submitStartHour: submitStartHour,
+        submitEndHour: submitEndHour,
+        hasMissedOrderWindow: false,
+      );
+    }
+
+    final today = DateTime(now.year, now.month, now.day);
+    _BranchOrderTiming? lastEndedTiming;
+
+    for (var offset = -14; offset <= 14; offset++) {
+      final candidate = DateTime(today.year, today.month, today.day + offset);
+      if (normalized.contains(candidate.weekday)) {
+        final timing = _BranchOrderTiming.fromOrderDate(
+          candidate,
+          now: now,
+          submitStartHour: submitStartHour,
+          submitEndHour: submitEndHour,
+          hasMissedOrderWindow: false,
+        );
+
+        if (!now.isBefore(timing.deadlineAt)) {
+          lastEndedTiming = timing;
+          continue;
+        }
+
+        final missedToday =
+            lastEndedTiming != null &&
+            _isSameDate(now, lastEndedTiming.deadlineAt);
+
+        return timing.copyWith(
+          hasMissedOrderWindow:
+              !timing.isPreparationWindowActive && missedToday,
+        );
+      }
+    }
+
+    return _BranchOrderTiming.fromOrderDate(
+      fallbackOrderDate,
+      now: now,
+      submitStartHour: submitStartHour,
+      submitEndHour: submitEndHour,
+      hasMissedOrderWindow:
+          lastEndedTiming != null &&
+          _isSameDate(now, lastEndedTiming.deadlineAt),
+    );
+  }
+
+  bool _isSameDate(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  String _dateKey(DateTime date) {
+    final y = date.year.toString().padLeft(4, '0');
+    final m = date.month.toString().padLeft(2, '0');
+    final d = date.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+}
+
+class _BranchOrderTiming {
+  final DateTime orderDate;
+  final DateTime preparationAt;
+  final DateTime deadlineAt;
+  final bool isPreparationWindowActive;
+  final bool hasMissedOrderWindow;
+
+  const _BranchOrderTiming({
+    required this.orderDate,
+    required this.preparationAt,
+    required this.deadlineAt,
+    required this.isPreparationWindowActive,
+    required this.hasMissedOrderWindow,
+  });
+
+  factory _BranchOrderTiming.fromOrderDate(
+    DateTime orderDate, {
+    required DateTime now,
+    required int submitStartHour,
+    required int submitEndHour,
+    required bool hasMissedOrderWindow,
+  }) {
+    final cleanOrderDate = DateTime(
+      orderDate.year,
+      orderDate.month,
+      orderDate.day,
+    );
+    final isFullDayWindow = submitStartHour == 0 && submitEndHour == 24;
+    final preparationDay = isFullDayWindow
+        ? cleanOrderDate
+        : cleanOrderDate.subtract(const Duration(days: 1));
+    final preparationAt = DateTime(
+      preparationDay.year,
+      preparationDay.month,
+      preparationDay.day,
+      submitStartHour,
+    );
+
+    final deadlineDay = isFullDayWindow
+        ? cleanOrderDate
+        : submitStartHour > submitEndHour
+        ? cleanOrderDate
+        : preparationDay;
+    final deadlineAt = _timeOnDay(deadlineDay, submitEndHour);
+
+    return _BranchOrderTiming(
+      orderDate: cleanOrderDate,
+      preparationAt: preparationAt,
+      deadlineAt: deadlineAt,
+      isPreparationWindowActive:
+          !now.isBefore(preparationAt) && now.isBefore(deadlineAt),
+      hasMissedOrderWindow: hasMissedOrderWindow,
+    );
+  }
+
+  _BranchOrderTiming copyWith({bool? hasMissedOrderWindow}) {
+    return _BranchOrderTiming(
+      orderDate: orderDate,
+      preparationAt: preparationAt,
+      deadlineAt: deadlineAt,
+      isPreparationWindowActive: isPreparationWindowActive,
+      hasMissedOrderWindow: hasMissedOrderWindow ?? this.hasMissedOrderWindow,
+    );
+  }
+
+  static DateTime _timeOnDay(DateTime day, int hour) {
+    if (hour >= 24) {
+      return DateTime(day.year, day.month, day.day + 1);
+    }
+
+    return DateTime(day.year, day.month, day.day, hour.clamp(0, 23));
   }
 }

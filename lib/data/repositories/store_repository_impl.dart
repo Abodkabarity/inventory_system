@@ -38,6 +38,12 @@ class StoreRepositoryImpl implements StoreRepository {
   /// ================================
   /// ALL BRANCHES
   /// ================================
+  @override
+  Future<List<String>> fetchActiveBranchNames() {
+    return remote.fetchActiveBranchNames();
+  }
+
+  @override
   Future<List<Map<String, dynamic>>> fetchAllBranches() async {
     return await remote.fetchAllBranches();
   }
@@ -274,24 +280,44 @@ class StoreRepositoryImpl implements StoreRepository {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> fetchMovementProductSuggestions({
+    required String query,
+  }) {
+    return remote.fetchMovementProductSuggestions(query: query);
+  }
+
+  @override
   Future<List<ProductMovement>> fetchProductMovement({
-    required String branch,
-    required String itemCode,
+    required String query,
+    required String? branch,
+    required DateTime from,
+    required DateTime to,
+    required String movementType,
   }) async {
     final rows = await remote.fetchProductMovement(
+      query: query,
       branch: branch,
-      itemCode: itemCode,
+      from: from,
+      to: to,
+      movementType: movementType,
     );
 
     return rows.map((e) {
+      final movementDate =
+          DateTime.tryParse((e['movement_date'] ?? '').toString()) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final createdAt =
+          DateTime.tryParse((e['created_at'] ?? '').toString()) ?? movementDate;
+
       return ProductMovement(
-        branch: e['branch'],
-        itemCode: e['item_code'],
-        itemName: e['item_name'],
+        branch: (e['branch'] ?? '').toString(),
+        itemCode: (e['item_code'] ?? '').toString(),
+        itemName: (e['item_name'] ?? '').toString(),
         barcode: e['barcode'] ?? '',
-        movementType: e['movement_type'],
+        movementType: (e['movement_type'] ?? '').toString(),
         qty: e['qty'] ?? 0,
-        createdAt: DateTime.parse(e['created_at']).toLocal(),
+        movementDate: movementDate,
+        createdAt: createdAt.toLocal(),
       );
     }).toList();
   }
@@ -302,5 +328,18 @@ class StoreRepositoryImpl implements StoreRepository {
     required String runDate,
   }) {
     return remote.fetchDailyOrderForBranch(branch: branch, runDate: runDate);
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchBranchOrderMovements({
+    required String branch,
+    required DateTime date,
+    required String query,
+  }) {
+    return remote.fetchBranchOrderMovements(
+      branch: branch,
+      date: date,
+      query: query,
+    );
   }
 }

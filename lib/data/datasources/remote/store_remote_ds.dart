@@ -5,6 +5,20 @@ class StoreRemoteDs {
   final SupabaseClient client;
 
   StoreRemoteDs(this.client);
+
+  Future<List<String>> fetchActiveBranchNames() async {
+    final res = await client
+        .from('branches')
+        .select('branch_name')
+        .eq('is_active', true)
+        .order('branch_name');
+
+    return List<Map<String, dynamic>>.from(res)
+        .map((e) => (e['branch_name'] ?? '').toString())
+        .where((e) => e.trim().isNotEmpty)
+        .toList();
+  }
+
   Future<List<String>> fetchBranchesToday() async {
     final today = DateFormat('EEEE').format(DateTime.now());
 
@@ -45,6 +59,34 @@ class StoreRemoteDs {
         .from('branches')
         .select('branch_name,submit_start_hour,submit_end_hour')
         .eq('is_active', true);
+
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchBranchOrderMovements({
+    required String branch,
+    required DateTime date,
+    required String query,
+  }) async {
+    final dateText =
+        '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+
+    var request = client
+        .from('product_movement_history')
+        .select('id,branch,movement_date,item_code,item_name,movement_type,qty')
+        .eq('branch', branch)
+        .eq('movement_date', dateText)
+        .eq('movement_type', 'daily_order');
+
+    final search = query.trim();
+    if (search.isNotEmpty) {
+      final safe = search.replaceAll(',', ' ');
+      request = request.or('item_code.ilike.%$safe%,item_name.ilike.%$safe%');
+    }
+
+    final res = await request.order('created_at', ascending: false);
 
     return List<Map<String, dynamic>>.from(res);
   }
@@ -227,17 +269,69 @@ class StoreRemoteDs {
   }
 
   Future<List<Map<String, dynamic>>> fetchProductMovement({
-    required String branch,
-    required String itemCode,
+    required String query,
+    required String? branch,
+    required DateTime from,
+    required DateTime to,
+    required String movementType,
   }) async {
-    final res = await client
+    final fromText =
+        '${from.year.toString().padLeft(4, '0')}-'
+        '${from.month.toString().padLeft(2, '0')}-'
+        '${from.day.toString().padLeft(2, '0')}';
+    final toText =
+        '${to.year.toString().padLeft(4, '0')}-'
+        '${to.month.toString().padLeft(2, '0')}-'
+        '${to.day.toString().padLeft(2, '0')}';
+
+    var request = client
         .from('product_movement_history')
-        .select()
-        .eq('branch', branch)
-        .eq('item_code', itemCode)
-        .order('created_at', ascending: false);
+        .select(
+          'id,branch,movement_date,item_code,item_name,movement_type,qty,source_id,created_at',
+        )
+        .gte('movement_date', fromText)
+        .lte('movement_date', toText);
+
+    final search = query.trim();
+    if (search.isNotEmpty) {
+      final safe = search.replaceAll(',', ' ');
+      request = request.or('item_code.ilike.%$safe%,item_name.ilike.%$safe%');
+    }
+
+    if (branch != null && branch.trim().isNotEmpty) {
+      request = request.eq('branch', branch);
+    }
+
+    if (movementType != 'all') {
+      request = request.eq('movement_type', movementType);
+    }
+
+    final res = await request.order('created_at', ascending: false).limit(5000);
 
     return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchMovementProductSuggestions({
+    required String query,
+  }) async {
+    final search = query.trim();
+    if (search.isEmpty) return [];
+
+    final safe = search.replaceAll(',', ' ');
+    final res = await client
+        .from('item_report')
+        .select('item_code,item_name,barcode')
+        .or('item_code.ilike.%$safe%,item_name.ilike.%$safe%')
+        .order('item_name', ascending: true)
+        .limit(20);
+
+    final rows = List<Map<String, dynamic>>.from(res);
+    final unique = <String, Map<String, dynamic>>{};
+    for (final row in rows) {
+      final code = (row['item_code'] ?? '').toString();
+      if (code.isNotEmpty) unique[code] = row;
+    }
+    return unique.values.toList();
   }
 
   Future<List<String>> fetchMovementBranches() async {

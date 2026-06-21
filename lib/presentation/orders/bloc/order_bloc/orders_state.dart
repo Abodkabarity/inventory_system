@@ -233,6 +233,9 @@ class OrdersState extends Equatable {
   final int usedAdditionalOrders;
   final bool receivedLast7DaysOnly;
   final String? nextAvailableDate;
+  final String? nextOrderDate;
+  final String? nextPreparationAt;
+  final String? nextPreparationDeadlineAt;
   final int? daysUntilNextSlot;
   // submission status
   final String submissionStatus; // draft/submitted
@@ -246,6 +249,7 @@ class OrdersState extends Equatable {
   // tracking list (flat list of requests rows)
   final List<AdditionalRequestRow> additionalTrackingRows;
   final bool isOrderDay;
+  final bool isMissingOrder;
   const OrdersState({
     required this.status,
     required this.runDate,
@@ -276,6 +280,9 @@ class OrdersState extends Equatable {
     this.submitEndHour = 9,
     required this.mismatchItems,
     this.nextAvailableDate,
+    this.nextOrderDate,
+    this.nextPreparationAt,
+    this.nextPreparationDeadlineAt,
     this.daysUntilNextSlot,
     required this.mismatchSuggestions,
     this.editingMismatchId,
@@ -288,6 +295,7 @@ class OrdersState extends Equatable {
     required this.maxAdjSearch,
     required this.isExporting,
     required this.isOrderDay,
+    required this.isMissingOrder,
     required this.selectedItemDemand,
     required this.onlyBranchMaxAdj,
     required this.showCreate,
@@ -442,6 +450,7 @@ class OrdersState extends Equatable {
       showMismatchResult: false,
       finalEdits: const {},
       isOrderDay: true,
+      isMissingOrder: false,
       additionalEdits: const {},
       sentAdditionalHistoryByItemCode: const {},
       sentAdditionalQtyByItemCode: const {},
@@ -521,6 +530,7 @@ class OrdersState extends Equatable {
     bool? lastActionSuccess,
     bool? isExporting,
     bool? isOrderDay,
+    bool? isMissingOrder,
     bool? onlyBranchMaxAdj,
     int? submitStartHour,
     bool? orderLoadedOnce,
@@ -528,6 +538,9 @@ class OrdersState extends Equatable {
     int? submitEndHour,
     bool? isAddingItemToOrder,
     String? nextAvailableDate,
+    String? nextOrderDate,
+    String? nextPreparationAt,
+    String? nextPreparationDeadlineAt,
     int? daysUntilNextSlot,
     bool? showCreate,
     List<Map<String, dynamic>>? mismatchItems,
@@ -594,6 +607,10 @@ class OrdersState extends Equatable {
 
       orderIncreaseLimit: orderIncreaseLimit ?? this.orderIncreaseLimit,
       nextAvailableDate: nextAvailableDate ?? this.nextAvailableDate,
+      nextOrderDate: nextOrderDate ?? this.nextOrderDate,
+      nextPreparationAt: nextPreparationAt ?? this.nextPreparationAt,
+      nextPreparationDeadlineAt:
+          nextPreparationDeadlineAt ?? this.nextPreparationDeadlineAt,
 
       daysUntilNextSlot: daysUntilNextSlot ?? this.daysUntilNextSlot,
       orderEditLimit: orderEditLimit ?? this.orderEditLimit,
@@ -613,6 +630,7 @@ class OrdersState extends Equatable {
       maxAdjSearch: maxAdjSearch ?? this.maxAdjSearch,
       isExporting: isExporting ?? this.isExporting,
       isOrderDay: isOrderDay ?? this.isOrderDay,
+      isMissingOrder: isMissingOrder ?? this.isMissingOrder,
       selectedItemDemand: selectedItemDemand ?? this.selectedItemDemand,
       usedAdditionalOrders: usedAdditionalOrders ?? this.usedAdditionalOrders,
       onlyBranchMaxAdj: onlyBranchMaxAdj ?? this.onlyBranchMaxAdj,
@@ -654,6 +672,9 @@ class OrdersState extends Equatable {
     receivedLast7DaysOnly,
     submissionStatus,
     usedAdditionalOrders,
+    nextOrderDate,
+    nextPreparationAt,
+    nextPreparationDeadlineAt,
     selectedItemCode,
     additionalTrackingRows,
     mismatchSearch,
@@ -666,6 +687,7 @@ class OrdersState extends Equatable {
     maxAdjSearch,
     isExporting,
     isOrderDay,
+    isMissingOrder,
     maxAdjLimit,
     orderIncreaseLimit,
     orderEditLimit,

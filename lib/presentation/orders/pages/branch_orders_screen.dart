@@ -363,7 +363,9 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
               startHour: s.submitStartHour,
               endHour: s.submitEndHour,
             );
-        final orderedColumns = s.isOrderDay
+        final showFullOrderColumns =
+            s.isOrderDay || s.isMissingOrder || s.isSubmitted;
+        final orderedColumns = showFullOrderColumns
             ? BranchOrdersSelectors.orderedVisibleColumns(s)
             : ['item_code', 'item_name', 'branch_stock', 'store_stock'];
 
@@ -647,13 +649,13 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                 _StatusChip(
                                   isSubmitted: s.isSubmitted,
                                   isOrderDay: s.isOrderDay,
+                                  runDate: s.runDate,
+                                  nextOrderDate: s.nextOrderDate,
+                                  nextPreparationAt: s.nextPreparationAt,
+                                  nextPreparationDeadlineAt:
+                                      s.nextPreparationDeadlineAt,
                                   isMissingOrder:
-                                      s.isOrderDay &&
-                                      !s.isSubmitted &&
-                                      OperationalDateHelper.isMissingWindowForBranch(
-                                        startHour: s.submitStartHour,
-                                        endHour: s.submitEndHour,
-                                      ),
+                                      s.isMissingOrder && !s.isSubmitted,
                                 ),
 
                                 const SizedBox(width: 10),
@@ -900,7 +902,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                   selectedCategory: s.categoryFilter,
                                   selectedFormulary: s.formularyFilter,
                                   nonWithSales45Only: s.nonWithSales45Only,
-                                  numericFinalOnly: s.isOrderDay
+                                  numericFinalOnly: showFullOrderColumns
                                       ? s.numericFinalOnly
                                       : false,
                                   useLimitedStockMode: useLimitedStockMode,
@@ -927,7 +929,8 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                       OrdersNonWithSales45Toggled(v),
                                     );
                                   },
-                                  onNumericFinalOnlyChanged: s.isOrderDay
+                                  onNumericFinalOnlyChanged:
+                                      showFullOrderColumns
                                       ? (v) {
                                           context.read<OrdersBloc>().add(
                                             OrdersNumericFinalOnlyToggled(v),
@@ -1756,13 +1759,15 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
 
                                               onTapFinalReorder: (row) {
                                                 final locked =
-                                                    s.isOrderDay &&
-                                                    !s.isSubmitted &&
-                                                    OperationalDateHelper.isMissingWindowForBranch(
-                                                      startHour:
-                                                          s.submitStartHour,
-                                                      endHour: s.submitEndHour,
-                                                    );
+                                                    s.isSubmitted ||
+                                                    s.isMissingOrder ||
+                                                    (s.isOrderDay &&
+                                                        OperationalDateHelper.isMissingWindowForBranch(
+                                                          startHour:
+                                                              s.submitStartHour,
+                                                          endHour:
+                                                              s.submitEndHour,
+                                                        ));
 
                                                 if (locked) {
                                                   return;
@@ -1844,16 +1849,88 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
   }
 }
 
-class _StatusChip extends StatelessWidget {
+class _StatusChip extends StatefulWidget {
   final bool isSubmitted;
   final bool isOrderDay;
   final bool isMissingOrder;
+  final String runDate;
+  final String? nextOrderDate;
+  final String? nextPreparationAt;
+  final String? nextPreparationDeadlineAt;
 
   const _StatusChip({
     required this.isSubmitted,
     required this.isOrderDay,
     required this.isMissingOrder,
+    required this.runDate,
+    required this.nextOrderDate,
+    required this.nextPreparationAt,
+    required this.nextPreparationDeadlineAt,
   });
+
+  @override
+  State<_StatusChip> createState() => _StatusChipState();
+}
+
+class _StatusChipState extends State<_StatusChip> {
+  Timer? _timer;
+  late DateTime _now;
+
+  @override
+  void initState() {
+    super.initState();
+    _now = OperationalDateHelper.nowUae;
+    _syncTimer();
+  }
+
+  @override
+  void didUpdateWidget(covariant _StatusChip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.runDate != widget.runDate ||
+        oldWidget.isOrderDay != widget.isOrderDay ||
+        oldWidget.isSubmitted != widget.isSubmitted ||
+        oldWidget.nextPreparationAt != widget.nextPreparationAt ||
+        oldWidget.nextPreparationDeadlineAt !=
+            widget.nextPreparationDeadlineAt) {
+      _now = OperationalDateHelper.nowUae;
+      _syncTimer();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _syncTimer() {
+    _timer?.cancel();
+    if (!_shouldCountDown) return;
+
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {
+        _now = OperationalDateHelper.nowUae;
+        if (!_shouldCountDown) {
+          _timer?.cancel();
+          _timer = null;
+        }
+      });
+    });
+  }
+
+  DateTime? get _preparationAt =>
+      DateTime.tryParse(widget.nextPreparationAt ?? '');
+
+  DateTime? get _deadlineAt =>
+      DateTime.tryParse(widget.nextPreparationDeadlineAt ?? '');
+
+  bool get _shouldCountDown {
+    if (widget.isSubmitted) return false;
+
+    final target = widget.isOrderDay ? _deadlineAt : _preparationAt;
+    return target != null && _now.isBefore(target);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1862,35 +1939,36 @@ class _StatusChip extends StatelessWidget {
     Color fg;
     String text;
     IconData icon;
+    String? detail;
 
-    if (!isOrderDay) {
-      // 🔴 No Order Today
-      bg = const Color(0xFFFFF1F2);
-      br = const Color(0xFFFDA4AF);
-      fg = const Color(0xFFB42318);
-      text = 'No Order Today';
-      icon = Icons.block;
-    } else if (isSubmitted) {
-      // ✅ Submitted
+    if (widget.isSubmitted) {
       bg = const Color(0xFFECFDF3);
       br = const Color(0xFFABEFC6);
       fg = const Color(0xFF027A48);
       text = 'Submitted';
       icon = Icons.check_circle;
-    } else if (isMissingOrder) {
-      // 🔥 Missing Order
+      detail = _nextOrderPreparationMessage();
+    } else if (widget.isMissingOrder) {
       bg = const Color(0xFFFEF3F2);
       br = const Color(0xFFFDA29B);
       fg = const Color(0xFFB42318);
       text = 'Missing Order';
       icon = Icons.warning_amber_rounded;
+      detail = _nextOrderPreparationMessage();
+    } else if (!widget.isOrderDay) {
+      bg = const Color(0xFFFFF1F2);
+      br = const Color(0xFFFDA4AF);
+      fg = const Color(0xFFB42318);
+      text = 'No Order Today';
+      icon = Icons.block;
+      detail = _futurePreparationMessage();
     } else {
-      // 🟡 Draft
       bg = const Color(0xFFFFFBEB);
       br = const Color(0xFFFDE68A);
       fg = const Color(0xFF92400E);
       text = 'Draft';
       icon = Icons.edit_outlined;
+      detail = _activeWindowMessage('Submit ends');
     }
 
     return Container(
@@ -1903,19 +1981,127 @@ class _StatusChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            isSubmitted ? Icons.check_circle : Icons.edit_outlined,
-            size: 16,
-            color: fg,
-          ),
+          Icon(icon, size: 16, color: fg),
           const SizedBox(width: 6),
           Text(
             text,
             style: TextStyle(fontWeight: FontWeight.w900, color: fg),
           ),
+          if (detail != null) ...[
+            Container(
+              height: 16,
+              width: 1,
+              margin: const EdgeInsets.symmetric(horizontal: 8),
+              color: br,
+            ),
+            Icon(Icons.schedule_rounded, size: 14, color: fg),
+            const SizedBox(width: 5),
+            Text(
+              detail,
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: fg,
+                fontSize: 12,
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  String _formatReadableDate(String value) {
+    final date = DateTime.tryParse(value);
+    if (date == null) return value;
+
+    const days = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+
+    final dayName = days[date.weekday - 1];
+    final d = date.day.toString().padLeft(2, '0');
+    final m = date.month.toString().padLeft(2, '0');
+    final y = date.year.toString().padLeft(4, '0');
+    return '$dayName $d-$m-$y';
+  }
+
+  String? _futurePreparationMessage() {
+    final preparationAt = _preparationAt;
+    if (preparationAt == null) {
+      return widget.nextOrderDate == null
+          ? null
+          : 'Next order: ${_formatReadableDate(widget.nextOrderDate!)}';
+    }
+
+    final prepDay = DateTime(
+      preparationAt.year,
+      preparationAt.month,
+      preparationAt.day,
+    );
+    final today = DateTime(_now.year, _now.month, _now.day);
+    final time = _formatClock(preparationAt);
+
+    if (prepDay == today) {
+      final countdown = _now.isBefore(preparationAt)
+          ? ' - starts in ${_formatDuration(preparationAt.difference(_now))}'
+          : '';
+      return 'Prepared today at $time$countdown';
+    }
+
+    return 'Prepared ${_formatReadableDate(preparationAt.toIso8601String())} at $time';
+  }
+
+  String _nextOrderPreparationMessage() {
+    final nextOrder = widget.nextOrderDate == null
+        ? 'Next order'
+        : 'Next: ${_formatReadableDate(widget.nextOrderDate!)}';
+    final preparationAt = _preparationAt;
+
+    if (preparationAt == null) return nextOrder;
+
+    final prepDay = DateTime(
+      preparationAt.year,
+      preparationAt.month,
+      preparationAt.day,
+    );
+    final today = DateTime(_now.year, _now.month, _now.day);
+    final when = prepDay == today
+        ? 'today'
+        : _formatReadableDate(preparationAt.toIso8601String());
+
+    return '$nextOrder - prepare $when at ${_formatClock(preparationAt)}';
+  }
+
+  String _activeWindowMessage(String label) {
+    final deadlineAt = _deadlineAt;
+    if (deadlineAt == null) return 'Order window is open';
+
+    if (_now.isBefore(deadlineAt)) {
+      return '$label in ${_formatDuration(deadlineAt.difference(_now))}';
+    }
+
+    return 'Window closed at ${_formatClock(deadlineAt)}';
+  }
+
+  String _formatClock(DateTime date) {
+    final hour12 = date.hour % 12 == 0 ? 12 : date.hour % 12;
+    final minute = date.minute.toString().padLeft(2, '0');
+    final suffix = date.hour >= 12 ? 'PM' : 'AM';
+    return '$hour12:$minute $suffix';
+  }
+
+  String _formatDuration(Duration duration) {
+    final safe = duration.isNegative ? Duration.zero : duration;
+    final hours = safe.inHours.toString().padLeft(2, '0');
+    final minutes = (safe.inMinutes % 60).toString().padLeft(2, '0');
+    final seconds = (safe.inSeconds % 60).toString().padLeft(2, '0');
+    return '$hours:$minutes:$seconds';
   }
 }
 
