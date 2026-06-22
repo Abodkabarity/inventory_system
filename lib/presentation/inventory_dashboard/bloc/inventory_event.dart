@@ -349,3 +349,11 @@ class SearchFormulary extends InventoryEvent {
   @override
   List<Object?> get props => [query];
 }
+
+class AdditionalRequestRealtimeUpdated extends InventoryEvent {
+  final String id;
+
+  AdditionalRequestRealtimeUpdated(this.id);
+  @override
+  List<Object?> get props => [id];
+}

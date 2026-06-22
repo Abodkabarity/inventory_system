@@ -41,7 +41,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     on<LoadBranchAnalytics>(_onBranchAnalytics);
     on<ApproveInventoryRequest>(_onApproveInventory);
     on<LoadBranchAdditionalStats>(_onBranchAdditionalStats);
-
+    on<AdditionalRequestRealtimeUpdated>(_onAdditionalRealtimeUpdate);
     on<ChangeInventoryPage>((event, emit) {
       emit(state.copyWith(currentPage: event.page));
     });
@@ -434,16 +434,20 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
               );
 
               print('AFTER NOTIFICATION');
-
-              add(LoadInventoryDashboard(runDate, silent: true));
             },
           )
           .onPostgresChanges(
             event: PostgresChangeEvent.update,
             schema: 'public',
             table: 'additional_requests',
-            callback: (_) {
-              add(LoadInventoryDashboard(runDate, silent: true));
+            callback: (payload) {
+              final updatedId = payload.newRecord['id']?.toString();
+
+              if (updatedId == null) {
+                return;
+              }
+
+              add(AdditionalRequestRealtimeUpdated(updatedId));
             },
           )
           .subscribe();
@@ -898,7 +902,6 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       await repo.approveInventory(id: event.requestId, qty: event.qty);
 
       /// reload dashboard silently
-      add(LoadInventoryDashboard(runDate, silent: true));
     } catch (e) {
       print("Inventory Approve Error: $e");
     }
@@ -2842,5 +2845,16 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       emit(state.copyWith(isEffectivenessLoading: false));
       print('LoadRequestEffectiveness error: $e');
     }
+  }
+
+  Future<void> _onAdditionalRealtimeUpdate(
+    AdditionalRequestRealtimeUpdated event,
+    Emitter<InventoryState> emit,
+  ) async {
+    final updated = state.additionalRequests
+        .where((e) => e.groupId != event.id)
+        .toList();
+
+    emit(state.copyWith(additionalRequests: updated));
   }
 }
