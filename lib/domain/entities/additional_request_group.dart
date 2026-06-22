@@ -17,6 +17,7 @@ class AdditionalRequestGroup {
   final String? itemStatus;
   final int? todayCount;
   final int? inventoryQty;
+  final String? inventoryNote;
   final num? fulfilledQty;
   final String? storeNote;
 
@@ -40,5 +41,6 @@ class AdditionalRequestGroup {
     this.fulfilledQty,
     this.storeNote,
     this.inventoryQty,
+    this.inventoryNote,
   });
 }

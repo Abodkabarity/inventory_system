@@ -94,6 +94,7 @@ class InventoryRepositoryImpl implements InventoryRepository {
         fulfilledQty: e['fulfilled_qty'] ?? 0,
         storeNote: e['store_note'] ?? '',
         inventoryQty: e['inventory_qty'] ?? 0,
+        inventoryNote: e['inventory_note'] ?? '',
       );
     }).toList();
   }
@@ -118,8 +119,12 @@ class InventoryRepositoryImpl implements InventoryRepository {
   /// INVENTORY APPROVAL
   /// ================================
   @override
-  Future<void> approveInventory({required String id, required num qty}) {
-    return remote.approveInventory(id: id, qty: qty);
+  Future<void> approveInventory({
+    required String id,
+    required num qty,
+    String note = '',
+  }) {
+    return remote.approveInventory(id: id, qty: qty, note: note);
   }
 
   @override

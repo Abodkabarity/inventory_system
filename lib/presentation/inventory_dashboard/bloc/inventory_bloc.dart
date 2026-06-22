@@ -807,6 +807,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       final submittedTimes = await repo.fetchSubmittedBranchTimes(runDate);
 
       final additional = await repo.fetchAdditionalRequests();
+      final counters = _additionalCounters(additional);
 
       final mismatchToday = await repo.fetchMismatchToday();
       final mismatchMonth = await repo.fetchMismatchMonth();
@@ -820,14 +821,6 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         runDate,
       );
 
-      final pending = additional
-          .where((e) => e.status == 'pending_inventory')
-          .length;
-
-      final sentToStore = additional
-          .where((e) => e.status == 'sent_to_store')
-          .length;
-
       emit(
         state.copyWith(
           branches: branches,
@@ -839,8 +832,9 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           mismatchTotalCount: mismatchTotal,
           submittedCount: submitted.length,
           additionalCount: additional.length,
-          additionalPendingCount: pending,
-          additionalSentToStoreCount: sentToStore,
+          additionalPendingCount: counters.pending,
+          additionalSentToStoreCount: counters.sentToStore,
+          additionalTodayCount: counters.today,
           mismatchTodayCount: mismatchToday,
           mismatchMonthCount: mismatchMonth,
           mismatch: mismatchData,
@@ -899,7 +893,11 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     Emitter<InventoryState> emit,
   ) async {
     try {
-      await repo.approveInventory(id: event.requestId, qty: event.qty);
+      await repo.approveInventory(
+        id: event.requestId,
+        qty: event.qty,
+        note: event.note,
+      );
 
       /// reload dashboard silently
     } catch (e) {
@@ -1060,10 +1058,15 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       await repo.approveAllInventory(event.items);
 
       final additional = await repo.fetchAdditionalRequests();
+      final counters = _additionalCounters(additional);
 
       emit(
         state.copyWith(
           additionalRequests: additional,
+          additionalCount: additional.length,
+          additionalPendingCount: counters.pending,
+          additionalSentToStoreCount: counters.sentToStore,
+          additionalTodayCount: counters.today,
           isBulkLoading: false,
           bulkSuccess: true,
           bulkMessage: "All requests approved successfully ✅",
@@ -1090,9 +1093,17 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       await repo.storeApprove(event.items);
 
       final additional = await repo.fetchAdditionalRequests();
+      final counters = _additionalCounters(additional);
 
       emit(
-        state.copyWith(additionalRequests: additional, isBulkLoading: false),
+        state.copyWith(
+          additionalRequests: additional,
+          additionalCount: additional.length,
+          additionalPendingCount: counters.pending,
+          additionalSentToStoreCount: counters.sentToStore,
+          additionalTodayCount: counters.today,
+          isBulkLoading: false,
+        ),
       );
     } catch (e) {
       emit(state.copyWith(isBulkLoading: false));
@@ -2908,6 +2919,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       fulfilledQty: row['fulfilled_qty'] ?? 0,
       storeNote: row['store_note'] ?? '',
       inventoryQty: row['inventory_qty'] ?? 0,
+      inventoryNote: row['inventory_note'] ?? '',
     );
   }
 
@@ -2921,26 +2933,34 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     return list;
   }
 
-  void _emitAdditionalRequests(
-    Emitter<InventoryState> emit,
-    List<AdditionalRequestGroup> requests, {
-    Map<String, int>? additionalTodayBranchCount,
-  }) {
+  ({int pending, int sentToStore, int today}) _additionalCounters(
+    List<AdditionalRequestGroup> requests,
+  ) {
     final pending = requests
         .where((e) => _isPendingAdditionalStatus(e.status))
         .length;
     final sentToStore = requests
         .where((e) => e.status.toLowerCase().trim() == 'sent_to_store')
         .length;
-    final todayCount = requests.where(_isCreatedToday).length;
+    final today = requests.where(_isCreatedToday).length;
+
+    return (pending: pending, sentToStore: sentToStore, today: today);
+  }
+
+  void _emitAdditionalRequests(
+    Emitter<InventoryState> emit,
+    List<AdditionalRequestGroup> requests, {
+    Map<String, int>? additionalTodayBranchCount,
+  }) {
+    final counters = _additionalCounters(requests);
 
     emit(
       state.copyWith(
         additionalRequests: requests,
         additionalCount: requests.length,
-        additionalPendingCount: pending,
-        additionalSentToStoreCount: sentToStore,
-        additionalTodayCount: todayCount,
+        additionalPendingCount: counters.pending,
+        additionalSentToStoreCount: counters.sentToStore,
+        additionalTodayCount: counters.today,
         additionalTodayBranchCount:
             additionalTodayBranchCount ?? state.additionalTodayBranchCount,
       ),

@@ -29,58 +29,30 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
     final List<Map<String, dynamic>> bulk = [];
 
     for (var e in widget.requests) {
-      if (e.status != 'pending') continue;
+      if (!_isPending(e)) continue;
 
       final id = e.groupId;
 
+      final fallbackQty = e.inventoryQty ?? e.requestQty ?? 0;
       final qty =
-          int.tryParse(qtyControllers[id]?.text ?? e.requestQty.toString()) ??
+          num.tryParse(
+            (qtyControllers[id]?.text ?? fallbackQty.toString()).trim(),
+          ) ??
           0;
 
-      final note = noteControllers[id]?.text ?? '';
-      print('================');
-      print('ID: $id');
-      print('REQUEST QTY: ${e.requestQty}');
-      print('TEXTFIELD QTY: ${qtyControllers[id]?.text}');
-      print('NOTE: ${noteControllers[id]?.text}');
-      print('================');
-      bulk.add({'id': id, 'qty': qty, 'note': note});
+      final note = (noteControllers[id]?.text ?? '').trim();
+      bulk.add({
+        'id': id,
+        'qty': qty,
+        'inventory_qty': qty,
+        'note': note,
+        'inventory_note': note,
+      });
     }
 
     if (bulk.isEmpty) return;
 
-    final bloc = context.read<InventoryBloc>();
-
-    try {
-      bloc.emit(bloc.state.copyWith(isBulkLoading: true));
-
-      await bloc.repo.approveAllInventory(bulk);
-
-      final additional = await bloc.repo.fetchAdditionalRequests();
-
-      bloc.emit(
-        bloc.state.copyWith(
-          additionalRequests: additional,
-          isBulkLoading: false,
-        ),
-      );
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("All requests approved successfully ✅"),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      bloc.emit(bloc.state.copyWith(isBulkLoading: false));
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Failed to approve requests ❌"),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
+    context.read<InventoryBloc>().add(ApproveAllInventoryRequests(bulk));
   }
 
   @override
@@ -117,73 +89,157 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
       return latestB.compareTo(latestA);
     });
 
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.backgroundWidget,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        children: [
-          /// HEADER
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Padding(
-                  padding: EdgeInsets.only(left: 10),
-                  child: SelectableText(
-                    "Inventory Additional Requests",
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.secondaryColor,
+    return BlocListener<InventoryBloc, InventoryState>(
+      listenWhen: (previous, current) {
+        return previous.isBulkLoading &&
+            !current.isBulkLoading &&
+            current.bulkSuccess != null;
+      },
+      listener: (context, state) {
+        _showBulkSnackBar(context, success: state.bulkSuccess == true);
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.backgroundWidget,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          children: [
+            /// HEADER
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(left: 10),
+                    child: SelectableText(
+                      "Inventory Additional Requests",
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.secondaryColor,
+                      ),
                     ),
                   ),
-                ),
-                BlocBuilder<InventoryBloc, InventoryState>(
-                  builder: (context, state) {
-                    return ElevatedButton(
-                      onPressed: state.isBulkLoading
-                          ? null
-                          : () => _confirmAll(context),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryColor,
-                      ),
-                      child: state.isBulkLoading
-                          ? SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
+                  BlocBuilder<InventoryBloc, InventoryState>(
+                    builder: (context, state) {
+                      return ElevatedButton(
+                        onPressed: state.isBulkLoading
+                            ? null
+                            : () => _confirmAll(context),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryColor,
+                        ),
+                        child: state.isBulkLoading
+                            ? SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text(
+                                "Confirm All Additional",
+                                style: TextStyle(color: Colors.white),
                               ),
-                            )
-                          : const Text(
-                              "Confirm All Additional",
-                              style: TextStyle(color: Colors.white),
-                            ),
-                    );
-                  },
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 25),
+              child: const Divider(color: AppColors.primaryColor),
+            ),
+
+            Expanded(
+              child: ListView.builder(
+                itemCount: groupedList.length,
+                itemBuilder: (context, i) {
+                  return _buildProductCard(groupedList[i]);
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showBulkSnackBar(BuildContext context, {required bool success}) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+
+    messenger.showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        duration: const Duration(seconds: 3),
+        content: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          decoration: BoxDecoration(
+            color: success ? const Color(0xff16A34A) : const Color(0xffDC2626),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.18),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  shape: BoxShape.circle,
                 ),
-              ],
-            ),
+                child: Icon(
+                  success ? Icons.check_rounded : Icons.close_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      success
+                          ? 'All additional requests confirmed'
+                          : 'Failed to confirm additional requests',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      success
+                          ? 'The selected quantities and notes were sent successfully.'
+                          : 'Please try again or check the connection.',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 25),
-            child: const Divider(color: AppColors.primaryColor),
-          ),
-
-          Expanded(
-            child: ListView.builder(
-              itemCount: groupedList.length,
-              itemBuilder: (context, i) {
-                return _buildProductCard(groupedList[i]);
-              },
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -314,10 +370,19 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
               );
               qtyControllers.putIfAbsent(
                 id,
-                () => TextEditingController(text: e.requestQty.toString()),
+                () => TextEditingController(
+                  text:
+                      ((e.inventoryQty ?? 0) > 0
+                              ? e.inventoryQty
+                              : e.requestQty ?? 0)
+                          .toString(),
+                ),
               );
 
-              noteControllers.putIfAbsent(id, () => TextEditingController());
+              noteControllers.putIfAbsent(
+                id,
+                () => TextEditingController(text: e.inventoryNote ?? ''),
+              );
 
               return Padding(
                 key: ValueKey(id),
@@ -364,7 +429,7 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
                         ),
 
                         const SizedBox(width: 15),
-                        if (e.status == "pending") ...[
+                        if (_isPending(e)) ...[
                           /// QTY
                           SizedBox(
                             width: 100,
@@ -564,7 +629,7 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
                           _infoBox("Today Req", e.todayCount),
                           _infoBox("Item Status", e.itemStatus),
                           Spacer(),
-                          if (e.status == "pending") ...[
+                          if (_isPending(e)) ...[
                             SizedBox(width: 5.w),
 
                             BlocListener<InventoryBloc, InventoryState>(
@@ -591,6 +656,10 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
                                           ApproveInventoryRequest(
                                             requestId: e.groupId,
                                             qty: qty,
+                                            note:
+                                                noteControllers[id]?.text
+                                                    .trim() ??
+                                                '',
                                           ),
                                         );
                                       },

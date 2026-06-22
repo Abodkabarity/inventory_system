@@ -39,7 +39,9 @@ class InventoryRemoteDs {
         .toList();
   }
 
-  Future<Map<String, DateTime>> fetchSubmittedBranchTimes(String runDate) async {
+  Future<Map<String, DateTime>> fetchSubmittedBranchTimes(
+    String runDate,
+  ) async {
     final res = await client
         .from('order_submissions')
         .select('branch_name, submitted_at')
@@ -155,13 +157,18 @@ class InventoryRemoteDs {
   /// INVENTORY APPROVAL
   /// ===============================
 
-  Future<void> approveInventory({required String id, required num qty}) async {
+  Future<void> approveInventory({
+    required String id,
+    required num qty,
+    String note = '',
+  }) async {
     final status = qty == 0 ? 'rejected' : 'sent_to_store';
 
     await client
         .from('additional_requests')
         .update({
           'inventory_qty': qty,
+          'inventory_note': note,
           'inventory_approved_at': DateTime.now().toIso8601String(),
           'status': status,
         })

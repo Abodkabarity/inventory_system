@@ -29,11 +29,16 @@ class SelectBranch extends InventoryEvent {
 class ApproveInventoryRequest extends InventoryEvent {
   final String requestId;
   final num qty;
+  final String note;
 
-  ApproveInventoryRequest({required this.requestId, required this.qty});
+  ApproveInventoryRequest({
+    required this.requestId,
+    required this.qty,
+    this.note = '',
+  });
 
   @override
-  List<Object?> get props => [requestId, qty];
+  List<Object?> get props => [requestId, qty, note];
 }
 
 class LoadBranchAnalytics extends InventoryEvent {

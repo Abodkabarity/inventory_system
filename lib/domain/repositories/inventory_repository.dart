@@ -20,7 +20,11 @@ abstract class InventoryRepository {
 
   Future<int> fetchAdditionalMonth();
 
-  Future<void> approveInventory({required String id, required num qty});
+  Future<void> approveInventory({
+    required String id,
+    required num qty,
+    String note = '',
+  });
   Future<Map<String, int>> fetchBranchEditsCount(String runDate);
   Future<Map<String, int>> fetchAdditionalTodayByBranch(String runDate);
   Future<int> fetchAdditionalMonthByBranch(String branch);
