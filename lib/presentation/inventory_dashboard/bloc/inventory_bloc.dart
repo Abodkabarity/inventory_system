@@ -15,6 +15,7 @@ import '../../../core/utils/max_adj_export.dart';
 import '../../../core/utils/mismatch_export.dart';
 import '../../../core/utils/tma_export.dart';
 import '../../../core/utils/web_notification.dart';
+import '../../../domain/entities/additional_request_group.dart';
 import '../../../domain/entities/daily_order_row.dart';
 import '../../../domain/entities/mismatch_item.dart';
 import '../../../domain/repositories/inventory_repository.dart';
@@ -68,6 +69,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     on<ImportFormularyExcel>(_onImportFormulary);
     on<LoadOrdersPage>(_onLoadOrdersPage);
     on<ImportTmaExcel>(_onImportTma);
+    on<AdditionalRequestInsertedRealtime>(_onAdditionalInsertedRealtime);
     on<ExportTmaTemplate>(_onExportTmaTemplate);
     on<ExportTmaCurrent>(_onExportTmaCurrent);
     on<ExportTmaWithHistory>(_onExportTmaHistory);
@@ -2856,5 +2858,38 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         .toList();
 
     emit(state.copyWith(additionalRequests: updated));
+  }
+
+  Future<void> _onAdditionalInsertedRealtime(
+    AdditionalRequestInsertedRealtime event,
+    Emitter<InventoryState> emit,
+  ) async {
+    final row = event.row;
+
+    final item = AdditionalRequestGroup(
+      groupId: (row['id'] ?? '').toString(),
+      branchName: (row['branch_name'] ?? '').toString(),
+      createdAt:
+          DateTime.tryParse(row['created_at'].toString()) ?? DateTime.now(),
+      itemsCount: 1,
+      status: (row['status'] ?? 'pending').toString(),
+      itemNames: (row['item_name'] ?? '').toString(),
+      itemCodes: (row['item_code'] ?? '').toString(),
+      contactLogistic: (row['contact_logistic'] ?? '').toString(),
+      requestQty: row['request_qty'] ?? 0,
+      branchStock: row['branch_stock'] ?? 0,
+      storeStock: row['store_stock'] ?? 0,
+      sales: row['sales_45d'] ?? 0,
+      finalReorder: row['final_reorder_qty'] ?? '',
+      itemStatus: row['item_purchase_type'] ?? '',
+      todayCount: 1,
+      fulfilledQty: row['fulfilled_qty'] ?? 0,
+      storeNote: row['store_note'] ?? '',
+      inventoryQty: row['inventory_qty'] ?? 0,
+    );
+
+    emit(
+      state.copyWith(additionalRequests: [item, ...state.additionalRequests]),
+    );
   }
 }

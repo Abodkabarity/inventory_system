@@ -38,7 +38,12 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
           0;
 
       final note = noteControllers[id]?.text ?? '';
-
+      print('================');
+      print('ID: $id');
+      print('REQUEST QTY: ${e.requestQty}');
+      print('TEXTFIELD QTY: ${qtyControllers[id]?.text}');
+      print('NOTE: ${noteControllers[id]?.text}');
+      print('================');
       bulk.add({'id': id, 'qty': qty, 'note': note});
     }
 

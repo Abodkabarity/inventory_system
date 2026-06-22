@@ -357,3 +357,11 @@ class AdditionalRequestRealtimeUpdated extends InventoryEvent {
   @override
   List<Object?> get props => [id];
 }
+
+class AdditionalRequestInsertedRealtime extends InventoryEvent {
+  final Map<String, dynamic> row;
+
+  AdditionalRequestInsertedRealtime(this.row);
+  @override
+  List<Object?> get props => [row];
+}
