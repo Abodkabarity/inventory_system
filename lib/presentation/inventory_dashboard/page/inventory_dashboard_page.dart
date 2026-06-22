@@ -78,13 +78,6 @@ class _InventoryDashboardViewState extends State<InventoryDashboardView> {
             bloc.add(LoadInventoryDashboard(widget.runDate, silent: true));
           },
         )
-        /// ADDITIONAL REQUESTS
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'additional_requests',
-          callback: (_) {},
-        )
         /// ORDER EDITS
         .onPostgresChanges(
           event: PostgresChangeEvent.all,

@@ -70,6 +70,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     on<LoadOrdersPage>(_onLoadOrdersPage);
     on<ImportTmaExcel>(_onImportTma);
     on<AdditionalRequestInsertedRealtime>(_onAdditionalInsertedRealtime);
+    on<AdditionalRequestDeletedRealtime>(_onAdditionalDeletedRealtime);
     on<ExportTmaTemplate>(_onExportTmaTemplate);
     on<ExportTmaCurrent>(_onExportTmaCurrent);
     on<ExportTmaWithHistory>(_onExportTmaHistory);
@@ -399,16 +400,17 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       additionalChannel = Supabase.instance.client
           .channel('additional_live')
           .onPostgresChanges(
-            event: PostgresChangeEvent.all,
+            event: PostgresChangeEvent.insert,
             schema: 'public',
             table: 'additional_requests',
             callback: (payload) async {
-              print('EVENT RECEIVED');
-              print(payload.eventType);
-              print(payload.newRecord);
               final row = payload.newRecord;
 
-              if ((row['status'] ?? '') != 'pending') {
+              add(AdditionalRequestInsertedRealtime(row));
+
+              if (!_isPendingAdditionalStatus(
+                (row['status'] ?? '').toString(),
+              )) {
                 return;
               }
 
@@ -419,23 +421,15 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
               final qty = (row['request_qty'] ?? 0).toString();
 
               try {
-                print('BEFORE SOUND');
-
                 await _player.play(AssetSource('sounds/notification.mp3'));
-
-                print('AFTER SOUND');
               } catch (e) {
                 print(e);
               }
-
-              print('BEFORE NOTIFICATION');
 
               WebNotification.show(
                 title: 'New Additional Order',
                 body: '$branch\n$item\nQty: $qty',
               );
-
-              print('AFTER NOTIFICATION');
             },
           )
           .onPostgresChanges(
@@ -443,13 +437,17 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
             schema: 'public',
             table: 'additional_requests',
             callback: (payload) {
-              final updatedId = payload.newRecord['id']?.toString();
-
-              if (updatedId == null) {
-                return;
-              }
-
-              add(AdditionalRequestRealtimeUpdated(updatedId));
+              add(AdditionalRequestRealtimeUpdated(payload.newRecord));
+            },
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.delete,
+            schema: 'public',
+            table: 'additional_requests',
+            callback: (payload) {
+              final oldId = payload.oldRecord['id']?.toString();
+              if (oldId == null || oldId.isEmpty) return;
+              add(AdditionalRequestDeletedRealtime(oldId));
             },
           )
           .subscribe();
@@ -2853,24 +2851,48 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     AdditionalRequestRealtimeUpdated event,
     Emitter<InventoryState> emit,
   ) async {
-    final updated = state.additionalRequests
-        .where((e) => e.groupId != event.id)
-        .toList();
+    final item = _additionalFromRealtimeRow(event.row);
+    final updated = _mergeAdditionalRequest(state.additionalRequests, item);
 
-    emit(state.copyWith(additionalRequests: updated));
+    _emitAdditionalRequests(emit, updated);
   }
 
   Future<void> _onAdditionalInsertedRealtime(
     AdditionalRequestInsertedRealtime event,
     Emitter<InventoryState> emit,
   ) async {
-    final row = event.row;
+    final item = _additionalFromRealtimeRow(event.row);
+    final updated = _mergeAdditionalRequest(state.additionalRequests, item);
+    final branchCounts = _updatedBranchAdditionalCounts(
+      row: event.row,
+      delta: 1,
+    );
 
-    final item = AdditionalRequestGroup(
+    _emitAdditionalRequests(
+      emit,
+      updated,
+      additionalTodayBranchCount: branchCounts,
+    );
+  }
+
+  Future<void> _onAdditionalDeletedRealtime(
+    AdditionalRequestDeletedRealtime event,
+    Emitter<InventoryState> emit,
+  ) async {
+    final updated = state.additionalRequests
+        .where((e) => e.groupId != event.id)
+        .toList();
+
+    _emitAdditionalRequests(emit, updated);
+  }
+
+  AdditionalRequestGroup _additionalFromRealtimeRow(Map<String, dynamic> row) {
+    return AdditionalRequestGroup(
       groupId: (row['id'] ?? '').toString(),
       branchName: (row['branch_name'] ?? '').toString(),
       createdAt:
-          DateTime.tryParse(row['created_at'].toString()) ?? DateTime.now(),
+          DateTime.tryParse((row['created_at'] ?? '').toString()) ??
+          DateTime.now(),
       itemsCount: 1,
       status: (row['status'] ?? 'pending').toString(),
       itemNames: (row['item_name'] ?? '').toString(),
@@ -2887,9 +2909,70 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       storeNote: row['store_note'] ?? '',
       inventoryQty: row['inventory_qty'] ?? 0,
     );
+  }
+
+  List<AdditionalRequestGroup> _mergeAdditionalRequest(
+    List<AdditionalRequestGroup> current,
+    AdditionalRequestGroup item,
+  ) {
+    final list = current.where((e) => e.groupId != item.groupId).toList();
+    list.insert(0, item);
+    list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return list;
+  }
+
+  void _emitAdditionalRequests(
+    Emitter<InventoryState> emit,
+    List<AdditionalRequestGroup> requests, {
+    Map<String, int>? additionalTodayBranchCount,
+  }) {
+    final pending = requests
+        .where((e) => _isPendingAdditionalStatus(e.status))
+        .length;
+    final sentToStore = requests
+        .where((e) => e.status.toLowerCase().trim() == 'sent_to_store')
+        .length;
+    final todayCount = requests.where(_isCreatedToday).length;
 
     emit(
-      state.copyWith(additionalRequests: [item, ...state.additionalRequests]),
+      state.copyWith(
+        additionalRequests: requests,
+        additionalCount: requests.length,
+        additionalPendingCount: pending,
+        additionalSentToStoreCount: sentToStore,
+        additionalTodayCount: todayCount,
+        additionalTodayBranchCount:
+            additionalTodayBranchCount ?? state.additionalTodayBranchCount,
+      ),
     );
+  }
+
+  Map<String, int>? _updatedBranchAdditionalCounts({
+    required Map<String, dynamic> row,
+    required int delta,
+  }) {
+    if ((row['run_date'] ?? '').toString() != runDate) return null;
+
+    final branch = (row['branch_name'] ?? '').toString();
+    if (branch.isEmpty) return null;
+
+    final updated = Map<String, int>.from(state.additionalTodayBranchCount);
+    updated[branch] = ((updated[branch] ?? 0) + delta)
+        .clamp(0, 1 << 31)
+        .toInt();
+    return updated;
+  }
+
+  static bool _isCreatedToday(AdditionalRequestGroup request) {
+    final now = DateTime.now();
+    final created = request.createdAt.toLocal();
+    return created.year == now.year &&
+        created.month == now.month &&
+        created.day == now.day;
+  }
+
+  static bool _isPendingAdditionalStatus(String status) {
+    final value = status.toLowerCase().trim();
+    return value == 'pending' || value == 'pending_inventory';
   }
 }

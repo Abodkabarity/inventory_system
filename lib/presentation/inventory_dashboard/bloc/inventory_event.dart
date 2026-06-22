@@ -351,11 +351,11 @@ class SearchFormulary extends InventoryEvent {
 }
 
 class AdditionalRequestRealtimeUpdated extends InventoryEvent {
-  final String id;
+  final Map<String, dynamic> row;
 
-  AdditionalRequestRealtimeUpdated(this.id);
+  AdditionalRequestRealtimeUpdated(this.row);
   @override
-  List<Object?> get props => [id];
+  List<Object?> get props => [row];
 }
 
 class AdditionalRequestInsertedRealtime extends InventoryEvent {
@@ -364,4 +364,12 @@ class AdditionalRequestInsertedRealtime extends InventoryEvent {
   AdditionalRequestInsertedRealtime(this.row);
   @override
   List<Object?> get props => [row];
+}
+
+class AdditionalRequestDeletedRealtime extends InventoryEvent {
+  final String id;
+
+  AdditionalRequestDeletedRealtime(this.id);
+  @override
+  List<Object?> get props => [id];
 }
