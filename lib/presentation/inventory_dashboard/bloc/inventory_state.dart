@@ -162,12 +162,12 @@ class InventoryState extends Equatable {
   final bool isAllocationLoading;
   final int allocationLoadedRows;
   final String allocationError;
-  final List<String> allocationBranches;
+  List<Map<String, dynamic>> allocationBranches;
   final List<String> allocationCategories;
   final List<String> allocationItemStatuses;
   final List<AllocationResultRow> allocationResults;
 
-  const InventoryState({
+  InventoryState({
     required this.branches,
     required this.selectedBranch,
     required this.edits,
@@ -261,7 +261,7 @@ class InventoryState extends Equatable {
   });
 
   factory InventoryState.initial() {
-    return const InventoryState(
+    return InventoryState(
       branches: [],
       selectedBranch: null,
       edits: [],
@@ -451,7 +451,7 @@ class InventoryState extends Equatable {
     bool? isAllocationLoading,
     int? allocationLoadedRows,
     String? allocationError,
-    List<String>? allocationBranches,
+    List<Map<String, dynamic>>? allocationBranches,
     List<String>? allocationCategories,
     List<String>? allocationItemStatuses,
     List<AllocationResultRow>? allocationResults,

@@ -29,6 +29,12 @@ class _AllocationPageState extends State<AllocationPage> {
   bool _receiversInitialized = false;
   bool _categoriesInitialized = false;
   bool _itemStatusesInitialized = false;
+  List<String> getBranchNames(List<Map<String, dynamic>> branches) {
+    return branches
+        .map((e) => (e['branch_name'] ?? '').toString())
+        .where((e) => e.isNotEmpty)
+        .toList();
+  }
 
   @override
   void initState() {
@@ -137,11 +143,15 @@ class _AllocationPageState extends State<AllocationPage> {
         runDate: widget.runDate,
         donorBranches: effectiveSelection(
           _donorBranches,
-          context.read<InventoryBloc>().state.allocationBranches,
+          getBranchNames(
+            context.read<InventoryBloc>().state.allocationBranches,
+          ),
         ),
         receiverBranches: effectiveSelection(
           _receiverBranches,
-          context.read<InventoryBloc>().state.allocationBranches,
+          getBranchNames(
+            context.read<InventoryBloc>().state.allocationBranches,
+          ),
         ),
         priorityBranches: _priorityBranches.toList(),
         categories: effectiveSelection(
@@ -164,12 +174,12 @@ class _AllocationPageState extends State<AllocationPage> {
 
   void _selectDefaults(InventoryState state) {
     if (!_donorsInitialized && state.allocationBranches.isNotEmpty) {
-      _donorBranches.addAll(state.allocationBranches);
+      _donorBranches.addAll(getBranchNames(state.allocationBranches));
       _donorsInitialized = true;
     }
 
     if (!_receiversInitialized && state.allocationBranches.isNotEmpty) {
-      _receiverBranches.addAll(state.allocationBranches);
+      _receiverBranches.addAll(getBranchNames(state.allocationBranches));
       _receiversInitialized = true;
     }
 
@@ -368,7 +378,7 @@ class _MetricPill extends StatelessWidget {
 }
 
 class _FiltersCard extends StatelessWidget {
-  final List<String> branches;
+  final List<Map<String, dynamic>> branches;
   final List<String> categories;
   final List<String> itemStatuses;
   final Set<String> donorBranches;
@@ -426,7 +436,7 @@ class _FiltersCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _SelectBox(
+                child: _BranchSelectBox(
                   title: 'Pull From Branches',
                   subtitle: 'Branches that have extra stock',
                   icon: Icons.call_made_rounded,
@@ -438,7 +448,7 @@ class _FiltersCard extends StatelessWidget {
               ),
               const SizedBox(width: 14),
               Expanded(
-                child: _SelectBox(
+                child: _BranchSelectBox(
                   title: 'Supply To Branches',
                   subtitle: 'Branches that need stock',
                   icon: Icons.call_received_rounded,
@@ -450,7 +460,7 @@ class _FiltersCard extends StatelessWidget {
               ),
               const SizedBox(width: 14),
               Expanded(
-                child: _SelectBox(
+                child: _BranchSelectBox(
                   title: 'Priority Branches',
                   subtitle: 'Receive stock before others',
                   icon: Icons.star_rounded,
@@ -500,6 +510,13 @@ class _FiltersCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class BranchFilter {
+  final String? area;
+  final String? branchType;
+
+  const BranchFilter({this.area, this.branchType});
 }
 
 class _SelectBox extends StatelessWidget {
@@ -678,6 +695,7 @@ class _MultiSelectDialogState extends State<_MultiSelectDialog> {
                 ],
               ),
             ),
+
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: TextField(
@@ -719,6 +737,357 @@ class _MultiSelectDialogState extends State<_MultiSelectDialog> {
                 },
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.all(18),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context, _selected),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: widget.color,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                  ),
+                  child: Text('Apply (${_selected.length})'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BranchSelectBox extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+  final List<Map<String, dynamic>> options;
+  final Set<String> selected;
+  final VoidCallback onChanged;
+
+  const _BranchSelectBox({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+    required this.options,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final label = selected.isEmpty
+        ? title == 'Priority Branches'
+              ? 'No priority'
+              : 'None selected'
+        : selected.length == options.length
+        ? 'All selected'
+        : '${selected.length} selected';
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () async {
+        final result = await showDialog<Set<String>>(
+          context: context,
+          builder: (_) => _BranchMultiSelectDialog(
+            title: title,
+            options: options,
+            initialSelected: selected,
+            color: color,
+          ),
+        );
+
+        if (result == null) return;
+
+        selected
+          ..clear()
+          ..addAll(result);
+
+        onChanged();
+      },
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: .08),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withValues(alpha: .22)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: .16),
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: Icon(icon, color: color),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xff0F172A),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xff64748B),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(color: color, fontWeight: FontWeight.w900),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BranchMultiSelectDialog extends StatefulWidget {
+  final String title;
+  final List<Map<String, dynamic>> options;
+  final Set<String> initialSelected;
+  final Color color;
+
+  const _BranchMultiSelectDialog({
+    required this.title,
+    required this.options,
+    required this.initialSelected,
+    required this.color,
+  });
+
+  @override
+  State<_BranchMultiSelectDialog> createState() =>
+      _BranchMultiSelectDialogState();
+}
+
+class _BranchMultiSelectDialogState extends State<_BranchMultiSelectDialog> {
+  late final Set<String> _selected = {...widget.initialSelected};
+
+  String _query = '';
+
+  String? selectedArea;
+  String? selectedType;
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = widget.options.where((branch) {
+      final name = (branch['branch_name'] ?? '').toString();
+
+      final area = (branch['area'] ?? '').toString();
+
+      final type = (branch['branch_type'] ?? '').toString();
+
+      if (_query.isNotEmpty &&
+          !name.toLowerCase().contains(_query.toLowerCase())) {
+        return false;
+      }
+
+      if (selectedArea != null && area != selectedArea) {
+        return false;
+      }
+
+      if (selectedType != null && type != selectedType) {
+        return false;
+      }
+
+      return true;
+    }).toList();
+
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      child: SizedBox(
+        width: 620,
+        height: 720,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 20, 16, 14),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.title,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        _selected
+                          ..clear()
+                          ..addAll(
+                            widget.options.map(
+                              (e) => e['branch_name'].toString(),
+                            ),
+                          );
+                      });
+                    },
+                    child: const Text('Select All'),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        _selected.clear();
+                      });
+                    },
+                    child: const Text('Clear'),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ActionChip(
+                    label: const Text('Online'),
+                    onPressed: () {
+                      setState(() {
+                        selectedType = 'Online';
+                      });
+                    },
+                  ),
+                  ActionChip(
+                    label: const Text('Retail'),
+                    onPressed: () {
+                      setState(() {
+                        selectedType = 'Retail';
+                      });
+                    },
+                  ),
+                  ActionChip(
+                    label: const Text('Al Ain'),
+                    onPressed: () {
+                      setState(() {
+                        selectedArea = 'Al Ain';
+                      });
+                    },
+                  ),
+                  ActionChip(
+                    label: const Text('Abu Dhabi'),
+                    onPressed: () {
+                      setState(() {
+                        selectedArea = 'Abu Dhabi';
+                      });
+                    },
+                  ),
+                  ActionChip(
+                    label: const Text('Dubai'),
+                    onPressed: () {
+                      setState(() {
+                        selectedArea = 'Dubai';
+                      });
+                    },
+                  ),
+                  ActionChip(
+                    label: const Text('Clear Filters'),
+                    onPressed: () {
+                      setState(() {
+                        selectedArea = null;
+                        selectedType = null;
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: TextField(
+                onChanged: (value) {
+                  setState(() {
+                    _query = value;
+                  });
+                },
+                decoration: InputDecoration(
+                  hintText: 'Search...',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  filled: true,
+                  fillColor: const Color(0xffF1F5F9),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                itemCount: filtered.length,
+                itemBuilder: (context, index) {
+                  final branch = filtered[index];
+
+                  final name = branch['branch_name'].toString();
+
+                  final area = (branch['area'] ?? '').toString();
+
+                  final type = (branch['branch_type'] ?? '').toString();
+
+                  final checked = _selected.contains(name);
+
+                  return CheckboxListTile(
+                    value: checked,
+                    activeColor: widget.color,
+                    title: Text(
+                      name,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: Text('$area • $type'),
+                    onChanged: (_) {
+                      setState(() {
+                        checked ? _selected.remove(name) : _selected.add(name);
+                      });
+                    },
+                  );
+                },
+              ),
+            ),
+
             Padding(
               padding: const EdgeInsets.all(18),
               child: SizedBox(

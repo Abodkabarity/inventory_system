@@ -1013,7 +1013,7 @@ class InventoryRepositoryImpl implements InventoryRepository {
   }
 
   @override
-  Future<List<String>> fetchAllocationBranches() {
+  Future<List<Map<String, dynamic>>> fetchAllocationBranches() {
     return remote.fetchAllocationBranches();
   }
 

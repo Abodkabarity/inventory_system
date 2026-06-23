@@ -427,17 +427,18 @@ item_minimum_order_unit, barcode, store_item_classifications
     return all;
   }
 
-  Future<List<String>> fetchAllocationBranches() async {
+  Future<List<Map<String, dynamic>>> fetchAllocationBranches() async {
     final res = await client
         .from('branches')
-        .select('branch_name')
+        .select('''
+        branch_name,
+        area,
+        branch_type
+      ''')
         .eq('is_active', true)
         .order('branch_name');
 
-    return List<Map<String, dynamic>>.from(res)
-        .map((e) => (e['branch_name'] ?? '').toString())
-        .where((e) => e.trim().isNotEmpty)
-        .toList();
+    return List<Map<String, dynamic>>.from(res);
   }
 
   Future<List<String>> fetchAllocationCategories(String runDate) async {

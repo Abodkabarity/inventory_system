@@ -167,7 +167,7 @@ abstract class InventoryRepository {
     required int to,
     String query = '',
   });
-  Future<List<String>> fetchAllocationBranches();
+  Future<List<Map<String, dynamic>>> fetchAllocationBranches();
   Future<List<String>> fetchAllocationCategories(String runDate);
   Future<List<String>> fetchAllocationItemStatuses(String runDate);
   Future<List<AllocationSourceRow>> fetchAllocationSourceRows({
