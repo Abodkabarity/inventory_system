@@ -1209,7 +1209,9 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     Emitter<InventoryState> emit,
   ) async {
     try {
-      emit(state.copyWith(allocationError: ''));
+      emit(
+        state.copyWith(isAllocationFiltersLoading: true, allocationError: ''),
+      );
 
       final branches = await repo.fetchAllocationBranches();
       final categories = await repo.fetchAllocationCategories(event.runDate);
@@ -1222,10 +1224,16 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           allocationBranches: branches,
           allocationCategories: categories,
           allocationItemStatuses: itemStatuses,
+          isAllocationFiltersLoading: false,
         ),
       );
     } catch (e) {
-      emit(state.copyWith(allocationError: e.toString()));
+      emit(
+        state.copyWith(
+          allocationError: e.toString(),
+          isAllocationFiltersLoading: false,
+        ),
+      );
     }
   }
 

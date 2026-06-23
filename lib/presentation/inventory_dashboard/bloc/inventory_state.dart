@@ -159,10 +159,11 @@ class InventoryState extends Equatable {
   final bool? bulkSuccess;
 
   final bool isLoading;
+  final bool isAllocationFiltersLoading;
   final bool isAllocationLoading;
   final int allocationLoadedRows;
   final String allocationError;
-  List<Map<String, dynamic>> allocationBranches;
+  final List<Map<String, dynamic>> allocationBranches;
   final List<String> allocationCategories;
   final List<String> allocationItemStatuses;
   final List<AllocationResultRow> allocationResults;
@@ -242,6 +243,7 @@ class InventoryState extends Equatable {
     this.bulkMessage,
     this.bulkSuccess,
     required this.isLoading,
+    required this.isAllocationFiltersLoading,
     required this.isAllocationLoading,
     required this.allocationLoadedRows,
     required this.allocationError,
@@ -354,6 +356,7 @@ class InventoryState extends Equatable {
       bulkMessage: null,
       bulkSuccess: null,
       isLoading: false,
+      isAllocationFiltersLoading: false,
       isAllocationLoading: false,
       allocationLoadedRows: 0,
       allocationError: '',
@@ -448,6 +451,7 @@ class InventoryState extends Equatable {
     String? bulkMessage,
     bool? bulkSuccess,
     bool? isLoading,
+    bool? isAllocationFiltersLoading,
     bool? isAllocationLoading,
     int? allocationLoadedRows,
     String? allocationError,
@@ -549,6 +553,8 @@ class InventoryState extends Equatable {
       bulkMessage: bulkMessage ?? this.bulkMessage,
       bulkSuccess: bulkSuccess ?? this.bulkSuccess,
       isLoading: isLoading ?? this.isLoading,
+      isAllocationFiltersLoading:
+          isAllocationFiltersLoading ?? this.isAllocationFiltersLoading,
       isAllocationLoading: isAllocationLoading ?? this.isAllocationLoading,
       allocationLoadedRows: allocationLoadedRows ?? this.allocationLoadedRows,
       allocationError: allocationError ?? this.allocationError,
@@ -645,6 +651,7 @@ class InventoryState extends Equatable {
     bulkMessage,
     bulkSuccess,
     isLoading,
+    isAllocationFiltersLoading,
     isAllocationLoading,
     allocationLoadedRows,
     allocationError,

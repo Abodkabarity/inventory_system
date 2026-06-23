@@ -69,7 +69,9 @@ class _AllocationPageState extends State<AllocationPage> {
   Widget build(BuildContext context) {
     return BlocBuilder<InventoryBloc, InventoryState>(
       builder: (context, state) {
-        _selectDefaults(state);
+        if (!state.isAllocationFiltersLoading) {
+          _selectDefaults(state);
+        }
         final visibleResults = _filterResults(state.allocationResults);
 
         return Container(
@@ -93,17 +95,20 @@ class _AllocationPageState extends State<AllocationPage> {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(28, 18, 28, 28),
                   children: [
-                    _FiltersCard(
-                      branches: state.allocationBranches,
-                      categories: state.allocationCategories,
-                      itemStatuses: state.allocationItemStatuses,
-                      donorBranches: _donorBranches,
-                      receiverBranches: _receiverBranches,
-                      priorityBranches: _priorityBranches,
-                      selectedCategories: _categories,
-                      selectedItemStatuses: _itemStatuses,
-                      onChanged: () => setState(() {}),
-                    ),
+                    if (state.isAllocationFiltersLoading)
+                      const _AllocationFiltersLoadingCard()
+                    else
+                      _FiltersCard(
+                        branches: state.allocationBranches,
+                        categories: state.allocationCategories,
+                        itemStatuses: state.allocationItemStatuses,
+                        donorBranches: _donorBranches,
+                        receiverBranches: _receiverBranches,
+                        priorityBranches: _priorityBranches,
+                        selectedCategories: _categories,
+                        selectedItemStatuses: _itemStatuses,
+                        onChanged: () => setState(() {}),
+                      ),
                     const SizedBox(height: 18),
                     if (state.allocationError.isNotEmpty)
                       _ErrorBanner(message: state.allocationError),
@@ -512,12 +517,166 @@ class _FiltersCard extends StatelessWidget {
   }
 }
 
+class _AllocationFiltersLoadingCard extends StatelessWidget {
+  const _AllocationFiltersLoadingCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xffE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .05),
+            blurRadius: 22,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: const Color(0xff0EA5E9).withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: const Center(
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.6,
+                      color: Color(0xff0EA5E9),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Loading allocation filters',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xff0F172A),
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Fetching branches, categories, and item status options...',
+                      style: TextStyle(color: Color(0xff64748B), fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: const [
+              Expanded(child: _LoadingPill()),
+              SizedBox(width: 14),
+              Expanded(child: _LoadingPill()),
+              SizedBox(width: 14),
+              Expanded(child: _LoadingPill()),
+              SizedBox(width: 14),
+              Expanded(child: _LoadingPill()),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadingPill extends StatelessWidget {
+  const _LoadingPill();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 72,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xffF8FAFC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xffE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: const Color(0xffE2E8F0),
+              borderRadius: BorderRadius.circular(13),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  height: 10,
+                  width: 110,
+                  decoration: BoxDecoration(
+                    color: const Color(0xffE2E8F0),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  height: 8,
+                  width: 150,
+                  decoration: BoxDecoration(
+                    color: const Color(0xffEEF2F7),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class BranchFilter {
   final String? area;
   final String? branchType;
 
   const BranchFilter({this.area, this.branchType});
 }
+
+String _branchName(Map<String, dynamic> branch) {
+  return (branch['branch_name'] ?? '').toString().trim();
+}
+
+String _branchArea(Map<String, dynamic> branch) {
+  return (branch['area'] ?? '').toString().trim();
+}
+
+String _branchType(Map<String, dynamic> branch) {
+  return (branch['branch_type'] ?? branch['brancy_type'] ?? '')
+      .toString()
+      .trim();
+}
+
+String _branchKey(String value) => value.trim().toLowerCase();
 
 class _SelectBox extends StatelessWidget {
   final String title;
@@ -701,7 +860,7 @@ class _MultiSelectDialogState extends State<_MultiSelectDialog> {
               child: TextField(
                 onChanged: (value) => setState(() => _query = value),
                 decoration: InputDecoration(
-                  hintText: 'Search...',
+                  hintText: 'Search branch, area, or type...',
                   prefixIcon: const Icon(Icons.search_rounded),
                   filled: true,
                   fillColor: const Color(0xffF1F5F9),
@@ -892,77 +1051,93 @@ class _BranchMultiSelectDialogState extends State<_BranchMultiSelectDialog> {
 
   String _query = '';
 
-  String? selectedArea;
-  String? selectedType;
-
   @override
   Widget build(BuildContext context) {
-    final filtered = widget.options.where((branch) {
-      final name = (branch['branch_name'] ?? '').toString();
+    final sortedOptions = [...widget.options]
+      ..sort((a, b) => _branchName(a).compareTo(_branchName(b)));
+    final query = _branchKey(_query);
+    final filtered = sortedOptions.where((branch) {
+      if (query.isEmpty) return true;
+      final searchable = [
+        _branchName(branch),
+        _branchArea(branch),
+        _branchType(branch),
+      ].join(' ').toLowerCase();
 
-      final area = (branch['area'] ?? '').toString();
-
-      final type = (branch['branch_type'] ?? '').toString();
-
-      if (_query.isNotEmpty &&
-          !name.toLowerCase().contains(_query.toLowerCase())) {
-        return false;
-      }
-
-      if (selectedArea != null && area != selectedArea) {
-        return false;
-      }
-
-      if (selectedType != null && type != selectedType) {
-        return false;
-      }
-
-      return true;
+      return searchable.contains(query);
     }).toList();
+    final selectedPreview = _selected.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
 
     return Dialog(
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
       child: SizedBox(
-        width: 620,
+        width: 920,
         height: 720,
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(22, 20, 16, 14),
+              padding: const EdgeInsets.fromLTRB(24, 22, 18, 16),
               child: Row(
                 children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: widget.color.withValues(alpha: .12),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(Icons.hub_rounded, color: widget.color),
+                  ),
+                  const SizedBox(width: 12),
                   Expanded(
-                    child: Text(
-                      widget.title,
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.title,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xff0F172A),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${_selected.length} selected from ${sortedOptions.length} branches',
+                          style: const TextStyle(
+                            color: Color(0xff64748B),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  TextButton(
+                  _TinyActionButton(
+                    label: 'All',
                     onPressed: () {
                       setState(() {
                         _selected
                           ..clear()
                           ..addAll(
-                            widget.options.map(
-                              (e) => e['branch_name'].toString(),
-                            ),
+                            sortedOptions
+                                .map(_branchName)
+                                .where((e) => e.isNotEmpty),
                           );
                       });
                     },
-                    child: const Text('Select All'),
                   ),
-                  TextButton(
-                    onPressed: () {
-                      setState(() {
-                        _selected.clear();
-                      });
-                    },
-                    child: const Text('Clear'),
+                  const SizedBox(width: 8),
+                  _TinyActionButton(
+                    label: 'Clear',
+                    onPressed: () => setState(_selected.clear),
+                    foreground: const Color(0xffEF4444),
+                    background: const Color(0xffFEF2F2),
+                    border: const Color(0xffFECACA),
                   ),
+                  const SizedBox(width: 8),
                   IconButton(
                     onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.close_rounded),
@@ -973,59 +1148,113 @@ class _BranchMultiSelectDialogState extends State<_BranchMultiSelectDialog> {
 
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ActionChip(
-                    label: const Text('Online'),
-                    onPressed: () {
-                      setState(() {
-                        selectedType = 'Online';
-                      });
-                    },
+                  const Row(
+                    children: [
+                      Icon(
+                        Icons.auto_awesome_rounded,
+                        color: Color(0xff0EA5E9),
+                        size: 18,
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        'Quick select by area and branch type',
+                        style: TextStyle(
+                          color: Color(0xff0F172A),
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
                   ),
-                  ActionChip(
-                    label: const Text('Retail'),
-                    onPressed: () {
-                      setState(() {
-                        selectedType = 'Retail';
-                      });
-                    },
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _GroupChip(
+                        label: 'Online Branches',
+                        color: const Color(0xff2563EB),
+                        onPressed: () => _selectBranchGroup(type: 'Online'),
+                      ),
+                      _GroupChip(
+                        label: 'Retail Branches',
+                        color: const Color(0xff16A34A),
+                        onPressed: () => _selectBranchGroup(type: 'Retail'),
+                      ),
+                      _GroupChip(
+                        label: 'Al Ain Branches',
+                        color: const Color(0xffF59E0B),
+                        onPressed: () => _selectBranchGroup(area: 'Al Ain'),
+                      ),
+                      _GroupChip(
+                        label: 'Abu Dhabi Branches',
+                        color: const Color(0xffF59E0B),
+                        onPressed: () => _selectBranchGroup(area: 'Abu Dhabi'),
+                      ),
+                      _GroupChip(
+                        label: 'Dubai Branches',
+                        color: const Color(0xffF59E0B),
+                        onPressed: () => _selectBranchGroup(area: 'Dubai'),
+                      ),
+                      _GroupChip(
+                        label: 'Online Abu Dhabi',
+                        color: const Color(0xff7C3AED),
+                        onPressed: () => _selectBranchGroup(
+                          type: 'Online',
+                          area: 'Abu Dhabi',
+                        ),
+                      ),
+                      _GroupChip(
+                        label: 'Online Al Ain',
+                        color: const Color(0xff7C3AED),
+                        onPressed: () =>
+                            _selectBranchGroup(type: 'Online', area: 'Al Ain'),
+                      ),
+                      _GroupChip(
+                        label: 'Retail Abu Dhabi',
+                        color: const Color(0xff0F766E),
+                        onPressed: () => _selectBranchGroup(
+                          type: 'Retail',
+                          area: 'Abu Dhabi',
+                        ),
+                      ),
+                      _GroupChip(
+                        label: 'Retail Dubai',
+                        color: const Color(0xff0F766E),
+                        onPressed: () =>
+                            _selectBranchGroup(type: 'Retail', area: 'Dubai'),
+                      ),
+                      _GroupChip(
+                        label: 'All Branches',
+                        color: const Color(0xff0EA5E9),
+                        onPressed: () {
+                          setState(() {
+                            _selected
+                              ..clear()
+                              ..addAll(
+                                widget.options
+                                    .map(_branchName)
+                                    .where((e) => e.isNotEmpty),
+                              );
+                          });
+                        },
+                      ),
+                    ],
                   ),
-                  ActionChip(
-                    label: const Text('Al Ain'),
-                    onPressed: () {
-                      setState(() {
-                        selectedArea = 'Al Ain';
-                      });
-                    },
-                  ),
-                  ActionChip(
-                    label: const Text('Abu Dhabi'),
-                    onPressed: () {
-                      setState(() {
-                        selectedArea = 'Abu Dhabi';
-                      });
-                    },
-                  ),
-                  ActionChip(
-                    label: const Text('Dubai'),
-                    onPressed: () {
-                      setState(() {
-                        selectedArea = 'Dubai';
-                      });
-                    },
-                  ),
-                  ActionChip(
-                    label: const Text('Clear Filters'),
-                    onPressed: () {
-                      setState(() {
-                        selectedArea = null;
-                        selectedType = null;
-                      });
-                    },
-                  ),
+                  if (_selected.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _SelectedBranchesPreview(
+                      selected: selectedPreview,
+                      color: widget.color,
+                      onRemove: (branch) {
+                        setState(() {
+                          _selected.remove(branch);
+                        });
+                      },
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1041,7 +1270,7 @@ class _BranchMultiSelectDialogState extends State<_BranchMultiSelectDialog> {
                   });
                 },
                 decoration: InputDecoration(
-                  hintText: 'Search...',
+                  hintText: 'Search branch, area, or type...',
                   prefixIcon: const Icon(Icons.search_rounded),
                   filled: true,
                   fillColor: const Color(0xffF1F5F9),
@@ -1062,11 +1291,11 @@ class _BranchMultiSelectDialogState extends State<_BranchMultiSelectDialog> {
                 itemBuilder: (context, index) {
                   final branch = filtered[index];
 
-                  final name = branch['branch_name'].toString();
+                  final name = _branchName(branch);
 
-                  final area = (branch['area'] ?? '').toString();
+                  final area = _branchArea(branch);
 
-                  final type = (branch['branch_type'] ?? '').toString();
+                  final type = _branchType(branch);
 
                   final checked = _selected.contains(name);
 
@@ -1077,7 +1306,12 @@ class _BranchMultiSelectDialogState extends State<_BranchMultiSelectDialog> {
                       name,
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
-                    subtitle: Text('$area • $type'),
+                    subtitle: Text(
+                      [
+                        if (area.isNotEmpty) area,
+                        if (type.isNotEmpty) type,
+                      ].join(' - '),
+                    ),
                     onChanged: (_) {
                       setState(() {
                         checked ? _selected.remove(name) : _selected.add(name);
@@ -1109,6 +1343,166 @@ class _BranchMultiSelectDialogState extends State<_BranchMultiSelectDialog> {
           ],
         ),
       ),
+    );
+  }
+
+  void _selectBranchGroup({String? area, String? type}) {
+    final selected = widget.options
+        .where((branch) {
+          final areaOk =
+              area == null ||
+              _branchKey(_branchArea(branch)).contains(_branchKey(area));
+          final typeOk =
+              type == null ||
+              _branchKey(_branchType(branch)).contains(_branchKey(type));
+          return areaOk && typeOk;
+        })
+        .map(_branchName)
+        .where((e) => e.isNotEmpty);
+
+    setState(() => _selected.addAll(selected));
+  }
+}
+
+class _SelectedBranchesPreview extends StatelessWidget {
+  final List<String> selected;
+  final Color color;
+  final ValueChanged<String> onRemove;
+
+  const _SelectedBranchesPreview({
+    required this.selected,
+    required this.color,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = selected.take(12).toList();
+    final remaining = selected.length - visible.length;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .06),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: .18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.done_all_rounded, color: color, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                'Selected branches (${selected.length})',
+                style: const TextStyle(
+                  color: Color(0xff0F172A),
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ...visible.map(
+                (branch) => InputChip(
+                  label: Text(branch),
+                  onDeleted: () => onRemove(branch),
+                  deleteIcon: const Icon(Icons.close_rounded, size: 16),
+                  labelStyle: TextStyle(
+                    color: color,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                  backgroundColor: Colors.white,
+                  side: BorderSide(color: color.withValues(alpha: .25)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+              if (remaining > 0)
+                Chip(
+                  label: Text('+$remaining more'),
+                  labelStyle: const TextStyle(
+                    color: Color(0xff64748B),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                  backgroundColor: const Color(0xffF8FAFC),
+                  side: const BorderSide(color: Color(0xffE2E8F0)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TinyActionButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onPressed;
+  final Color foreground;
+  final Color background;
+  final Color border;
+
+  const _TinyActionButton({
+    required this.label,
+    required this.onPressed,
+    this.foreground = const Color(0xff2563EB),
+    this.background = const Color(0xffEFF6FF),
+    this.border = const Color(0xffBFDBFE),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        foregroundColor: foreground,
+        backgroundColor: background,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: border),
+        ),
+      ),
+      child: Text(label, style: const TextStyle(fontWeight: FontWeight.w900)),
+    );
+  }
+}
+
+class _GroupChip extends StatelessWidget {
+  final String label;
+  final Color color;
+  final VoidCallback onPressed;
+
+  const _GroupChip({
+    required this.label,
+    required this.color,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ActionChip(
+      label: Text(label),
+      avatar: Icon(Icons.checklist_rounded, size: 18, color: color),
+      onPressed: onPressed,
+      labelStyle: TextStyle(color: color, fontWeight: FontWeight.w900),
+      backgroundColor: color.withValues(alpha: .08),
+      side: BorderSide(color: color.withValues(alpha: .24)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
     );
   }
 }

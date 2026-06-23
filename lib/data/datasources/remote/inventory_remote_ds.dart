@@ -428,17 +428,35 @@ item_minimum_order_unit, barcode, store_item_classifications
   }
 
   Future<List<Map<String, dynamic>>> fetchAllocationBranches() async {
-    final res = await client
-        .from('branches')
-        .select('''
+    try {
+      final res = await client
+          .from('branches')
+          .select('''
         branch_name,
         area,
         branch_type
       ''')
-        .eq('is_active', true)
-        .order('branch_name');
+          .eq('is_active', true)
+          .order('branch_name');
 
-    return List<Map<String, dynamic>>.from(res);
+      return List<Map<String, dynamic>>.from(res);
+    } on PostgrestException catch (e) {
+      if (e.code != '42703' && !e.message.contains('brancy_type')) rethrow;
+
+      final res = await client
+          .from('branches')
+          .select('''
+        branch_name,
+        area,
+        brancy_type
+      ''')
+          .eq('is_active', true)
+          .order('branch_name');
+
+      return List<Map<String, dynamic>>.from(res).map((row) {
+        return {...row, 'branch_type': row['brancy_type']};
+      }).toList();
+    }
   }
 
   Future<List<String>> fetchAllocationCategories(String runDate) async {
