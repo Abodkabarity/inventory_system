@@ -984,6 +984,8 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                               const OrdersExportPressed(),
                                             );
                                           },
+                                          showColumnsButton:
+                                              showFullOrderColumns,
                                           statusChip: null,
                                           actions: [
                                             OrdersToolbar.actionButton(

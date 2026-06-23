@@ -14,6 +14,7 @@ class OrdersToolbar extends StatefulWidget {
   final VoidCallback addMax;
   final VoidCallback onClearAll;
   final bool isOrderDay;
+  final bool showColumnsButton;
   final Widget? statusChip;
   final Widget? extraLeft;
   final List<Widget> actions;
@@ -31,6 +32,7 @@ class OrdersToolbar extends StatefulWidget {
     required this.addMismatch,
     required this.addMax,
     required this.isOrderDay,
+    this.showColumnsButton = true,
   });
 
   @override
@@ -277,7 +279,7 @@ class _OrdersToolbarState extends State<OrdersToolbar> {
                 // ==========================
                 // Columns
                 // ==========================
-                if (widget.isOrderDay)
+                if (widget.showColumnsButton)
                   SizedBox(
                     width: 175.w,
                     child: OutlinedButton.icon(
