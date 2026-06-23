@@ -597,6 +597,19 @@ total_sales_last_90_days,
     return all;
   }
 
+  Future<Set<String>> fetchMaxAdjZeroItemCodes({required String branch}) async {
+    final rows = await client
+        .from('max_adj')
+        .select('item_code')
+        .eq('branch_name', branch)
+        .eq('max_adjustment_30d', 0);
+
+    return rows
+        .map((row) => (row['item_code'] ?? '').toString().trim())
+        .where((code) => code.isNotEmpty)
+        .toSet();
+  }
+
   Future<void> insertMaxAdj(Map<String, dynamic> data) async {
     final branch = data['branch_name'];
     final itemCode = data['item_code'];

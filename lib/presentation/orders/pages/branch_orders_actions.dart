@@ -318,32 +318,9 @@ class BranchOrdersActions {
         num.tryParse(row.finalReorderQtyStoreStockGt0.toString())?.toInt() ?? 0;
 
     final edit = state.finalEdits[row.itemCode];
-    final alreadyEdited = state.finalEdits.containsKey(row.itemCode);
-
-    final limitReached = state.finalEdits.length >= state.orderEditLimit;
     final initialQty = edit?.newQty ?? oldQty;
     final compareQty = edit?.newQty ?? oldQty;
     final initialReason = edit?.reason ?? '';
-    if (!alreadyEdited && limitReached) {
-      await showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('Edit Limit Reached'),
-          content: Text(
-            'Maximum edited products allowed: '
-            '${state.orderEditLimit}',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
-      );
-
-      return;
-    }
     final bloc = context.read<OrdersBloc>();
 
     final availableStock = await bloc.repo.fetchLiveAvailableStock(
@@ -352,9 +329,9 @@ class BranchOrdersActions {
       branchName: state.branchName,
     );
 
-    final liveRow = row.copyWith(
-      totalReorderToday: row.storeStock.toInt() - availableStock.toInt(),
-    );
+    final totalReorderToday = row.storeStock.toInt() - availableStock.toInt();
+
+    final liveRow = row.copyWith(totalReorderToday: totalReorderToday);
     await showGeneralDialog(
       context: context,
       barrierDismissible: true,
@@ -374,6 +351,34 @@ class BranchOrdersActions {
             onClose: () => navigator.pop(),
             onSave: (newQty, reason, applyMaxAdj) async {
               final bloc = context.read<OrdersBloc>();
+              final latestState = bloc.state;
+              final latestEdit = latestState.finalEdits[row.itemCode];
+              final isIncrease = newQty > oldQty;
+              final wasIncrease =
+                  latestEdit != null && latestEdit.newQty > latestEdit.oldQty;
+              final increaseLimitReached =
+                  latestState.increasedEditsCount >= latestState.orderEditLimit;
+
+              if (isIncrease && !wasIncrease && increaseLimitReached) {
+                await showDialog(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    title: const Text('Increase Limit Reached'),
+                    content: Text(
+                      'Maximum increased products allowed: '
+                      '${latestState.orderEditLimit}.\n\n'
+                      'You can still decrease quantities without using this limit.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('OK'),
+                      ),
+                    ],
+                  ),
+                );
+                return;
+              }
 
               if (newQty == oldQty) {
                 await bloc.repo.deleteFinalReorderDraft(

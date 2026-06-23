@@ -205,6 +205,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
           );
         },
       );
+      final maxAdjZeroItemCodes = await repo.fetchMaxAdjZeroItemCodes(
+        branch: state.branchName,
+      );
       final drafts = await repo.fetchFinalReorderDrafts(
         runDate: state.runDate,
         branchName: state.branchName,
@@ -474,6 +477,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         isSubmitted: submissionStatus == 'submitted',
         isOrderWindowClosed: isOrderWindowClosed,
         sentAdditionalQtyByItemCode: sentAdditional,
+        maxAdjZeroItemCodes: maxAdjZeroItemCodes,
       );
 
       print('🎯 View rows: ${view.length}');
@@ -515,6 +519,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
           orderLoadedOnce: true,
           loadedOperationalDate: state.runDate,
           viewRows: view,
+          maxAdjZeroItemCodes: maxAdjZeroItemCodes,
           isOrderDay: isOrderDay,
           isMissingOrder: isMissingOrder,
           nextOrderDate: nextOrderDate,
@@ -805,7 +810,10 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     required bool isOrderWindowClosed,
     required Map<String, AdditionalRequestEdit> additionalEdits,
     required Map<String, num> sentAdditionalQtyByItemCode,
+    Set<String>? maxAdjZeroItemCodes,
   }) {
+    final zeroMaxAdjCodes = maxAdjZeroItemCodes ?? state.maxAdjZeroItemCodes;
+
     bool matchCategory(DailyOrderRow r) {
       if (categoryFilter == 'ALL') return true;
       final cat = (r.category ?? '').toString().trim();
@@ -820,9 +828,8 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
 
     bool matchNonWithSales45(DailyOrderRow r) {
       if (!nonWithSales45Only) return true;
-      final f = (r.branchFormulary ?? '').toString().trim().toUpperCase();
       final sales45 = _toNum(r.qty30DaysFromLast45d);
-      return f == 'NON' && sales45 > 0;
+      return zeroMaxAdjCodes.contains(r.itemCode) && sales45 > 0;
     }
 
     bool matchNumericFinalOnly(DailyOrderRow r) {

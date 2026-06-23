@@ -26,6 +26,11 @@ class OrdersRepositoryImpl implements OrdersRepository {
   }
 
   @override
+  Future<Set<String>> fetchMaxAdjZeroItemCodes({required String branch}) {
+    return remote.fetchMaxAdjZeroItemCodes(branch: branch);
+  }
+
+  @override
   Future<String?> fetchHistoryFileUrl({
     required String branchName,
     required String runDate,

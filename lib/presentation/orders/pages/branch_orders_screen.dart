@@ -355,7 +355,10 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
       builder: (context, s) {
         final isBusy = s.isBusy;
 
-        final visibleStats = BranchOrdersSelectors.calcStats(s.viewRows);
+        final visibleStats = BranchOrdersSelectors.calcStats(
+          s.viewRows,
+          maxAdjZeroItemCodes: s.maxAdjZeroItemCodes,
+        );
         final categories = BranchOrdersSelectors.extractCategories(s.rows);
         final useLimitedStockMode =
             !s.isSubmitted &&
@@ -661,7 +664,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                 const SizedBox(width: 10),
 
                                 _EditLimitChip(
-                                  used: s.finalEdits.length,
+                                  used: s.increasedEditsCount,
                                   limit: s.orderEditLimit,
                                 ),
 
@@ -871,7 +874,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                         SizedBox(
                                           width: cardWidth,
                                           child: _KpiCard(
-                                            title: 'Non',
+                                            title: 'Max = 0',
                                             value: '${visibleStats.non}',
                                             subtitle: '',
                                             icon: Icons.layers_outlined,
@@ -1757,8 +1760,6 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                               submitStartHour:
                                                   s.submitStartHour,
                                               submitEndHour: s.submitEndHour,
-                                              orderEditLimit: s.orderEditLimit,
-
                                               onTapFinalReorder: (row) {
                                                 final locked =
                                                     s.isSubmitted ||
@@ -2453,8 +2454,8 @@ class _FiltersBar extends StatelessWidget {
               SizedBox(
                 width: itemWidth,
                 child: _SwitchTile(
-                  title: 'NON + Sales (45d)',
-                  subtitle: 'Show NON items with sales > 0',
+                  title: 'Max 0 + Sales (45d)',
+                  subtitle: 'Show Max Adj = 0 with sales > 0',
                   value: nonWithSales45Only,
                   onChanged: onNonWithSales45Changed,
                 ),

@@ -46,7 +46,10 @@ class BranchOrdersSelectors {
     return num.tryParse(m.group(0) ?? '') ?? 0;
   }
 
-  static BranchStats calcStats(List<DailyOrderRow> rows) {
+  static BranchStats calcStats(
+    List<DailyOrderRow> rows, {
+    Set<String> maxAdjZeroItemCodes = const {},
+  }) {
     int essential = 0;
     int non = 0;
     int finalReorderCount = 0;
@@ -60,7 +63,7 @@ class BranchOrdersSelectors {
 
       final f = (row.branchFormulary ?? '').trim().toUpperCase();
       if (f == 'ESSENTIAL') essential++;
-      if (f == 'NON') non++;
+      if (maxAdjZeroItemCodes.contains(row.itemCode)) non++;
     }
 
     return BranchStats(

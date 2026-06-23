@@ -108,6 +108,8 @@ abstract class OrdersRepository {
 
   Future<List<Map<String, dynamic>>> fetchMaxAdj({required String branch});
 
+  Future<Set<String>> fetchMaxAdjZeroItemCodes({required String branch});
+
   Future<void> insertMaxAdj(Map<String, dynamic> data);
 
   Future<void> deleteMaxAdj(String id);

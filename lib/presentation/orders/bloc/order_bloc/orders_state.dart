@@ -222,6 +222,7 @@ class OrdersState extends Equatable {
   final Map<String, FinalReorderEdit> finalEdits;
   final List<Map<String, dynamic>> maxAdjItems;
   final bool isMaxAdjLoading;
+  final Set<String> maxAdjZeroItemCodes;
   // additional requests (local draft)
   final Map<String, AdditionalRequestEdit> additionalEdits;
   final num selectedItemDemand;
@@ -292,6 +293,7 @@ class OrdersState extends Equatable {
     required this.isMismatchLoading,
     required this.maxAdjItems,
     required this.isMaxAdjLoading,
+    required this.maxAdjZeroItemCodes,
     required this.maxAdjSearch,
     required this.isExporting,
     required this.isOrderDay,
@@ -461,6 +463,7 @@ class OrdersState extends Equatable {
       mismatchSearch: '',
       maxAdjItems: const [],
       isMaxAdjLoading: false,
+      maxAdjZeroItemCodes: const {},
       onlyBranchMaxAdj: true,
     );
   }
@@ -473,6 +476,9 @@ class OrdersState extends Equatable {
   bool get hasEdits => finalEdits.isNotEmpty;
 
   int get editsCount => finalEdits.length;
+
+  int get increasedEditsCount =>
+      finalEdits.values.where((e) => e.newQty > e.oldQty).length;
 
   bool get hasAdditional => additionalEdits.isNotEmpty;
 
@@ -565,6 +571,7 @@ class OrdersState extends Equatable {
     List<AdditionalRequestRow>? additionalTrackingRows,
     List<Map<String, dynamic>>? maxAdjItems,
     bool? isMaxAdjLoading,
+    Set<String>? maxAdjZeroItemCodes,
   }) {
     return OrdersState(
       status: status ?? this.status,
@@ -627,6 +634,7 @@ class OrdersState extends Equatable {
       isMismatchLoading: isMismatchLoading ?? this.isMismatchLoading,
       maxAdjItems: maxAdjItems ?? this.maxAdjItems,
       isMaxAdjLoading: isMaxAdjLoading ?? this.isMaxAdjLoading,
+      maxAdjZeroItemCodes: maxAdjZeroItemCodes ?? this.maxAdjZeroItemCodes,
       maxAdjSearch: maxAdjSearch ?? this.maxAdjSearch,
       isExporting: isExporting ?? this.isExporting,
       isOrderDay: isOrderDay ?? this.isOrderDay,
@@ -684,6 +692,7 @@ class OrdersState extends Equatable {
     isAddingItemToOrder,
     maxAdjItems,
     isMaxAdjLoading,
+    maxAdjZeroItemCodes,
     maxAdjSearch,
     isExporting,
     isOrderDay,
