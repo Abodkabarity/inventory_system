@@ -995,6 +995,14 @@ class InventoryRepositoryImpl implements InventoryRepository {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> fetchAdditionalOrderHistory({
+    required DateTime from,
+    required DateTime to,
+  }) {
+    return remote.fetchAdditionalOrderHistory(from: from, to: to);
+  }
+
+  @override
   Future<Map<String, dynamic>> fetchRequestEffectiveness({
     required DateTime from,
     required DateTime to,

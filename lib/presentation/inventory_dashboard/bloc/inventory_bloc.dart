@@ -63,6 +63,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     on<StoreApproveRequests>(_onStoreApprove);
     on<ApproveAllInventoryRequests>(_onApproveAllInventory);
     on<LoadAdditionalOrderAnalysis>(_onLoadAdditionalOrderAnalysis);
+    on<LoadAdditionalOrderHistory>(_onLoadAdditionalOrderHistory);
     on<ExportMaxAdjCurrent>(_onExportCurrent);
     on<ExportMaxAdjWithHistory>(_onExportWithHistory);
     on<ImportAssortmentExcel>(_onImportAssortment);
@@ -3183,6 +3184,30 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     }
   }
 
+  Future<void> _onLoadAdditionalOrderHistory(
+    LoadAdditionalOrderHistory event,
+    Emitter<InventoryState> emit,
+  ) async {
+    try {
+      emit(state.copyWith(isAdditionalHistoryLoading: true));
+
+      final rows = await repo.fetchAdditionalOrderHistory(
+        from: event.from,
+        to: event.to,
+      );
+
+      emit(
+        state.copyWith(
+          additionalOrderHistory: rows,
+          isAdditionalHistoryLoading: false,
+        ),
+      );
+    } catch (e) {
+      emit(state.copyWith(isAdditionalHistoryLoading: false));
+      print('LoadAdditionalOrderHistory error: $e');
+    }
+  }
+
   Future<void> _onLoadRequestEffectiveness(
     LoadRequestEffectiveness event,
     Emitter<InventoryState> emit,
@@ -3212,6 +3237,18 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     AdditionalRequestRealtimeUpdated event,
     Emitter<InventoryState> emit,
   ) async {
+    if (!_shouldDisplayAdditionalRealtimeRow(event.row)) {
+      final id = (event.row['id'] ?? '').toString();
+      if (id.isEmpty) return;
+
+      final updated = state.additionalRequests
+          .where((e) => e.groupId != id)
+          .toList();
+
+      _emitAdditionalRequests(emit, updated);
+      return;
+    }
+
     final item = _additionalFromRealtimeRow(event.row);
     final updated = _mergeAdditionalRequest(state.additionalRequests, item);
 
@@ -3222,6 +3259,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     AdditionalRequestInsertedRealtime event,
     Emitter<InventoryState> emit,
   ) async {
+    if (!_shouldDisplayAdditionalRealtimeRow(event.row)) return;
+
     final item = _additionalFromRealtimeRow(event.row);
     final updated = _mergeAdditionalRequest(state.additionalRequests, item);
     final branchCounts = _updatedBranchAdditionalCounts(
@@ -3344,6 +3383,33 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   static bool _isPendingAdditionalStatus(String status) {
     final value = status.toLowerCase().trim();
     return value == 'pending' || value == 'pending_inventory';
+  }
+
+  static bool _shouldDisplayAdditionalRealtimeRow(Map<String, dynamic> row) {
+    final status = (row['status'] ?? '').toString();
+    if (_isPendingAdditionalStatus(status)) return true;
+
+    final value = status.toLowerCase().trim();
+    final dates = <dynamic>[
+      if (value == 'sent_to_store' || value == 'rejected')
+        row['inventory_approved_at'],
+      if (value == 'done' || value == 'rejected') row['done_at'],
+      row['created_at'],
+    ];
+
+    final now = DateTime.now();
+    for (final raw in dates) {
+      final parsed = DateTime.tryParse((raw ?? '').toString())?.toLocal();
+      if (parsed == null) continue;
+
+      if (parsed.year == now.year &&
+          parsed.month == now.month &&
+          parsed.day == now.day) {
+        return true;
+      }
+    }
+
+    return false;
   }
 }
 

@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:intl/intl.dart';
 
 import '../bloc/inventory_bloc.dart';
 import '../bloc/inventory_event.dart';
@@ -41,6 +42,7 @@ class _AdditionalOrderAnalysisPageState
   static const _tabs = [
     _TabDef(Icons.bar_chart_rounded, 'Overview'),
     _TabDef(Icons.track_changes_rounded, 'Sales Performance'),
+    _TabDef(Icons.history_rounded, 'Additional Order History'),
   ];
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -55,6 +57,7 @@ class _AdditionalOrderAnalysisPageState
           setState(() => _tabIndex = _tabController.index);
           // Lazy-load effectiveness data on first visit to that tab
           if (_tabIndex == 1) _loadEffectiveness();
+          if (_tabIndex == 2) _loadHistory();
         }
       });
 
@@ -89,9 +92,16 @@ class _AdditionalOrderAnalysisPageState
     );
   }
 
+  void _loadHistory() {
+    context.read<InventoryBloc>().add(
+      LoadAdditionalOrderHistory(from: _from, to: _to),
+    );
+  }
+
   void _loadAll() {
     _loadOverview();
     if (_tabIndex == 1) _loadEffectiveness();
+    if (_tabIndex == 2) _loadHistory();
   }
 
   // ── Date picker ───────────────────────────────────────────────────────────
@@ -130,7 +140,7 @@ class _AdditionalOrderAnalysisPageState
   Widget build(BuildContext context) {
     return BlocListener<InventoryBloc, InventoryState>(
       listenWhen: (p, c) => p.additionalAnalysis != c.additionalAnalysis,
-      listener: (_, __) => setState(() => _isAnalysisLoading = false),
+      listener: (_, _) => setState(() => _isAnalysisLoading = false),
       child: Container(
         color: const Color(0xffF0F4F8),
         child: Column(
@@ -147,6 +157,7 @@ class _AdditionalOrderAnalysisPageState
 
                   // ── TAB 1: Effectiveness ─────────────────────────────────
                   RequestEffectivenessTab(from: _from, to: _to),
+                  _buildHistoryTab(),
                 ],
               ),
             ),
@@ -322,6 +333,493 @@ class _AdditionalOrderAnalysisPageState
         );
       },
     );
+  }
+
+  Widget _buildHistoryTab() {
+    return BlocBuilder<InventoryBloc, InventoryState>(
+      buildWhen: (p, c) =>
+          p.additionalOrderHistory != c.additionalOrderHistory ||
+          p.isAdditionalHistoryLoading != c.isAdditionalHistoryLoading,
+      builder: (context, state) {
+        if (state.isAdditionalHistoryLoading) {
+          return const Center(
+            child: CircularProgressIndicator(color: Color(0xff06B6D4)),
+          );
+        }
+
+        final rows = state.additionalOrderHistory;
+        if (rows.isEmpty) {
+          return Center(
+            child: Container(
+              width: 420,
+              padding: const EdgeInsets.all(28),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: const Color(0xffE2E8F0)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 22,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 58,
+                    height: 58,
+                    decoration: BoxDecoration(
+                      color: const Color(0xffE0F2FE),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: const Icon(
+                      Icons.history_rounded,
+                      color: Color(0xff0284C7),
+                      size: 30,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'No additional orders found',
+                    style: TextStyle(
+                      color: Color(0xff1E293B),
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Choose another date range or refresh the current period.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Color(0xff64748B), fontSize: 13),
+                  ),
+                  const SizedBox(height: 16),
+                  TextButton.icon(
+                    onPressed: _loadHistory,
+                    icon: const Icon(Icons.refresh, color: Color(0xff06B6D4)),
+                    label: const Text(
+                      'Reload History',
+                      style: TextStyle(color: Color(0xff06B6D4)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        final pending = rows.where((e) {
+          final status = _historyStatus(e);
+          return status == 'pending' || status == 'pending_inventory';
+        }).length;
+        final sent = rows
+            .where((e) => _historyStatus(e) == 'sent_to_store')
+            .length;
+        final done = rows.where((e) => _historyStatus(e) == 'done').length;
+        final rejected = rows
+            .where((e) => _historyStatus(e) == 'rejected')
+            .length;
+        final totalQty = rows.fold<num>(
+          0,
+          (sum, row) => sum + _historyNum(row['request_qty']),
+        );
+
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildHistoryMetric(
+                      title: 'Total Requests',
+                      value: '${rows.length}',
+                      icon: Icons.receipt_long_rounded,
+                      color: const Color(0xff06B6D4),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: _buildHistoryMetric(
+                      title: 'Pending',
+                      value: '$pending',
+                      icon: Icons.hourglass_top_rounded,
+                      color: const Color(0xffF59E0B),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: _buildHistoryMetric(
+                      title: 'Sent To Store',
+                      value: '$sent',
+                      icon: Icons.local_shipping_rounded,
+                      color: const Color(0xff3B82F6),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: _buildHistoryMetric(
+                      title: 'Done / Rejected',
+                      value: '${done + rejected}',
+                      icon: Icons.fact_check_rounded,
+                      color: const Color(0xff10B981),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: _buildHistoryMetric(
+                      title: 'Total Qty',
+                      value: _numText(totalQty),
+                      icon: Icons.inventory_2_rounded,
+                      color: const Color(0xff8B5CF6),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Expanded(child: _buildHistoryTable(rows)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildHistoryMetric({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      height: 96,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xffE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.035),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xff64748B),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xff0F172A),
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistoryTable(List<Map<String, dynamic>> rows) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xffE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.035),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Container(
+            height: 54,
+            color: const Color(0xffF8FAFC),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                _historyHeader('#', 1),
+                _historyHeader('Status', 2),
+                _historyHeader('Branch', 3),
+                _historyHeader('Item', 5),
+                _historyHeader('Req', 1),
+                _historyHeader('Inventory', 2),
+                _historyHeader('Store', 2),
+                _historyHeader('Date & Time', 2),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView.separated(
+              itemCount: rows.length,
+              separatorBuilder: (_, _) =>
+                  const Divider(height: 1, color: Color(0xffE2E8F0)),
+              itemBuilder: (_, index) => _buildHistoryRow(rows[index], index),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _historyHeader(String text, int flex) {
+    return Expanded(
+      flex: flex,
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: Color(0xff64748B),
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHistoryRow(Map<String, dynamic> row, int index) {
+    final status = _historyStatus(row);
+    final inventoryNote = _historyText(row, 'inventory_note');
+    final storeNote = _historyText(row, 'store_note');
+    final note = inventoryNote.isNotEmpty ? inventoryNote : storeNote;
+
+    return Container(
+      color: index.isEven ? Colors.white : const Color(0xffF8FAFC),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 1,
+            child: Text(
+              '${index + 1}',
+              style: const TextStyle(color: Color(0xff475569), fontSize: 12),
+            ),
+          ),
+          Expanded(flex: 2, child: _historyStatusChip(status)),
+          Expanded(
+            flex: 3,
+            child: Text(
+              _historyText(row, 'branch_name'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xff0F172A),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 5,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _historyText(row, 'item_name'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xff0F172A),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  [
+                    _historyText(row, 'item_code'),
+                    if (note.isNotEmpty) note,
+                  ].join('  -  '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xff64748B),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _historyValue(_numText(row['request_qty']), 1),
+          _historyValue(_numText(row['inventory_qty']), 2),
+          _historyValue(_numText(row['fulfilled_qty']), 2),
+          _historyValue(_historyDate(row), 2),
+        ],
+      ),
+    );
+  }
+
+  Widget _historyValue(String value, int flex) {
+    return Expanded(
+      flex: flex,
+      child: Text(
+        value,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: Color(0xff334155),
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Widget _historyStatusChip(String status) {
+    final color = _historyStatusColor(status);
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: color.withValues(alpha: 0.28)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(_historyStatusIcon(status), size: 13, color: color),
+            const SizedBox(width: 5),
+            Text(
+              _historyStatusLabel(status),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _historyText(Map<String, dynamic> row, String key) {
+    return (row[key] ?? '').toString().trim();
+  }
+
+  String _historyStatus(Map<String, dynamic> row) {
+    return _historyText(row, 'status').toLowerCase();
+  }
+
+  num _historyNum(dynamic raw) {
+    if (raw is num) return raw;
+    return num.tryParse((raw ?? '').toString()) ?? 0;
+  }
+
+  String _numText(dynamic raw) {
+    if (raw == null || raw.toString().trim().isEmpty) return '-';
+    final value = _historyNum(raw);
+    if (value == value.roundToDouble()) return value.toInt().toString();
+    return value.toStringAsFixed(2);
+  }
+
+  String _historyDate(Map<String, dynamic> row) {
+    final status = _historyStatus(row);
+    final rawDates = <dynamic>[
+      if (status == 'done' || status == 'rejected') row['done_at'],
+      if (status == 'sent_to_store' || status == 'rejected')
+        row['inventory_approved_at'],
+      row['created_at'],
+    ];
+
+    for (final raw in rawDates) {
+      final parsed = DateTime.tryParse((raw ?? '').toString())?.toLocal();
+      if (parsed == null) continue;
+      return DateFormat('yyyy-MM-dd HH:mm').format(parsed);
+    }
+
+    return '-';
+  }
+
+  Color _historyStatusColor(String status) {
+    switch (status) {
+      case 'pending':
+      case 'pending_inventory':
+        return const Color(0xffF59E0B);
+      case 'sent_to_store':
+        return const Color(0xff3B82F6);
+      case 'done':
+        return const Color(0xff10B981);
+      case 'rejected':
+        return const Color(0xffEF4444);
+      default:
+        return const Color(0xff64748B);
+    }
+  }
+
+  IconData _historyStatusIcon(String status) {
+    switch (status) {
+      case 'pending':
+      case 'pending_inventory':
+        return Icons.schedule_rounded;
+      case 'sent_to_store':
+        return Icons.local_shipping_rounded;
+      case 'done':
+        return Icons.check_circle_rounded;
+      case 'rejected':
+        return Icons.cancel_rounded;
+      default:
+        return Icons.info_rounded;
+    }
+  }
+
+  String _historyStatusLabel(String status) {
+    switch (status) {
+      case 'pending':
+      case 'pending_inventory':
+        return 'PENDING';
+      case 'sent_to_store':
+        return 'SENT';
+      case 'done':
+        return 'DONE';
+      case 'rejected':
+        return 'REJECTED';
+      default:
+        return status.isEmpty ? 'UNKNOWN' : status.toUpperCase();
+    }
   }
 }
 

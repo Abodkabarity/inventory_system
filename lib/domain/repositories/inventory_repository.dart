@@ -157,6 +157,10 @@ abstract class InventoryRepository {
     required DateTime from,
     required DateTime to,
   });
+  Future<List<Map<String, dynamic>>> fetchAdditionalOrderHistory({
+    required DateTime from,
+    required DateTime to,
+  });
   Future<Map<String, dynamic>> fetchRequestEffectiveness({
     required DateTime from,
     required DateTime to,

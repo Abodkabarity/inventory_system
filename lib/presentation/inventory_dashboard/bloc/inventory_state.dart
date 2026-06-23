@@ -20,6 +20,8 @@ class InventoryState extends Equatable {
 
   final List<AdditionalRequestGroup> additionalRequests;
   final Map<String, dynamic> additionalAnalysis;
+  final List<Map<String, dynamic>> additionalOrderHistory;
+  final bool isAdditionalHistoryLoading;
   final Map<String, double> mismatchColumnWidths;
 
   final int submittedCount;
@@ -175,6 +177,8 @@ class InventoryState extends Equatable {
     required this.additionalMonthBranchCount,
     required this.additionalTodayBranchExactCount,
     required this.additionalRequests,
+    required this.additionalOrderHistory,
+    required this.isAdditionalHistoryLoading,
     required this.mismatchColumnWidths,
     required this.submittedCount,
     required this.isHistoryLoading,
@@ -270,6 +274,8 @@ class InventoryState extends Equatable {
       additionalMonthBranchCount: {},
       additionalTodayBranchExactCount: {},
       additionalRequests: [],
+      additionalOrderHistory: [],
+      isAdditionalHistoryLoading: false,
       mismatchColumnWidths: {
         'branch': 160,
         'code': 150,
@@ -374,6 +380,8 @@ class InventoryState extends Equatable {
     Map<String, int>? additionalMonthBranchCount,
     Map<String, int>? additionalTodayBranchExactCount,
     List<AdditionalRequestGroup>? additionalRequests,
+    List<Map<String, dynamic>>? additionalOrderHistory,
+    bool? isAdditionalHistoryLoading,
     Map<String, double>? mismatchColumnWidths,
     int? submittedCount,
     bool? isHistoryLoading,
@@ -470,6 +478,10 @@ class InventoryState extends Equatable {
           additionalTodayBranchExactCount ??
           this.additionalTodayBranchExactCount,
       additionalRequests: additionalRequests ?? this.additionalRequests,
+      additionalOrderHistory:
+          additionalOrderHistory ?? this.additionalOrderHistory,
+      isAdditionalHistoryLoading:
+          isAdditionalHistoryLoading ?? this.isAdditionalHistoryLoading,
       mismatchColumnWidths: mismatchColumnWidths ?? this.mismatchColumnWidths,
       submittedCount: submittedCount ?? this.submittedCount,
       isHistoryLoading: isHistoryLoading ?? this.isHistoryLoading,
@@ -574,6 +586,8 @@ class InventoryState extends Equatable {
     additionalMonthBranchCount,
     additionalTodayBranchExactCount,
     additionalRequests,
+    additionalOrderHistory,
+    isAdditionalHistoryLoading,
     mismatchColumnWidths,
     submittedCount,
     isHistoryLoading,

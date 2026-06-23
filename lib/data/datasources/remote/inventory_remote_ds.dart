@@ -6,6 +6,32 @@ class InventoryRemoteDs {
 
   InventoryRemoteDs(this.client);
 
+  static const String _additionalRequestColumns = '''
+        id,
+        request_group_id,
+        run_date,
+        created_at,
+        branch_name,
+        item_code,
+        item_name,
+        status,
+        request_qty,
+        fulfilled_qty,
+        store_note,
+        inventory_qty,
+        inventory_note,
+        inventory_approved_at,
+        done_at,
+        contact_logistic,
+
+        branch_stock,
+        store_stock,
+        sales_45d,
+        final_reorder_qty,
+        item_purchase_type,
+        max_type
+      ''';
+
   Future<List<String>> fetchBranchesToday([String? runDate]) async {
     final orderDate = DateTime.tryParse(runDate ?? '') ?? DateTime.now();
     final today = DateFormat('EEEE').format(orderDate);
@@ -87,31 +113,86 @@ class InventoryRemoteDs {
   /// ===============================
 
   Future<List<Map<String, dynamic>>> fetchAdditionalRequests() async {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day);
+    final end = start.add(const Duration(days: 1));
+
+    Future<List<Map<String, dynamic>>> query(
+      PostgrestFilterBuilder builder,
+    ) async {
+      final rows = await builder.order('created_at', ascending: false);
+      return List<Map<String, dynamic>>.from(rows);
+    }
+
+    final pendingRows = await query(
+      client
+          .from('additional_requests')
+          .select(_additionalRequestColumns)
+          .inFilter('status', ['pending', 'pending_inventory']),
+    );
+
+    final createdTodayRows = await query(
+      client
+          .from('additional_requests')
+          .select(_additionalRequestColumns)
+          .inFilter('status', ['sent_to_store', 'done', 'rejected'])
+          .gte('created_at', start.toIso8601String())
+          .lt('created_at', end.toIso8601String()),
+    );
+
+    final inventoryApprovedTodayRows = await query(
+      client
+          .from('additional_requests')
+          .select(_additionalRequestColumns)
+          .inFilter('status', ['sent_to_store', 'rejected'])
+          .gte('inventory_approved_at', start.toIso8601String())
+          .lt('inventory_approved_at', end.toIso8601String()),
+    );
+
+    final storeCompletedTodayRows = await query(
+      client
+          .from('additional_requests')
+          .select(_additionalRequestColumns)
+          .inFilter('status', ['done', 'rejected'])
+          .gte('done_at', start.toIso8601String())
+          .lt('done_at', end.toIso8601String()),
+    );
+
+    final byId = <String, Map<String, dynamic>>{};
+    for (final row in [
+      ...pendingRows,
+      ...createdTodayRows,
+      ...inventoryApprovedTodayRows,
+      ...storeCompletedTodayRows,
+    ]) {
+      final id = (row['id'] ?? '').toString();
+      if (id.isEmpty) continue;
+      byId[id] = row;
+    }
+
+    final rows = byId.values.toList()
+      ..sort((a, b) {
+        final ad =
+            DateTime.tryParse((a['created_at'] ?? '').toString()) ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        final bd =
+            DateTime.tryParse((b['created_at'] ?? '').toString()) ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        return bd.compareTo(ad);
+      });
+
+    return rows;
+  }
+
+  Future<List<Map<String, dynamic>>> fetchAdditionalOrderHistory({
+    required DateTime from,
+    required DateTime to,
+  }) async {
     final res = await client
         .from('additional_requests')
-        .select('''
-        id,
-        request_group_id,
-        run_date,
-        created_at,
-        branch_name,
-        item_code,
-        item_name,
-        status,
-        request_qty,
-        fulfilled_qty,
-        store_note,
-        inventory_qty,
-        inventory_note,
-        contact_logistic,
-
-        branch_stock,
-        store_stock,
-        sales_45d,
-        final_reorder_qty,
-        item_purchase_type,
-        max_type
-      ''')
+        .select(_additionalRequestColumns)
+        .gte('created_at', from.toIso8601String())
+        .lte('created_at', to.toIso8601String())
         .order('created_at', ascending: false);
 
     return List<Map<String, dynamic>>.from(res);
