@@ -9,4 +9,5 @@ enum InventoryPageType {
 
   additionalOrderAnalysis,
   branchesTracker,
+  allocation,
 }

@@ -9,6 +9,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/cache/daily_order_cache_service.dart';
+import '../../../core/utils/allocation_excel_exporter.dart';
 import '../../../core/utils/assortment_export.dart';
 import '../../../core/utils/formulary_export.dart';
 import '../../../core/utils/max_adj_export.dart';
@@ -16,6 +17,7 @@ import '../../../core/utils/mismatch_export.dart';
 import '../../../core/utils/tma_export.dart';
 import '../../../core/utils/web_notification.dart';
 import '../../../domain/entities/additional_request_group.dart';
+import '../../../domain/entities/allocation_result_row.dart';
 import '../../../domain/entities/daily_order_row.dart';
 import '../../../domain/entities/mismatch_item.dart';
 import '../../../domain/repositories/inventory_repository.dart';
@@ -71,6 +73,13 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     on<ImportTmaExcel>(_onImportTma);
     on<AdditionalRequestInsertedRealtime>(_onAdditionalInsertedRealtime);
     on<AdditionalRequestDeletedRealtime>(_onAdditionalDeletedRealtime);
+    on<LoadAllocationFilters>(_onLoadAllocationFilters);
+    on<RunAllocation>(_onRunAllocation);
+    on<ExportAllocationResults>(_onExportAllocationResults);
+    on<ImportAllocationFile>(_onImportAllocationFile);
+    on<AllocationProgressUpdated>((event, emit) {
+      emit(state.copyWith(allocationLoadedRows: event.loadedRows));
+    });
     on<ExportTmaTemplate>(_onExportTmaTemplate);
     on<ExportTmaCurrent>(_onExportTmaCurrent);
     on<ExportTmaWithHistory>(_onExportTmaHistory);
@@ -1109,6 +1118,255 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       emit(state.copyWith(isBulkLoading: false));
       print("Store Approve Error: $e");
     }
+  }
+
+  Future<void> _onLoadAllocationFilters(
+    LoadAllocationFilters event,
+    Emitter<InventoryState> emit,
+  ) async {
+    try {
+      emit(state.copyWith(allocationError: ''));
+
+      final branches = await repo.fetchAllocationBranches();
+      final categories = await repo.fetchAllocationCategories(event.runDate);
+      final itemStatuses = await repo.fetchAllocationItemStatuses(
+        event.runDate,
+      );
+
+      emit(
+        state.copyWith(
+          allocationBranches: branches,
+          allocationCategories: categories,
+          allocationItemStatuses: itemStatuses,
+        ),
+      );
+    } catch (e) {
+      emit(state.copyWith(allocationError: e.toString()));
+    }
+  }
+
+  Future<void> _onRunAllocation(
+    RunAllocation event,
+    Emitter<InventoryState> emit,
+  ) async {
+    try {
+      emit(
+        state.copyWith(
+          isAllocationLoading: true,
+          allocationLoadedRows: 0,
+          allocationError: '',
+          allocationResults: [],
+        ),
+      );
+
+      final results = await repo.fetchAllocationResults(
+        runDate: event.runDate,
+        donorBranches: event.donorBranches,
+        receiverBranches: event.receiverBranches,
+        priorityBranches: event.priorityBranches,
+        categories: event.categories,
+        itemStatuses: event.itemStatuses,
+      );
+
+      emit(
+        state.copyWith(
+          allocationResults: results,
+          isAllocationLoading: false,
+          allocationLoadedRows: results.length,
+        ),
+      );
+    } catch (e) {
+      emit(
+        state.copyWith(
+          isAllocationLoading: false,
+          allocationError: e.toString(),
+        ),
+      );
+    }
+  }
+
+  Future<void> _onExportAllocationResults(
+    ExportAllocationResults event,
+    Emitter<InventoryState> emit,
+  ) async {
+    if (state.allocationResults.isEmpty) return;
+    await AllocationExcelExporter.export(state.allocationResults);
+  }
+
+  Future<void> _onImportAllocationFile(
+    ImportAllocationFile event,
+    Emitter<InventoryState> emit,
+  ) async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['csv'],
+        withData: true,
+      );
+
+      if (result == null || result.files.single.bytes == null) return;
+
+      emit(
+        state.copyWith(
+          isAllocationLoading: true,
+          allocationError: '',
+          allocationResults: [],
+          allocationLoadedRows: 0,
+        ),
+      );
+
+      final bytes = result.files.single.bytes!;
+      String csvText;
+      try {
+        csvText = utf8.decode(bytes);
+      } catch (_) {
+        csvText = latin1.decode(bytes);
+      }
+
+      final rows = const CsvToListConverter().convert(csvText);
+      if (rows.length < 2) {
+        throw Exception('Allocation import file is empty.');
+      }
+
+      const branchCol = 0;
+      const codeCol = 1;
+      const nameCol = 2;
+      const extraCol = 3;
+      const reorderCol = 4;
+      const finalCol = 5;
+
+      final imported = <_AllocationImportRow>[];
+      for (final rawRow in rows.skip(1)) {
+        final row = List<dynamic>.from(rawRow);
+        String cell(int index) =>
+            index >= 0 && index < row.length ? row[index].toString() : '';
+
+        if (row.length < 6) continue;
+
+        final branch = cell(branchCol).trim();
+        final itemCode = cell(codeCol).trim();
+        if (branch.isEmpty || itemCode.isEmpty) continue;
+
+        final reorderQty = _allocationNum(cell(reorderCol));
+        final finalReorder = _allocationNum(cell(finalCol));
+        final extraQty = _allocationNum(cell(extraCol));
+
+        imported.add(
+          _AllocationImportRow(
+            branch: branch,
+            itemCode: itemCode,
+            itemName: cell(nameCol).trim(),
+            extraQty: extraQty,
+            shortage: (reorderQty - finalReorder).clamp(0, double.infinity),
+          ),
+        );
+      }
+
+      final results = _buildImportedAllocationResults(
+        rows: imported,
+        priorityBranches: event.priorityBranches,
+      );
+
+      emit(
+        state.copyWith(
+          isAllocationLoading: false,
+          allocationResults: results,
+          allocationLoadedRows: results.length,
+        ),
+      );
+    } catch (e) {
+      emit(
+        state.copyWith(
+          isAllocationLoading: false,
+          allocationError: e.toString(),
+        ),
+      );
+    }
+  }
+
+  List<AllocationResultRow> _buildImportedAllocationResults({
+    required List<_AllocationImportRow> rows,
+    required List<String> priorityBranches,
+  }) {
+    final byItem = <String, List<_AllocationImportRow>>{};
+    final prioritySet = priorityBranches.toSet();
+
+    for (final row in rows) {
+      byItem.putIfAbsent(row.itemCode, () => []).add(row);
+    }
+
+    final results = <AllocationResultRow>[];
+
+    for (final itemRows in byItem.values) {
+      final receivers = itemRows.where((row) => row.shortage > 0).toList()
+        ..sort((a, b) {
+          final pa = prioritySet.contains(a.branch) ? 0 : 1;
+          final pb = prioritySet.contains(b.branch) ? 0 : 1;
+          if (pa != pb) return pa.compareTo(pb);
+          final shortageCompare = b.shortage.compareTo(a.shortage);
+          if (shortageCompare != 0) return shortageCompare;
+          return a.branch.compareTo(b.branch);
+        });
+
+      final donors = itemRows.where((row) => row.extraQty > 0).toList()
+        ..sort((a, b) {
+          final extraCompare = b.extraQty.compareTo(a.extraQty);
+          if (extraCompare != 0) return extraCompare;
+          return a.branch.compareTo(b.branch);
+        });
+
+      final donorRemaining = <String, num>{
+        for (final donor in donors) donor.branch: donor.extraQty,
+      };
+
+      for (final receiver in receivers) {
+        var need = receiver.shortage;
+        if (need <= 0) continue;
+
+        for (final donor in donors) {
+          if (donor.branch == receiver.branch) continue;
+
+          final available = donorRemaining[donor.branch] ?? 0;
+          if (available <= 0) continue;
+
+          final qty = available >= need ? need : available;
+          if (qty <= 0) continue;
+
+          results.add(
+            AllocationResultRow(
+              fromBranch: donor.branch,
+              itemCode: receiver.itemCode,
+              itemName: receiver.itemName.isNotEmpty
+                  ? receiver.itemName
+                  : donor.itemName,
+              qty: qty,
+              toBranch: receiver.branch,
+              category: '',
+            ),
+          );
+
+          donorRemaining[donor.branch] = available - qty;
+          need -= qty;
+          if (need <= 0) break;
+        }
+      }
+    }
+
+    results.sort((a, b) {
+      final toCompare = a.toBranch.compareTo(b.toBranch);
+      if (toCompare != 0) return toCompare;
+      final codeCompare = a.itemCode.compareTo(b.itemCode);
+      if (codeCompare != 0) return codeCompare;
+      return a.fromBranch.compareTo(b.fromBranch);
+    });
+
+    return results;
+  }
+
+  num _allocationNum(String value) {
+    final cleaned = value.replaceAll(RegExp(r'[^0-9\.\-]'), '');
+    if (!RegExp(r'^-?[0-9]+(\.[0-9]+)?$').hasMatch(cleaned)) return 0;
+    return num.tryParse(cleaned) ?? 0;
   }
 
   Future<void> _onExportCurrent(
@@ -2995,4 +3253,20 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     final value = status.toLowerCase().trim();
     return value == 'pending' || value == 'pending_inventory';
   }
+}
+
+class _AllocationImportRow {
+  final String branch;
+  final String itemCode;
+  final String itemName;
+  final num extraQty;
+  final num shortage;
+
+  const _AllocationImportRow({
+    required this.branch,
+    required this.itemCode,
+    required this.itemName,
+    required this.extraQty,
+    required this.shortage,
+  });
 }

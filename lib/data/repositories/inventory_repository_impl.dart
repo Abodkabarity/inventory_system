@@ -1,4 +1,6 @@
 import '../../domain/entities/additional_request_group.dart';
+import '../../domain/entities/allocation_result_row.dart';
+import '../../domain/entities/allocation_source_row.dart';
 import '../../domain/entities/inventory_edit_item.dart';
 import '../../domain/entities/mismatch_item.dart';
 import '../../domain/repositories/inventory_repository.dart';
@@ -1003,5 +1005,60 @@ class InventoryRepositoryImpl implements InventoryRepository {
     String query = '',
   }) {
     return remote.fetchFormularyPage(from: from, to: to, query: query);
+  }
+
+  @override
+  Future<List<String>> fetchAllocationBranches() {
+    return remote.fetchAllocationBranches();
+  }
+
+  @override
+  Future<List<String>> fetchAllocationCategories(String runDate) {
+    return remote.fetchAllocationCategories(runDate);
+  }
+
+  @override
+  Future<List<String>> fetchAllocationItemStatuses(String runDate) {
+    return remote.fetchAllocationItemStatuses(runDate);
+  }
+
+  @override
+  Future<List<AllocationSourceRow>> fetchAllocationSourceRows({
+    required String runDate,
+    required List<String> donorBranches,
+    required List<String> receiverBranches,
+    required List<String> categories,
+    void Function(int loaded)? onProgress,
+  }) async {
+    final rows = await remote.fetchAllocationSourceRows(
+      runDate: runDate,
+      donorBranches: donorBranches,
+      receiverBranches: receiverBranches,
+      categories: categories,
+      onProgress: onProgress,
+    );
+
+    return rows.map(AllocationSourceRow.fromMap).toList();
+  }
+
+  @override
+  Future<List<AllocationResultRow>> fetchAllocationResults({
+    required String runDate,
+    required List<String> donorBranches,
+    required List<String> receiverBranches,
+    required List<String> priorityBranches,
+    required List<String> categories,
+    required List<String> itemStatuses,
+  }) async {
+    final rows = await remote.fetchAllocationResults(
+      runDate: runDate,
+      donorBranches: donorBranches,
+      receiverBranches: receiverBranches,
+      priorityBranches: priorityBranches,
+      categories: categories,
+      itemStatuses: itemStatuses,
+    );
+
+    return rows.map(AllocationResultRow.fromMap).toList();
   }
 }

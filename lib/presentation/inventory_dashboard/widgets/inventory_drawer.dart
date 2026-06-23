@@ -229,6 +229,13 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
                         badgeCount: _trackerCount,
                         badgeLoading: _trackerLoading,
                       ),
+                      _menuItem(
+                        context: context,
+                        state: state,
+                        page: InventoryPageType.allocation,
+                        icon: Icons.account_tree_rounded,
+                        title: 'Allocation',
+                      ),
                     ],
                   ),
                 ),

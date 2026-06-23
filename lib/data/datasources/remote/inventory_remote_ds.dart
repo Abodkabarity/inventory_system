@@ -413,6 +413,123 @@ item_minimum_order_unit, barcode, store_item_classifications
     return all;
   }
 
+  Future<List<String>> fetchAllocationBranches() async {
+    final res = await client
+        .from('branches')
+        .select('branch_name')
+        .eq('is_active', true)
+        .order('branch_name');
+
+    return List<Map<String, dynamic>>.from(res)
+        .map((e) => (e['branch_name'] ?? '').toString())
+        .where((e) => e.trim().isNotEmpty)
+        .toList();
+  }
+
+  Future<List<String>> fetchAllocationCategories(String runDate) async {
+    final res = await client.rpc(
+      'get_allocation_categories',
+      params: {'p_run_date': runDate},
+    );
+
+    return List<dynamic>.from(res)
+        .map((e) {
+          if (e is Map<String, dynamic>) {
+            return (e['category'] ?? '').toString();
+          }
+          return e.toString();
+        })
+        .where((e) => e.trim().isNotEmpty)
+        .toList();
+  }
+
+  Future<List<String>> fetchAllocationItemStatuses(String runDate) async {
+    final res = await client.rpc(
+      'get_allocation_item_statuses',
+      params: {'p_run_date': runDate},
+    );
+
+    return List<dynamic>.from(res)
+        .map((e) {
+          if (e is Map<String, dynamic>) {
+            return (e['item_status'] ?? '').toString();
+          }
+          return e.toString();
+        })
+        .where((e) => e.trim().isNotEmpty)
+        .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> fetchAllocationResults({
+    required String runDate,
+    required List<String> donorBranches,
+    required List<String> receiverBranches,
+    required List<String> priorityBranches,
+    required List<String> categories,
+    required List<String> itemStatuses,
+  }) async {
+    final res = await client.rpc(
+      'get_inventory_allocation',
+      params: {
+        'p_run_date': runDate,
+        'p_donor_branches': donorBranches,
+        'p_receiver_branches': receiverBranches,
+        'p_priority_branches': priorityBranches,
+        'p_categories': categories,
+        'p_item_statuses': itemStatuses,
+      },
+    );
+
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchAllocationSourceRows({
+    required String runDate,
+    required List<String> donorBranches,
+    required List<String> receiverBranches,
+    required List<String> categories,
+    void Function(int loaded)? onProgress,
+  }) async {
+    const cols = '''
+branch,
+item_code,
+item_name,
+category,
+extra_qty_more_than_month,
+reorder_qty,
+final_reorder_qty_store_stock_gt_0
+''';
+    const batchSize = 10000;
+    final all = <Map<String, dynamic>>[];
+    final neededBranches = <String>{...donorBranches, ...receiverBranches};
+    var from = 0;
+
+    while (true) {
+      var query = client
+          .from('daily_order')
+          .select(cols)
+          .eq('run_date', runDate);
+
+      if (neededBranches.isNotEmpty) {
+        query = query.inFilter('branch', neededBranches.toList());
+      }
+
+      if (categories.isNotEmpty) {
+        query = query.inFilter('category', categories);
+      }
+
+      final res = await query.range(from, from + batchSize - 1);
+      final rows = List<Map<String, dynamic>>.from(res);
+      all.addAll(rows);
+      onProgress?.call(all.length);
+
+      if (rows.length < batchSize) break;
+      from += batchSize;
+    }
+
+    return all;
+  }
+
   Future<List<Map<String, dynamic>>> fetchBranchAllChanges({
     required String branch,
   }) async {

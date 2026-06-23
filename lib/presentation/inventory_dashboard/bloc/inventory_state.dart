@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 
 import '../../../domain/entities/additional_request_group.dart';
+import '../../../domain/entities/allocation_result_row.dart';
 import '../../../domain/entities/daily_order_row.dart';
 import '../../../domain/entities/inventory_edit_item.dart';
 import '../../../domain/entities/inventory_page.dart';
@@ -158,6 +159,13 @@ class InventoryState extends Equatable {
   final bool? bulkSuccess;
 
   final bool isLoading;
+  final bool isAllocationLoading;
+  final int allocationLoadedRows;
+  final String allocationError;
+  final List<String> allocationBranches;
+  final List<String> allocationCategories;
+  final List<String> allocationItemStatuses;
+  final List<AllocationResultRow> allocationResults;
 
   const InventoryState({
     required this.branches,
@@ -234,6 +242,13 @@ class InventoryState extends Equatable {
     this.bulkMessage,
     this.bulkSuccess,
     required this.isLoading,
+    required this.isAllocationLoading,
+    required this.allocationLoadedRows,
+    required this.allocationError,
+    required this.allocationBranches,
+    required this.allocationCategories,
+    required this.allocationItemStatuses,
+    required this.allocationResults,
     required this.hasMorePages,
     required this.additionalAnalysis,
     required this.requestEffectiveness,
@@ -339,6 +354,13 @@ class InventoryState extends Equatable {
       bulkMessage: null,
       bulkSuccess: null,
       isLoading: false,
+      isAllocationLoading: false,
+      allocationLoadedRows: 0,
+      allocationError: '',
+      allocationBranches: [],
+      allocationCategories: [],
+      allocationItemStatuses: [],
+      allocationResults: [],
     );
   }
 
@@ -426,6 +448,13 @@ class InventoryState extends Equatable {
     String? bulkMessage,
     bool? bulkSuccess,
     bool? isLoading,
+    bool? isAllocationLoading,
+    int? allocationLoadedRows,
+    String? allocationError,
+    List<String>? allocationBranches,
+    List<String>? allocationCategories,
+    List<String>? allocationItemStatuses,
+    List<AllocationResultRow>? allocationResults,
   }) {
     return InventoryState(
       branches: branches ?? this.branches,
@@ -520,6 +549,14 @@ class InventoryState extends Equatable {
       bulkMessage: bulkMessage ?? this.bulkMessage,
       bulkSuccess: bulkSuccess ?? this.bulkSuccess,
       isLoading: isLoading ?? this.isLoading,
+      isAllocationLoading: isAllocationLoading ?? this.isAllocationLoading,
+      allocationLoadedRows: allocationLoadedRows ?? this.allocationLoadedRows,
+      allocationError: allocationError ?? this.allocationError,
+      allocationBranches: allocationBranches ?? this.allocationBranches,
+      allocationCategories: allocationCategories ?? this.allocationCategories,
+      allocationItemStatuses:
+          allocationItemStatuses ?? this.allocationItemStatuses,
+      allocationResults: allocationResults ?? this.allocationResults,
     );
   }
 
@@ -608,5 +645,12 @@ class InventoryState extends Equatable {
     bulkMessage,
     bulkSuccess,
     isLoading,
+    isAllocationLoading,
+    allocationLoadedRows,
+    allocationError,
+    allocationBranches,
+    allocationCategories,
+    allocationItemStatuses,
+    allocationResults,
   ];
 }

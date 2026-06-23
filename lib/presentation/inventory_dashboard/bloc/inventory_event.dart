@@ -378,3 +378,60 @@ class AdditionalRequestDeletedRealtime extends InventoryEvent {
   @override
   List<Object?> get props => [id];
 }
+
+class LoadAllocationFilters extends InventoryEvent {
+  final String runDate;
+
+  LoadAllocationFilters(this.runDate);
+
+  @override
+  List<Object?> get props => [runDate];
+}
+
+class RunAllocation extends InventoryEvent {
+  final String runDate;
+  final List<String> donorBranches;
+  final List<String> receiverBranches;
+  final List<String> priorityBranches;
+  final List<String> categories;
+  final List<String> itemStatuses;
+
+  RunAllocation({
+    required this.runDate,
+    required this.donorBranches,
+    required this.receiverBranches,
+    required this.priorityBranches,
+    required this.categories,
+    required this.itemStatuses,
+  });
+
+  @override
+  List<Object?> get props => [
+    runDate,
+    donorBranches,
+    receiverBranches,
+    priorityBranches,
+    categories,
+    itemStatuses,
+  ];
+}
+
+class ExportAllocationResults extends InventoryEvent {}
+
+class ImportAllocationFile extends InventoryEvent {
+  final List<String> priorityBranches;
+
+  ImportAllocationFile({required this.priorityBranches});
+
+  @override
+  List<Object?> get props => [priorityBranches];
+}
+
+class AllocationProgressUpdated extends InventoryEvent {
+  final int loadedRows;
+
+  AllocationProgressUpdated(this.loadedRows);
+
+  @override
+  List<Object?> get props => [loadedRows];
+}

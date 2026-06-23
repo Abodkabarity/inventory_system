@@ -1,4 +1,6 @@
 import '../entities/additional_request_group.dart';
+import '../entities/allocation_result_row.dart';
+import '../entities/allocation_source_row.dart';
 import '../entities/inventory_edit_item.dart';
 import '../entities/mismatch_item.dart';
 
@@ -164,5 +166,23 @@ abstract class InventoryRepository {
     required int from,
     required int to,
     String query = '',
+  });
+  Future<List<String>> fetchAllocationBranches();
+  Future<List<String>> fetchAllocationCategories(String runDate);
+  Future<List<String>> fetchAllocationItemStatuses(String runDate);
+  Future<List<AllocationSourceRow>> fetchAllocationSourceRows({
+    required String runDate,
+    required List<String> donorBranches,
+    required List<String> receiverBranches,
+    required List<String> categories,
+    void Function(int loaded)? onProgress,
+  });
+  Future<List<AllocationResultRow>> fetchAllocationResults({
+    required String runDate,
+    required List<String> donorBranches,
+    required List<String> receiverBranches,
+    required List<String> priorityBranches,
+    required List<String> categories,
+    required List<String> itemStatuses,
   });
 }
