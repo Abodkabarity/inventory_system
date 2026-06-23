@@ -158,7 +158,7 @@ class InventoryRepositoryImpl implements InventoryRepository {
 
     final logs = await remote.client
         .from('mismatch_log')
-        .select('branch_name,item_code,action')
+        .select('branch_name,item_code')
         .or('action.eq.update,action.eq.delete');
 
     final logSet = logs
@@ -422,7 +422,17 @@ class InventoryRepositoryImpl implements InventoryRepository {
   Future<List<Map<String, dynamic>>> fetchAssortment() async {
     final res = await remote.client
         .from('assortment')
-        .select()
+        .select('''
+          id,
+          branch_name,
+          item_code,
+          item_name,
+          assortment_qty,
+          assortment_by,
+          assortment_start,
+          assortment_end,
+          created_at
+        ''')
         .order('created_at', ascending: false);
 
     return List<Map<String, dynamic>>.from(res);
@@ -466,8 +476,6 @@ class InventoryRepositoryImpl implements InventoryRepository {
 
       final data = List<Map<String, dynamic>>.from(res);
 
-      print("assortment batch: ${data.length}");
-
       if (data.isEmpty) break;
 
       all.addAll(data);
@@ -476,8 +484,6 @@ class InventoryRepositoryImpl implements InventoryRepository {
 
       from += batch;
     }
-
-    print("TOTAL assortment: ${all.length}");
 
     return all;
   }
@@ -505,8 +511,6 @@ class InventoryRepositoryImpl implements InventoryRepository {
 
       from += batch;
     }
-
-    print("TOTAL LOG: ${all.length}");
 
     return all;
   }
@@ -560,7 +564,16 @@ class InventoryRepositoryImpl implements InventoryRepository {
   Future<List<Map<String, dynamic>>> fetchTma() async {
     final res = await remote.client
         .from('tma')
-        .select()
+        .select('''
+          id,
+          branch_name,
+          item_code,
+          item_name,
+          qty_per_duration,
+          start_date,
+          end_date,
+          created_at
+        ''')
         .order('created_at', ascending: false);
 
     return List<Map<String, dynamic>>.from(res);
@@ -614,8 +627,6 @@ class InventoryRepositoryImpl implements InventoryRepository {
 
       final data = List<Map<String, dynamic>>.from(res);
 
-      print("tma batch: ${data.length}");
-
       if (data.isEmpty) break;
 
       all.addAll(data);
@@ -624,8 +635,6 @@ class InventoryRepositoryImpl implements InventoryRepository {
 
       from += batch;
     }
-
-    print("TOTAL tma: ${all.length}");
 
     return all;
   }
@@ -730,15 +739,11 @@ class InventoryRepositoryImpl implements InventoryRepository {
 
       allData.addAll(batch);
 
-      print("Fetched: ${allData.length}");
-
       if (batch.length < batchSize) break;
 
       from += batchSize;
       to += batchSize;
     }
-
-    print("Total Loaded: ${allData.length}");
 
     return allData;
   }

@@ -58,6 +58,19 @@ class _FormularyPageState extends State<FormularyPage> {
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<InventoryBloc, InventoryState>(
+      buildWhen: (previous, current) {
+        return previous.filteredFormulary != current.filteredFormulary ||
+            previous.formularySearch != current.formularySearch ||
+            previous.formularyPage != current.formularyPage ||
+            previous.formularyPageSize != current.formularyPageSize ||
+            previous.formularyTotalRows != current.formularyTotalRows ||
+            previous.formularyHasMore != current.formularyHasMore ||
+            previous.isFormularyLoading != current.isFormularyLoading ||
+            previous.isLoading != current.isLoading ||
+            previous.isImporting != current.isImporting ||
+            previous.isExporting != current.isExporting ||
+            previous.exportMessage != current.exportMessage;
+      },
       builder: (context, state) {
         return Stack(
           children: [

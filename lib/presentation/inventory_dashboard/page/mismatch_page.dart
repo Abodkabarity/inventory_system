@@ -10,12 +10,38 @@ import '../bloc/inventory_bloc.dart';
 import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
 
-class MismatchPage extends StatelessWidget {
+class MismatchPage extends StatefulWidget {
   const MismatchPage({super.key});
+
+  @override
+  State<MismatchPage> createState() => _MismatchPageState();
+}
+
+class _MismatchPageState extends State<MismatchPage> {
+  @override
+  void initState() {
+    super.initState();
+    final bloc = context.read<InventoryBloc>();
+    bloc.add(StartMismatchRealtime());
+    bloc.add(LoadMismatch());
+  }
 
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<InventoryBloc, InventoryState>(
+      buildWhen: (previous, current) {
+        return previous.filteredMismatch != current.filteredMismatch ||
+            previous.mismatchColumnWidths != current.mismatchColumnWidths ||
+            previous.mismatchTodayCount != current.mismatchTodayCount ||
+            previous.mismatchMonthCount != current.mismatchMonthCount ||
+            previous.mismatchTotalCount != current.mismatchTotalCount ||
+            previous.mismatchDiffSum != current.mismatchDiffSum ||
+            previous.mismatchBranch != current.mismatchBranch ||
+            previous.branches != current.branches ||
+            previous.isExporting != current.isExporting ||
+            previous.exportMessage != current.exportMessage ||
+            previous.isLoading != current.isLoading;
+      },
       builder: (context, state) {
         final rows = state.filteredMismatch;
         final widths = state.mismatchColumnWidths;
@@ -382,33 +408,36 @@ class MismatchPage extends StatelessWidget {
 class _MismatchDataSource extends DataGridSource {
   final List<MismatchItem> data;
   final BuildContext context;
+  late final List<DataGridRow> _rows;
 
-  _MismatchDataSource(this.data, this.context);
+  _MismatchDataSource(this.data, this.context) {
+    _rows = List.generate(data.length, (index) {
+      final e = data[index];
+
+      return DataGridRow(
+        cells: [
+          DataGridCell(columnName: 'index', value: index + 1),
+          DataGridCell(columnName: 'branch', value: e.branchName),
+          DataGridCell(columnName: 'code', value: e.itemCode),
+          DataGridCell(columnName: 'name', value: e.itemName),
+          DataGridCell(columnName: 'system', value: e.systemStock),
+          DataGridCell(columnName: 'actual', value: e.actualStock),
+          DataGridCell(columnName: 'diff', value: e.diff),
+          DataGridCell(columnName: 'history', value: e),
+        ],
+      );
+    });
+  }
 
   @override
-  List<DataGridRow> get rows => List.generate(data.length, (index) {
-    final e = data[index];
-
-    return DataGridRow(
-      cells: [
-        DataGridCell(columnName: 'index', value: index + 1),
-        DataGridCell(columnName: 'branch', value: e.branchName),
-        DataGridCell(columnName: 'code', value: e.itemCode),
-        DataGridCell(columnName: 'name', value: e.itemName),
-        DataGridCell(columnName: 'system', value: e.systemStock),
-        DataGridCell(columnName: 'actual', value: e.actualStock),
-        DataGridCell(columnName: 'diff', value: e.diff),
-        DataGridCell(columnName: 'history', value: e),
-      ],
-    );
-  });
+  List<DataGridRow> get rows => _rows;
 
   @override
   DataGridRowAdapter buildRow(DataGridRow row) {
-    final index = effectiveRows.indexOf(row);
+    final rowNo = int.tryParse(row.getCells().first.value.toString()) ?? 1;
 
     return DataGridRowAdapter(
-      color: index % 2 == 0 ? Colors.white : Colors.grey.shade50,
+      color: rowNo.isOdd ? Colors.white : Colors.grey.shade50,
       cells: row.getCells().map((c) {
         /// 🔥 DIFF STYLE
         if (c.columnName == 'diff') {

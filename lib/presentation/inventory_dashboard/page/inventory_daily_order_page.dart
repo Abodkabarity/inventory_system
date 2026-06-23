@@ -64,6 +64,19 @@ class _InventoryDailyOrderPageState extends State<InventoryDailyOrderPage> {
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<InventoryBloc, InventoryState>(
+      buildWhen: (previous, current) {
+        return previous.allOrders != current.allOrders ||
+            previous.cachedOrders != current.cachedOrders ||
+            previous.currentOrdersPage != current.currentOrdersPage ||
+            previous.isOrdersLoading != current.isOrdersLoading ||
+            previous.isBackgroundLoading != current.isBackgroundLoading ||
+            previous.loadedCount != current.loadedCount ||
+            previous.allDataLoaded != current.allDataLoaded ||
+            previous.visibleColumns != current.visibleColumns ||
+            previous.columnOrder != current.columnOrder ||
+            previous.isExporting != current.isExporting ||
+            previous.exportMessage != current.exportMessage;
+      },
       builder: (context, state) {
         final columns = state.columnOrder.isEmpty
             ? orders_state.OrdersState.defaultColumnOrder
@@ -102,6 +115,9 @@ class _InventoryDailyOrderPageState extends State<InventoryDailyOrderPage> {
         final int toIdx = isSearching
             ? total
             : ((safePage + 1) * _pageSize).clamp(0, total);
+        final displayRows = isSearching || isGridFiltering
+            ? allRows
+            : allRows.sublist(fromIdx, toIdx);
 
         return Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -130,7 +146,7 @@ class _InventoryDailyOrderPageState extends State<InventoryDailyOrderPage> {
                   // TABLE
                   Expanded(
                     child: InventoryOrdersTable(
-                      rows: List.from(allRows),
+                      rows: displayRows,
                       isLoading: state.isOrdersLoading,
                       orderedColumns: finalColumns,
                       columnWidths: {},

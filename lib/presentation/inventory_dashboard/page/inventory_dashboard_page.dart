@@ -112,6 +112,19 @@ class _InventoryDashboardViewState extends State<InventoryDashboardView> {
       child: Scaffold(
         backgroundColor: const Color(0xffF4F7FB),
         body: BlocBuilder<InventoryBloc, InventoryState>(
+          buildWhen: (previous, current) {
+            if (previous.currentPage != current.currentPage) return true;
+            if (previous.branches.isEmpty != current.branches.isEmpty) {
+              return true;
+            }
+
+            if (current.currentPage == InventoryPageType.dashboard) {
+              return previous != current;
+            }
+
+            return previous.selectedBranch != current.selectedBranch ||
+                previous.submittedBranches != current.submittedBranches;
+          },
           builder: (context, state) {
             final bool isSubmitted =
                 state.selectedBranch != null &&

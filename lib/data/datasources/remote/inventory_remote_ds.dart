@@ -131,9 +131,10 @@ class InventoryRemoteDs {
         .from('additional_requests')
         .select('id')
         .gte('created_at', start.toIso8601String())
-        .lt('created_at', end.toIso8601String());
+        .lt('created_at', end.toIso8601String())
+        .count(CountOption.exact);
 
-    return (res as List).length;
+    return res.count;
   }
 
   /// ===============================
@@ -148,9 +149,10 @@ class InventoryRemoteDs {
     final res = await client
         .from('additional_requests')
         .select('id')
-        .gte('created_at', start.toIso8601String());
+        .gte('created_at', start.toIso8601String())
+        .count(CountOption.exact);
 
-    return (res as List).length;
+    return res.count;
   }
 
   /// ===============================
@@ -221,9 +223,10 @@ class InventoryRemoteDs {
         .from('additional_requests')
         .select('id')
         .eq('branch_name', branch)
-        .gte('created_at', start.toIso8601String());
+        .gte('created_at', start.toIso8601String())
+        .count(CountOption.exact);
 
-    return (res as List).length;
+    return res.count;
   }
 
   Future<int> fetchAdditionalTodayByBranchExact(String branch) async {
@@ -237,9 +240,10 @@ class InventoryRemoteDs {
         .select('id')
         .eq('branch_name', branch)
         .gte('created_at', start.toIso8601String())
-        .lt('created_at', end.toIso8601String());
+        .lt('created_at', end.toIso8601String())
+        .count(CountOption.exact);
 
-    return (res as List).length;
+    return res.count;
   }
 
   Future<List<Map<String, dynamic>>> fetchMismatch() async {
@@ -251,7 +255,17 @@ class InventoryRemoteDs {
     while (true) {
       final res = await client
           .from('stk_mismatch')
-          .select()
+          .select('''
+            id,
+            branch_name,
+            item_code,
+            item_name,
+            system_stock,
+            actual_stock,
+            update_date,
+            diff,
+            created_at
+          ''')
           .order('update_date', ascending: false)
           .range(from, from + limit - 1);
 
@@ -675,34 +689,32 @@ end_date
       final filter =
           'item_code.ilike.%$safe%,item_name.ilike.%$safe%,branch_name.ilike.%$safe%,adjustment_type.ilike.%$safe%,reason.ilike.%$safe%';
 
-      final rowsRes = await client
+      final response = await client
           .from('max_adj')
           .select(cols)
           .or(filter)
           .order('created_at', ascending: false)
           .order('item_code', ascending: true)
-          .range(from, to);
-
-      final countRes = await client.from('max_adj').select('id').or(filter);
+          .range(from, to)
+          .count(CountOption.exact);
 
       return {
-        'rows': List<Map<String, dynamic>>.from(rowsRes),
-        'total': (countRes as List).length,
+        'rows': List<Map<String, dynamic>>.from(response.data),
+        'total': response.count,
       };
     }
 
-    final rowsRes = await client
+    final response = await client
         .from('max_adj')
         .select(cols)
         .order('created_at', ascending: false)
         .order('item_code', ascending: true)
-        .range(from, to);
-
-    final countRes = await client.from('max_adj').select('id');
+        .range(from, to)
+        .count(CountOption.exact);
 
     return {
-      'rows': List<Map<String, dynamic>>.from(rowsRes),
-      'total': (countRes as List).length,
+      'rows': List<Map<String, dynamic>>.from(response.data),
+      'total': response.count,
     };
   }
 
@@ -805,7 +817,7 @@ reason
     final safe = search.replaceAll(',', ' ');
 
     if (hasSearch) {
-      final rowsRes = await client
+      final response = await client
           .from('branch_formulary')
           .select(cols)
           .or(
@@ -813,33 +825,26 @@ reason
           )
           .order('revised_date', ascending: false)
           .order('item_code', ascending: true)
-          .range(from, to);
-
-      final countRes = await client
-          .from('branch_formulary')
-          .select('id')
-          .or(
-            'item_code.ilike.%$safe%,item_name.ilike.%$safe%,branch_name.ilike.%$safe%',
-          );
+          .range(from, to)
+          .count(CountOption.exact);
 
       return {
-        'rows': List<Map<String, dynamic>>.from(rowsRes),
-        'total': (countRes as List).length,
+        'rows': List<Map<String, dynamic>>.from(response.data),
+        'total': response.count,
       };
     }
 
-    final rowsRes = await client
+    final response = await client
         .from('branch_formulary')
         .select(cols)
         .order('revised_date', ascending: false)
         .order('item_code', ascending: true)
-        .range(from, to);
-
-    final countRes = await client.from('branch_formulary').select('id');
+        .range(from, to)
+        .count(CountOption.exact);
 
     return {
-      'rows': List<Map<String, dynamic>>.from(rowsRes),
-      'total': (countRes as List).length,
+      'rows': List<Map<String, dynamic>>.from(response.data),
+      'total': response.count,
     };
   }
 }

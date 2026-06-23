@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
@@ -189,7 +190,23 @@ class _InventoryOrdersTableState extends State<InventoryOrdersTable> {
   @override
   void didUpdateWidget(covariant InventoryOrdersTable oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (_sameRows(oldWidget.rows, widget.rows) &&
+        listEquals(oldWidget.orderedColumns, widget.orderedColumns)) {
+      return;
+    }
+
     _source.update(rows: widget.rows, columns: widget.orderedColumns);
+  }
+
+  bool _sameRows(List<DailyOrderRow> oldRows, List<DailyOrderRow> newRows) {
+    if (identical(oldRows, newRows)) return true;
+    if (oldRows.length != newRows.length) return false;
+
+    for (var i = 0; i < oldRows.length; i++) {
+      if (!identical(oldRows[i], newRows[i])) return false;
+    }
+
+    return true;
   }
 
   double _widthFor(String key) {

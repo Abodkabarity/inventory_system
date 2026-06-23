@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -19,6 +21,8 @@ class AssortmentPage extends StatefulWidget {
 }
 
 class _AssortmentPageState extends State<AssortmentPage> {
+  Timer? _searchDebounce;
+
   @override
   void initState() {
     super.initState();
@@ -26,8 +30,22 @@ class _AssortmentPageState extends State<AssortmentPage> {
   }
 
   @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return BlocBuilder<InventoryBloc, InventoryState>(
+      buildWhen: (previous, current) {
+        return previous.filteredAssortment != current.filteredAssortment ||
+            previous.assortmentSearch != current.assortmentSearch ||
+            previous.isLoading != current.isLoading ||
+            previous.isImporting != current.isImporting ||
+            previous.isExporting != current.isExporting ||
+            previous.exportMessage != current.exportMessage;
+      },
       builder: (context, state) {
         return Stack(
           children: [
@@ -55,8 +73,15 @@ class _AssortmentPageState extends State<AssortmentPage> {
                       Expanded(
                         child: TextField(
                           onChanged: (v) {
-                            context.read<InventoryBloc>().add(
-                              SearchAssortment(v),
+                            _searchDebounce?.cancel();
+                            _searchDebounce = Timer(
+                              const Duration(milliseconds: 250),
+                              () {
+                                if (!mounted) return;
+                                context.read<InventoryBloc>().add(
+                                  SearchAssortment(v),
+                                );
+                              },
                             );
                           },
                           decoration: InputDecoration(

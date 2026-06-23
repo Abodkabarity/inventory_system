@@ -19,6 +19,7 @@ import '../../../core/utils/web_notification.dart';
 import '../../../domain/entities/additional_request_group.dart';
 import '../../../domain/entities/allocation_result_row.dart';
 import '../../../domain/entities/daily_order_row.dart';
+import '../../../domain/entities/inventory_page.dart';
 import '../../../domain/entities/mismatch_item.dart';
 import '../../../domain/repositories/inventory_repository.dart';
 import '../../orders/bloc/order_bloc/orders_state.dart' as orders_state;
@@ -36,8 +37,13 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   static final Map<String, List<DailyOrderRow>> ordersCache = {};
   String? _ordersLoadingRunDate;
   int _ordersLoadToken = 0;
+  int _formularyLoadToken = 0;
+  int _maxAdjLoadToken = 0;
+  int _mismatchLoadToken = 0;
+  int _assortmentLoadToken = 0;
+  int _tmaLoadToken = 0;
   String runDate = '';
-  late final RealtimeChannel mismatchChannel;
+  RealtimeChannel? mismatchChannel;
   InventoryBloc(this.repo) : super(InventoryState.initial()) {
     on<LoadInventoryDashboard>(_onLoad);
     on<SelectBranch>(_onSelectBranch);
@@ -86,6 +92,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     on<ExportMaxAdjTemplate>(_onExportTemplate);
     on<LoadFormulary>((event, emit) async {
       const pageSize = 10000;
+      final requestToken = ++_formularyLoadToken;
 
       if (!event.silent) {
         emit(state.copyWith(isFormularyLoading: true, isLoading: true));
@@ -93,13 +100,15 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
       try {
         final from = event.page * pageSize;
-        final to = from + pageSize;
+        final to = from + pageSize - 1;
 
         final result = await repo.fetchFormularyPage(
           from: from,
           to: to,
           query: event.query,
         );
+
+        if (requestToken != _formularyLoadToken) return;
 
         final pageData = List<Map<String, dynamic>>.from(result['rows'] ?? []);
         final totalRows = (result['total'] ?? 0) as int;
@@ -120,6 +129,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           ),
         );
       } catch (e) {
+        if (requestToken != _formularyLoadToken) return;
         emit(state.copyWith(isFormularyLoading: false, isLoading: false));
       }
     });
@@ -136,7 +146,13 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
             table: 'branch_formulary',
             callback: (payload) {
               if (!state.isImporting) {
-                add(LoadFormulary(silent: true));
+                add(
+                  LoadFormulary(
+                    page: state.formularyPage,
+                    query: state.formularySearch,
+                    silent: true,
+                  ),
+                );
               }
             },
           )
@@ -237,27 +253,33 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       emit(state.copyWith(isHistoryLoading: false, formularyHistory: data));
     });
     on<LoadAssortment>((event, emit) async {
+      final requestToken = ++_assortmentLoadToken;
+
       if (!event.silent) {
         emit(state.copyWith(isLoading: true));
       }
 
-      final data = await repo.fetchAssortment();
+      try {
+        final data = await repo.fetchAssortment();
+        if (requestToken != _assortmentLoadToken) return;
 
-      emit(
-        state.copyWith(
-          assortment: data,
-          filteredAssortment: data,
-          isLoading: false,
-        ),
-      );
+        final filtered = _filterAssortmentRows(data, state.assortmentSearch);
+
+        emit(
+          state.copyWith(
+            assortment: data,
+            filteredAssortment: filtered,
+            isLoading: false,
+          ),
+        );
+      } catch (e) {
+        if (requestToken != _assortmentLoadToken) return;
+        emit(state.copyWith(isLoading: false));
+        print("LoadAssortment Error: $e");
+      }
     });
     on<SearchAssortment>((event, emit) {
-      final q = event.query.toLowerCase();
-
-      final filtered = state.assortment.where((e) {
-        return (e['item_name'] ?? '').toString().toLowerCase().contains(q) ||
-            (e['item_code'] ?? '').toString().toLowerCase().contains(q);
-      }).toList();
+      final filtered = _filterAssortmentRows(state.assortment, event.query);
 
       emit(
         state.copyWith(
@@ -280,6 +302,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
     on<LoadMaxAdjustment>((event, emit) async {
       const pageSize = 10000;
+      final requestToken = ++_maxAdjLoadToken;
 
       if (!event.silent) {
         emit(
@@ -304,6 +327,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           query: event.query,
         );
 
+        if (requestToken != _maxAdjLoadToken) return;
+
         final rows = List<Map<String, dynamic>>.from(result['rows'] ?? []);
         final total = (result['total'] ?? 0) as int;
         final totalPages = total == 0 ? 1 : (total / pageSize).ceil();
@@ -323,6 +348,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           ),
         );
       } catch (e) {
+        if (requestToken != _maxAdjLoadToken) return;
         emit(state.copyWith(isLoading: false, isMaxAdjLoading: false));
       }
     });
@@ -348,21 +374,29 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           .subscribe();
     });
     on<LoadTma>((event, emit) async {
+      final requestToken = ++_tmaLoadToken;
+
       if (!event.silent) {
         emit(state.copyWith(isLoading: true));
       }
 
-      final data = await repo.fetchTma();
+      try {
+        final data = await repo.fetchTma();
+        if (requestToken != _tmaLoadToken) return;
 
-      emit(state.copyWith(tma: data, filteredTma: data, isLoading: false));
+        final filtered = _filterTmaRows(data, state.tmaSearch);
+
+        emit(
+          state.copyWith(tma: data, filteredTma: filtered, isLoading: false),
+        );
+      } catch (e) {
+        if (requestToken != _tmaLoadToken) return;
+        emit(state.copyWith(isLoading: false));
+        print("LoadTma Error: $e");
+      }
     });
     on<SearchTma>((event, emit) {
-      final q = event.query.toLowerCase();
-
-      final filtered = state.tma.where((e) {
-        return (e['item_name'] ?? '').toLowerCase().contains(q) ||
-            (e['item_code'] ?? '').toLowerCase().contains(q);
-      }).toList();
+      final filtered = _filterTmaRows(state.tma, event.query);
 
       emit(state.copyWith(tmaSearch: event.query, filteredTma: filtered));
     });
@@ -780,7 +814,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
             schema: 'public',
             table: 'mismatch_log',
             callback: (payload) {
-              add(LoadInventoryDashboard(runDate, silent: true));
+              if (state.currentPage != InventoryPageType.mismatch) return;
+              add(LoadMismatch());
             },
           )
           .subscribe();
@@ -788,7 +823,6 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       emit(state.copyWith(isMismatchRealtimeStarted: true));
     });
     WebNotification.init();
-    add(StartMismatchRealtime());
     add(StartAdditionalRealtime());
     add(StartMaxAdjRealtime());
     add(StartAssortmentRealtime());
@@ -818,11 +852,6 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       final additional = await repo.fetchAdditionalRequests();
       final counters = _additionalCounters(additional);
 
-      final mismatchToday = await repo.fetchMismatchToday();
-      final mismatchMonth = await repo.fetchMismatchMonth();
-      final mismatchTotal = await repo.fetchMismatchTotal();
-      final mismatchDiff = await repo.fetchMismatchDiffSum();
-      final mismatchData = await repo.fetchMismatch();
       final editsCount = await repo.fetchBranchEditsCount(runDate);
 
       /// NEW
@@ -838,17 +867,11 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           additionalRequests: additional,
           editsCount: editsCount,
           additionalTodayBranchCount: additionalBranchToday,
-          mismatchTotalCount: mismatchTotal,
           submittedCount: submitted.length,
           additionalCount: additional.length,
           additionalPendingCount: counters.pending,
           additionalSentToStoreCount: counters.sentToStore,
           additionalTodayCount: counters.today,
-          mismatchTodayCount: mismatchToday,
-          mismatchMonthCount: mismatchMonth,
-          mismatch: mismatchData,
-          mismatchDiffSum: mismatchDiff,
-          filteredMismatch: mismatchData,
           isLoading: false,
         ),
       );
@@ -962,9 +985,67 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     LoadMismatch event,
     Emitter<InventoryState> emit,
   ) async {
-    final data = await repo.fetchMismatch();
+    final requestToken = ++_mismatchLoadToken;
 
-    emit(state.copyWith(mismatch: data, filteredMismatch: data));
+    try {
+      final results = await Future.wait<Object>([
+        repo.fetchMismatch(),
+        repo.fetchMismatchToday(),
+        repo.fetchMismatchMonth(),
+        repo.fetchMismatchStats(state.mismatchBranch),
+      ]);
+
+      if (requestToken != _mismatchLoadToken) return;
+
+      final data = results[0] as List<MismatchItem>;
+      final today = results[1] as int;
+      final month = results[2] as int;
+      final stats = results[3] as Map<String, dynamic>;
+      final filtered = _applyMismatchFilters(
+        list: data,
+        search: state.mismatchSearch,
+        branch: state.mismatchBranch,
+      );
+
+      emit(
+        state.copyWith(
+          mismatch: data,
+          filteredMismatch: filtered,
+          mismatchTodayCount: today,
+          mismatchMonthCount: month,
+          mismatchTotalCount: stats['total'] ?? 0,
+          mismatchDiffSum: stats['diff_sum'] ?? 0,
+        ),
+      );
+    } catch (e) {
+      print("LoadMismatch Error: $e");
+    }
+  }
+
+  List<Map<String, dynamic>> _filterAssortmentRows(
+    List<Map<String, dynamic>> list,
+    String query,
+  ) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return list;
+
+    return list.where((e) {
+      return (e['item_name'] ?? '').toString().toLowerCase().contains(q) ||
+          (e['item_code'] ?? '').toString().toLowerCase().contains(q);
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> _filterTmaRows(
+    List<Map<String, dynamic>> list,
+    String query,
+  ) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return list;
+
+    return list.where((e) {
+      return (e['item_name'] ?? '').toString().toLowerCase().contains(q) ||
+          (e['item_code'] ?? '').toString().toLowerCase().contains(q);
+    }).toList();
   }
 
   void _onSearchMismatch(SearchMismatch event, Emitter<InventoryState> emit) {
@@ -1049,7 +1130,10 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
   @override
   Future<void> close() {
-    Supabase.instance.client.removeChannel(mismatchChannel);
+    final channel = mismatchChannel;
+    if (channel != null) {
+      Supabase.instance.client.removeChannel(channel);
+    }
     Supabase.instance.client.removeChannel(maxAdjChannel);
     Supabase.instance.client.removeChannel(assortmentChannel);
     Supabase.instance.client.removeChannel(formularyChannel);

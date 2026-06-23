@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -19,6 +21,8 @@ class TmaPage extends StatefulWidget {
 }
 
 class _TmaPageState extends State<TmaPage> {
+  Timer? _searchDebounce;
+
   @override
   void initState() {
     super.initState();
@@ -28,8 +32,22 @@ class _TmaPageState extends State<TmaPage> {
   }
 
   @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return BlocBuilder<InventoryBloc, InventoryState>(
+      buildWhen: (previous, current) {
+        return previous.filteredTma != current.filteredTma ||
+            previous.tmaSearch != current.tmaSearch ||
+            previous.isLoading != current.isLoading ||
+            previous.isImporting != current.isImporting ||
+            previous.isExporting != current.isExporting ||
+            previous.exportMessage != current.exportMessage;
+      },
       builder: (context, state) {
         return Stack(
           children: [
@@ -57,7 +75,14 @@ class _TmaPageState extends State<TmaPage> {
                       Expanded(
                         child: TextField(
                           onChanged: (v) {
-                            context.read<InventoryBloc>().add(SearchTma(v));
+                            _searchDebounce?.cancel();
+                            _searchDebounce = Timer(
+                              const Duration(milliseconds: 250),
+                              () {
+                                if (!mounted) return;
+                                context.read<InventoryBloc>().add(SearchTma(v));
+                              },
+                            );
                           },
                           decoration: InputDecoration(
                             hintText: "Search item...",

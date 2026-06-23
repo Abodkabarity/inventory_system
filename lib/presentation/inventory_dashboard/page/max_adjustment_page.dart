@@ -39,6 +39,17 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage> {
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<InventoryBloc, InventoryState>(
+      buildWhen: (previous, current) {
+        return previous.filteredMaxAdjustment !=
+                current.filteredMaxAdjustment ||
+            previous.maxAdjSearch != current.maxAdjSearch ||
+            previous.maxAdjPage != current.maxAdjPage ||
+            previous.maxAdjPageSize != current.maxAdjPageSize ||
+            previous.maxAdjTotalRows != current.maxAdjTotalRows ||
+            previous.maxAdjHasMore != current.maxAdjHasMore ||
+            previous.isMaxAdjLoading != current.isMaxAdjLoading ||
+            previous.isLoading != current.isLoading;
+      },
       builder: (context, state) {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
