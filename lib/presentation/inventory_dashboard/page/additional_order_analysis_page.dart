@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/utils/additional_analysis_excel_exporter.dart';
+import '../../../core/utils/additional_order_history_excel_exporter.dart';
 import '../bloc/inventory_bloc.dart';
 import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
@@ -34,6 +36,10 @@ class _AdditionalOrderAnalysisPageState
 
   // ── Loading flags ─────────────────────────────────────────────────────────
   bool _isAnalysisLoading = false;
+  final TextEditingController _historySearchController =
+      TextEditingController();
+  String _historyQuery = '';
+  String _historyBranch = 'All Branches';
 
   // ── Tab controller ────────────────────────────────────────────────────────
   late final TabController _tabController;
@@ -73,6 +79,7 @@ class _AdditionalOrderAnalysisPageState
 
   @override
   void dispose() {
+    _historySearchController.dispose();
     _tabController.dispose();
     super.dispose();
   }
@@ -314,6 +321,8 @@ class _AdditionalOrderAnalysisPageState
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              _buildOverviewExportBar(data),
+              const SizedBox(height: 18),
               AdditionalKpiCards(data: data),
               const SizedBox(height: 24),
               SizedBox(
@@ -332,6 +341,83 @@ class _AdditionalOrderAnalysisPageState
           ),
         );
       },
+    );
+  }
+
+  Widget _buildOverviewExportBar(Map<String, dynamic> data) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xffE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: const Color(0xffE0F2FE),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.summarize_rounded,
+              color: Color(0xff0284C7),
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Manager Overview Report',
+                  style: TextStyle(
+                    color: Color(0xff0F172A),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Export a polished Excel report with summary, branch performance, products, reasons, and status distribution.',
+                  style: TextStyle(color: Color(0xff64748B), fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          ElevatedButton.icon(
+            onPressed: () => AdditionalAnalysisExcelExporter.exportOverview(
+              data: data,
+              from: _from,
+              to: _to,
+            ),
+            style: ElevatedButton.styleFrom(
+              elevation: 0,
+              backgroundColor: const Color(0xff0F766E),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            icon: const Icon(Icons.download_rounded, size: 18),
+            label: const Text(
+              'Export Overview',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -411,18 +497,28 @@ class _AdditionalOrderAnalysisPageState
           );
         }
 
-        final pending = rows.where((e) {
+        final branches = _historyBranches(rows);
+        if (_historyBranch != 'All Branches' &&
+            !branches.contains(_historyBranch)) {
+          _historyBranch = 'All Branches';
+        }
+
+        final filteredRows = _filteredHistoryRows(rows);
+
+        final pending = filteredRows.where((e) {
           final status = _historyStatus(e);
           return status == 'pending' || status == 'pending_inventory';
         }).length;
-        final sent = rows
+        final sent = filteredRows
             .where((e) => _historyStatus(e) == 'sent_to_store')
             .length;
-        final done = rows.where((e) => _historyStatus(e) == 'done').length;
-        final rejected = rows
+        final done = filteredRows
+            .where((e) => _historyStatus(e) == 'done')
+            .length;
+        final rejected = filteredRows
             .where((e) => _historyStatus(e) == 'rejected')
             .length;
-        final totalQty = rows.fold<num>(
+        final totalQty = filteredRows.fold<num>(
           0,
           (sum, row) => sum + _historyNum(row['request_qty']),
         );
@@ -436,7 +532,7 @@ class _AdditionalOrderAnalysisPageState
                   Expanded(
                     child: _buildHistoryMetric(
                       title: 'Total Requests',
-                      value: '${rows.length}',
+                      value: '${filteredRows.length}',
                       icon: Icons.receipt_long_rounded,
                       color: const Color(0xff06B6D4),
                     ),
@@ -480,7 +576,9 @@ class _AdditionalOrderAnalysisPageState
                 ],
               ),
               const SizedBox(height: 18),
-              Expanded(child: _buildHistoryTable(rows)),
+              _buildHistoryToolbar(branches: branches, rows: filteredRows),
+              const SizedBox(height: 14),
+              Expanded(child: _buildHistoryTable(filteredRows)),
             ],
           ),
         );
@@ -555,6 +653,148 @@ class _AdditionalOrderAnalysisPageState
     );
   }
 
+  Widget _buildHistoryToolbar({
+    required List<String> branches,
+    required List<Map<String, dynamic>> rows,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xffE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 5,
+            child: TextField(
+              controller: _historySearchController,
+              onChanged: (value) => setState(() => _historyQuery = value),
+              decoration: InputDecoration(
+                hintText:
+                    'Search branch, item code, item name, status, or notes...',
+                prefixIcon: const Icon(
+                  Icons.search_rounded,
+                  color: Color(0xff64748B),
+                ),
+                suffixIcon: _historyQuery.trim().isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Clear search',
+                        onPressed: () {
+                          _historySearchController.clear();
+                          setState(() => _historyQuery = '');
+                        },
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: Color(0xff64748B),
+                        ),
+                      ),
+                filled: true,
+                fillColor: const Color(0xffF8FAFC),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: Color(0xffE2E8F0)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: Color(0xffE2E8F0)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(
+                    color: Color(0xff06B6D4),
+                    width: 1.4,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 2,
+            child: Container(
+              height: 56,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xffF8FAFC),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xffE2E8F0)),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _historyBranch,
+                  isExpanded: true,
+                  icon: const Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    color: Color(0xff64748B),
+                  ),
+                  items: ['All Branches', ...branches]
+                      .map(
+                        (branch) => DropdownMenuItem<String>(
+                          value: branch,
+                          child: Text(
+                            branch,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xff0F172A),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _historyBranch = value);
+                  },
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            height: 56,
+            child: ElevatedButton.icon(
+              onPressed: rows.isEmpty
+                  ? null
+                  : () => AdditionalOrderHistoryExcelExporter.export(
+                      rows: rows,
+                      from: _from,
+                      to: _to,
+                      branch: _historyBranch,
+                      query: _historyQuery.trim(),
+                    ),
+              style: ElevatedButton.styleFrom(
+                elevation: 0,
+                backgroundColor: const Color(0xff0F766E),
+                disabledBackgroundColor: const Color(0xffCBD5E1),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 22),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              icon: const Icon(Icons.download_rounded, size: 18),
+              label: const Text(
+                'Export',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildHistoryTable(List<Map<String, dynamic>> rows) {
     return Container(
       decoration: BoxDecoration(
@@ -585,17 +825,29 @@ class _AdditionalOrderAnalysisPageState
                 _historyHeader('Req', 1),
                 _historyHeader('Inventory', 2),
                 _historyHeader('Store', 2),
+                _historyHeader('Store Note', 3),
                 _historyHeader('Date & Time', 2),
               ],
             ),
           ),
           Expanded(
-            child: ListView.separated(
-              itemCount: rows.length,
-              separatorBuilder: (_, _) =>
-                  const Divider(height: 1, color: Color(0xffE2E8F0)),
-              itemBuilder: (_, index) => _buildHistoryRow(rows[index], index),
-            ),
+            child: rows.isEmpty
+                ? const Center(
+                    child: Text(
+                      'No rows match the current search or branch filter.',
+                      style: TextStyle(
+                        color: Color(0xff64748B),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  )
+                : ListView.separated(
+                    itemCount: rows.length,
+                    separatorBuilder: (_, _) =>
+                        const Divider(height: 1, color: Color(0xffE2E8F0)),
+                    itemBuilder: (_, index) =>
+                        _buildHistoryRow(rows[index], index),
+                  ),
           ),
         ],
       ),
@@ -622,7 +874,6 @@ class _AdditionalOrderAnalysisPageState
     final status = _historyStatus(row);
     final inventoryNote = _historyText(row, 'inventory_note');
     final storeNote = _historyText(row, 'store_note');
-    final note = inventoryNote.isNotEmpty ? inventoryNote : storeNote;
 
     return Container(
       color: index.isEven ? Colors.white : const Color(0xffF8FAFC),
@@ -667,7 +918,7 @@ class _AdditionalOrderAnalysisPageState
                 Text(
                   [
                     _historyText(row, 'item_code'),
-                    if (note.isNotEmpty) note,
+                    if (inventoryNote.isNotEmpty) inventoryNote,
                   ].join('  -  '),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -682,6 +933,7 @@ class _AdditionalOrderAnalysisPageState
           _historyValue(_numText(row['request_qty']), 1),
           _historyValue(_numText(row['inventory_qty']), 2),
           _historyValue(_numText(row['fulfilled_qty']), 2),
+          _historyValue(storeNote.isEmpty ? '-' : storeNote, 3),
           _historyValue(_historyDate(row), 2),
         ],
       ),
@@ -738,6 +990,44 @@ class _AdditionalOrderAnalysisPageState
 
   String _historyText(Map<String, dynamic> row, String key) {
     return (row[key] ?? '').toString().trim();
+  }
+
+  List<String> _historyBranches(List<Map<String, dynamic>> rows) {
+    final branches = rows
+        .map((row) => _historyText(row, 'branch_name'))
+        .where((branch) => branch.isNotEmpty)
+        .toSet()
+        .toList();
+
+    branches.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return branches;
+  }
+
+  List<Map<String, dynamic>> _filteredHistoryRows(
+    List<Map<String, dynamic>> rows,
+  ) {
+    final query = _historyQuery.trim().toLowerCase();
+
+    return rows.where((row) {
+      final branch = _historyText(row, 'branch_name');
+      if (_historyBranch != 'All Branches' && branch != _historyBranch) {
+        return false;
+      }
+
+      if (query.isEmpty) return true;
+
+      final searchable = [
+        branch,
+        _historyText(row, 'item_code'),
+        _historyText(row, 'item_name'),
+        _historyStatusLabel(_historyStatus(row)),
+        _historyText(row, 'inventory_note'),
+        _historyText(row, 'store_note'),
+        _historyText(row, 'contact_logistic'),
+      ].join(' ').toLowerCase();
+
+      return searchable.contains(query);
+    }).toList();
   }
 
   String _historyStatus(Map<String, dynamic> row) {

@@ -4,6 +4,7 @@ import 'package:daily_order/presentation/inventory_dashboard/widgets/additional_
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/utils/additional_analysis_excel_exporter.dart';
 import '../../../../domain/entities/request_effectiveness_row.dart';
 import '../../bloc/inventory_bloc.dart';
 import '../../bloc/inventory_event.dart';
@@ -195,6 +196,15 @@ class _RequestEffectivenessTabState extends State<RequestEffectivenessTab> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // ── KPI row ────────────────────────────────────────────────
+              _SalesExportBar(
+                data: data,
+                from: widget.from,
+                to: widget.to,
+                branch: _selectedBranch,
+                search: _search,
+                statusFilter: _statusFilter,
+              ),
+              const SizedBox(height: 18),
               _KpiRow(summary: summary),
               const SizedBox(height: 24),
 
@@ -272,6 +282,93 @@ class _RequestEffectivenessTabState extends State<RequestEffectivenessTab> {
 // ─────────────────────────────────────────────────────────────────────────────
 // KPI ROW
 // ─────────────────────────────────────────────────────────────────────────────
+
+class _SalesExportBar extends StatelessWidget {
+  final Map<String, dynamic> data;
+  final DateTime from;
+  final DateTime to;
+  final String? branch;
+  final String search;
+  final String statusFilter;
+
+  const _SalesExportBar({
+    required this.data,
+    required this.from,
+    required this.to,
+    required this.branch,
+    required this.search,
+    required this.statusFilter,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassContainer(
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: const Color(0xffDCFCE7),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.mark_email_read_rounded,
+              color: Color(0xff16A34A),
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Manager Sales Performance Report',
+                  style: TextStyle(
+                    color: Color(0xff0F172A),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Export branch-level sales success, product performance, weekly trend, and request-level sell-through details.',
+                  style: TextStyle(color: Color(0xff64748B), fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          ElevatedButton.icon(
+            onPressed: () =>
+                AdditionalAnalysisExcelExporter.exportSalesPerformance(
+                  data: data,
+                  from: from,
+                  to: to,
+                  branch: branch,
+                  search: search,
+                  statusFilter: statusFilter,
+                ),
+            style: ElevatedButton.styleFrom(
+              elevation: 0,
+              backgroundColor: const Color(0xff166534),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            icon: const Icon(Icons.download_rounded, size: 18),
+            label: const Text(
+              'Export Sales Report',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _KpiRow extends StatelessWidget {
   final Map<String, dynamic> summary;
