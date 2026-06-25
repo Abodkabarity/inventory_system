@@ -1860,13 +1860,64 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   String? _parseDate(dynamic value) {
     if (value == null) return null;
 
-    try {
-      final parts = value.toString().split('/'); // 20/04/2026
+    if (value is DateTime) {
+      return _dateOnly(value);
+    }
 
-      return "${parts[2]}-${parts[1]}-${parts[0]}";
-    } catch (e) {
+    if (value is num) {
+      final excelDate = DateTime(
+        1899,
+        12,
+        30,
+      ).add(Duration(days: value.floor()));
+      return _dateOnly(excelDate);
+    }
+
+    final raw = value.toString().trim();
+    if (raw.isEmpty) return null;
+
+    final iso = DateTime.tryParse(raw);
+    if (iso != null) return _dateOnly(iso);
+
+    final dateOnly = raw.split(RegExp(r'\s+')).first;
+    final parts = dateOnly
+        .replaceAll('\\', '/')
+        .replaceAll('-', '/')
+        .replaceAll('.', '/')
+        .split('/')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+
+    if (parts.length != 3) return null;
+
+    int? year;
+    int? month;
+    int? day;
+
+    if (parts[0].length == 4) {
+      year = int.tryParse(parts[0]);
+      month = int.tryParse(parts[1]);
+      day = int.tryParse(parts[2]);
+    } else {
+      day = int.tryParse(parts[0]);
+      month = int.tryParse(parts[1]);
+      year = int.tryParse(parts[2]);
+    }
+
+    if (year == null || month == null || day == null) return null;
+    if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) {
       return null;
     }
+
+    return _dateOnly(DateTime(year, month, day));
+  }
+
+  String _dateOnly(DateTime date) {
+    final y = date.year.toString().padLeft(4, '0');
+    final m = date.month.toString().padLeft(2, '0');
+    final d = date.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
   }
 
   Future<void> _onExportTemplate(
