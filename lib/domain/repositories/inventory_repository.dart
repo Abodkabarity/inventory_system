@@ -198,4 +198,10 @@ abstract class InventoryRepository {
     required List<String> categories,
     required List<String> itemStatuses,
   });
+  Future<List<Map<String, dynamic>>> fetchPurchaseShortage({
+    required String runDate,
+  });
+  Future<List<Map<String, dynamic>>> fetchPurchaseShortageBranchStock({
+    required String runDate,
+  });
 }

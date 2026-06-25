@@ -173,6 +173,9 @@ class InventoryState extends Equatable {
   final List<String> allocationCategories;
   final List<String> allocationItemStatuses;
   final List<AllocationResultRow> allocationResults;
+  final bool isPurchaseShortageLoading;
+  final String purchaseShortageError;
+  final List<Map<String, dynamic>> purchaseShortageRows;
 
   InventoryState({
     required this.branches,
@@ -263,6 +266,9 @@ class InventoryState extends Equatable {
     required this.allocationCategories,
     required this.allocationItemStatuses,
     required this.allocationResults,
+    required this.isPurchaseShortageLoading,
+    required this.purchaseShortageError,
+    required this.purchaseShortageRows,
     required this.hasMorePages,
     required this.additionalAnalysis,
     required this.requestEffectiveness,
@@ -382,6 +388,9 @@ class InventoryState extends Equatable {
       allocationCategories: [],
       allocationItemStatuses: [],
       allocationResults: [],
+      isPurchaseShortageLoading: false,
+      purchaseShortageError: '',
+      purchaseShortageRows: [],
     );
   }
 
@@ -483,6 +492,9 @@ class InventoryState extends Equatable {
     List<String>? allocationCategories,
     List<String>? allocationItemStatuses,
     List<AllocationResultRow>? allocationResults,
+    bool? isPurchaseShortageLoading,
+    String? purchaseShortageError,
+    List<Map<String, dynamic>>? purchaseShortageRows,
   }) {
     return InventoryState(
       branches: branches ?? this.branches,
@@ -598,6 +610,11 @@ class InventoryState extends Equatable {
       allocationItemStatuses:
           allocationItemStatuses ?? this.allocationItemStatuses,
       allocationResults: allocationResults ?? this.allocationResults,
+      isPurchaseShortageLoading:
+          isPurchaseShortageLoading ?? this.isPurchaseShortageLoading,
+      purchaseShortageError:
+          purchaseShortageError ?? this.purchaseShortageError,
+      purchaseShortageRows: purchaseShortageRows ?? this.purchaseShortageRows,
     );
   }
 
@@ -700,5 +717,8 @@ class InventoryState extends Equatable {
     allocationCategories,
     allocationItemStatuses,
     allocationResults,
+    isPurchaseShortageLoading,
+    purchaseShortageError,
+    purchaseShortageRows,
   ];
 }

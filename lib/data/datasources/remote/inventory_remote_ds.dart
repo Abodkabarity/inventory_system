@@ -1393,6 +1393,189 @@ end_date
     return rows;
   }
 
+  Future<List<Map<String, dynamic>>> fetchPurchaseShortage({
+    required String runDate,
+  }) async {
+    try {
+      final res = await client.rpc(
+        'get_purchase_shortage',
+        params: {'p_run_date': runDate},
+      );
+      final rows = List<Map<String, dynamic>>.from(res as List);
+      rows.sort((a, b) => _num(b['shortage']).compareTo(_num(a['shortage'])));
+      return rows;
+    } catch (_) {
+      return _fetchPurchaseShortageFallback(runDate: runDate);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchPurchaseShortageBranchStock({
+    required String runDate,
+  }) async {
+    const pageSize = 10000;
+    var from = 0;
+    final rows = <Map<String, dynamic>>[];
+
+    while (true) {
+      final res = await client
+          .from('daily_order')
+          .select('branch,item_code,item_name,branch_stock')
+          .eq('run_date', runDate)
+          .order('branch', ascending: true)
+          .order('item_code', ascending: true)
+          .range(from, from + pageSize - 1);
+
+      final batch = List<Map<String, dynamic>>.from(res);
+      rows.addAll(
+        batch.map(
+          (row) => {
+            'branch': _text(row['branch']),
+            'item_code': _text(row['item_code']),
+            'item_name': _text(row['item_name']),
+            'branch_stock': _num(row['branch_stock']),
+          },
+        ),
+      );
+
+      if (batch.length < pageSize) break;
+      from += pageSize;
+    }
+
+    return rows;
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchPurchaseShortageFallback({
+    required String runDate,
+  }) async {
+    const pageSize = 10000;
+    var from = 0;
+    final rows = <Map<String, dynamic>>[];
+
+    while (true) {
+      final res = await client
+          .from('daily_order')
+          .select('''
+            item_code,
+            item_name,
+            branch_stock,
+            store_stock,
+            extra_qty_more_than_month,
+            demand_for_30_days,
+            reason,
+            tma_qty,
+            item_purchase_type,
+            category,
+            supplier,
+            item_minimum_order_unit
+          ''')
+          .eq('run_date', runDate)
+          .eq('item_purchase_type', '1#NORMAL PURCHASE')
+          .range(from, from + pageSize - 1);
+
+      final batch = List<Map<String, dynamic>>.from(res);
+      rows.addAll(batch);
+      if (batch.length < pageSize) break;
+      from += pageSize;
+    }
+
+    return _buildPurchaseShortageRows(rows);
+  }
+
+  List<Map<String, dynamic>> _buildPurchaseShortageRows(
+    List<Map<String, dynamic>> source,
+  ) {
+    const txtCat = 'By Category Dep (Puch Item)';
+    const txtChr = 'Chronic Items Based Stock - Zone Manager';
+    final grouped = <String, Map<String, dynamic>>{};
+
+    for (final row in source) {
+      if (_text(row['item_purchase_type']) != '1#NORMAL PURCHASE') continue;
+      if (_num(row['item_minimum_order_unit']) != 1) continue;
+
+      final itemCode = _text(row['item_code']);
+      final itemName = _text(row['item_name']);
+      if (itemCode.isEmpty && itemName.isEmpty) continue;
+      final key = '$itemCode|$itemName';
+
+      final reason = _text(row['reason']);
+      final tmaText = _text(row['tma_qty']);
+      final hasCat = reason.toLowerCase().contains(txtCat.toLowerCase());
+      final hasChr = reason.toLowerCase().contains(txtChr.toLowerCase());
+      final hasTma = RegExp(r'\d').hasMatch(tmaText);
+
+      final target = grouped.putIfAbsent(
+        key,
+        () => {
+          'item_code': itemCode,
+          'item_name': itemName,
+          'branches_stock': 0,
+          'store_stock': _num(row['store_stock']),
+          'extra_qty_more_than_month': 0,
+          'demand_for_30_days': 0,
+          'has_cat': hasCat,
+          'has_chr': hasChr,
+          'has_tma': hasTma,
+          'category': _text(row['category']),
+          'supplier': _text(row['supplier']),
+        },
+      );
+
+      target['branches_stock'] =
+          _num(target['branches_stock']) + _num(row['branch_stock']);
+      target['extra_qty_more_than_month'] =
+          _num(target['extra_qty_more_than_month']) +
+          _num(row['extra_qty_more_than_month']);
+      target['demand_for_30_days'] =
+          _num(target['demand_for_30_days']) + _num(row['demand_for_30_days']);
+
+      if (_num(row['store_stock']) > _num(target['store_stock'])) {
+        target['store_stock'] = _num(row['store_stock']);
+      }
+      if (hasCat) target['has_cat'] = true;
+      if (hasChr) target['has_chr'] = true;
+      if (hasTma) target['has_tma'] = true;
+      if (_text(target['category']).isEmpty) {
+        target['category'] = _text(row['category']);
+      }
+      if (_text(target['supplier']).isEmpty) {
+        target['supplier'] = _text(row['supplier']);
+      }
+    }
+
+    final result = <Map<String, dynamic>>[];
+    for (final row in grouped.values) {
+      final branchStock = _num(row['branches_stock']);
+      final storeStock = _num(row['store_stock']);
+      final demand = _num(row['demand_for_30_days']);
+      final shortageRaw = demand - branchStock - storeStock;
+      final shortage = shortageRaw > 0 ? shortageRaw.ceil() : 0;
+      if (shortage == 0) continue;
+
+      var assortmentText = '';
+      if (row['has_chr'] == true) {
+        assortmentText = txtChr;
+      } else if (row['has_cat'] == true) {
+        assortmentText = txtCat;
+      }
+      if (row['has_tma'] == true) assortmentText = 'TMA';
+
+      result.add({
+        'item_code': row['item_code'],
+        'item_name': row['item_name'],
+        'branches_stock': branchStock,
+        'category': row['category'],
+        'supplier': row['supplier'],
+        'store_stock': storeStock.ceil(),
+        'shortage': shortage,
+        'upp_shortage': '',
+        'assortment_items': assortmentText,
+      });
+    }
+
+    result.sort((a, b) => _num(b['shortage']).compareTo(_num(a['shortage'])));
+    return result;
+  }
+
   Map<String, dynamic> _emptyOrderEditSalesPerformance() {
     return {
       'summary': {

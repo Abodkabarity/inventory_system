@@ -470,3 +470,21 @@ class AllocationProgressUpdated extends InventoryEvent {
   @override
   List<Object?> get props => [loadedRows];
 }
+
+class LoadPurchaseShortage extends InventoryEvent {
+  final String runDate;
+
+  LoadPurchaseShortage(this.runDate);
+
+  @override
+  List<Object?> get props => [runDate];
+}
+
+class ExportPurchaseShortage extends InventoryEvent {
+  final String runDate;
+
+  ExportPurchaseShortage(this.runDate);
+
+  @override
+  List<Object?> get props => [runDate];
+}

@@ -243,6 +243,13 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
                         icon: Icons.account_tree_rounded,
                         title: 'Allocation',
                       ),
+                      _menuItem(
+                        context: context,
+                        state: state,
+                        page: InventoryPageType.shortage,
+                        icon: Icons.production_quantity_limits_rounded,
+                        title: 'Shortage',
+                      ),
                     ],
                   ),
                 ),

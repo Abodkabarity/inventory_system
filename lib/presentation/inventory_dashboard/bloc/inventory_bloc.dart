@@ -14,6 +14,7 @@ import '../../../core/utils/assortment_export.dart';
 import '../../../core/utils/formulary_export.dart';
 import '../../../core/utils/max_adj_export.dart';
 import '../../../core/utils/mismatch_export.dart';
+import '../../../core/utils/purchase_shortage_excel_exporter.dart';
 import '../../../core/utils/tma_export.dart';
 import '../../../core/utils/web_notification.dart';
 import '../../../domain/entities/additional_request_group.dart';
@@ -89,6 +90,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     on<AllocationProgressUpdated>((event, emit) {
       emit(state.copyWith(allocationLoadedRows: event.loadedRows));
     });
+    on<LoadPurchaseShortage>(_onLoadPurchaseShortage);
+    on<ExportPurchaseShortage>(_onExportPurchaseShortage);
     on<ExportTmaTemplate>(_onExportTmaTemplate);
     on<ExportTmaCurrent>(_onExportTmaCurrent);
     on<ExportTmaWithHistory>(_onExportTmaHistory);
@@ -1286,6 +1289,50 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   ) async {
     if (state.allocationResults.isEmpty) return;
     await AllocationExcelExporter.export(state.allocationResults);
+  }
+
+  Future<void> _onLoadPurchaseShortage(
+    LoadPurchaseShortage event,
+    Emitter<InventoryState> emit,
+  ) async {
+    emit(
+      state.copyWith(
+        isPurchaseShortageLoading: true,
+        purchaseShortageError: '',
+      ),
+    );
+
+    try {
+      final rows = await repo.fetchPurchaseShortage(runDate: event.runDate);
+      emit(
+        state.copyWith(
+          purchaseShortageRows: rows,
+          isPurchaseShortageLoading: false,
+          purchaseShortageError: '',
+        ),
+      );
+    } catch (e) {
+      emit(
+        state.copyWith(
+          isPurchaseShortageLoading: false,
+          purchaseShortageError: e.toString(),
+        ),
+      );
+    }
+  }
+
+  Future<void> _onExportPurchaseShortage(
+    ExportPurchaseShortage event,
+    Emitter<InventoryState> emit,
+  ) async {
+    if (state.purchaseShortageRows.isEmpty) return;
+    final branchStockRows = await repo.fetchPurchaseShortageBranchStock(
+      runDate: event.runDate,
+    );
+    await PurchaseShortageExcelExporter.export(
+      rows: state.purchaseShortageRows,
+      branchStockRows: branchStockRows,
+    );
   }
 
   Future<void> _onImportAllocationFile(

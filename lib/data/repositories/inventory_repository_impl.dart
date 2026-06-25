@@ -1095,4 +1095,18 @@ class InventoryRepositoryImpl implements InventoryRepository {
 
     return rows.map(AllocationResultRow.fromMap).toList();
   }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchPurchaseShortage({
+    required String runDate,
+  }) {
+    return remote.fetchPurchaseShortage(runDate: runDate);
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchPurchaseShortageBranchStock({
+    required String runDate,
+  }) {
+    return remote.fetchPurchaseShortageBranchStock(runDate: runDate);
+  }
 }

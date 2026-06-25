@@ -22,6 +22,7 @@ import 'inventory_daily_order_page.dart';
 import 'max_adjustment_page.dart';
 import 'mismatch_page.dart';
 import 'order_edit_analysis_page.dart';
+import 'purchase_shortage_page.dart';
 
 class InventoryDashboardPage extends StatelessWidget {
   final String runDate;
@@ -257,5 +258,7 @@ Widget _buildPage(InventoryState state, bool isSubmitted, String runDate) {
       return const BranchesTrackerPage();
     case InventoryPageType.allocation:
       return AllocationPage(runDate: runDate);
+    case InventoryPageType.shortage:
+      return PurchaseShortagePage(runDate: runDate);
   }
 }
