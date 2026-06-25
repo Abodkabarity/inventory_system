@@ -7,6 +7,12 @@ class RequestEffectivenessRow {
   final String itemName;
   final num requestQty;
   final num totalSoldQty;
+  final num remainingAddedQty;
+  final int saleCount;
+  final String? firstSaleDate;
+  final String? lastSaleDate;
+  final String monitoringStatus;
+  final String monitoringLabel;
   final String status;
   final String requestDate;
   final int daysElapsed;
@@ -24,6 +30,12 @@ class RequestEffectivenessRow {
     required this.itemName,
     required this.requestQty,
     required this.totalSoldQty,
+    required this.remainingAddedQty,
+    required this.saleCount,
+    required this.firstSaleDate,
+    required this.lastSaleDate,
+    required this.monitoringStatus,
+    required this.monitoringLabel,
     required this.status,
     required this.requestDate,
     required this.daysElapsed,
@@ -43,6 +55,12 @@ class RequestEffectivenessRow {
       itemName: m['item_name']?.toString() ?? '',
       requestQty: (m['request_qty'] as num?) ?? 0,
       totalSoldQty: (m['total_sold_qty'] as num?) ?? 0,
+      remainingAddedQty: (m['remaining_added_qty'] as num?) ?? 0,
+      saleCount: (m['sale_count'] as num?)?.toInt() ?? 0,
+      firstSaleDate: m['first_sale_date']?.toString(),
+      lastSaleDate: m['last_sale_date']?.toString(),
+      monitoringStatus: m['monitoring_status']?.toString() ?? 'not_sold',
+      monitoringLabel: m['monitoring_label']?.toString() ?? 'Not Sold',
       status: m['status']?.toString() ?? '',
       requestDate: m['request_date']?.toString() ?? '',
       daysElapsed: (m['days_elapsed'] as num?)?.toInt() ?? 0,

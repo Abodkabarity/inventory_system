@@ -161,7 +161,16 @@ abstract class InventoryRepository {
     required DateTime from,
     required DateTime to,
   });
+  Future<Map<String, dynamic>> fetchOrderEditAnalysis({
+    required DateTime from,
+    required DateTime to,
+  });
   Future<Map<String, dynamic>> fetchRequestEffectiveness({
+    required DateTime from,
+    required DateTime to,
+    String? branch,
+  });
+  Future<Map<String, dynamic>> fetchOrderEditSalesPerformance({
     required DateTime from,
     required DateTime to,
     String? branch,

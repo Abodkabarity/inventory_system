@@ -8,6 +8,7 @@ enum InventoryPageType {
   tma,
 
   additionalOrderAnalysis,
+  orderEditAnalysis,
   branchesTracker,
   allocation,
 }

@@ -1003,12 +1003,33 @@ class InventoryRepositoryImpl implements InventoryRepository {
   }
 
   @override
+  Future<Map<String, dynamic>> fetchOrderEditAnalysis({
+    required DateTime from,
+    required DateTime to,
+  }) {
+    return remote.fetchOrderEditAnalysis(from: from, to: to);
+  }
+
+  @override
   Future<Map<String, dynamic>> fetchRequestEffectiveness({
     required DateTime from,
     required DateTime to,
     String? branch,
   }) {
     return remote.fetchRequestEffectiveness(from: from, to: to, branch: branch);
+  }
+
+  @override
+  Future<Map<String, dynamic>> fetchOrderEditSalesPerformance({
+    required DateTime from,
+    required DateTime to,
+    String? branch,
+  }) {
+    return remote.fetchOrderEditSalesPerformance(
+      from: from,
+      to: to,
+      branch: branch,
+    );
   }
 
   @override

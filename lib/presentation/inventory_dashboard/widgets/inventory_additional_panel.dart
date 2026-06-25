@@ -279,7 +279,7 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
 
       if (pa != pb) return pa.compareTo(pb);
 
-      if (a.status == 'pending' && b.status == 'pending') {
+      if (_isPending(a) && _isPending(b)) {
         return b.createdAt.compareTo(a.createdAt);
       }
 

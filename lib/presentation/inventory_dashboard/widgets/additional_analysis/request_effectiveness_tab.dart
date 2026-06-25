@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/utils/additional_analysis_excel_exporter.dart';
+import '../../../../core/utils/order_edit_analysis_excel_exporter.dart';
 import '../../../../domain/entities/request_effectiveness_row.dart';
 import '../../bloc/inventory_bloc.dart';
 import '../../bloc/inventory_event.dart';
@@ -19,11 +20,13 @@ import 'glass_container.dart';
 class RequestEffectivenessTab extends StatefulWidget {
   final DateTime from;
   final DateTime to;
+  final bool orderEditMode;
 
   const RequestEffectivenessTab({
     super.key,
     required this.from,
     required this.to,
+    this.orderEditMode = false,
   });
 
   @override
@@ -56,7 +59,19 @@ class _RequestEffectivenessTabState extends State<RequestEffectivenessTab> {
   }
 
   void _load() {
-    context.read<InventoryBloc>().add(
+    final bloc = context.read<InventoryBloc>();
+    if (widget.orderEditMode) {
+      bloc.add(
+        LoadOrderEditSalesPerformance(
+          from: widget.from,
+          to: widget.to,
+          branch: _selectedBranch,
+        ),
+      );
+      return;
+    }
+
+    bloc.add(
       LoadRequestEffectiveness(
         from: widget.from,
         to: widget.to,
@@ -66,22 +81,6 @@ class _RequestEffectivenessTabState extends State<RequestEffectivenessTab> {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
-
-  static const _statusColor = {
-    'sold_within_3d': Color(0xff10B981),
-    'sold_after_3d': Color(0xffF59E0B),
-    'not_sold': Color(0xffEF4444),
-  };
-
-  static const _statusLabel = {
-    'sold_within_3d': 'Sold ≤ 3 Days',
-    'sold_after_3d': 'Sold > 3 Days',
-    'not_sold': 'Not Sold',
-  };
-
-  Color _statusChipColor(String s) =>
-      _statusColor[s] ?? const Color(0xff94A3B8);
-  String _statusChipLabel(String s) => _statusLabel[s] ?? s;
 
   List<RequestEffectivenessRow> _applyFilters(
     List<RequestEffectivenessRow> rows,
@@ -123,6 +122,10 @@ class _RequestEffectivenessTabState extends State<RequestEffectivenessTab> {
           cmp = a.requestQty.compareTo(b.requestQty);
         case 'sold_qty':
           cmp = a.totalSoldQty.compareTo(b.totalSoldQty);
+        case 'remaining_qty':
+          cmp = a.remainingAddedQty.compareTo(b.remainingAddedQty);
+        case 'sale_count':
+          cmp = a.saleCount.compareTo(b.saleCount);
         case 'days_elapsed':
           cmp = a.daysElapsed.compareTo(b.daysElapsed);
         case 'days_to_sale':
@@ -143,17 +146,28 @@ class _RequestEffectivenessTabState extends State<RequestEffectivenessTab> {
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<InventoryBloc, InventoryState>(
-      buildWhen: (p, c) =>
-          p.requestEffectiveness != c.requestEffectiveness ||
-          p.isEffectivenessLoading != c.isEffectivenessLoading,
+      buildWhen: (p, c) {
+        if (widget.orderEditMode) {
+          return p.orderEditSalesPerformance != c.orderEditSalesPerformance ||
+              p.isOrderEditSalesLoading != c.isOrderEditSalesLoading;
+        }
+
+        return p.requestEffectiveness != c.requestEffectiveness ||
+            p.isEffectivenessLoading != c.isEffectivenessLoading;
+      },
       builder: (context, state) {
-        if (state.isEffectivenessLoading) {
+        final isLoading = widget.orderEditMode
+            ? state.isOrderEditSalesLoading
+            : state.isEffectivenessLoading;
+        final data = widget.orderEditMode
+            ? state.orderEditSalesPerformance
+            : state.requestEffectiveness;
+
+        if (isLoading) {
           return const Center(
             child: CircularProgressIndicator(color: Color(0xff06B6D4)),
           );
         }
-
-        final data = state.requestEffectiveness;
 
         if (data.isEmpty) {
           return _EmptyPlaceholder(onReload: _load);
@@ -176,6 +190,14 @@ class _RequestEffectivenessTabState extends State<RequestEffectivenessTab> {
         );
 
         final rows = rawRows.map(RequestEffectivenessRow.fromMap).toList();
+        final worstItems = productEffectiveness
+            .where((p) {
+              final notSold =
+                  (p['not_sold_count'] as num?) ?? (p['not_sold'] as num?) ?? 0;
+              return notSold >= 2;
+            })
+            .take(12)
+            .toList();
 
         final filtered = _applyFilters(rows);
         final pageCount = (filtered.length / _pageSize).ceil().clamp(1, 9999);
@@ -203,29 +225,36 @@ class _RequestEffectivenessTabState extends State<RequestEffectivenessTab> {
                 branch: _selectedBranch,
                 search: _search,
                 statusFilter: _statusFilter,
+                orderEditMode: widget.orderEditMode,
               ),
               const SizedBox(height: 18),
-              _KpiRow(summary: summary),
+              _KpiRow(summary: summary, orderEditMode: widget.orderEditMode),
               const SizedBox(height: 24),
 
               // ── Trend + Branch leaderboard ─────────────────────────────
               SizedBox(
-                height: 600,
+                height: widget.orderEditMode ? 660 : 600,
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
                       flex: 4,
-                      child: _BranchEffCard(branches: branchEff),
+                      child: widget.orderEditMode
+                          ? _OrderEditBranchMonitorCard(branches: branchEff)
+                          : _BranchEffCard(branches: branchEff),
                     ),
 
                     const SizedBox(width: 20),
 
                     Expanded(
                       flex: 3,
-                      child: ProductEffectivenessCard(
-                        products: productEffectiveness,
-                      ),
+                      child: widget.orderEditMode
+                          ? _OrderEditProductMonitorCard(
+                              products: productEffectiveness,
+                            )
+                          : ProductEffectivenessCard(
+                              products: productEffectiveness,
+                            ),
                     ),
                   ],
                 ),
@@ -234,6 +263,21 @@ class _RequestEffectivenessTabState extends State<RequestEffectivenessTab> {
               const SizedBox(height: 24),
 
               // ── Main table ─────────────────────────────────────────────
+              if (!widget.orderEditMode) ...[
+                SizedBox(
+                  height: 320,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: _WeeklyTrendCard(trend: weeklyTrend)),
+                      const SizedBox(width: 20),
+                      Expanded(child: _WorstItemsCard(items: worstItems)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+              ],
+
               _TableCard(
                 rows: pageRows,
                 allRows: filtered,
@@ -268,6 +312,7 @@ class _RequestEffectivenessTabState extends State<RequestEffectivenessTab> {
                 }),
                 onPageChanged: (p) => setState(() => _page = p),
                 onReload: _load,
+                orderEditMode: widget.orderEditMode,
               ),
 
               const SizedBox(height: 40),
@@ -290,6 +335,7 @@ class _SalesExportBar extends StatelessWidget {
   final String? branch;
   final String search;
   final String statusFilter;
+  final bool orderEditMode;
 
   const _SalesExportBar({
     required this.data,
@@ -298,10 +344,18 @@ class _SalesExportBar extends StatelessWidget {
     required this.branch,
     required this.search,
     required this.statusFilter,
+    required this.orderEditMode,
   });
 
   @override
   Widget build(BuildContext context) {
+    final title = orderEditMode
+        ? 'Order Edit Sales Monitoring Report'
+        : 'Manager Sales Performance Report';
+    final subtitle = orderEditMode
+        ? 'Export branches, added products, added qty, sold qty, remaining qty, first and last sales.'
+        : 'Export branch-level sales success, product performance, weekly trend, and request-level sell-through details.';
+
     return GlassContainer(
       child: Row(
         children: [
@@ -318,37 +372,53 @@ class _SalesExportBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Manager Sales Performance Report',
-                  style: TextStyle(
+                  title,
+                  style: const TextStyle(
                     color: Color(0xff0F172A),
                     fontSize: 16,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                SizedBox(height: 2),
+                const SizedBox(height: 2),
                 Text(
-                  'Export branch-level sales success, product performance, weekly trend, and request-level sell-through details.',
-                  style: TextStyle(color: Color(0xff64748B), fontSize: 12),
+                  subtitle,
+                  style: const TextStyle(
+                    color: Color(0xff64748B),
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),
           ),
           const SizedBox(width: 12),
           ElevatedButton.icon(
-            onPressed: () =>
-                AdditionalAnalysisExcelExporter.exportSalesPerformance(
+            onPressed: () {
+              if (orderEditMode) {
+                OrderEditAnalysisExcelExporter.exportSalesPerformance(
                   data: data,
                   from: from,
                   to: to,
                   branch: branch,
                   search: search,
                   statusFilter: statusFilter,
-                ),
+                );
+                return;
+              }
+
+              AdditionalAnalysisExcelExporter.exportSalesPerformance(
+                data: data,
+                from: from,
+                to: to,
+                branch: branch,
+                search: search,
+                statusFilter: statusFilter,
+              );
+            },
             style: ElevatedButton.styleFrom(
               elevation: 0,
               backgroundColor: const Color(0xff166534),
@@ -372,7 +442,8 @@ class _SalesExportBar extends StatelessWidget {
 
 class _KpiRow extends StatelessWidget {
   final Map<String, dynamic> summary;
-  const _KpiRow({required this.summary});
+  final bool orderEditMode;
+  const _KpiRow({required this.summary, this.orderEditMode = false});
 
   @override
   Widget build(BuildContext context) {
@@ -390,7 +461,7 @@ class _KpiRow extends StatelessWidget {
         Row(
           children: [
             _kpi(
-              'Total Requests',
+              orderEditMode ? 'Positive Edits' : 'Total Requests',
               '$total',
               const Color(0xff06B6D4),
               Icons.analytics_outlined,
@@ -445,7 +516,7 @@ class _KpiRow extends StatelessWidget {
             ),
             const SizedBox(width: 16),
             _kpi(
-              'Quantity Sold %',
+              orderEditMode ? 'Added Qty Sold %' : 'Quantity Sold %',
               '${avgSold.toStringAsFixed(1)}%',
               const Color(0xff3B82F6),
               Icons.percent,
@@ -549,6 +620,7 @@ class _TrendBars extends StatelessWidget {
       children: trend.map((w) {
         final total = (w['total'] as num?) ?? 0;
         final sold3 = (w['sold_3d'] as num?) ?? 0;
+        final soldAfter = (w['sold_after_3d'] as num?) ?? 0;
         final notSold = (w['not_sold'] as num?) ?? 0;
         final effRate = (w['effectiveness_rate'] as num?) ?? 0;
         final barH = total == 0
@@ -580,11 +652,25 @@ class _TrendBars extends StatelessWidget {
                       child: Column(
                         children: [
                           // "sold ≤3d" portion (green)
-                          Container(color: const Color(0xff10B981)),
-
-                          Container(color: const Color(0xffF59E0B)),
-
-                          Container(color: const Color(0xffEF4444)),
+                          if (sold3 > 0)
+                            Expanded(
+                              flex: sold3.toInt(),
+                              child: Container(color: const Color(0xff10B981)),
+                            ),
+                          if (soldAfter > 0)
+                            Expanded(
+                              flex: soldAfter.toInt(),
+                              child: Container(color: const Color(0xffF59E0B)),
+                            ),
+                          if (notSold > 0)
+                            Expanded(
+                              flex: notSold.toInt(),
+                              child: Container(color: const Color(0xffEF4444)),
+                            ),
+                          if (sold3 == 0 && soldAfter == 0 && notSold == 0)
+                            Expanded(
+                              child: Container(color: const Color(0xffCBD5E1)),
+                            ),
                         ],
                       ),
                     ),
@@ -763,6 +849,247 @@ class _BranchEffCard extends StatelessWidget {
 // WORST ITEMS CARD
 // ─────────────────────────────────────────────────────────────────────────────
 
+class _OrderEditBranchMonitorCard extends StatelessWidget {
+  final List<Map<String, dynamic>> branches;
+  const _OrderEditBranchMonitorCard({required this.branches});
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = [...branches]
+      ..sort(
+        (a, b) =>
+            _asNum(b['total_requests']).compareTo(_asNum(a['total_requests'])),
+      );
+
+    return GlassContainer(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionHeader(
+            Icons.storefront_outlined,
+            'Branch Edit Sales Monitor',
+            const Color(0xff0EA5E9),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Positive final reorder edits by branch, with sold and remaining added quantity.',
+            style: TextStyle(color: Color(0xff64748B), fontSize: 12),
+          ),
+          const SizedBox(height: 14),
+          if (rows.isEmpty)
+            const Expanded(child: _EmptyState())
+          else
+            Expanded(
+              child: ListView.separated(
+                itemCount: rows.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                itemBuilder: (_, index) {
+                  final row = rows[index];
+                  final rate = _asNum(row['effectiveness_rate']);
+                  final remaining = _asNum(row['remaining_added_qty']);
+                  final color = remaining > 0
+                      ? const Color(0xffF97316)
+                      : const Color(0xff10B981);
+
+                  return Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xffE2E8F0)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.035),
+                          blurRadius: 12,
+                          offset: const Offset(0, 5),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                row['branch_name']?.toString() ?? '',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Color(0xff0F172A),
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 15,
+                                ),
+                              ),
+                            ),
+                            _smallPill(
+                              '${rate.toStringAsFixed(1)}% sold',
+                              const Color(0xff10B981),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            _miniMetric(
+                              'Edits',
+                              _fmtQty(row['total_requests']),
+                              const Color(0xff3B82F6),
+                            ),
+                            _miniMetric(
+                              'Products',
+                              _fmtQty(row['products_count']),
+                              const Color(0xff8B5CF6),
+                            ),
+                            _miniMetric(
+                              'Added',
+                              _fmtQty(row['total_request_qty']),
+                              const Color(0xff0EA5E9),
+                            ),
+                            _miniMetric(
+                              'Sold',
+                              _fmtQty(row['total_sold_qty']),
+                              const Color(0xff10B981),
+                            ),
+                            _miniMetric('Remaining', _fmtQty(remaining), color),
+                          ],
+                        ),
+                        if ((row['last_sale_date']?.toString() ?? '')
+                            .isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Last sale: ${row['last_sale_date']}',
+                            style: const TextStyle(
+                              color: Color(0xff64748B),
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OrderEditProductMonitorCard extends StatelessWidget {
+  final List<Map<String, dynamic>> products;
+  const _OrderEditProductMonitorCard({required this.products});
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = [...products]
+      ..sort(
+        (a, b) => _asNum(
+          b['remaining_added_qty'],
+        ).compareTo(_asNum(a['remaining_added_qty'])),
+      );
+
+    return GlassContainer(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionHeader(
+            Icons.inventory_2_outlined,
+            'Product Follow Up',
+            const Color(0xffF97316),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Products with added quantity, sold quantity, and remaining quantity to watch.',
+            style: TextStyle(color: Color(0xff64748B), fontSize: 12),
+          ),
+          const SizedBox(height: 14),
+          if (rows.isEmpty)
+            const Expanded(child: _EmptyState())
+          else
+            Expanded(
+              child: ListView.separated(
+                itemCount: rows.length.clamp(0, 40),
+                separatorBuilder: (_, __) => const Divider(height: 18),
+                itemBuilder: (_, index) {
+                  final row = rows[index];
+                  final added = _asNum(row['total_request_qty']);
+                  final sold = _asNum(row['total_sold_qty']);
+                  final remaining = _asNum(row['remaining_added_qty']);
+                  final pct = added <= 0
+                      ? 0
+                      : (sold / added * 100).clamp(0, 100);
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        row['item_name']?.toString() ?? '',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xff0F172A),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        row['item_code']?.toString() ?? '',
+                        style: const TextStyle(
+                          color: Color(0xff64748B),
+                          fontSize: 11,
+                        ),
+                      ),
+                      const SizedBox(height: 9),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: LinearProgressIndicator(
+                          value: (pct / 100).toDouble(),
+                          minHeight: 7,
+                          backgroundColor: const Color(0xffE2E8F0),
+                          color: remaining > 0
+                              ? const Color(0xffF97316)
+                              : const Color(0xff10B981),
+                        ),
+                      ),
+                      const SizedBox(height: 9),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _smallPill(
+                            'Added ${_fmtQty(added)}',
+                            const Color(0xff0EA5E9),
+                          ),
+                          _smallPill(
+                            'Sold ${_fmtQty(sold)}',
+                            const Color(0xff10B981),
+                          ),
+                          _smallPill(
+                            'Remaining ${_fmtQty(remaining)}',
+                            remaining > 0
+                                ? const Color(0xffF97316)
+                                : const Color(0xff10B981),
+                          ),
+                          _smallPill(
+                            '${_fmtQty(row['sale_count'])} sales',
+                            const Color(0xff8B5CF6),
+                          ),
+                        ],
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _WorstItemsCard extends StatelessWidget {
   final List<Map<String, dynamic>> items;
   const _WorstItemsCard({required this.items});
@@ -775,7 +1102,7 @@ class _WorstItemsCard extends StatelessWidget {
         children: [
           _sectionHeader(
             Icons.warning_amber_rounded,
-            'Repeatedly Unrequired Products (≥ 2 Unsold Requests)',
+            'Repeated Unsold Products (>= 2 records)',
             const Color(0xffEF4444),
           ),
           const SizedBox(height: 12),
@@ -837,7 +1164,7 @@ class _WorstItemsCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        '${item['not_sold_count']} unsold / ${item['total_requests']} total',
+                        '${item['not_sold_count'] ?? item['not_sold'] ?? 0} unsold / ${item['total_requests'] ?? item['requests'] ?? 0} total',
                         style: const TextStyle(
                           color: Color(0xffEF4444),
                           fontSize: 11,
@@ -896,6 +1223,7 @@ class _TableCard extends StatelessWidget {
   final ValueChanged<String> onSort;
   final ValueChanged<int> onPageChanged;
   final VoidCallback onReload;
+  final bool orderEditMode;
 
   const _TableCard({
     required this.rows,
@@ -914,6 +1242,7 @@ class _TableCard extends StatelessWidget {
     required this.onSort,
     required this.onPageChanged,
     required this.onReload,
+    this.orderEditMode = false,
   });
 
   static const _statusColor = {
@@ -934,7 +1263,9 @@ class _TableCard extends StatelessWidget {
               Expanded(
                 child: _sectionHeader(
                   Icons.table_rows_outlined,
-                  'Request Sales Details',
+                  orderEditMode
+                      ? 'Added Quantity Sales Details'
+                      : 'Request Sales Details',
                   const Color(0xff06B6D4),
                 ),
               ),
@@ -1088,7 +1419,13 @@ class _TableCard extends StatelessWidget {
                       fontSize: 11,
                     ),
                     columns: [
-                      _col('Date', 'request_date', sortCol, sortAsc, onSort),
+                      _col(
+                        orderEditMode ? 'Added Date' : 'Date',
+                        'request_date',
+                        sortCol,
+                        sortAsc,
+                        onSort,
+                      ),
                       _col('Branch', 'branch', sortCol, sortAsc, onSort),
                       _col(
                         'Item',
@@ -1098,29 +1435,57 @@ class _TableCard extends StatelessWidget {
                         onSort,
                         width: 200,
                       ),
-                      _col('Req Qty', 'request_qty', sortCol, sortAsc, onSort),
+                      _col(
+                        orderEditMode ? 'Added Qty' : 'Req Qty',
+                        'request_qty',
+                        sortCol,
+                        sortAsc,
+                        onSort,
+                      ),
                       _col('Sold Qty', 'sold_qty', sortCol, sortAsc, onSort),
+                      if (orderEditMode)
+                        _col(
+                          'Remaining',
+                          'remaining_qty',
+                          sortCol,
+                          sortAsc,
+                          onSort,
+                        ),
+                      if (orderEditMode)
+                        _col(
+                          'Sale Count',
+                          'sale_count',
+                          sortCol,
+                          sortAsc,
+                          onSort,
+                        ),
                       _col('Sold %', 'sold_pct', sortCol, sortAsc, onSort),
                       _col(
-                        'Days Elapsed',
+                        orderEditMode ? 'Days Since Added' : 'Days Elapsed',
                         'days_elapsed',
                         sortCol,
                         sortAsc,
                         onSort,
                       ),
                       _col(
-                        'Days to Sale',
+                        orderEditMode ? 'First Sale After' : 'Days to Sale',
                         'days_to_sale',
                         sortCol,
                         sortAsc,
                         onSort,
                       ),
-                      const DataColumn(label: Text('Status')),
+                      DataColumn(
+                        label: Text(orderEditMode ? 'Sales Status' : 'Status'),
+                      ),
                     ],
                     rows: rows.map((r) {
-                      final sc =
-                          _statusColor[r.effectivenessStatus] ??
-                          const Color(0xff94A3B8);
+                      final statusText = orderEditMode
+                          ? r.monitoringLabel
+                          : r.effectivenessLabel;
+                      final sc = orderEditMode
+                          ? _monitoringColor(r.monitoringStatus)
+                          : (_statusColor[r.effectivenessStatus] ??
+                                const Color(0xff94A3B8));
                       return DataRow(
                         cells: [
                           DataCell(
@@ -1190,6 +1555,30 @@ class _TableCard extends StatelessWidget {
                               ),
                             ),
                           ),
+                          if (orderEditMode)
+                            DataCell(
+                              Text(
+                                '${r.remainingAddedQty}',
+                                style: TextStyle(
+                                  color: r.remainingAddedQty > 0
+                                      ? const Color(0xffF97316)
+                                      : const Color(0xff10B981),
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          if (orderEditMode)
+                            DataCell(
+                              Text(
+                                '${r.saleCount}',
+                                style: const TextStyle(
+                                  color: Color(0xff334155),
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
                           DataCell(_PctBar(pct: r.soldPct)),
                           DataCell(
                             Text(
@@ -1234,7 +1623,7 @@ class _TableCard extends StatelessWidget {
                                 border: Border.all(color: sc.withOpacity(0.3)),
                               ),
                               child: Text(
-                                r.effectivenessLabel,
+                                statusText,
                                 style: TextStyle(
                                   color: sc,
                                   fontWeight: FontWeight.bold,
@@ -1261,6 +1650,19 @@ class _TableCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Color _monitoringColor(String value) {
+    switch (value) {
+      case 'sold':
+        return const Color(0xff10B981);
+      case 'partially_sold':
+        return const Color(0xffF59E0B);
+      case 'not_sold':
+        return const Color(0xffEF4444);
+      default:
+        return const Color(0xff94A3B8);
+    }
   }
 
   DataColumn _col(
@@ -1498,4 +1900,70 @@ Widget _sectionHeader(IconData icon, String title, Color color) {
       ),
     ],
   );
+}
+
+Widget _miniMetric(String label, String value, Color color) {
+  return Expanded(
+    child: Container(
+      margin: const EdgeInsets.only(right: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Color(0xff0F172A),
+              fontWeight: FontWeight.w900,
+              fontSize: 14,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _smallPill(String label, Color color) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+    decoration: BoxDecoration(
+      color: color.withOpacity(0.10),
+      borderRadius: BorderRadius.circular(999),
+      border: Border.all(color: color.withOpacity(0.25)),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 11),
+    ),
+  );
+}
+
+num _asNum(dynamic value) {
+  if (value is num) return value;
+  return num.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+String _fmtQty(dynamic value) {
+  final n = _asNum(value);
+  if (n % 1 == 0) return n.toInt().toString();
+  return n.toStringAsFixed(2);
 }

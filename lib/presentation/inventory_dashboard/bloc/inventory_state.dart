@@ -22,6 +22,10 @@ class InventoryState extends Equatable {
   final Map<String, dynamic> additionalAnalysis;
   final List<Map<String, dynamic>> additionalOrderHistory;
   final bool isAdditionalHistoryLoading;
+  final Map<String, dynamic> orderEditAnalysis;
+  final bool isOrderEditAnalysisLoading;
+  final Map<String, dynamic> orderEditSalesPerformance;
+  final bool isOrderEditSalesLoading;
   final Map<String, double> mismatchColumnWidths;
 
   final int submittedCount;
@@ -179,6 +183,10 @@ class InventoryState extends Equatable {
     required this.additionalRequests,
     required this.additionalOrderHistory,
     required this.isAdditionalHistoryLoading,
+    required this.orderEditAnalysis,
+    required this.isOrderEditAnalysisLoading,
+    required this.orderEditSalesPerformance,
+    required this.isOrderEditSalesLoading,
     required this.mismatchColumnWidths,
     required this.submittedCount,
     required this.isHistoryLoading,
@@ -276,6 +284,10 @@ class InventoryState extends Equatable {
       additionalRequests: [],
       additionalOrderHistory: [],
       isAdditionalHistoryLoading: false,
+      orderEditAnalysis: {},
+      isOrderEditAnalysisLoading: false,
+      orderEditSalesPerformance: {},
+      isOrderEditSalesLoading: false,
       mismatchColumnWidths: {
         'branch': 160,
         'code': 150,
@@ -382,6 +394,10 @@ class InventoryState extends Equatable {
     List<AdditionalRequestGroup>? additionalRequests,
     List<Map<String, dynamic>>? additionalOrderHistory,
     bool? isAdditionalHistoryLoading,
+    Map<String, dynamic>? orderEditAnalysis,
+    bool? isOrderEditAnalysisLoading,
+    Map<String, dynamic>? orderEditSalesPerformance,
+    bool? isOrderEditSalesLoading,
     Map<String, double>? mismatchColumnWidths,
     int? submittedCount,
     bool? isHistoryLoading,
@@ -482,6 +498,13 @@ class InventoryState extends Equatable {
           additionalOrderHistory ?? this.additionalOrderHistory,
       isAdditionalHistoryLoading:
           isAdditionalHistoryLoading ?? this.isAdditionalHistoryLoading,
+      orderEditAnalysis: orderEditAnalysis ?? this.orderEditAnalysis,
+      isOrderEditAnalysisLoading:
+          isOrderEditAnalysisLoading ?? this.isOrderEditAnalysisLoading,
+      orderEditSalesPerformance:
+          orderEditSalesPerformance ?? this.orderEditSalesPerformance,
+      isOrderEditSalesLoading:
+          isOrderEditSalesLoading ?? this.isOrderEditSalesLoading,
       mismatchColumnWidths: mismatchColumnWidths ?? this.mismatchColumnWidths,
       submittedCount: submittedCount ?? this.submittedCount,
       isHistoryLoading: isHistoryLoading ?? this.isHistoryLoading,
@@ -588,6 +611,10 @@ class InventoryState extends Equatable {
     additionalRequests,
     additionalOrderHistory,
     isAdditionalHistoryLoading,
+    orderEditAnalysis,
+    isOrderEditAnalysisLoading,
+    orderEditSalesPerformance,
+    isOrderEditSalesLoading,
     mismatchColumnWidths,
     submittedCount,
     isHistoryLoading,

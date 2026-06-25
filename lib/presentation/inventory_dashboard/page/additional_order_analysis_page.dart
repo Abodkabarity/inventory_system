@@ -40,6 +40,7 @@ class _AdditionalOrderAnalysisPageState
       TextEditingController();
   String _historyQuery = '';
   String _historyBranch = 'All Branches';
+  final Map<String, Set<String>> _historyColumnFilters = {};
 
   // ── Tab controller ────────────────────────────────────────────────────────
   late final TabController _tabController;
@@ -503,7 +504,8 @@ class _AdditionalOrderAnalysisPageState
           _historyBranch = 'All Branches';
         }
 
-        final filteredRows = _filteredHistoryRows(rows);
+        final baseRows = _filteredHistoryRows(rows);
+        final filteredRows = _applyHistoryColumnFilters(baseRows);
 
         final pending = filteredRows.where((e) {
           final status = _historyStatus(e);
@@ -514,9 +516,6 @@ class _AdditionalOrderAnalysisPageState
             .length;
         final done = filteredRows
             .where((e) => _historyStatus(e) == 'done')
-            .length;
-        final rejected = filteredRows
-            .where((e) => _historyStatus(e) == 'rejected')
             .length;
         final totalQty = filteredRows.fold<num>(
           0,
@@ -558,8 +557,8 @@ class _AdditionalOrderAnalysisPageState
                   const SizedBox(width: 14),
                   Expanded(
                     child: _buildHistoryMetric(
-                      title: 'Done / Rejected',
-                      value: '${done + rejected}',
+                      title: 'Done',
+                      value: '$done',
                       icon: Icons.fact_check_rounded,
                       color: const Color(0xff10B981),
                     ),
@@ -578,7 +577,9 @@ class _AdditionalOrderAnalysisPageState
               const SizedBox(height: 18),
               _buildHistoryToolbar(branches: branches, rows: filteredRows),
               const SizedBox(height: 14),
-              Expanded(child: _buildHistoryTable(filteredRows)),
+              Expanded(
+                child: _buildHistoryTable(filteredRows, sourceRows: baseRows),
+              ),
             ],
           ),
         );
@@ -761,6 +762,28 @@ class _AdditionalOrderAnalysisPageState
             ),
           ),
           const SizedBox(width: 12),
+          if (_historyHasColumnFilters) ...[
+            SizedBox(
+              height: 56,
+              child: OutlinedButton.icon(
+                onPressed: () => setState(_historyColumnFilters.clear),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xffEF4444),
+                  side: const BorderSide(color: Color(0xffFECACA)),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                icon: const Icon(Icons.filter_alt_off_rounded, size: 18),
+                label: const Text(
+                  'Clear Filters',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+          ],
           SizedBox(
             height: 56,
             child: ElevatedButton.icon(
@@ -795,7 +818,10 @@ class _AdditionalOrderAnalysisPageState
     );
   }
 
-  Widget _buildHistoryTable(List<Map<String, dynamic>> rows) {
+  Widget _buildHistoryTable(
+    List<Map<String, dynamic>> rows, {
+    required List<Map<String, dynamic>> sourceRows,
+  }) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -819,14 +845,54 @@ class _AdditionalOrderAnalysisPageState
             child: Row(
               children: [
                 _historyHeader('#', 1),
-                _historyHeader('Status', 2),
-                _historyHeader('Branch', 3),
-                _historyHeader('Item', 5),
-                _historyHeader('Req', 1),
-                _historyHeader('Inventory', 2),
-                _historyHeader('Store', 2),
-                _historyHeader('Store Note', 3),
-                _historyHeader('Date & Time', 2),
+                _historyHeader(
+                  'Status',
+                  2,
+                  filterKey: 'status',
+                  sourceRows: sourceRows,
+                ),
+                _historyHeader(
+                  'Branch',
+                  3,
+                  filterKey: 'branch_name',
+                  sourceRows: sourceRows,
+                ),
+                _historyHeader(
+                  'Item',
+                  5,
+                  filterKey: 'item',
+                  sourceRows: sourceRows,
+                ),
+                _historyHeader(
+                  'Req',
+                  1,
+                  filterKey: 'request_qty',
+                  sourceRows: sourceRows,
+                ),
+                _historyHeader(
+                  'Inventory',
+                  2,
+                  filterKey: 'inventory_qty',
+                  sourceRows: sourceRows,
+                ),
+                _historyHeader(
+                  'Store',
+                  2,
+                  filterKey: 'fulfilled_qty',
+                  sourceRows: sourceRows,
+                ),
+                _historyHeader(
+                  'Store Note',
+                  3,
+                  filterKey: 'store_note',
+                  sourceRows: sourceRows,
+                ),
+                _historyHeader(
+                  'Date & Time',
+                  2,
+                  filterKey: 'date_time',
+                  sourceRows: sourceRows,
+                ),
               ],
             ),
           ),
@@ -834,7 +900,7 @@ class _AdditionalOrderAnalysisPageState
             child: rows.isEmpty
                 ? const Center(
                     child: Text(
-                      'No rows match the current search or branch filter.',
+                      'No rows match the current search or filters.',
                       style: TextStyle(
                         color: Color(0xff64748B),
                         fontWeight: FontWeight.w600,
@@ -854,18 +920,53 @@ class _AdditionalOrderAnalysisPageState
     );
   }
 
-  Widget _historyHeader(String text, int flex) {
+  Widget _historyHeader(
+    String text,
+    int flex, {
+    String? filterKey,
+    List<Map<String, dynamic>> sourceRows = const [],
+  }) {
+    final isFiltered =
+        filterKey != null && _isHistoryColumnFilterActive(filterKey);
+
     return Expanded(
       flex: flex,
-      child: Text(
-        text,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: Color(0xff64748B),
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-        ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xff64748B),
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          if (filterKey != null)
+            Tooltip(
+              message: 'Filter $text',
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () =>
+                    _showHistoryColumnFilter(filterKey, text, sourceRows),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(
+                    isFiltered
+                        ? Icons.filter_alt_rounded
+                        : Icons.filter_alt_outlined,
+                    size: 16,
+                    color: isFiltered
+                        ? const Color(0xff06B6D4)
+                        : const Color(0xff64748B),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -986,6 +1087,349 @@ class _AdditionalOrderAnalysisPageState
         ),
       ),
     );
+  }
+
+  bool get _historyHasColumnFilters =>
+      _historyColumnFilters.values.any((selected) => selected.isNotEmpty);
+
+  bool _isHistoryColumnFilterActive(String key) {
+    return _historyColumnFilters[key]?.isNotEmpty ?? false;
+  }
+
+  List<Map<String, dynamic>> _applyHistoryColumnFilters(
+    List<Map<String, dynamic>> rows,
+  ) {
+    if (!_historyHasColumnFilters) return rows;
+
+    return rows.where((row) {
+      for (final entry in _historyColumnFilters.entries) {
+        if (entry.value.isEmpty) continue;
+        if (!entry.value.contains(_historyFilterValue(row, entry.key))) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+  }
+
+  String _historyFilterValue(Map<String, dynamic> row, String key) {
+    switch (key) {
+      case 'status':
+        return _historyStatusLabel(_historyStatus(row));
+      case 'branch_name':
+        return _historyText(row, 'branch_name').isEmpty
+            ? '-'
+            : _historyText(row, 'branch_name');
+      case 'item':
+        final code = _historyText(row, 'item_code');
+        final name = _historyText(row, 'item_name');
+        if (code.isEmpty && name.isEmpty) return '-';
+        if (code.isEmpty) return name;
+        if (name.isEmpty) return code;
+        return '$code - $name';
+      case 'request_qty':
+      case 'inventory_qty':
+      case 'fulfilled_qty':
+        return _numText(row[key]);
+      case 'store_note':
+        final note = _historyText(row, 'store_note');
+        return note.isEmpty ? '-' : note;
+      case 'date_time':
+        return _historyDate(row);
+      default:
+        final value = _historyText(row, key);
+        return value.isEmpty ? '-' : value;
+    }
+  }
+
+  Future<void> _showHistoryColumnFilter(
+    String key,
+    String title,
+    List<Map<String, dynamic>> sourceRows,
+  ) async {
+    final allValues =
+        sourceRows
+            .map((row) => _historyFilterValue(row, key))
+            .where((value) => value.trim().isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+    if (allValues.isEmpty) return;
+
+    var search = '';
+    final selected = Set<String>.from(_historyColumnFilters[key] ?? allValues);
+
+    final result = await showDialog<Set<String>>(
+      context: context,
+      barrierColor: Colors.black38,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final visibleValues = allValues
+                .where(
+                  (value) =>
+                      search.isEmpty ||
+                      value.toLowerCase().contains(search.toLowerCase()),
+                )
+                .toList();
+            final allVisibleSelected =
+                visibleValues.isNotEmpty &&
+                visibleValues.every(selected.contains);
+
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 24,
+              ),
+              child: Container(
+                width: 430,
+                constraints: const BoxConstraints(maxHeight: 620),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.18),
+                      blurRadius: 28,
+                      offset: const Offset(0, 14),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 16, 12, 12),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: const Color(0xffE0F2FE),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.filter_alt_rounded,
+                              color: Color(0xff0284C7),
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Filter $title',
+                                  style: const TextStyle(
+                                    color: Color(0xff0F172A),
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                Text(
+                                  '${selected.length} of ${allValues.length} selected',
+                                  style: const TextStyle(
+                                    color: Color(0xff64748B),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.pop(dialogContext, allValues.toSet()),
+                            child: const Text('Clear'),
+                          ),
+                          IconButton(
+                            tooltip: 'Close',
+                            onPressed: () => Navigator.pop(dialogContext),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1, color: Color(0xffE2E8F0)),
+                    Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: TextField(
+                        onChanged: (value) =>
+                            setDialogState(() => search = value.trim()),
+                        decoration: InputDecoration(
+                          hintText: 'Search values...',
+                          prefixIcon: const Icon(
+                            Icons.search_rounded,
+                            color: Color(0xff64748B),
+                          ),
+                          filled: true,
+                          fillColor: const Color(0xffF8FAFC),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: const BorderSide(
+                              color: Color(0xffE2E8F0),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: const BorderSide(
+                              color: Color(0xffE2E8F0),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: const BorderSide(
+                              color: Color(0xff06B6D4),
+                              width: 1.4,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Flexible(
+                      child: ListView(
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                        children: [
+                          CheckboxListTile(
+                            value: allVisibleSelected,
+                            onChanged: (_) {
+                              setDialogState(() {
+                                if (allVisibleSelected) {
+                                  selected.removeAll(visibleValues);
+                                } else {
+                                  selected.addAll(visibleValues);
+                                }
+                              });
+                            },
+                            dense: true,
+                            controlAffinity: ListTileControlAffinity.leading,
+                            activeColor: const Color(0xff06B6D4),
+                            title: const Text(
+                              'Select All',
+                              style: TextStyle(fontWeight: FontWeight.w900),
+                            ),
+                          ),
+                          const Divider(height: 1, color: Color(0xffE2E8F0)),
+                          if (visibleValues.isEmpty)
+                            const Padding(
+                              padding: EdgeInsets.all(18),
+                              child: Text(
+                                'No values found.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Color(0xff64748B)),
+                              ),
+                            )
+                          else
+                            ...visibleValues.map(
+                              (value) => CheckboxListTile(
+                                value: selected.contains(value),
+                                onChanged: (checked) {
+                                  setDialogState(() {
+                                    if (checked == true) {
+                                      selected.add(value);
+                                    } else {
+                                      selected.remove(value);
+                                    }
+                                  });
+                                },
+                                dense: true,
+                                controlAffinity:
+                                    ListTileControlAffinity.leading,
+                                activeColor: const Color(0xff06B6D4),
+                                title: Text(
+                                  value,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Color(0xff0F172A),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: const BoxDecoration(
+                        color: Color(0xffF8FAFC),
+                        border: Border(
+                          top: BorderSide(color: Color(0xffE2E8F0)),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.pop(dialogContext),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xff64748B),
+                                side: const BorderSide(
+                                  color: Color(0xffCBD5E1),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: const Text('Cancel'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: selected.isEmpty
+                                  ? null
+                                  : () =>
+                                        Navigator.pop(dialogContext, selected),
+                              style: ElevatedButton.styleFrom(
+                                elevation: 0,
+                                backgroundColor: const Color(0xff06B6D4),
+                                disabledBackgroundColor: const Color(
+                                  0xffCBD5E1,
+                                ),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: const Text(
+                                'Apply',
+                                style: TextStyle(fontWeight: FontWeight.w900),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (!mounted || result == null) return;
+    setState(() {
+      if (result.length == allValues.length) {
+        _historyColumnFilters.remove(key);
+      } else {
+        _historyColumnFilters[key] = result;
+      }
+    });
   }
 
   String _historyText(Map<String, dynamic> row, String key) {

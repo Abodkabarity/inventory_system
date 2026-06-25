@@ -198,6 +198,283 @@ class InventoryRemoteDs {
     return List<Map<String, dynamic>>.from(res);
   }
 
+  Future<Map<String, dynamic>> fetchOrderEditAnalysis({
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final fromDate = DateFormat('yyyy-MM-dd').format(from);
+    final toDate = DateFormat('yyyy-MM-dd').format(to);
+
+    final res = await client
+        .from('order_edits')
+        .select('''
+          id,
+          run_date,
+          zone,
+          branch_name,
+          item_code,
+          item_name,
+          old_qty,
+          new_qty,
+          diff,
+          reason,
+          created_at,
+          updated_at,
+          updated_by
+        ''')
+        .gt('diff', 0)
+        .gte('run_date', fromDate)
+        .lte('run_date', toDate)
+        .order('run_date', ascending: false)
+        .order('created_at', ascending: false)
+        .limit(50000);
+
+    final rows = List<Map<String, dynamic>>.from(
+      res,
+    ).map(_normalizeOrderEditRow).toList();
+
+    final totalEdits = rows.length;
+    final totalQty = rows.fold<num>(0, (sum, row) => sum + _num(row['diff']));
+    final uniqueProducts = rows
+        .map(
+          (row) => _text(row['item_code']).isEmpty
+              ? _text(row['item_name'])
+              : _text(row['item_code']),
+        )
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .length;
+    final uniqueBranches = rows
+        .map((row) => _text(row['branch_name']))
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .length;
+    final maxAddition = rows.fold<num>(
+      0,
+      (max, row) => _num(row['diff']) > max ? _num(row['diff']) : max,
+    );
+
+    int activeBranches = uniqueBranches;
+    try {
+      final activeRes = await client
+          .from('branches')
+          .select('branch_name')
+          .eq('is_active', true);
+      activeBranches = (activeRes as List).length;
+    } catch (_) {
+      activeBranches = uniqueBranches;
+    }
+
+    final topBranches = _buildOrderEditBranches(rows);
+    final topProducts = _buildOrderEditProducts(rows);
+    final reasons = _buildOrderEditReasonRows(rows);
+    final dailyTrend = _buildOrderEditDailyTrend(rows);
+    final zones = _buildOrderEditZoneRows(rows);
+
+    return {
+      'total_requests': totalEdits,
+      'total_edits': totalEdits,
+      'total_qty': totalQty,
+      'unique_products': uniqueProducts,
+      'unique_branches': uniqueBranches,
+      'active_branch_rate': activeBranches == 0
+          ? 0
+          : (uniqueBranches / activeBranches) * 100,
+      'avg_qty': totalEdits == 0 ? 0 : totalQty / totalEdits,
+      'max_addition': maxAddition,
+      'top_branches': topBranches,
+      'top_products': topProducts,
+      'branch_performance': topBranches,
+      'reasons': reasons,
+      'daily_trend': dailyTrend,
+      'zone_analysis': zones,
+      'rows': rows,
+    };
+  }
+
+  Map<String, dynamic> _normalizeOrderEditRow(Map<String, dynamic> row) {
+    final oldQty = _num(row['old_qty']);
+    final newQty = _num(row['new_qty']);
+    final diff = _num(row['diff']);
+
+    return {
+      ...row,
+      'old_qty': oldQty,
+      'new_qty': newQty,
+      'diff': diff,
+      'added_qty': diff,
+      'changed_at': row['updated_at'] ?? row['created_at'],
+    };
+  }
+
+  List<Map<String, dynamic>> _buildOrderEditBranches(
+    List<Map<String, dynamic>> rows,
+  ) {
+    final grouped = <String, Map<String, dynamic>>{};
+
+    for (final row in rows) {
+      final branch = _text(row['branch_name']);
+      if (branch.isEmpty) continue;
+
+      final target = grouped.putIfAbsent(
+        branch,
+        () => {
+          'branch_name': branch,
+          'requests': 0,
+          'total': 0,
+          'qty': 0,
+          'products': <String>{},
+        },
+      );
+
+      target['requests'] = (target['requests'] as int) + 1;
+      target['total'] = (target['total'] as int) + 1;
+      target['qty'] = (target['qty'] as num) + _num(row['diff']);
+      (target['products'] as Set<String>).add(_text(row['item_code']));
+    }
+
+    final result = grouped.values.map((row) {
+      final products = row['products'] as Set<String>;
+      return {
+        ...row,
+        'products': products.length,
+        'avg_qty': (row['requests'] as int) == 0
+            ? 0
+            : (row['qty'] as num) / (row['requests'] as int),
+      };
+    }).toList();
+
+    result.sort((a, b) => (_num(b['qty'])).compareTo(_num(a['qty'])));
+    return result;
+  }
+
+  List<Map<String, dynamic>> _buildOrderEditProducts(
+    List<Map<String, dynamic>> rows,
+  ) {
+    final grouped = <String, Map<String, dynamic>>{};
+
+    for (final row in rows) {
+      final itemCode = _text(row['item_code']);
+      final itemName = _text(row['item_name']);
+      final key = '$itemCode|$itemName';
+      final branch = _text(row['branch_name']);
+
+      final target = grouped.putIfAbsent(
+        key,
+        () => {
+          'item_code': itemCode,
+          'item_name': itemName,
+          'requests': 0,
+          'qty': 0,
+          'product_branches': <String, Map<String, dynamic>>{},
+        },
+      );
+
+      target['requests'] = (target['requests'] as int) + 1;
+      target['qty'] = (target['qty'] as num) + _num(row['diff']);
+
+      final branchMap =
+          target['product_branches'] as Map<String, Map<String, dynamic>>;
+      final branchRow = branchMap.putIfAbsent(
+        branch,
+        () => {'branch_name': branch, 'requests': 0, 'qty': 0},
+      );
+      branchRow['requests'] = (branchRow['requests'] as int) + 1;
+      branchRow['qty'] = (branchRow['qty'] as num) + _num(row['diff']);
+    }
+
+    final result = grouped.values.map((row) {
+      final branches =
+          (row['product_branches'] as Map<String, Map<String, dynamic>>).values
+              .toList()
+            ..sort((a, b) => _num(b['qty']).compareTo(_num(a['qty'])));
+      return {...row, 'product_branches': branches};
+    }).toList();
+
+    result.sort((a, b) => (_num(b['qty'])).compareTo(_num(a['qty'])));
+    return result;
+  }
+
+  List<Map<String, dynamic>> _buildOrderEditReasonRows(
+    List<Map<String, dynamic>> rows,
+  ) {
+    final grouped = <String, Map<String, dynamic>>{};
+
+    for (final row in rows) {
+      final reason = _text(row['reason']).isEmpty
+          ? 'No reason'
+          : _text(row['reason']);
+      final target = grouped.putIfAbsent(
+        reason,
+        () => {'reason': reason, 'count': 0, 'qty': 0},
+      );
+      target['count'] = (target['count'] as int) + 1;
+      target['qty'] = (target['qty'] as num) + _num(row['diff']);
+    }
+
+    final total = rows.length;
+    final result = grouped.values.map((row) {
+      return {
+        ...row,
+        'percent': total == 0 ? 0 : ((row['count'] as int) / total) * 100,
+      };
+    }).toList();
+
+    result.sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
+    return result;
+  }
+
+  List<Map<String, dynamic>> _buildOrderEditDailyTrend(
+    List<Map<String, dynamic>> rows,
+  ) {
+    final grouped = <String, Map<String, dynamic>>{};
+
+    for (final row in rows) {
+      final day = _text(row['run_date']);
+      if (day.isEmpty) continue;
+
+      final target = grouped.putIfAbsent(
+        day,
+        () => {'date': day, 'requests': 0, 'qty': 0},
+      );
+      target['requests'] = (target['requests'] as int) + 1;
+      target['qty'] = (target['qty'] as num) + _num(row['diff']);
+    }
+
+    final result = grouped.values.toList();
+    result.sort((a, b) => (b['date'] as String).compareTo(a['date'] as String));
+    return result;
+  }
+
+  List<Map<String, dynamic>> _buildOrderEditZoneRows(
+    List<Map<String, dynamic>> rows,
+  ) {
+    final grouped = <String, Map<String, dynamic>>{};
+
+    for (final row in rows) {
+      final zone = _text(row['zone']).isEmpty ? 'Unknown' : _text(row['zone']);
+      final target = grouped.putIfAbsent(
+        zone,
+        () => {'zone': zone, 'requests': 0, 'qty': 0},
+      );
+      target['requests'] = (target['requests'] as int) + 1;
+      target['qty'] = (target['qty'] as num) + _num(row['diff']);
+    }
+
+    final result = grouped.values.toList();
+    result.sort((a, b) => _num(b['qty']).compareTo(_num(a['qty'])));
+    return result;
+  }
+
+  num _num(dynamic value) {
+    if (value is num) return value;
+    return num.tryParse((value ?? '').toString()) ?? 0;
+  }
+
+  String _text(dynamic value) {
+    return (value ?? '').toString().trim();
+  }
+
   /// ===============================
   /// ADDITIONAL TODAY
   /// ===============================
@@ -896,6 +1173,686 @@ end_date
 
     if (result == null) return {};
     return Map<String, dynamic>.from(result as Map);
+  }
+
+  Future<Map<String, dynamic>> fetchOrderEditSalesPerformance({
+    required DateTime from,
+    required DateTime to,
+    String? branch,
+  }) async {
+    final fromDate = DateFormat('yyyy-MM-dd').format(from);
+    final toDate = DateFormat('yyyy-MM-dd').format(to);
+
+    var query = client
+        .from('order_edits')
+        .select('''
+          id,
+          run_date,
+          zone,
+          branch_name,
+          item_code,
+          item_name,
+          old_qty,
+          new_qty,
+          diff,
+          reason,
+          created_at,
+          updated_at,
+          updated_by
+        ''')
+        .gt('diff', 0)
+        .gte('run_date', fromDate)
+        .lte('run_date', toDate);
+
+    final selectedBranch = _text(branch);
+    if (selectedBranch.isNotEmpty && selectedBranch != 'All Branches') {
+      query = query.eq('branch_name', selectedBranch);
+    }
+
+    final editRes = await query
+        .order('run_date', ascending: false)
+        .order('created_at', ascending: false)
+        .limit(50000);
+
+    final edits = List<Map<String, dynamic>>.from(
+      editRes,
+    ).map(_normalizeOrderEditRow).toList();
+
+    if (edits.isEmpty) {
+      return _emptyOrderEditSalesPerformance();
+    }
+
+    final itemsByBranch = <String, Set<String>>{};
+    for (final row in edits) {
+      final rowBranch = _text(row['branch_name']);
+      final itemCode = _text(row['item_code']);
+      if (rowBranch.isEmpty || itemCode.isEmpty) continue;
+      itemsByBranch.putIfAbsent(rowBranch, () => <String>{}).add(itemCode);
+    }
+
+    final salesRows = await _fetchOrderEditSalesRows(
+      itemsByBranch: itemsByBranch,
+      fromDate: fromDate,
+      toDate: DateFormat('yyyy-MM-dd').format(DateTime.now()),
+    );
+
+    final salesByPair = <String, List<Map<String, dynamic>>>{};
+    for (final row in salesRows) {
+      final key = _orderEditPairKey(row['branch_name'], row['item_code']);
+      if (key == '|') continue;
+      salesByPair.putIfAbsent(key, () => []).add(row);
+    }
+
+    for (final rows in salesByPair.values) {
+      rows.sort((a, b) {
+        final ad = _dateOnly(a['inv_date']);
+        final bd = _dateOnly(b['inv_date']);
+        if (ad == null && bd == null) return 0;
+        if (ad == null) return 1;
+        if (bd == null) return -1;
+        return ad.compareTo(bd);
+      });
+    }
+
+    final today = _dateOnly(DateTime.now())!;
+    final enrichedRows = <Map<String, dynamic>>[];
+
+    for (final edit in edits) {
+      final requestDate =
+          _dateOnly(edit['run_date']) ??
+          _dateOnly(edit['changed_at']) ??
+          _dateOnly(from)!;
+      final requestQty = _num(edit['diff']);
+      final key = _orderEditPairKey(edit['branch_name'], edit['item_code']);
+      final pairSales = salesByPair[key] ?? const <Map<String, dynamic>>[];
+
+      num totalSoldQty = 0;
+      var saleCount = 0;
+      DateTime? firstSaleDate;
+      DateTime? lastSaleDate;
+      final sellingDays = <String>{};
+
+      for (final sale in pairSales) {
+        final saleDate = _dateOnly(sale['inv_date']);
+        if (saleDate == null || saleDate.isBefore(requestDate)) continue;
+
+        final qty = _num(sale['qty']);
+        if (qty <= 0) continue;
+
+        totalSoldQty += qty;
+        saleCount++;
+        sellingDays.add(_formatDateOnly(saleDate));
+        firstSaleDate ??= saleDate;
+        lastSaleDate = saleDate;
+      }
+
+      var daysElapsed = today.difference(requestDate).inDays;
+      if (daysElapsed < 0) daysElapsed = 0;
+
+      int? daysToFirstSale;
+      var daysWithoutSale = daysElapsed;
+      var effectivenessStatus = 'not_sold';
+
+      if (firstSaleDate != null) {
+        daysToFirstSale = firstSaleDate.difference(requestDate).inDays;
+        if (daysToFirstSale < 0) daysToFirstSale = 0;
+        daysWithoutSale = daysToFirstSale;
+        effectivenessStatus = daysToFirstSale <= 3
+            ? 'sold_within_3d'
+            : 'sold_after_3d';
+      }
+
+      var soldPct = requestQty <= 0 ? 0 : (totalSoldQty / requestQty) * 100;
+      if (soldPct > 100) soldPct = 100;
+      final remainingAddedQty = requestQty - totalSoldQty;
+      final safeRemainingAddedQty = remainingAddedQty > 0
+          ? remainingAddedQty
+          : 0;
+      final monitoringStatus = totalSoldQty <= 0
+          ? 'not_sold'
+          : safeRemainingAddedQty > 0
+          ? 'partially_sold'
+          : 'sold';
+
+      enrichedRows.add({
+        ...edit,
+        'id': _text(edit['id']),
+        'request_date': _formatDateOnly(requestDate),
+        'request_qty': requestQty,
+        'total_sold_qty': totalSoldQty,
+        'remaining_added_qty': safeRemainingAddedQty,
+        'sale_count': saleCount,
+        'first_sale_date': firstSaleDate == null
+            ? null
+            : _formatDateOnly(firstSaleDate),
+        'last_sale_date': lastSaleDate == null
+            ? null
+            : _formatDateOnly(lastSaleDate),
+        'monitoring_status': monitoringStatus,
+        'monitoring_label': _orderEditMonitoringLabel(monitoringStatus),
+        'status': 'order_edit',
+        'days_elapsed': daysElapsed,
+        'days_to_first_sale': daysToFirstSale,
+        'days_without_sale': daysWithoutSale,
+        'selling_days': sellingDays.length,
+        'effectiveness_status': effectivenessStatus,
+        'effectiveness_label': _effectivenessLabel(effectivenessStatus),
+        'sold_pct': soldPct,
+      });
+    }
+
+    return {
+      'summary': _buildOrderEditSalesSummary(enrichedRows),
+      'rows': enrichedRows,
+      'branch_effectiveness': _buildOrderEditBranchEffectiveness(enrichedRows),
+      'product_effectiveness': _buildOrderEditProductEffectiveness(
+        enrichedRows,
+      ),
+      'weekly_trend': _buildOrderEditWeeklyTrend(enrichedRows),
+    };
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchOrderEditSalesRows({
+    required Map<String, Set<String>> itemsByBranch,
+    required String fromDate,
+    required String toDate,
+  }) async {
+    const chunkSize = 250;
+    const pageSize = 5000;
+    final rows = <Map<String, dynamic>>[];
+
+    for (final entry in itemsByBranch.entries) {
+      final branch = entry.key;
+      final items = entry.value.where((e) => e.trim().isNotEmpty).toList();
+      if (branch.trim().isEmpty || items.isEmpty) continue;
+
+      for (var i = 0; i < items.length; i += chunkSize) {
+        final end = i + chunkSize > items.length ? items.length : i + chunkSize;
+        final part = items.sublist(i, end);
+        var from = 0;
+
+        while (true) {
+          final res = await client
+              .from('sales_last_45_days')
+              .select('branch_name,item_code,qty,inv_date')
+              .eq('branch_name', branch)
+              .inFilter('item_code', part)
+              .gte('inv_date', fromDate)
+              .lte('inv_date', toDate)
+              .order('inv_date', ascending: true)
+              .range(from, from + pageSize - 1);
+
+          final batch = List<Map<String, dynamic>>.from(res);
+          rows.addAll(batch);
+          if (batch.length < pageSize) break;
+          from += pageSize;
+        }
+      }
+    }
+
+    return rows;
+  }
+
+  Map<String, dynamic> _emptyOrderEditSalesPerformance() {
+    return {
+      'summary': {
+        'total_requests': 0,
+        'sold_within_3d': 0,
+        'sold_after_3d': 0,
+        'not_sold': 0,
+        'effectiveness_rate': 0,
+        'quick_sell_rate': 0,
+        'avg_days_to_first_sale': null,
+        'avg_sold_pct': 0,
+        'total_added_qty': 0,
+        'total_sold_qty': 0,
+        'remaining_added_qty': 0,
+        'sale_count': 0,
+      },
+      'rows': <Map<String, dynamic>>[],
+      'branch_effectiveness': <Map<String, dynamic>>[],
+      'product_effectiveness': <Map<String, dynamic>>[],
+      'weekly_trend': <Map<String, dynamic>>[],
+    };
+  }
+
+  Map<String, dynamic> _buildOrderEditSalesSummary(
+    List<Map<String, dynamic>> rows,
+  ) {
+    final total = rows.length;
+    final soldWithin = rows
+        .where((row) => row['effectiveness_status'] == 'sold_within_3d')
+        .length;
+    final soldAfter = rows
+        .where((row) => row['effectiveness_status'] == 'sold_after_3d')
+        .length;
+    final notSold = rows
+        .where((row) => row['effectiveness_status'] == 'not_sold')
+        .length;
+
+    final dayValues = rows
+        .map((row) => row['days_to_first_sale'])
+        .whereType<num>()
+        .toList();
+    final soldPctTotal = rows.fold<num>(
+      0,
+      (sum, row) => sum + _num(row['sold_pct']),
+    );
+    final totalAddedQty = rows.fold<num>(
+      0,
+      (sum, row) => sum + _num(row['request_qty']),
+    );
+    final totalSoldQty = rows.fold<num>(
+      0,
+      (sum, row) => sum + _num(row['total_sold_qty']),
+    );
+    final remainingAddedQty = rows.fold<num>(
+      0,
+      (sum, row) => sum + _num(row['remaining_added_qty']),
+    );
+    final saleCount = rows.fold<num>(
+      0,
+      (sum, row) => sum + _num(row['sale_count']),
+    );
+
+    return {
+      'total_requests': total,
+      'sold_within_3d': soldWithin,
+      'sold_after_3d': soldAfter,
+      'not_sold': notSold,
+      'effectiveness_rate': total == 0
+          ? 0
+          : ((soldWithin + soldAfter) / total) * 100,
+      'quick_sell_rate': total == 0 ? 0 : (soldWithin / total) * 100,
+      'avg_days_to_first_sale': dayValues.isEmpty
+          ? null
+          : dayValues.fold<num>(0, (sum, value) => sum + value) /
+                dayValues.length,
+      'avg_sold_pct': total == 0 ? 0 : soldPctTotal / total,
+      'total_added_qty': totalAddedQty,
+      'total_sold_qty': totalSoldQty,
+      'remaining_added_qty': remainingAddedQty,
+      'sale_count': saleCount,
+    };
+  }
+
+  List<Map<String, dynamic>> _buildOrderEditBranchEffectiveness(
+    List<Map<String, dynamic>> rows,
+  ) {
+    final grouped = <String, Map<String, dynamic>>{};
+
+    for (final row in rows) {
+      final branch = _text(row['branch_name']);
+      if (branch.isEmpty) continue;
+
+      final target = grouped.putIfAbsent(
+        branch,
+        () => {
+          'branch_name': branch,
+          'total_requests': 0,
+          'sold_within_3d': 0,
+          'sold_after_3d': 0,
+          'not_sold': 0,
+          'total_request_qty': 0,
+          'total_sold_qty': 0,
+          'remaining_added_qty': 0,
+          'sale_count': 0,
+          'products_count': <String>{},
+          'last_sale_date': null,
+          'products': <Map<String, dynamic>>[],
+          '_days_sum': 0,
+          '_days_count': 0,
+        },
+      );
+
+      target['total_requests'] = (target['total_requests'] as int) + 1;
+      target['total_request_qty'] =
+          (target['total_request_qty'] as num) + _num(row['request_qty']);
+      target['total_sold_qty'] =
+          (target['total_sold_qty'] as num) + _num(row['total_sold_qty']);
+      target['remaining_added_qty'] =
+          (target['remaining_added_qty'] as num) +
+          _num(row['remaining_added_qty']);
+      target['sale_count'] =
+          (target['sale_count'] as num) + _num(row['sale_count']);
+      (target['products_count'] as Set<String>).add(_text(row['item_code']));
+      final lastSaleDate = _dateOnly(row['last_sale_date']);
+      final currentLastSaleDate = _dateOnly(target['last_sale_date']);
+      if (lastSaleDate != null &&
+          (currentLastSaleDate == null ||
+              lastSaleDate.isAfter(currentLastSaleDate))) {
+        target['last_sale_date'] = _formatDateOnly(lastSaleDate);
+      }
+
+      final status = _text(row['effectiveness_status']);
+      if (status == 'sold_within_3d') {
+        target['sold_within_3d'] = (target['sold_within_3d'] as int) + 1;
+      } else if (status == 'sold_after_3d') {
+        target['sold_after_3d'] = (target['sold_after_3d'] as int) + 1;
+      } else {
+        target['not_sold'] = (target['not_sold'] as int) + 1;
+      }
+
+      final daysToFirstSale = row['days_to_first_sale'];
+      if (daysToFirstSale is num) {
+        target['_days_sum'] = (target['_days_sum'] as num) + daysToFirstSale;
+        target['_days_count'] = (target['_days_count'] as int) + 1;
+      }
+
+      (target['products'] as List<Map<String, dynamic>>).add({
+        'item_code': row['item_code'],
+        'item_name': row['item_name'],
+        'request_qty': row['request_qty'],
+        'total_sold_qty': row['total_sold_qty'],
+        'remaining_added_qty': row['remaining_added_qty'],
+        'sale_count': row['sale_count'],
+        'request_date': row['request_date'],
+        'first_sale_date': row['first_sale_date'],
+        'last_sale_date': row['last_sale_date'],
+        'monitoring_label': row['monitoring_label'],
+        'days_elapsed': row['days_elapsed'],
+        'days_to_first_sale': row['days_to_first_sale'],
+        'effectiveness_status': row['effectiveness_status'],
+      });
+    }
+
+    final result = grouped.values.map((row) {
+      final total = row['total_requests'] as int;
+      final soldWithin = row['sold_within_3d'] as int;
+      final soldAfter = row['sold_after_3d'] as int;
+      final daysCount = row['_days_count'] as int;
+      return {
+        'branch_name': row['branch_name'],
+        'total_requests': total,
+        'sold_within_3d': soldWithin,
+        'sold_after_3d': soldAfter,
+        'not_sold': row['not_sold'],
+        'total_request_qty': row['total_request_qty'],
+        'total_sold_qty': row['total_sold_qty'],
+        'remaining_added_qty': row['remaining_added_qty'],
+        'sale_count': row['sale_count'],
+        'products_count': (row['products_count'] as Set<String>).length,
+        'last_sale_date': row['last_sale_date'],
+        'effectiveness_rate': total == 0
+            ? 0
+            : ((soldWithin + soldAfter) / total) * 100,
+        'quick_sell_rate': total == 0 ? 0 : (soldWithin / total) * 100,
+        'avg_days_to_first_sale': daysCount == 0
+            ? null
+            : (row['_days_sum'] as num) / daysCount,
+        'products': row['products'],
+      };
+    }).toList();
+
+    result.sort(
+      (a, b) => _num(
+        b['effectiveness_rate'],
+      ).compareTo(_num(a['effectiveness_rate'])),
+    );
+    return result;
+  }
+
+  List<Map<String, dynamic>> _buildOrderEditProductEffectiveness(
+    List<Map<String, dynamic>> rows,
+  ) {
+    final grouped = <String, Map<String, dynamic>>{};
+
+    for (final row in rows) {
+      final itemCode = _text(row['item_code']);
+      final itemName = _text(row['item_name']);
+      final key = '$itemCode|$itemName';
+
+      final target = grouped.putIfAbsent(
+        key,
+        () => {
+          'item_code': itemCode,
+          'item_name': itemName,
+          'total_requests': 0,
+          'total_request_qty': 0,
+          'total_sold_qty': 0,
+          'remaining_added_qty': 0,
+          'sale_count': 0,
+          'sold_within_3d': 0,
+          'sold_after_3d': 0,
+          'not_sold': 0,
+          'branches': <String, Map<String, dynamic>>{},
+        },
+      );
+
+      target['total_requests'] = (target['total_requests'] as int) + 1;
+      target['total_request_qty'] =
+          (target['total_request_qty'] as num) + _num(row['request_qty']);
+      target['total_sold_qty'] =
+          (target['total_sold_qty'] as num) + _num(row['total_sold_qty']);
+      target['remaining_added_qty'] =
+          (target['remaining_added_qty'] as num) +
+          _num(row['remaining_added_qty']);
+      target['sale_count'] =
+          (target['sale_count'] as num) + _num(row['sale_count']);
+
+      final status = _text(row['effectiveness_status']);
+      if (status == 'sold_within_3d') {
+        target['sold_within_3d'] = (target['sold_within_3d'] as int) + 1;
+      } else if (status == 'sold_after_3d') {
+        target['sold_after_3d'] = (target['sold_after_3d'] as int) + 1;
+      } else {
+        target['not_sold'] = (target['not_sold'] as int) + 1;
+      }
+
+      final branches = target['branches'] as Map<String, Map<String, dynamic>>;
+      final branchName = _text(row['branch_name']);
+      final branchRow = branches.putIfAbsent(
+        branchName,
+        () => {
+          'branch_name': branchName,
+          'request_qty': 0,
+          'total_sold_qty': 0,
+          'remaining_added_qty': 0,
+          'sale_count': 0,
+          'request_date': row['request_date'],
+          'first_sale_date': row['first_sale_date'],
+          'last_sale_date': row['last_sale_date'],
+          'monitoring_label': row['monitoring_label'],
+          'days_elapsed': 0,
+          'days_to_first_sale': null,
+          'effectiveness_status': 'not_sold',
+        },
+      );
+
+      branchRow['request_qty'] =
+          (branchRow['request_qty'] as num) + _num(row['request_qty']);
+      branchRow['total_sold_qty'] =
+          (branchRow['total_sold_qty'] as num) + _num(row['total_sold_qty']);
+      branchRow['remaining_added_qty'] =
+          (branchRow['remaining_added_qty'] as num) +
+          _num(row['remaining_added_qty']);
+      branchRow['sale_count'] =
+          (branchRow['sale_count'] as num) + _num(row['sale_count']);
+      branchRow['days_elapsed'] = _maxNum(
+        branchRow['days_elapsed'],
+        row['days_elapsed'],
+      );
+      branchRow['days_to_first_sale'] = _minNullableNum(
+        branchRow['days_to_first_sale'],
+        row['days_to_first_sale'],
+      );
+      branchRow['effectiveness_status'] = _bestEffectivenessStatus(
+        _text(branchRow['effectiveness_status']),
+        status,
+      );
+      final lastSaleDate = _dateOnly(row['last_sale_date']);
+      final currentLastSaleDate = _dateOnly(branchRow['last_sale_date']);
+      if (lastSaleDate != null &&
+          (currentLastSaleDate == null ||
+              lastSaleDate.isAfter(currentLastSaleDate))) {
+        branchRow['last_sale_date'] = _formatDateOnly(lastSaleDate);
+      }
+    }
+
+    final result = grouped.values.map((row) {
+      final total = row['total_requests'] as int;
+      final soldWithin = row['sold_within_3d'] as int;
+      final soldAfter = row['sold_after_3d'] as int;
+      final notSold = row['not_sold'] as int;
+      final requestQty = _num(row['total_request_qty']);
+      final soldQty = _num(row['total_sold_qty']);
+      final effectivenessRate = total == 0
+          ? 0
+          : ((soldWithin + soldAfter) / total) * 100;
+
+      final branchRows =
+          (row['branches'] as Map<String, Map<String, dynamic>>).values.toList()
+            ..sort(
+              (a, b) => _num(
+                b['total_sold_qty'],
+              ).compareTo(_num(a['total_sold_qty'])),
+            );
+
+      return {
+        'item_code': row['item_code'],
+        'item_name': row['item_name'],
+        'requests': total,
+        'qty': requestQty,
+        'sales_rate': effectivenessRate,
+        'not_sold_rate': total == 0 ? 0 : (notSold / total) * 100,
+        'total_requests': total,
+        'total_request_qty': requestQty,
+        'total_sold_qty': soldQty,
+        'remaining_added_qty': row['remaining_added_qty'],
+        'sale_count': row['sale_count'],
+        'sold_within_3d': soldWithin,
+        'sold_after_3d': soldAfter,
+        'not_sold': notSold,
+        'effectiveness_rate': effectivenessRate,
+        'sold_pct': requestQty <= 0 ? 0 : (soldQty / requestQty) * 100,
+        'branches': branchRows,
+      };
+    }).toList();
+
+    result.sort(
+      (a, b) =>
+          _num(b['total_request_qty']).compareTo(_num(a['total_request_qty'])),
+    );
+    return result;
+  }
+
+  List<Map<String, dynamic>> _buildOrderEditWeeklyTrend(
+    List<Map<String, dynamic>> rows,
+  ) {
+    final grouped = <String, Map<String, dynamic>>{};
+
+    for (final row in rows) {
+      final requestDate = _dateOnly(row['request_date']);
+      if (requestDate == null) continue;
+
+      final weekStart = requestDate.subtract(
+        Duration(days: requestDate.weekday - 1),
+      );
+      final week = _formatDateOnly(weekStart);
+      final target = grouped.putIfAbsent(
+        week,
+        () => {
+          'week': week,
+          'total': 0,
+          'sold_3d': 0,
+          'sold_after_3d': 0,
+          'not_sold': 0,
+        },
+      );
+
+      target['total'] = (target['total'] as int) + 1;
+      final status = _text(row['effectiveness_status']);
+      if (status == 'sold_within_3d') {
+        target['sold_3d'] = (target['sold_3d'] as int) + 1;
+      } else if (status == 'sold_after_3d') {
+        target['sold_after_3d'] = (target['sold_after_3d'] as int) + 1;
+      } else {
+        target['not_sold'] = (target['not_sold'] as int) + 1;
+      }
+    }
+
+    final result = grouped.values.map((row) {
+      final total = row['total'] as int;
+      final sold3 = row['sold_3d'] as int;
+      final soldAfter = row['sold_after_3d'] as int;
+      return {
+        ...row,
+        'effectiveness_rate': total == 0
+            ? 0
+            : ((sold3 + soldAfter) / total) * 100,
+      };
+    }).toList();
+
+    result.sort((a, b) => _text(a['week']).compareTo(_text(b['week'])));
+    return result;
+  }
+
+  String _orderEditPairKey(dynamic branch, dynamic itemCode) {
+    return '${_text(branch)}|${_text(itemCode)}';
+  }
+
+  String _orderEditMonitoringLabel(String value) {
+    switch (value) {
+      case 'sold':
+        return 'Sold';
+      case 'partially_sold':
+        return 'Partially Sold';
+      case 'not_sold':
+        return 'Not Sold';
+      default:
+        return 'Unknown';
+    }
+  }
+
+  DateTime? _dateOnly(dynamic value) {
+    if (value is DateTime) {
+      return DateTime(value.year, value.month, value.day);
+    }
+
+    final parsed = DateTime.tryParse(_text(value));
+    if (parsed == null) return null;
+    final local = parsed.toLocal();
+    return DateTime(local.year, local.month, local.day);
+  }
+
+  String _formatDateOnly(DateTime value) {
+    return DateFormat('yyyy-MM-dd').format(value);
+  }
+
+  String _effectivenessLabel(String status) {
+    switch (status) {
+      case 'sold_within_3d':
+        return 'Sold <= 3 Days';
+      case 'sold_after_3d':
+        return 'Sold > 3 Days';
+      default:
+        return 'Not Sold';
+    }
+  }
+
+  num _maxNum(dynamic a, dynamic b) {
+    final av = _num(a);
+    final bv = _num(b);
+    return av > bv ? av : bv;
+  }
+
+  num? _minNullableNum(dynamic a, dynamic b) {
+    final bv = b is num ? b : num.tryParse(_text(b));
+    if (bv == null) return a is num ? a : num.tryParse(_text(a));
+
+    final av = a is num ? a : num.tryParse(_text(a));
+    if (av == null) return bv;
+    return av < bv ? av : bv;
+  }
+
+  String _bestEffectivenessStatus(String current, String next) {
+    if (current == 'sold_within_3d' || next == 'sold_within_3d') {
+      return 'sold_within_3d';
+    }
+    if (current == 'sold_after_3d' || next == 'sold_after_3d') {
+      return 'sold_after_3d';
+    }
+    return 'not_sold';
   }
 
   Future<Map<String, dynamic>> fetchFormularyPage({

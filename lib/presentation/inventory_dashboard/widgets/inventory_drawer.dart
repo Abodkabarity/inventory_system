@@ -223,6 +223,13 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
                       _menuItem(
                         context: context,
                         state: state,
+                        page: InventoryPageType.orderEditAnalysis,
+                        icon: Icons.add_chart_rounded,
+                        title: 'Order Edit Analysis',
+                      ),
+                      _menuItem(
+                        context: context,
+                        state: state,
                         page: InventoryPageType.branchesTracker,
                         icon: Icons.timeline_rounded,
                         title: 'Branches Tracker',

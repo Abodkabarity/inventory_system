@@ -64,6 +64,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     on<ApproveAllInventoryRequests>(_onApproveAllInventory);
     on<LoadAdditionalOrderAnalysis>(_onLoadAdditionalOrderAnalysis);
     on<LoadAdditionalOrderHistory>(_onLoadAdditionalOrderHistory);
+    on<LoadOrderEditAnalysis>(_onLoadOrderEditAnalysis);
     on<ExportMaxAdjCurrent>(_onExportCurrent);
     on<ExportMaxAdjWithHistory>(_onExportWithHistory);
     on<ImportAssortmentExcel>(_onImportAssortment);
@@ -75,6 +76,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     on<ExportInventoryOrders>(_onExportInventoryOrders);
     on<ExportFormularyTemplate>(_onExportFormularyTemplate);
     on<LoadRequestEffectiveness>(_onLoadRequestEffectiveness);
+    on<LoadOrderEditSalesPerformance>(_onLoadOrderEditSalesPerformance);
     on<ImportFormularyExcel>(_onImportFormulary);
     on<LoadOrdersPage>(_onLoadOrdersPage);
     on<ImportTmaExcel>(_onImportTma);
@@ -3208,6 +3210,30 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     }
   }
 
+  Future<void> _onLoadOrderEditAnalysis(
+    LoadOrderEditAnalysis event,
+    Emitter<InventoryState> emit,
+  ) async {
+    try {
+      emit(state.copyWith(isOrderEditAnalysisLoading: true));
+
+      final data = await repo.fetchOrderEditAnalysis(
+        from: event.from,
+        to: event.to,
+      );
+
+      emit(
+        state.copyWith(
+          orderEditAnalysis: data,
+          isOrderEditAnalysisLoading: false,
+        ),
+      );
+    } catch (e) {
+      emit(state.copyWith(isOrderEditAnalysisLoading: false));
+      print('LoadOrderEditAnalysis error: $e');
+    }
+  }
+
   Future<void> _onLoadRequestEffectiveness(
     LoadRequestEffectiveness event,
     Emitter<InventoryState> emit,
@@ -3230,6 +3256,31 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     } catch (e) {
       emit(state.copyWith(isEffectivenessLoading: false));
       print('LoadRequestEffectiveness error: $e');
+    }
+  }
+
+  Future<void> _onLoadOrderEditSalesPerformance(
+    LoadOrderEditSalesPerformance event,
+    Emitter<InventoryState> emit,
+  ) async {
+    try {
+      emit(state.copyWith(isOrderEditSalesLoading: true));
+
+      final data = await repo.fetchOrderEditSalesPerformance(
+        from: event.from,
+        to: event.to,
+        branch: event.branch,
+      );
+
+      emit(
+        state.copyWith(
+          orderEditSalesPerformance: data,
+          isOrderEditSalesLoading: false,
+        ),
+      );
+    } catch (e) {
+      emit(state.copyWith(isOrderEditSalesLoading: false));
+      print('LoadOrderEditSalesPerformance error: $e');
     }
   }
 

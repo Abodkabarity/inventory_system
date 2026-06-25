@@ -334,12 +334,37 @@ class LoadAdditionalOrderHistory extends InventoryEvent {
   List<Object?> get props => [from, to];
 }
 
+class LoadOrderEditAnalysis extends InventoryEvent {
+  final DateTime from;
+  final DateTime to;
+
+  LoadOrderEditAnalysis({required this.from, required this.to});
+
+  @override
+  List<Object?> get props => [from, to];
+}
+
 class LoadRequestEffectiveness extends InventoryEvent {
   final DateTime from;
   final DateTime to;
   final String? branch;
 
   LoadRequestEffectiveness({required this.from, required this.to, this.branch});
+
+  @override
+  List<Object?> get props => [from, to, branch];
+}
+
+class LoadOrderEditSalesPerformance extends InventoryEvent {
+  final DateTime from;
+  final DateTime to;
+  final String? branch;
+
+  LoadOrderEditSalesPerformance({
+    required this.from,
+    required this.to,
+    this.branch,
+  });
 
   @override
   List<Object?> get props => [from, to, branch];

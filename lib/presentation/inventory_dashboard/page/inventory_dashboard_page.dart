@@ -21,6 +21,7 @@ import 'formulary_page.dart';
 import 'inventory_daily_order_page.dart';
 import 'max_adjustment_page.dart';
 import 'mismatch_page.dart';
+import 'order_edit_analysis_page.dart';
 
 class InventoryDashboardPage extends StatelessWidget {
   final String runDate;
@@ -250,6 +251,8 @@ Widget _buildPage(InventoryState state, bool isSubmitted, String runDate) {
       return InventoryDailyOrderPage(runDate: runDate);
     case InventoryPageType.additionalOrderAnalysis:
       return const AdditionalOrderAnalysisPage();
+    case InventoryPageType.orderEditAnalysis:
+      return const OrderEditAnalysisPage();
     case InventoryPageType.branchesTracker:
       return const BranchesTrackerPage();
     case InventoryPageType.allocation:
