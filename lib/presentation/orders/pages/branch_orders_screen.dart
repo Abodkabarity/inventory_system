@@ -368,6 +368,14 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
             );
         final showFullOrderColumns =
             s.isOrderDay || s.isMissingOrder || s.isSubmitted;
+        final showAdditionalRowActions =
+            s.isSubmitted ||
+            s.isMissingOrder ||
+            !s.isOrderDay ||
+            !OperationalDateHelper.canSubmitForBranch(
+              startHour: s.submitStartHour,
+              endHour: s.submitEndHour,
+            );
         final orderedColumns = showFullOrderColumns
             ? BranchOrdersSelectors.orderedVisibleColumns(s)
             : ['item_code', 'item_name', 'branch_stock', 'store_stock'];
@@ -1038,30 +1046,31 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                     }
                                                   : null,
                                             ),
-                                            const SizedBox(width: 6),
-
-                                            OrdersToolbar.actionButton(
-                                              label: 'Send Additional',
-                                              icon: Icons.add_box_outlined,
-                                              badgeCount: draftAddCount,
-                                              color: AppColors.secondaryColor,
-                                              onPressed:
-                                                  (!zoneReady ||
-                                                      s
-                                                          .additionalEdits
-                                                          .isEmpty ||
-                                                      isBusy)
-                                                  ? null
-                                                  : () {
-                                                      context
-                                                          .read<OrdersBloc>()
-                                                          .add(
-                                                            OrdersSendAdditionalRequestsPressed(
-                                                              zone: zs.zone!,
-                                                            ),
-                                                          );
-                                                    },
-                                            ),
+                                            if (showAdditionalRowActions) ...[
+                                              const SizedBox(width: 6),
+                                              OrdersToolbar.actionButton(
+                                                label: 'Send Additional',
+                                                icon: Icons.add_box_outlined,
+                                                badgeCount: draftAddCount,
+                                                color: AppColors.secondaryColor,
+                                                onPressed:
+                                                    (!zoneReady ||
+                                                        s
+                                                            .additionalEdits
+                                                            .isEmpty ||
+                                                        isBusy)
+                                                    ? null
+                                                    : () {
+                                                        context
+                                                            .read<OrdersBloc>()
+                                                            .add(
+                                                              OrdersSendAdditionalRequestsPressed(
+                                                                zone: zs.zone!,
+                                                              ),
+                                                            );
+                                                      },
+                                              ),
+                                            ],
 
                                             if (!s.isSubmitted &&
                                                 s.isOrderDay &&
@@ -1786,6 +1795,8 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                   s.additionalEdits,
                                               sentAdditionalQtyByItemCode:
                                                   s.sentAdditionalQtyByItemCode,
+                                              showAdditionalRowActions:
+                                                  showAdditionalRowActions,
                                               onTapAdditionalRequest: (row) {
                                                 BranchOrdersActions.openAdditionalSidePanel(
                                                   context: context,

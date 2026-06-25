@@ -34,6 +34,7 @@ class OrdersTable extends StatefulWidget {
 
   // ✅ NEW: submitted flag (locks final reorder tap + hides edit icon)
   final bool isSubmitted;
+  final bool showAdditionalRowActions;
   final int submitStartHour;
   final int submitEndHour;
   // Controller for selection/scroll.
@@ -59,6 +60,7 @@ class OrdersTable extends StatefulWidget {
     required this.gridController,
     required this.onColumnResized,
     required this.isSubmitted, // ✅ NEW
+    required this.showAdditionalRowActions,
     this.controller,
     required this.submitStartHour,
     required this.submitEndHour,
@@ -206,6 +208,7 @@ class _OrdersTableState extends State<OrdersTable> {
       sentAdditionalQtyByItemCode: widget.sentAdditionalQtyByItemCode,
       onTapAdditionalRequest: widget.onTapAdditionalRequest,
       isSubmitted: widget.isSubmitted, // ✅ NEW
+      showAdditionalRowActions: widget.showAdditionalRowActions,
     );
 
     widget.gridController.attachSource(_source);
@@ -230,12 +233,15 @@ class _OrdersTableState extends State<OrdersTable> {
         );
 
     final submittedChanged = oldWidget.isSubmitted != widget.isSubmitted;
+    final additionalActionsChanged =
+        oldWidget.showAdditionalRowActions != widget.showAdditionalRowActions;
 
     if (!identical(oldWidget.rows, widget.rows) ||
         colsChanged ||
         editsChanged ||
         addChanged ||
-        submittedChanged) {
+        submittedChanged ||
+        additionalActionsChanged) {
       _source.update(
         rows: widget.rows,
         columns: _columns,
@@ -245,6 +251,7 @@ class _OrdersTableState extends State<OrdersTable> {
         additionalEdits: widget.additionalEdits,
         sentAdditionalQtyByItemCode: widget.sentAdditionalQtyByItemCode,
         isSubmitted: widget.isSubmitted, // ✅ NEW
+        showAdditionalRowActions: widget.showAdditionalRowActions,
       );
 
       widget.gridController.attachSource(_source);
@@ -471,6 +478,7 @@ class _OrdersDataSource extends DataGridSource {
 
   // ✅ NEW
   bool _isSubmitted = false;
+  bool _showAdditionalRowActions = true;
   int _submitStartHour = 21;
   int _submitEndHour = 9;
   late final ValueChanged<DailyOrderRow> _onTapAdditionalRequest;
@@ -485,6 +493,7 @@ class _OrdersDataSource extends DataGridSource {
     required Map<String, AdditionalRequestEdit> additionalEdits,
     required Map<String, num> sentAdditionalQtyByItemCode,
     required bool isSubmitted,
+    required bool showAdditionalRowActions,
     required ValueChanged<DailyOrderRow> onTapAdditionalRequest, // ✅ NEW
   }) {
     _onTapAdditionalRequest = onTapAdditionalRequest;
@@ -497,6 +506,7 @@ class _OrdersDataSource extends DataGridSource {
       submitEndHour: submitEndHour,
       sentAdditionalQtyByItemCode: sentAdditionalQtyByItemCode,
       isSubmitted: isSubmitted, // ✅ NEW
+      showAdditionalRowActions: showAdditionalRowActions,
     );
   }
 
@@ -509,6 +519,7 @@ class _OrdersDataSource extends DataGridSource {
     required Map<String, AdditionalRequestEdit> additionalEdits,
     required Map<String, num> sentAdditionalQtyByItemCode,
     required bool isSubmitted, // ✅ NEW
+    required bool showAdditionalRowActions,
   }) {
     _rows = rows;
     _columns = columns;
@@ -518,6 +529,7 @@ class _OrdersDataSource extends DataGridSource {
     _additionalEdits = additionalEdits;
     _sentAdditionalQtyByItemCode = sentAdditionalQtyByItemCode;
     _isSubmitted = isSubmitted; // ✅ NEW
+    _showAdditionalRowActions = showAdditionalRowActions;
 
     _gridRows = rows.asMap().entries.map((entry) {
       final idx = entry.key;
@@ -808,9 +820,11 @@ class _OrdersDataSource extends DataGridSource {
               : (hasSent ? sent.toString() : '');
 
           return GestureDetector(
-            onTap: () {
-              _onTapAdditionalRequest(daily);
-            },
+            onTap: _showAdditionalRowActions
+                ? () {
+                    _onTapAdditionalRequest(daily);
+                  }
+                : null,
             child: Container(
               alignment: Alignment.centerLeft,
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -888,26 +902,29 @@ class _OrdersDataSource extends DataGridSource {
 
                       const SizedBox(width: 8),
 
-                      InkWell(
-                        borderRadius: BorderRadius.circular(999),
-                        onTap: () {
-                          _onTapAdditionalRequest(daily);
-                        },
-                        child: Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF9FAFB),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(color: const Color(0xFFE6E8F0)),
-                          ),
-                          child: const Icon(
-                            Icons.add,
-                            size: 16,
-                            color: Color(0xFF6B7280),
+                      if (_showAdditionalRowActions)
+                        InkWell(
+                          borderRadius: BorderRadius.circular(999),
+                          onTap: () {
+                            _onTapAdditionalRequest(daily);
+                          },
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF9FAFB),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: const Color(0xFFE6E8F0),
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.add,
+                              size: 16,
+                              color: Color(0xFF6B7280),
+                            ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                 ],
