@@ -78,13 +78,16 @@ class InventoryDashboardBody extends StatelessWidget {
                   branches: state.branches,
                   submitted: state.submittedBranches,
                   submittedBranchTimes: state.submittedBranchTimes,
+                  submitEndHours: state.submitEndHours,
                   editsCount: state.editsCount,
                   selectedBranch: state.selectedBranch,
                   additionalTodayBranchCount: state.additionalTodayBranchCount,
                 ),
               ),
 
-SizedBox(width: 20.w,),              /// ADDITIONAL REQUESTS
+              SizedBox(width: 20.w),
+
+              /// ADDITIONAL REQUESTS
               Expanded(
                 child: InventoryAdditionalPanel(
                   requests: state.additionalRequests,

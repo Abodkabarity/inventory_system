@@ -853,6 +853,15 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
     try {
       final branches = await repo.fetchBranchesToday(runDate);
+      final branchSettings = await repo.fetchBranchSettings();
+      final submitStartHours = {
+        for (final branch in branchSettings)
+          branch.branchName: branch.submitStartHour,
+      };
+      final submitEndHours = {
+        for (final branch in branchSettings)
+          branch.branchName: branch.submitEndHour,
+      };
 
       final submitted = await repo.fetchSubmittedBranches(runDate);
       final submittedTimes = await repo.fetchSubmittedBranchTimes(runDate);
@@ -872,6 +881,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           branches: branches,
           submittedBranches: submitted,
           submittedBranchTimes: submittedTimes,
+          submitStartHours: submitStartHours,
+          submitEndHours: submitEndHours,
           additionalRequests: additional,
           editsCount: editsCount,
           additionalTodayBranchCount: additionalBranchToday,
@@ -1353,9 +1364,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           final message = total > 0
               ? 'Writing branches stock CSV: $written / $total'
               : 'Writing branches stock CSV: $written rows...';
-          emit(
-            state.copyWith(exportMessage: message),
-          );
+          emit(state.copyWith(exportMessage: message));
         },
       );
 

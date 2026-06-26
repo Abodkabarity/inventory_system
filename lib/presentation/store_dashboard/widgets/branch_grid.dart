@@ -51,7 +51,7 @@ class BranchGrid extends StatelessWidget {
                 crossAxisCount: 2,
                 mainAxisSpacing: 14,
                 crossAxisSpacing: 14,
-                childAspectRatio: 2.8,
+                childAspectRatio: 2.45,
               ),
 
               itemCount: branches.length,
@@ -255,8 +255,19 @@ class BranchGrid extends StatelessWidget {
                                           ? Colors.white70
                                           : statusColor,
                                     ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   );
                                 },
+                              ),
+
+                              const SizedBox(height: 7),
+
+                              _DeadlinePill(
+                                hour: endHour,
+                                isSelected: isSelected,
+                                isLate: isLate,
+                                isPrinted: isPrinted,
                               ),
                             ],
                           ),
@@ -278,5 +289,73 @@ class BranchGrid extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _DeadlinePill extends StatelessWidget {
+  final int hour;
+  final bool isSelected;
+  final bool isLate;
+  final bool isPrinted;
+
+  const _DeadlinePill({
+    required this.hour,
+    required this.isSelected,
+    required this.isLate,
+    required this.isPrinted,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor = isSelected
+        ? Colors.white
+        : isLate
+        ? Colors.red.shade900
+        : isPrinted
+        ? Colors.green.shade900
+        : const Color(0xff475569);
+    final bgColor = isSelected
+        ? Colors.white.withValues(alpha: .18)
+        : Colors.white.withValues(alpha: .72);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: isSelected
+              ? Colors.white.withValues(alpha: .22)
+              : Colors.black.withValues(alpha: .05),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.schedule_rounded, size: 13, color: textColor),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              'Deadline ${_formatHour(hour)}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: textColor,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _formatHour(int hour) {
+    if (hour >= 24) return '12:00 AM';
+    final normalized = hour.clamp(0, 23);
+    final suffix = normalized >= 12 ? 'PM' : 'AM';
+    final displayHour = normalized % 12 == 0 ? 12 : normalized % 12;
+    return '$displayHour:00 $suffix';
   }
 }

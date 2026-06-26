@@ -161,6 +161,10 @@ class InventoryState extends Equatable {
 
   final Map<String, DateTime> submittedBranchTimes;
 
+  final Map<String, int> submitStartHours;
+
+  final Map<String, int> submitEndHours;
+
   final String? bulkMessage;
 
   final bool? bulkSuccess;
@@ -261,6 +265,8 @@ class InventoryState extends Equatable {
     required this.isBulkLoading,
     required this.submittedBranches,
     required this.submittedBranchTimes,
+    required this.submitStartHours,
+    required this.submitEndHours,
     this.bulkMessage,
     this.bulkSuccess,
     required this.isLoading,
@@ -388,6 +394,8 @@ class InventoryState extends Equatable {
       isBulkLoading: false,
       submittedBranches: [],
       submittedBranchTimes: {},
+      submitStartHours: {},
+      submitEndHours: {},
       bulkMessage: null,
       bulkSuccess: null,
       isLoading: false,
@@ -497,6 +505,8 @@ class InventoryState extends Equatable {
     bool? isBulkLoading,
     List<String>? submittedBranches,
     Map<String, DateTime>? submittedBranchTimes,
+    Map<String, int>? submitStartHours,
+    Map<String, int>? submitEndHours,
     String? bulkMessage,
     bool? bulkSuccess,
     bool? isLoading,
@@ -618,6 +628,8 @@ class InventoryState extends Equatable {
       isBulkLoading: isBulkLoading ?? this.isBulkLoading,
       submittedBranches: submittedBranches ?? this.submittedBranches,
       submittedBranchTimes: submittedBranchTimes ?? this.submittedBranchTimes,
+      submitStartHours: submitStartHours ?? this.submitStartHours,
+      submitEndHours: submitEndHours ?? this.submitEndHours,
       bulkMessage: bulkMessage ?? this.bulkMessage,
       bulkSuccess: bulkSuccess ?? this.bulkSuccess,
       isLoading: isLoading ?? this.isLoading,
@@ -729,6 +741,8 @@ class InventoryState extends Equatable {
     isBulkLoading,
     submittedBranches,
     submittedBranchTimes,
+    submitStartHours,
+    submitEndHours,
     requestEffectiveness,
     formularyPage,
     formularyPageSize,
