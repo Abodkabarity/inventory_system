@@ -1,6 +1,7 @@
 import '../entities/additional_request_group.dart';
 import '../entities/allocation_result_row.dart';
 import '../entities/allocation_source_row.dart';
+import '../entities/branch_setting.dart';
 import '../entities/inventory_edit_item.dart';
 import '../entities/mismatch_item.dart';
 
@@ -203,5 +204,10 @@ abstract class InventoryRepository {
   });
   Future<List<Map<String, dynamic>>> fetchPurchaseShortageBranchStock({
     required String runDate,
+  });
+  Future<List<BranchSetting>> fetchBranchSettings();
+  Future<void> saveBranchSetting({
+    required BranchSetting branch,
+    String? originalBranchName,
   });
 }

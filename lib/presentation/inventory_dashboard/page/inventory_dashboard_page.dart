@@ -16,6 +16,7 @@ import '../widgets/inventory_drawer.dart';
 import 'additional_order_analysis_page.dart';
 import 'allocation_page.dart';
 import 'assortment_page.dart';
+import 'branch_setting_page.dart';
 import 'branches_tracker_page.dart';
 import 'formulary_page.dart';
 import 'inventory_daily_order_page.dart';
@@ -260,5 +261,7 @@ Widget _buildPage(InventoryState state, bool isSubmitted, String runDate) {
       return AllocationPage(runDate: runDate);
     case InventoryPageType.shortage:
       return PurchaseShortagePage(runDate: runDate);
+    case InventoryPageType.branchSetting:
+      return const BranchSettingPage();
   }
 }

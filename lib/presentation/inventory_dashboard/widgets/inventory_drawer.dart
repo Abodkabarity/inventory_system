@@ -250,6 +250,13 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
                         icon: Icons.production_quantity_limits_rounded,
                         title: 'Shortage',
                       ),
+                      _menuItem(
+                        context: context,
+                        state: state,
+                        page: InventoryPageType.branchSetting,
+                        icon: Icons.tune_rounded,
+                        title: 'Branch Setting',
+                      ),
                     ],
                   ),
                 ),

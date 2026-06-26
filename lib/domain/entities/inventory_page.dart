@@ -12,4 +12,5 @@ enum InventoryPageType {
   branchesTracker,
   allocation,
   shortage,
+  branchSetting,
 }

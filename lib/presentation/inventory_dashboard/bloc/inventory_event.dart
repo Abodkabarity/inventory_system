@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 
+import '../../../domain/entities/branch_setting.dart';
 import '../../../domain/entities/inventory_page.dart';
 
 class InventoryEvent extends Equatable {
@@ -487,4 +488,16 @@ class ExportPurchaseShortage extends InventoryEvent {
 
   @override
   List<Object?> get props => [runDate];
+}
+
+class LoadBranchSettings extends InventoryEvent {}
+
+class SaveBranchSetting extends InventoryEvent {
+  final BranchSetting branch;
+  final String? originalBranchName;
+
+  SaveBranchSetting({required this.branch, this.originalBranchName});
+
+  @override
+  List<Object?> get props => [branch, originalBranchName];
 }

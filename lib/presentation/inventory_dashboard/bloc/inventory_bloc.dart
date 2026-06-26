@@ -92,6 +92,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     });
     on<LoadPurchaseShortage>(_onLoadPurchaseShortage);
     on<ExportPurchaseShortage>(_onExportPurchaseShortage);
+    on<LoadBranchSettings>(_onLoadBranchSettings);
+    on<SaveBranchSetting>(_onSaveBranchSetting);
     on<ExportTmaTemplate>(_onExportTmaTemplate);
     on<ExportTmaCurrent>(_onExportTmaCurrent);
     on<ExportTmaWithHistory>(_onExportTmaHistory);
@@ -1333,6 +1335,72 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       rows: state.purchaseShortageRows,
       branchStockRows: branchStockRows,
     );
+  }
+
+  Future<void> _onLoadBranchSettings(
+    LoadBranchSettings event,
+    Emitter<InventoryState> emit,
+  ) async {
+    emit(
+      state.copyWith(
+        isBranchSettingsLoading: true,
+        branchSettingsError: '',
+        branchSettingsMessage: '',
+      ),
+    );
+
+    try {
+      final rows = await repo.fetchBranchSettings();
+      emit(
+        state.copyWith(
+          branchSettings: rows,
+          isBranchSettingsLoading: false,
+          branchSettingsError: '',
+        ),
+      );
+    } catch (e) {
+      emit(
+        state.copyWith(
+          isBranchSettingsLoading: false,
+          branchSettingsError: e.toString(),
+        ),
+      );
+    }
+  }
+
+  Future<void> _onSaveBranchSetting(
+    SaveBranchSetting event,
+    Emitter<InventoryState> emit,
+  ) async {
+    emit(
+      state.copyWith(
+        isBranchSettingsSaving: true,
+        branchSettingsError: '',
+        branchSettingsMessage: '',
+      ),
+    );
+
+    try {
+      await repo.saveBranchSetting(
+        branch: event.branch,
+        originalBranchName: event.originalBranchName,
+      );
+      final rows = await repo.fetchBranchSettings();
+      emit(
+        state.copyWith(
+          branchSettings: rows,
+          isBranchSettingsSaving: false,
+          branchSettingsMessage: 'Branch settings saved successfully',
+        ),
+      );
+    } catch (e) {
+      emit(
+        state.copyWith(
+          isBranchSettingsSaving: false,
+          branchSettingsError: e.toString(),
+        ),
+      );
+    }
   }
 
   Future<void> _onImportAllocationFile(

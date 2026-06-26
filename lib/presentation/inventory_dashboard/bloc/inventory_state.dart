@@ -2,6 +2,7 @@ import 'package:equatable/equatable.dart';
 
 import '../../../domain/entities/additional_request_group.dart';
 import '../../../domain/entities/allocation_result_row.dart';
+import '../../../domain/entities/branch_setting.dart';
 import '../../../domain/entities/daily_order_row.dart';
 import '../../../domain/entities/inventory_edit_item.dart';
 import '../../../domain/entities/inventory_page.dart';
@@ -176,6 +177,11 @@ class InventoryState extends Equatable {
   final bool isPurchaseShortageLoading;
   final String purchaseShortageError;
   final List<Map<String, dynamic>> purchaseShortageRows;
+  final bool isBranchSettingsLoading;
+  final bool isBranchSettingsSaving;
+  final String branchSettingsError;
+  final String branchSettingsMessage;
+  final List<BranchSetting> branchSettings;
 
   InventoryState({
     required this.branches,
@@ -269,6 +275,11 @@ class InventoryState extends Equatable {
     required this.isPurchaseShortageLoading,
     required this.purchaseShortageError,
     required this.purchaseShortageRows,
+    required this.isBranchSettingsLoading,
+    required this.isBranchSettingsSaving,
+    required this.branchSettingsError,
+    required this.branchSettingsMessage,
+    required this.branchSettings,
     required this.hasMorePages,
     required this.additionalAnalysis,
     required this.requestEffectiveness,
@@ -391,6 +402,11 @@ class InventoryState extends Equatable {
       isPurchaseShortageLoading: false,
       purchaseShortageError: '',
       purchaseShortageRows: [],
+      isBranchSettingsLoading: false,
+      isBranchSettingsSaving: false,
+      branchSettingsError: '',
+      branchSettingsMessage: '',
+      branchSettings: [],
     );
   }
 
@@ -495,6 +511,11 @@ class InventoryState extends Equatable {
     bool? isPurchaseShortageLoading,
     String? purchaseShortageError,
     List<Map<String, dynamic>>? purchaseShortageRows,
+    bool? isBranchSettingsLoading,
+    bool? isBranchSettingsSaving,
+    String? branchSettingsError,
+    String? branchSettingsMessage,
+    List<BranchSetting>? branchSettings,
   }) {
     return InventoryState(
       branches: branches ?? this.branches,
@@ -615,6 +636,14 @@ class InventoryState extends Equatable {
       purchaseShortageError:
           purchaseShortageError ?? this.purchaseShortageError,
       purchaseShortageRows: purchaseShortageRows ?? this.purchaseShortageRows,
+      isBranchSettingsLoading:
+          isBranchSettingsLoading ?? this.isBranchSettingsLoading,
+      isBranchSettingsSaving:
+          isBranchSettingsSaving ?? this.isBranchSettingsSaving,
+      branchSettingsError: branchSettingsError ?? this.branchSettingsError,
+      branchSettingsMessage:
+          branchSettingsMessage ?? this.branchSettingsMessage,
+      branchSettings: branchSettings ?? this.branchSettings,
     );
   }
 
@@ -720,5 +749,10 @@ class InventoryState extends Equatable {
     isPurchaseShortageLoading,
     purchaseShortageError,
     purchaseShortageRows,
+    isBranchSettingsLoading,
+    isBranchSettingsSaving,
+    branchSettingsError,
+    branchSettingsMessage,
+    branchSettings,
   ];
 }

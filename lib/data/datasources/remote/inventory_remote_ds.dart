@@ -1,6 +1,8 @@
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../domain/entities/branch_setting.dart';
+
 class InventoryRemoteDs {
   final SupabaseClient client;
 
@@ -88,6 +90,46 @@ class InventoryRemoteDs {
       result.putIfAbsent(branch, () => submittedAt);
     }
     return result;
+  }
+
+  Future<List<BranchSetting>> fetchBranchSettings() async {
+    final res = await client
+        .from('branches')
+        .select('''
+          branch_name,
+          email,
+          zone,
+          is_active,
+          order_days,
+          submit_start_hour,
+          submit_end_hour,
+          max_adj_limit,
+          order_increase_limit,
+          order_edit_limit,
+          additional_order_limit,
+          area,
+          branch_type
+        ''')
+        .order('branch_name', ascending: true);
+
+    return List<Map<String, dynamic>>.from(
+      res,
+    ).map(BranchSetting.fromMap).toList();
+  }
+
+  Future<void> saveBranchSetting({
+    required BranchSetting branch,
+    String? originalBranchName,
+  }) async {
+    final payload = branch.toMap();
+    final original = (originalBranchName ?? '').trim();
+
+    if (original.isEmpty) {
+      await client.from('branches').insert(payload);
+      return;
+    }
+
+    await client.from('branches').update(payload).eq('branch_name', original);
   }
 
   /// ===============================

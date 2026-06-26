@@ -1,6 +1,7 @@
 import '../../domain/entities/additional_request_group.dart';
 import '../../domain/entities/allocation_result_row.dart';
 import '../../domain/entities/allocation_source_row.dart';
+import '../../domain/entities/branch_setting.dart';
 import '../../domain/entities/inventory_edit_item.dart';
 import '../../domain/entities/mismatch_item.dart';
 import '../../domain/repositories/inventory_repository.dart';
@@ -1108,5 +1109,21 @@ class InventoryRepositoryImpl implements InventoryRepository {
     required String runDate,
   }) {
     return remote.fetchPurchaseShortageBranchStock(runDate: runDate);
+  }
+
+  @override
+  Future<List<BranchSetting>> fetchBranchSettings() {
+    return remote.fetchBranchSettings();
+  }
+
+  @override
+  Future<void> saveBranchSetting({
+    required BranchSetting branch,
+    String? originalBranchName,
+  }) {
+    return remote.saveBranchSetting(
+      branch: branch,
+      originalBranchName: originalBranchName,
+    );
   }
 }
