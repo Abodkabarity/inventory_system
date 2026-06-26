@@ -54,13 +54,25 @@ class StoreRemoteDs {
   }
 
   /// GET ALL BRANCHES
-  Future<List<Map<String, dynamic>>> fetchAllBranches() async {
+  Future<List<Map<String, dynamic>>> fetchTodayBranches() async {
+    final today = DateFormat('EEEE').format(DateTime.now());
+
     final res = await client
         .from('branches')
-        .select('branch_name,submit_start_hour,submit_end_hour')
+        .select('''
+branch_name,
+submit_start_hour,
+submit_end_hour,
+order_days
+''')
         .eq('is_active', true);
 
-    return List<Map<String, dynamic>>.from(res);
+    final rows = List<Map<String, dynamic>>.from(res);
+
+    return rows.where((row) {
+      final days = List<String>.from(row['order_days'] ?? []);
+      return days.contains(today);
+    }).toList();
   }
 
   Future<List<Map<String, dynamic>>> fetchBranchOrderMovements({

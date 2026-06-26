@@ -44,8 +44,8 @@ class StoreRepositoryImpl implements StoreRepository {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> fetchAllBranches() async {
-    return await remote.fetchAllBranches();
+  Future<List<Map<String, dynamic>>> fetchTodayBranches() async {
+    return await remote.fetchTodayBranches();
   }
 
   @override

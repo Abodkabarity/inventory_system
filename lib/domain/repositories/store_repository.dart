@@ -5,7 +5,7 @@ import '../entities/store_order_item.dart';
 abstract class StoreRepository {
   Future<List<String>> fetchActiveBranchNames();
 
-  Future<List<Map<String, dynamic>>> fetchAllBranches();
+  Future<List<Map<String, dynamic>>> fetchTodayBranches();
 
   Future<List<Map<String, dynamic>>> fetchSubmittedBranches(String runDate);
 

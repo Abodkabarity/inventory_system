@@ -125,7 +125,7 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
     }
 
     try {
-      final branchRows = await repo.fetchAllBranches();
+      final branchRows = await repo.fetchTodayBranches();
 
       final branches = <String>[];
 

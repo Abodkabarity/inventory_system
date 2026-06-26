@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../domain/entities/allocation_result_row.dart';
@@ -830,6 +831,7 @@ class _MultiSelectDialogState extends State<_MultiSelectDialog> {
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w900,
+                        color: AppColors.secondaryColor,
                       ),
                     ),
                   ),
@@ -841,11 +843,23 @@ class _MultiSelectDialogState extends State<_MultiSelectDialog> {
                           ..addAll(widget.options);
                       });
                     },
-                    child: const Text('Select All'),
+                    child: const Text(
+                      'Select All',
+                      style: TextStyle(
+                        color: AppColors.secondaryColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                   TextButton(
                     onPressed: () => setState(_selected.clear),
-                    child: const Text('Clear'),
+                    child: const Text(
+                      'Clear',
+                      style: TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                   IconButton(
                     onPressed: () => Navigator.pop(context),
@@ -1073,8 +1087,8 @@ class _BranchMultiSelectDialogState extends State<_BranchMultiSelectDialog> {
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
       child: SizedBox(
-        width: 920,
-        height: 720,
+        width: 920.w,
+        height: 1000.h,
         child: Column(
           children: [
             Padding(

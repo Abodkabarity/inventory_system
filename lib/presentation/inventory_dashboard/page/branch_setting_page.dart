@@ -1,3 +1,4 @@
+import 'package:daily_order/core/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -529,20 +530,24 @@ class _Toolbar extends StatelessWidget {
                     hintText: 'Search branch, zone, area, or type...',
                     prefixIcon: const Icon(Icons.search_rounded),
                     filled: true,
-                    fillColor: const Color(0xffF8FAFC),
+                    fillColor: AppColors.backgroundWidget,
                     contentPadding: const EdgeInsets.symmetric(vertical: 18),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(color: Color(0xffD8E5F3)),
+                      borderSide: const BorderSide(
+                        color: AppColors.primaryColor,
+                      ),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(color: Color(0xffD8E5F3)),
+                      borderSide: const BorderSide(
+                        color: AppColors.primaryColor,
+                      ),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
                       borderSide: const BorderSide(
-                        color: Color(0xff38BDF8),
+                        color: AppColors.primaryColor,
                         width: 1.5,
                       ),
                     ),
@@ -552,7 +557,11 @@ class _Toolbar extends StatelessWidget {
               const SizedBox(width: 12),
               IconButton.filledTonal(
                 onPressed: saving ? null : onRefresh,
-                icon: const Icon(Icons.refresh_rounded),
+                icon: const Icon(
+                  Icons.refresh_rounded,
+                  color: AppColors.primaryColor,
+                ),
+                style: IconButton.styleFrom(backgroundColor: Colors.white),
                 tooltip: 'Refresh branches',
               ),
             ],
@@ -1294,6 +1303,8 @@ class _BranchSettingDialogState extends State<_BranchSettingDialog> {
                         final selected = _value.orderDays.contains(day);
                         return FilterChip(
                           selected: selected,
+                          backgroundColor: Colors.white,
+
                           label: Text(day),
                           onSelected: (v) {
                             final next = [..._value.orderDays];
@@ -1376,7 +1387,7 @@ class _BranchSettingDialogState extends State<_BranchSettingDialog> {
                           _value = _value.copyWith(isActive: v);
                         });
                       },
-                      activeThumbColor: const Color(0xff059669),
+                      activeThumbColor: AppColors.primaryColor,
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 12,
                         vertical: 6,
@@ -1403,7 +1414,13 @@ class _BranchSettingDialogState extends State<_BranchSettingDialog> {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel'),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(
+                        color: AppColors.secondaryColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                   const Spacer(),
                   FilledButton.icon(
@@ -1473,8 +1490,19 @@ class _Input extends StatelessWidget {
         labelText: label,
         prefixIcon: Icon(icon),
         filled: true,
-        fillColor: const Color(0xffF8FAFC),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+        fillColor: AppColors.backgroundWidget,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: AppColors.primaryColor),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: AppColors.primaryColor),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: AppColors.primaryColor),
+        ),
       ),
     );
   }
@@ -1494,8 +1522,19 @@ class _NumberInput extends StatelessWidget {
       decoration: InputDecoration(
         labelText: label,
         filled: true,
-        fillColor: const Color(0xffF8FAFC),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+        fillColor: AppColors.backgroundWidget,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: AppColors.primaryColor),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: AppColors.primaryColor),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: AppColors.primaryColor),
+        ),
       ),
     );
   }
