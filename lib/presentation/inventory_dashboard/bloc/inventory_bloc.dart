@@ -1339,55 +1339,31 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     );
 
     try {
-      final Map<String, Map<String, dynamic>> items = {};
-      var processed = 0;
+      emit(state.copyWith(exportMessage: 'Generating shortage Excel...'));
 
-      // Stream data from local/remote progressively
-      await repo.forEachPurchaseShortageBranchStock(
-        runDate: event.runDate,
-        onRow: (row) async {
-          final code = row['item_code'].toString();
-
-          final item = items.putIfAbsent(code, () {
-            return {
-              'item_code': code,
-              'item_name': row['item_name'],
-              'stocks': <String, num>{},
-            };
-          });
-
-          (item['stocks'] as Map<String, num>)[row['branch'].toString()] =
-              row['branch_stock'] as num;
-
-          processed++;
-
-          // Periodically update the BLoC progress to display on screen
-          if (processed % 50000 == 0) {
-            emit(
-              state.copyWith(
-                exportMessage:
-                    'Loading branch stock: ${processed.toString()} rows...',
-              ),
-            );
-          }
-        },
-      );
-
-      emit(state.copyWith(exportMessage: 'Generating Excel...'));
-
-      // Use the newly optimized Exporter that uses event-loop yielding
       await PurchaseShortageExcelExporter.export(
         rows: state.purchaseShortageRows,
-        branchStockMatrixRows: items.values.toList(),
+        loadBranchStockRows: (onRow) {
+          return repo.forEachPurchaseShortageBranchStock(
+            runDate: event.runDate,
+            onRow: onRow,
+          );
+        },
         onBranchStockProgress: (written, total) {
+          final message = total > 0
+              ? 'Writing branches stock CSV: $written / $total'
+              : 'Writing branches stock CSV: $written rows...';
           emit(
-            state.copyWith(exportMessage: 'Writing Excel: $written / $total'),
+            state.copyWith(exportMessage: message),
           );
         },
       );
 
       emit(
-        state.copyWith(isExporting: false, exportMessage: 'Export completed ✓'),
+        state.copyWith(
+          isExporting: false,
+          exportMessage: 'Export completed: Shortage XLSX + Branches Stock CSV',
+        ),
       );
     } catch (e) {
       emit(

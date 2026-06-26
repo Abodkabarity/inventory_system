@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:html' as html;
 
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
@@ -5,13 +6,25 @@ import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
 class PurchaseShortageExcelExporter {
   static Future<void> export({
     required List<Map<String, dynamic>> rows,
-    required List<Map<String, dynamic>> branchStockMatrixRows,
+    required Future<int> Function(
+      FutureOr<void> Function(Map<String, dynamic> row) onRow,
+    )
+    loadBranchStockRows,
     void Function(int rowsWritten, int totalRows)? onBranchStockProgress,
   }) async {
+    onBranchStockProgress?.call(0, 0);
+    await _exportShortageWorkbook(rows);
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    await _exportBranchStockCsv(loadBranchStockRows, onBranchStockProgress);
+  }
+
+  static Future<void> _exportShortageWorkbook(
+    List<Map<String, dynamic>> rows,
+  ) async {
     final workbook = xlsio.Workbook();
 
     // ------------------------------------------------------------
-    // 1. SHEET 1: TotalShortage (980 rows)
+    // SHEET 1: TotalShortage
     // ------------------------------------------------------------
     final sheet = workbook.worksheets[0];
     sheet.name = 'TotalShortage';
@@ -58,18 +71,8 @@ class PurchaseShortageExcelExporter {
     _styleDataSheet(sheet, rows.length + 1, headers.length);
     _setColumnWidths(sheet, [17, 42, 16, 24, 34, 14, 13, 15, 30]);
 
-    // ------------------------------------------------------------
-    // 2. SHEET 2: Branches Stock List (888,000 rows)
-    // ------------------------------------------------------------
-    await _writeBranchStockListSheetFast(
-      workbook,
-      branchStockMatrixRows,
-      onBranchStockProgress,
-    );
-
     await Future<void>.delayed(Duration.zero);
 
-    // Save and dispose workbook safely
     final bytes = workbook.saveAsStream();
     workbook.dispose();
 
@@ -81,74 +84,50 @@ class PurchaseShortageExcelExporter {
     );
   }
 
-  /// FAST SHEET WRITER FOR MASSIVE DATASET (888,000+ rows)
-  /// Optimizations applied:
-  /// - ZERO Cell styling (keeps workbook memory extremely lightweight)
-  /// - Periodic Event Loop Yielding (await Future.delayed) to prevent page freeze
-  /// - Garbage collection safety triggers
-  static Future<void> _writeBranchStockListSheetFast(
-    xlsio.Workbook workbook,
-    List<Map<String, dynamic>> matrixRows,
+  static Future<void> _exportBranchStockCsv(
+    Future<int> Function(
+      FutureOr<void> Function(Map<String, dynamic> row) onRow,
+    )
+    loadBranchStockRows,
     void Function(int rowsWritten, int totalRows)? onProgress,
   ) async {
-    final branches = <String>{};
-    for (final row in matrixRows) {
-      final stocks = row['stocks'];
-      if (stocks is Map) {
-        branches.addAll(stocks.keys.map((key) => key.toString()));
-      }
-    }
-
-    final branchList = branches.toList()..sort();
-    const headers = ['Branch', 'Item Code', 'Item Name', 'Branch Stock'];
-    final totalRows = matrixRows.length * branchList.length;
-    onProgress?.call(0, totalRows);
-
-    final sheet = workbook.worksheets.addWithName('BRANCHES STOCK LIST');
-
-    // Headers
-    for (var c = 0; c < headers.length; c++) {
-      sheet.getRangeByIndex(1, c + 1).setText(headers[c]);
-    }
-
-    sheet.getRangeByIndex(1, 1).columnWidth = 18;
-    sheet.getRangeByIndex(1, 2).columnWidth = 16;
-    sheet.getRangeByIndex(1, 3).columnWidth = 40;
-    sheet.getRangeByIndex(1, 4).columnWidth = 14;
-
-    var dataRowIndex = 2;
+    final parts = <String>['\uFEFFBranch,Item Code,Item Name,Branch Stock\r\n'];
+    final buffer = StringBuffer();
     var totalRowsWritten = 0;
 
-    for (final row in matrixRows) {
-      final itemCode = row['item_code'];
-      final itemName = row['item_name'];
-      final stocks = row['stocks'] is Map ? row['stocks'] as Map : const {};
+    await loadBranchStockRows((row) async {
+      buffer
+        ..write(_csv(row['branch']))
+        ..write(',')
+        ..write(_csv(row['item_code']))
+        ..write(',')
+        ..write(_csv(row['item_name']))
+        ..write(',')
+        ..write(_csv(_parseNum(row['branch_stock'])))
+        ..write('\r\n');
 
-      for (final branch in branchList) {
-        final stock = stocks[branch] ?? 0;
+      totalRowsWritten++;
 
-        // Pure values - absolutely zero style configuration
-        sheet.getRangeByIndex(dataRowIndex, 1).setText(branch.toString());
-        sheet.getRangeByIndex(dataRowIndex, 2).setText(itemCode.toString());
-        sheet.getRangeByIndex(dataRowIndex, 3).setText(itemName.toString());
-        sheet
-            .getRangeByIndex(dataRowIndex, 4)
-            .setNumber(_parseNum(stock).toDouble());
-
-        dataRowIndex++;
-        totalRowsWritten++;
-
-        // CRITICAL: Yield thread every 50,000 rows to prevent event-loop lock and maximize writing speed!
-        if (totalRowsWritten % 50000 == 0) {
-          onProgress?.call(totalRowsWritten, totalRows);
-          await Future<void>.delayed(
-            Duration.zero,
-          ); // yields to browser UI scheduler
-        }
+      if (totalRowsWritten % 10000 == 0) {
+        parts.add(buffer.toString());
+        buffer.clear();
       }
+
+      if (totalRowsWritten % 50000 == 0) {
+        onProgress?.call(totalRowsWritten, 0);
+        await Future<void>.delayed(Duration.zero);
+      }
+    });
+
+    if (buffer.isNotEmpty) {
+      parts.add(buffer.toString());
     }
 
-    onProgress?.call(totalRowsWritten, totalRows);
+    onProgress?.call(totalRowsWritten, totalRowsWritten);
+    _downloadBlob(
+      html.Blob(parts, 'text/csv;charset=utf-8'),
+      'Branches Stock ${_downloadDate()}.csv',
+    );
   }
 
   static void _downloadBlob(html.Blob blob, String fileName) {
@@ -183,8 +162,9 @@ class PurchaseShortageExcelExporter {
     int lastRow,
     int lastColumn,
   ) {
-    if (lastRow > 15000)
+    if (lastRow > 15000) {
       return; // Completely disabled for bulk worksheets to prevent memory exhaustion
+    }
     try {
       final range = sheet.getRangeByIndex(1, 1, lastRow, lastColumn);
       range.cellStyle.hAlign = xlsio.HAlignType.center;
@@ -203,5 +183,16 @@ class PurchaseShortageExcelExporter {
   static num _parseNum(dynamic value) {
     if (value is num) return value;
     return num.tryParse(value.toString()) ?? 0;
+  }
+
+  static String _csv(dynamic value) {
+    final text = value?.toString() ?? '';
+    if (!text.contains(',') &&
+        !text.contains('"') &&
+        !text.contains('\n') &&
+        !text.contains('\r')) {
+      return text;
+    }
+    return '"${text.replaceAll('"', '""')}"';
   }
 }
