@@ -1457,44 +1457,37 @@ end_date
     required String runDate,
     required FutureOr<void> Function(Map<String, dynamic> row) onRow,
   }) async {
-    const batchSize = 10000;
-    const concurrent = 6;
+    const batchSize =
+        50000; // Increased to 50,000 for maximum speed as requested
     var offset = 0;
     var count = 0;
 
     while (true) {
-      final offsets = List.generate(concurrent, (i) => offset + i * batchSize);
-      final results = await Future.wait(
-        offsets.map(
-          (from) => client
-              .from('daily_order')
-              .select('branch,item_code,item_name,branch_stock')
-              .eq('run_date', runDate)
-              .range(from, from + batchSize - 1),
-        ),
-      );
+      final res = await client
+          .from('daily_order')
+          .select('branch,item_code,item_name,branch_stock')
+          .eq('run_date', runDate)
+          .range(offset, offset + batchSize - 1);
 
-      var anyData = false;
-      for (final res in results) {
-        final batch = List<Map<String, dynamic>>.from(res);
-        if (batch.isEmpty) continue;
-        anyData = true;
+      final batch = List<Map<String, dynamic>>.from(res);
+      if (batch.isEmpty) break;
 
-        for (final row in batch) {
-          await onRow({
-            'branch': _text(row['branch']),
-            'item_code': _text(row['item_code']),
-            'item_name': _text(row['item_name']),
-            'branch_stock': _num(row['branch_stock']),
-          });
-          count++;
-        }
+      for (final row in batch) {
+        await onRow({
+          'branch': _text(row['branch']),
+          'item_code': _text(row['item_code']),
+          'item_name': _text(row['item_name']),
+          'branch_stock': _num(row['branch_stock']),
+        });
+        count++;
       }
 
-      final lastBatch = List<Map<String, dynamic>>.from(results.last);
-      if (!anyData || lastBatch.length < batchSize) break;
+      // If the batch returned has fewer rows than the batchSize, we have reached the end!
+      if (batch.length < batchSize) break;
 
-      offset += concurrent * batchSize;
+      offset += batchSize;
+
+      // Yield control back to the Flutter UI thread so the browser remains fully responsive
       await Future<void>.delayed(Duration.zero);
     }
 

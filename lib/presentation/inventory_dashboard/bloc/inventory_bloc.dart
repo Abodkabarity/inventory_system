@@ -12,9 +12,9 @@ import '../../../core/cache/daily_order_cache_service.dart';
 import '../../../core/utils/allocation_excel_exporter.dart';
 import '../../../core/utils/assortment_export.dart';
 import '../../../core/utils/formulary_export.dart';
-import '../../../core/utils/local_purchase_shortage_export_client.dart';
 import '../../../core/utils/max_adj_export.dart';
 import '../../../core/utils/mismatch_export.dart';
+import '../../../core/utils/purchase_shortage_excel_exporter.dart';
 import '../../../core/utils/tma_export.dart';
 import '../../../core/utils/web_notification.dart';
 import '../../../domain/entities/additional_request_group.dart';
@@ -1334,36 +1334,67 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       state.copyWith(
         isExporting: true,
         purchaseShortageError: '',
-        exportMessage: 'Preparing shortage export...',
+        exportMessage: 'Preparing export...',
       ),
     );
 
     try {
-      emit(
-        state.copyWith(
-          exportMessage:
-              'Python helper is generating the Excel file outside Chrome...',
-        ),
-      );
+      final Map<String, Map<String, dynamic>> items = {};
+      var processed = 0;
 
-      final path = await LocalPurchaseShortageExportClient.export(
+      // Stream data from local/remote progressively
+      await repo.forEachPurchaseShortageBranchStock(
         runDate: event.runDate,
+        onRow: (row) async {
+          final code = row['item_code'].toString();
+
+          final item = items.putIfAbsent(code, () {
+            return {
+              'item_code': code,
+              'item_name': row['item_name'],
+              'stocks': <String, num>{},
+            };
+          });
+
+          (item['stocks'] as Map<String, num>)[row['branch'].toString()] =
+              row['branch_stock'] as num;
+
+          processed++;
+
+          // Periodically update the BLoC progress to display on screen
+          if (processed % 50000 == 0) {
+            emit(
+              state.copyWith(
+                exportMessage:
+                    'Loading branch stock: ${processed.toString()} rows...',
+              ),
+            );
+          }
+        },
+      );
+
+      emit(state.copyWith(exportMessage: 'Generating Excel...'));
+
+      // Use the newly optimized Exporter that uses event-loop yielding
+      await PurchaseShortageExcelExporter.export(
+        rows: state.purchaseShortageRows,
+        branchStockMatrixRows: items.values.toList(),
+        onBranchStockProgress: (written, total) {
+          emit(
+            state.copyWith(exportMessage: 'Writing Excel: $written / $total'),
+          );
+        },
       );
 
       emit(
-        state.copyWith(
-          isExporting: false,
-          exportMessage: path.isEmpty
-              ? 'Shortage export completed'
-              : 'Shortage export completed: $path',
-        ),
+        state.copyWith(isExporting: false, exportMessage: 'Export completed ✓'),
       );
     } catch (e) {
       emit(
         state.copyWith(
           isExporting: false,
-          purchaseShortageError: 'Export failed: $e',
-          exportMessage: 'Shortage export failed',
+          purchaseShortageError: e.toString(),
+          exportMessage: 'Export failed',
         ),
       );
     }
