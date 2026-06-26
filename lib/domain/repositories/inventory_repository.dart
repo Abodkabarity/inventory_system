@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../entities/additional_request_group.dart';
 import '../entities/allocation_result_row.dart';
 import '../entities/allocation_source_row.dart';
@@ -202,7 +204,11 @@ abstract class InventoryRepository {
   Future<List<Map<String, dynamic>>> fetchPurchaseShortage({
     required String runDate,
   });
-  Future<List<Map<String, dynamic>>> fetchPurchaseShortageBranchStock({
+  Future<int> forEachPurchaseShortageBranchStock({
+    required String runDate,
+    required FutureOr<void> Function(Map<String, dynamic> row) onRow,
+  });
+  Future<List<Map<String, dynamic>>> fetchPurchaseShortageBranchStockMatrix({
     required String runDate,
   });
   Future<List<BranchSetting>> fetchBranchSettings();

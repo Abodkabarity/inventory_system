@@ -12,9 +12,9 @@ import '../../../core/cache/daily_order_cache_service.dart';
 import '../../../core/utils/allocation_excel_exporter.dart';
 import '../../../core/utils/assortment_export.dart';
 import '../../../core/utils/formulary_export.dart';
+import '../../../core/utils/local_purchase_shortage_export_client.dart';
 import '../../../core/utils/max_adj_export.dart';
 import '../../../core/utils/mismatch_export.dart';
-import '../../../core/utils/purchase_shortage_excel_exporter.dart';
 import '../../../core/utils/tma_export.dart';
 import '../../../core/utils/web_notification.dart';
 import '../../../domain/entities/additional_request_group.dart';
@@ -1328,13 +1328,45 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     Emitter<InventoryState> emit,
   ) async {
     if (state.purchaseShortageRows.isEmpty) return;
-    final branchStockRows = await repo.fetchPurchaseShortageBranchStock(
-      runDate: event.runDate,
+    if (state.isExporting) return;
+
+    emit(
+      state.copyWith(
+        isExporting: true,
+        purchaseShortageError: '',
+        exportMessage: 'Preparing shortage export...',
+      ),
     );
-    await PurchaseShortageExcelExporter.export(
-      rows: state.purchaseShortageRows,
-      branchStockRows: branchStockRows,
-    );
+
+    try {
+      emit(
+        state.copyWith(
+          exportMessage:
+              'Python helper is generating the Excel file outside Chrome...',
+        ),
+      );
+
+      final path = await LocalPurchaseShortageExportClient.export(
+        runDate: event.runDate,
+      );
+
+      emit(
+        state.copyWith(
+          isExporting: false,
+          exportMessage: path.isEmpty
+              ? 'Shortage export completed'
+              : 'Shortage export completed: $path',
+        ),
+      );
+    } catch (e) {
+      emit(
+        state.copyWith(
+          isExporting: false,
+          purchaseShortageError: 'Export failed: $e',
+          exportMessage: 'Shortage export failed',
+        ),
+      );
+    }
   }
 
   Future<void> _onLoadBranchSettings(

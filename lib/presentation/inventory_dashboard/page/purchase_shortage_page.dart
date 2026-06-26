@@ -55,6 +55,8 @@ class _PurchaseShortagePageState extends State<PurchaseShortagePage> {
     return BlocBuilder<InventoryBloc, InventoryState>(
       buildWhen: (p, c) =>
           p.isPurchaseShortageLoading != c.isPurchaseShortageLoading ||
+          p.isExporting != c.isExporting ||
+          p.exportMessage != c.exportMessage ||
           p.purchaseShortageRows != c.purchaseShortageRows ||
           p.purchaseShortageError != c.purchaseShortageError,
       builder: (context, state) {
@@ -78,6 +80,8 @@ class _PurchaseShortagePageState extends State<PurchaseShortagePage> {
               _Header(
                 runDate: widget.runDate,
                 isLoading: state.isPurchaseShortageLoading,
+                isExporting: state.isExporting,
+                exportMessage: state.exportMessage,
                 rowsCount: rows.length,
                 onRefresh: _load,
                 onExport: state.purchaseShortageRows.isEmpty
@@ -122,6 +126,8 @@ class _PurchaseShortagePageState extends State<PurchaseShortagePage> {
 class _Header extends StatelessWidget {
   final String runDate;
   final bool isLoading;
+  final bool isExporting;
+  final String? exportMessage;
   final int rowsCount;
   final VoidCallback onRefresh;
   final VoidCallback? onExport;
@@ -129,6 +135,8 @@ class _Header extends StatelessWidget {
   const _Header({
     required this.runDate,
     required this.isLoading,
+    required this.isExporting,
+    required this.exportMessage,
     required this.rowsCount,
     required this.onRefresh,
     required this.onExport,
@@ -186,7 +194,7 @@ class _Header extends StatelessWidget {
           _HeaderMetric(label: 'Rows', value: '$rowsCount'),
           const SizedBox(width: 10),
           FilledButton.icon(
-            onPressed: isLoading ? null : onRefresh,
+            onPressed: isLoading || isExporting ? null : onRefresh,
             icon: isLoading
                 ? const SizedBox(
                     width: 16,
@@ -205,15 +213,37 @@ class _Header extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           FilledButton.icon(
-            onPressed: onExport,
-            icon: const Icon(Icons.download_rounded),
-            label: const Text('Export'),
+            onPressed: isExporting ? null : onExport,
+            icon: isExporting
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.download_rounded),
+            label: Text(isExporting ? 'Exporting' : 'Export'),
             style: FilledButton.styleFrom(
               backgroundColor: Colors.white,
               foregroundColor: const Color(0xff2563EB),
               padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
             ),
           ),
+          if (isExporting && exportMessage != null) ...[
+            const SizedBox(width: 10),
+            SizedBox(
+              width: 190,
+              child: Text(
+                exportMessage!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: .86),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

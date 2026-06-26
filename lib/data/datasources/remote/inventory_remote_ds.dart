@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -1451,39 +1453,121 @@ end_date
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchPurchaseShortageBranchStock({
+  Future<int> forEachPurchaseShortageBranchStock({
     required String runDate,
+    required FutureOr<void> Function(Map<String, dynamic> row) onRow,
   }) async {
-    const pageSize = 10000;
-    var from = 0;
-    final rows = <Map<String, dynamic>>[];
+    const batchSize = 10000;
+    const concurrent = 6;
+    var offset = 0;
+    var count = 0;
 
     while (true) {
-      final res = await client
-          .from('daily_order')
-          .select('branch,item_code,item_name,branch_stock')
-          .eq('run_date', runDate)
-          .order('branch', ascending: true)
-          .order('item_code', ascending: true)
-          .range(from, from + pageSize - 1);
+      final offsets = List.generate(concurrent, (i) => offset + i * batchSize);
+      final results = await Future.wait(
+        offsets.map(
+          (from) => client
+              .from('daily_order')
+              .select('branch,item_code,item_name,branch_stock')
+              .eq('run_date', runDate)
+              .range(from, from + batchSize - 1),
+        ),
+      );
 
-      final batch = List<Map<String, dynamic>>.from(res);
-      rows.addAll(
-        batch.map(
-          (row) => {
+      var anyData = false;
+      for (final res in results) {
+        final batch = List<Map<String, dynamic>>.from(res);
+        if (batch.isEmpty) continue;
+        anyData = true;
+
+        for (final row in batch) {
+          await onRow({
             'branch': _text(row['branch']),
             'item_code': _text(row['item_code']),
             'item_name': _text(row['item_name']),
             'branch_stock': _num(row['branch_stock']),
-          },
-        ),
-      );
+          });
+          count++;
+        }
+      }
 
-      if (batch.length < pageSize) break;
-      from += pageSize;
+      final lastBatch = List<Map<String, dynamic>>.from(results.last);
+      if (!anyData || lastBatch.length < batchSize) break;
+
+      offset += concurrent * batchSize;
+      await Future<void>.delayed(Duration.zero);
     }
 
+    return count;
+  }
+
+  Future<List<Map<String, dynamic>>> fetchPurchaseShortageBranchStockMatrix({
+    required String runDate,
+  }) async {
+    try {
+      final res = await client.rpc(
+        'get_purchase_shortage_branch_stock_matrix',
+        params: {'p_run_date': runDate},
+      );
+
+      final rows = List<Map<String, dynamic>>.from(res as List);
+      return rows.map(_mapBranchStockMatrixRow).toList();
+    } catch (_) {
+      return _fetchPurchaseShortageBranchStockMatrixFallback(runDate: runDate);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>>
+  _fetchPurchaseShortageBranchStockMatrixFallback({
+    required String runDate,
+  }) async {
+    final byItem = <String, Map<String, dynamic>>{};
+
+    await forEachPurchaseShortageBranchStock(
+      runDate: runDate,
+      onRow: (row) {
+        final itemCode = _text(row['item_code']);
+        if (itemCode.isEmpty) return;
+
+        final item = byItem.putIfAbsent(
+          itemCode,
+          () => {
+            'item_code': itemCode,
+            'item_name': _text(row['item_name']),
+            'stocks': <String, num>{},
+          },
+        );
+
+        final branch = _text(row['branch']);
+        if (branch.isNotEmpty) {
+          (item['stocks'] as Map<String, num>)[branch] = _num(
+            row['branch_stock'],
+          );
+        }
+      },
+    );
+
+    final rows = byItem.values.toList();
+    rows.sort((a, b) => _text(a['item_code']).compareTo(_text(b['item_code'])));
     return rows;
+  }
+
+  Map<String, dynamic> _mapBranchStockMatrixRow(Map<String, dynamic> row) {
+    final rawStocks = row['stock_by_branch'] ?? row['stocks'];
+    final stocks = <String, num>{};
+
+    if (rawStocks is Map) {
+      rawStocks.forEach((key, value) {
+        final branch = _text(key);
+        if (branch.isNotEmpty) stocks[branch] = _num(value);
+      });
+    }
+
+    return {
+      'item_code': _text(row['item_code']),
+      'item_name': _text(row['item_name']),
+      'stocks': stocks,
+    };
   }
 
   Future<List<Map<String, dynamic>>> _fetchPurchaseShortageFallback({
