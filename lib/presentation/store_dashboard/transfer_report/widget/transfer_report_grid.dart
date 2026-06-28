@@ -16,13 +16,14 @@ class TransferReportGrid extends StatefulWidget {
 class _TransferReportGridState extends State<TransferReportGrid> {
   final Map<String, double> columnWidths = {
     'status': 170.w,
-    'branch': 160.w,
+    'branch': 190.w,
+    'runDate': 140.w,
     'itemCode': 160.w,
-    'itemName': 250.w,
-    'requiredQty': 160.w,
-    'transferredQty': 160.w,
-    'diff': 140.w,
-    'completion': 140.w,
+    'itemName': 300.w,
+    'requiredQty': 200.w,
+    'transferredQty': 200.w,
+    'diff': 150.w,
+    'completion': 160.w,
   };
 
   @override
@@ -75,6 +76,12 @@ class _TransferReportGridState extends State<TransferReportGrid> {
               width: columnWidths['branch']!,
               columnName: 'branch',
               label: _header('Branch'),
+            ),
+
+            GridColumn(
+              width: columnWidths['runDate']!,
+              columnName: 'runDate',
+              label: _header('Run Date'),
             ),
 
             GridColumn(
@@ -166,6 +173,8 @@ class TransferReportDataSource extends DataGridSource {
 
           DataGridCell<String>(columnName: 'branch', value: e.branch),
 
+          DataGridCell<String>(columnName: 'runDate', value: e.runDate),
+
           DataGridCell<String>(columnName: 'itemCode', value: e.itemCode),
 
           DataGridCell<String>(columnName: 'itemName', value: e.itemName),
@@ -250,7 +259,7 @@ class TransferReportDataSource extends DataGridSource {
                 color: _statusTextColor(status).withValues(alpha: 0.35),
               ),
             ),
-            child: Text(
+            child: SelectableText(
               status,
               style: TextStyle(
                 fontWeight: FontWeight.bold,
@@ -262,11 +271,12 @@ class TransferReportDataSource extends DataGridSource {
 
         _cell(row.getCells()[1].value),
         _cell(row.getCells()[2].value),
-        _cell(row.getCells()[3].value, alignment: Alignment.centerLeft),
-        _cell(row.getCells()[4].value),
+        _cell(row.getCells()[3].value),
+        _cell(row.getCells()[4].value, alignment: Alignment.centerLeft),
         _cell(row.getCells()[5].value),
         _cell(row.getCells()[6].value),
-        _cell('${(row.getCells()[7].value as double).toStringAsFixed(1)}%'),
+        _cell(row.getCells()[7].value),
+        _cell('${(row.getCells()[8].value as double).toStringAsFixed(1)}%'),
       ],
     );
   }
@@ -278,10 +288,10 @@ class TransferReportDataSource extends DataGridSource {
       decoration: BoxDecoration(
         border: Border.all(color: const Color(0xffD6DCE5), width: 0.8),
       ),
-      child: Text(
+      child: SelectableText(
         value.toString(),
         textAlign: TextAlign.center,
-        overflow: TextOverflow.ellipsis,
+        //overflow: TextOverflow.ellipsis,
         style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
       ),
     );

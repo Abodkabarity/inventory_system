@@ -892,10 +892,11 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           additionalSentToStoreCount: counters.sentToStore,
           additionalTodayCount: counters.today,
           isLoading: false,
+          isDashboardLoaded: true,
         ),
       );
     } catch (e) {
-      emit(state.copyWith(isLoading: false));
+      emit(state.copyWith(isLoading: false, isDashboardLoaded: true));
 
       print("InventoryBloc Load Error: $e");
     }

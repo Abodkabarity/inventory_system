@@ -14,6 +14,7 @@ class TransferReportExcelExporter {
     final headers = [
       'Status',
       'Branch',
+      'Run Date',
       'Item Code',
       'Item Name',
       'Quantity In Order',
@@ -71,6 +72,7 @@ class TransferReportExcelExporter {
       final values = [
         status,
         item.branch,
+        item.runDate,
         item.itemCode,
         item.itemName,
         item.requiredQty,
@@ -102,7 +104,7 @@ class TransferReportExcelExporter {
         .getRangeByIndex(1, 1, rows.length + 1, headers.length)
         .autoFitColumns();
 
-    sheet.getRangeByIndex(1, 4).columnWidth = 40;
+    sheet.getRangeByIndex(1, 5).columnWidth = 40;
 
     /// =========================
     /// SAVE

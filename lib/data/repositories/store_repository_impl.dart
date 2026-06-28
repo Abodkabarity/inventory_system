@@ -331,6 +331,28 @@ class StoreRepositoryImpl implements StoreRepository {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> fetchDailyOrdersForBranches({
+    required List<String> branches,
+    required String runDate,
+  }) {
+    return remote.fetchDailyOrdersForBranches(
+      branches: branches,
+      runDate: runDate,
+    );
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchDailyOrderMovementsForBranches({
+    required List<String> branches,
+    required String runDate,
+  }) {
+    return remote.fetchDailyOrderMovementsForBranches(
+      branches: branches,
+      runDate: runDate,
+    );
+  }
+
+  @override
   Future<List<Map<String, dynamic>>> fetchBranchOrderMovements({
     required String branch,
     required DateTime date,

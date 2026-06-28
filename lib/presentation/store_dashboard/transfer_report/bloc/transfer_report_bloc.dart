@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:csv/csv.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:intl/intl.dart';
 
 import '../../../../data/models/transfer_report_row.dart';
 import '../../../../domain/repositories/store_repository.dart';
@@ -34,11 +35,9 @@ class TransferReportBloc
 
       final csvRows = const CsvToListConverter().convert(csvText);
 
-      final Map<String, double> transfers = {};
-
-      final Map<String, String> names = {};
-
-      final Map<String, String> branches = {};
+      final transfers = <String, double>{};
+      final names = <String, String>{};
+      final branchesByDate = <String, Set<String>>{};
 
       for (int i = 1; i < csvRows.length; i++) {
         final row = csvRows[i];
@@ -54,6 +53,8 @@ class TransferReportBloc
         }
         final branch = row[1].toString().trim();
 
+        final runDate = _parseTransferDate(row[3], fallback: event.runDate);
+
         final itemCode = row[7].toString().trim();
 
         final itemName = row[8].toString().trim();
@@ -65,108 +66,126 @@ class TransferReportBloc
           continue;
         }
 
-        final key = '$branch|$itemCode';
+        final key = _key(runDate, branch, itemCode);
 
         transfers.update(key, (v) => v + qty, ifAbsent: () => qty);
 
         names[key] = itemName;
 
-        branches[key] = branch;
+        branchesByDate.putIfAbsent(runDate, () => <String>{}).add(branch);
       }
 
       final resultRows = <TransferReportRow>[];
 
-      final branchNames = branches.values.toSet();
+      for (final dateEntry in branchesByDate.entries) {
+        final runDate = dateEntry.key;
+        final branchNames = dateEntry.value.toList();
 
-      for (final branch in branchNames) {
-        final orderRows = await repo.fetchDailyOrderForBranch(
-          branch: branch,
-          runDate: event.runDate,
+        final orderRows = await repo.fetchDailyOrderMovementsForBranches(
+          branches: branchNames,
+          runDate: runDate,
         );
 
-        final orderCodes = <String>{};
+        final ordersByBranch = <String, Map<String, Map<String, dynamic>>>{};
+        for (final row in orderRows) {
+          final branch = (row['branch'] ?? '').toString().trim();
+          final code = (row['item_code'] ?? '').toString().trim();
+          if (branch.isEmpty || code.isEmpty) continue;
 
-        final transferredCodes = transfers.keys
-            .where((e) => e.startsWith('$branch|'))
-            .map((e) => e.split('|')[1])
-            .toSet();
+          final qty = double.tryParse((row['qty'] ?? '0').toString()) ?? 0;
 
-        for (final item in orderRows) {
-          final code = item['item_code'].toString().trim();
+          if (branch.isEmpty) continue;
 
-          orderCodes.add(code);
-
-          final requiredQty =
-              double.tryParse(
-                item['total_final_reorder_today']?.toString() ?? '0',
-              ) ??
-              0;
-
-          final key = '$branch|$code';
-
-          final transferred = transfers[key] ?? 0;
-
-          TransferStatus status;
-
-          /// =========================
-          /// MISSING
-
-          /// =========================
-          if (!transferredCodes.contains(code)) {
-            status = TransferStatus.missing;
-          }
-          /// =========================
-          /// PARTIAL
-          /// =========================
-          else if (transferred < requiredQty) {
-            status = TransferStatus.partial;
-          }
-          /// =========================
-          /// COMPLETE
-          /// =========================
-          else if (transferred == requiredQty) {
-            status = TransferStatus.complete;
-          }
-          /// =========================
-          /// EXTRA
-          /// =========================
-          else {
-            status = TransferStatus.extra;
-          }
-
-          resultRows.add(
-            TransferReportRow(
-              branch: branch,
-              itemCode: code,
-              itemName: item['item_name']?.toString() ?? '',
-              requiredQty: requiredQty,
-              transferredQty: transferred,
-              status: status,
-            ),
+          final branchRows = ordersByBranch.putIfAbsent(
+            branch,
+            () => <String, Map<String, dynamic>>{},
           );
+
+          final existing = branchRows[code];
+          if (existing == null) {
+            branchRows[code] = {
+              'branch': branch,
+              'item_code': code,
+              'item_name': (row['item_name'] ?? '').toString(),
+              'required_qty': qty,
+            };
+          } else {
+            existing['required_qty'] =
+                (double.tryParse(existing['required_qty'].toString()) ?? 0) +
+                qty;
+          }
         }
 
-        for (final entry in transfers.entries) {
-          if (!entry.key.startsWith('$branch|')) {
-            continue;
+        for (final branch in branchNames) {
+          final branchOrderRows =
+              ordersByBranch[branch]?.values.toList() ?? const [];
+          final orderCodes = <String>{};
+
+          final transferredCodes = transfers.keys
+              .where((e) => e.startsWith('$runDate|$branch|'))
+              .map((e) => e.split('|')[2])
+              .toSet();
+
+          for (final item in branchOrderRows) {
+            final code = item['item_code'].toString().trim();
+
+            orderCodes.add(code);
+
+            final requiredQty =
+                double.tryParse(item['required_qty']?.toString() ?? '0') ?? 0;
+
+            final key = _key(runDate, branch, code);
+
+            final transferred = transfers[key] ?? 0;
+
+            TransferStatus status;
+
+            if (!transferredCodes.contains(code)) {
+              status = TransferStatus.missing;
+            } else if (transferred < requiredQty) {
+              status = TransferStatus.partial;
+            } else if (transferred == requiredQty) {
+              status = TransferStatus.complete;
+            } else {
+              status = TransferStatus.extra;
+            }
+
+            resultRows.add(
+              TransferReportRow(
+                branch: branch,
+                runDate: runDate,
+                itemCode: code,
+                itemName: item['item_name']?.toString() ?? '',
+                requiredQty: requiredQty,
+                transferredQty: transferred,
+                status: status,
+              ),
+            );
           }
 
-          final code = entry.key.split('|')[1];
+          for (final entry in transfers.entries) {
+            if (!entry.key.startsWith('$runDate|$branch|')) {
+              continue;
+            }
 
-          if (orderCodes.contains(code)) {
-            continue;
+            final code = entry.key.split('|')[2];
+
+            if (orderCodes.contains(code)) {
+              continue;
+            }
+
+            resultRows.add(
+              TransferReportRow(
+                branch: branch,
+                runDate: runDate,
+                itemCode: code,
+                itemName: names[entry.key] ?? '',
+                requiredQty: 0,
+                transferredQty: entry.value,
+                status: TransferStatus.notInDailyOrder,
+              ),
+            );
           }
-
-          resultRows.add(
-            TransferReportRow(
-              branch: branch,
-              itemCode: code,
-              itemName: names[entry.key] ?? '',
-              requiredQty: 0,
-              transferredQty: entry.value,
-              status: TransferStatus.notInDailyOrder,
-            ),
-          );
         }
       }
 
@@ -181,5 +200,49 @@ class TransferReportBloc
 
   void _onFilter(ChangeStatusFilter event, Emitter<TransferReportState> emit) {
     emit(state.copyWith(filter: event.status));
+  }
+
+  String _key(String runDate, String branch, String itemCode) {
+    return '$runDate|$branch|$itemCode';
+  }
+
+  String _parseTransferDate(dynamic value, {required String fallback}) {
+    if (value == null) return fallback;
+
+    if (value is DateTime) {
+      return DateFormat('yyyy-MM-dd').format(value);
+    }
+
+    final raw = value.toString().trim();
+    if (raw.isEmpty) return fallback;
+
+    final normalized = raw.replaceAll('/', '-');
+    final formats = [
+      'yyyy-MM-dd',
+      'dd-MM-yyyy',
+      'd-M-yyyy',
+      'dd-MMM-yy',
+      'd-MMM-yy',
+      'dd-MMM-yyyy',
+      'd-MMM-yyyy',
+      'MM-dd-yyyy',
+      'M-d-yyyy',
+    ];
+
+    for (final pattern in formats) {
+      try {
+        final parsed = DateFormat(pattern, 'en_US').parseStrict(normalized);
+        return DateFormat('yyyy-MM-dd').format(parsed);
+      } catch (_) {
+        // Try next supported transfer date format.
+      }
+    }
+
+    final parsed = DateTime.tryParse(raw);
+    if (parsed != null) {
+      return DateFormat('yyyy-MM-dd').format(parsed);
+    }
+
+    return fallback;
   }
 }

@@ -48,6 +48,16 @@ abstract class StoreRepository {
     required String runDate,
   });
 
+  Future<List<Map<String, dynamic>>> fetchDailyOrdersForBranches({
+    required List<String> branches,
+    required String runDate,
+  });
+
+  Future<List<Map<String, dynamic>>> fetchDailyOrderMovementsForBranches({
+    required List<String> branches,
+    required String runDate,
+  });
+
   Future<List<Map<String, dynamic>>> fetchBranchOrderMovements({
     required String branch,
     required DateTime date,

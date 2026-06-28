@@ -2,6 +2,7 @@ enum TransferStatus { complete, partial, missing, extra, notInDailyOrder }
 
 class TransferReportRow {
   final String branch;
+  final String runDate;
   final String itemCode;
   final String itemName;
 
@@ -12,6 +13,7 @@ class TransferReportRow {
 
   const TransferReportRow({
     required this.branch,
+    required this.runDate,
     required this.itemCode,
     required this.itemName,
     required this.requiredQty,

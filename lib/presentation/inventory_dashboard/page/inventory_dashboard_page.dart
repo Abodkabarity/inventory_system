@@ -133,7 +133,7 @@ class _InventoryDashboardViewState extends State<InventoryDashboardView> {
                 state.selectedBranch != null &&
                 state.submittedBranches.contains(state.selectedBranch);
 
-            if (firstLoad && state.branches.isNotEmpty) {
+            if (firstLoad && state.isDashboardLoaded) {
               firstLoad = false;
             }
 

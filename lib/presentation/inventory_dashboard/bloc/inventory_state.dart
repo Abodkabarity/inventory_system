@@ -170,6 +170,7 @@ class InventoryState extends Equatable {
   final bool? bulkSuccess;
 
   final bool isLoading;
+  final bool isDashboardLoaded;
   final bool isAllocationFiltersLoading;
   final bool isAllocationLoading;
   final int allocationLoadedRows;
@@ -270,6 +271,7 @@ class InventoryState extends Equatable {
     this.bulkMessage,
     this.bulkSuccess,
     required this.isLoading,
+    required this.isDashboardLoaded,
     required this.isAllocationFiltersLoading,
     required this.isAllocationLoading,
     required this.allocationLoadedRows,
@@ -399,6 +401,7 @@ class InventoryState extends Equatable {
       bulkMessage: null,
       bulkSuccess: null,
       isLoading: false,
+      isDashboardLoaded: false,
       isAllocationFiltersLoading: false,
       isAllocationLoading: false,
       allocationLoadedRows: 0,
@@ -510,6 +513,7 @@ class InventoryState extends Equatable {
     String? bulkMessage,
     bool? bulkSuccess,
     bool? isLoading,
+    bool? isDashboardLoaded,
     bool? isAllocationFiltersLoading,
     bool? isAllocationLoading,
     int? allocationLoadedRows,
@@ -633,6 +637,7 @@ class InventoryState extends Equatable {
       bulkMessage: bulkMessage ?? this.bulkMessage,
       bulkSuccess: bulkSuccess ?? this.bulkSuccess,
       isLoading: isLoading ?? this.isLoading,
+      isDashboardLoaded: isDashboardLoaded ?? this.isDashboardLoaded,
       isAllocationFiltersLoading:
           isAllocationFiltersLoading ?? this.isAllocationFiltersLoading,
       isAllocationLoading: isAllocationLoading ?? this.isAllocationLoading,
@@ -752,6 +757,7 @@ class InventoryState extends Equatable {
     bulkMessage,
     bulkSuccess,
     isLoading,
+    isDashboardLoaded,
     isAllocationFiltersLoading,
     isAllocationLoading,
     allocationLoadedRows,

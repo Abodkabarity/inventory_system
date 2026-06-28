@@ -75,165 +75,178 @@ class InventoryBranchGrid extends StatelessWidget {
           ),
 
           Expanded(
-            child: GridView.builder(
-              padding: const EdgeInsets.all(16),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                mainAxisSpacing: 14,
-                crossAxisSpacing: 14,
-                childAspectRatio: 1.8,
-              ),
-              itemCount: sortedBranches.length,
-
-              itemBuilder: (context, i) {
-                final branch = sortedBranches[i];
-
-                final isSubmitted = submittedSet.contains(_branchKey(branch));
-                final isSelected = selectedBranch == branch;
-
-                final edits = editsCount[branch] ?? 0;
-                final endHour = _lookupInt(submitEndHours, branch) ?? 24;
-
-                /// NEW
-                final additionalToday = additionalTodayBranchCount[branch] ?? 0;
-
-                return GestureDetector(
-                  onTap: () {
-                    final bloc = context.read<InventoryBloc>();
-
-                    showDialog(
-                      context: context,
-                      builder: (_) => BlocProvider.value(
-                        value: bloc,
-                        child: BranchAnalyticsDialog(branch: branch),
-                      ),
-                    );
-                  },
-
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 250),
+            child: sortedBranches.isEmpty
+                ? const _NoBranchesToday()
+                : GridView.builder(
                     padding: const EdgeInsets.all(16),
-
-                    decoration: BoxDecoration(
-                      gradient: isSelected
-                          ? const LinearGradient(
-                              colors: [Color(0xff4a6cf7), Color(0xff2f4dd9)],
-                            )
-                          : null,
-
-                      color: isSelected
-                          ? null
-                          : isSubmitted
-                          ? Colors.greenAccent.shade100
-                          : Colors.white,
-
-                      borderRadius: BorderRadius.circular(14),
-
-                      boxShadow: [
-                        BoxShadow(
-                          blurRadius: 14,
-                          color: Colors.black.withValues(alpha: .06),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          mainAxisSpacing: 14,
+                          crossAxisSpacing: 14,
+                          childAspectRatio: 1.8,
                         ),
-                      ],
-                    ),
+                    itemCount: sortedBranches.length,
 
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              isSubmitted ? Icons.check_circle : Icons.store,
-                              color: isSelected
-                                  ? Colors.white
-                                  : isSubmitted
-                                  ? Colors.green
-                                  : AppColors.primaryColor,
+                    itemBuilder: (context, i) {
+                      final branch = sortedBranches[i];
+
+                      final isSubmitted = submittedSet.contains(
+                        _branchKey(branch),
+                      );
+                      final isSelected = selectedBranch == branch;
+
+                      final edits = editsCount[branch] ?? 0;
+                      final endHour = _lookupInt(submitEndHours, branch) ?? 24;
+
+                      /// NEW
+                      final additionalToday =
+                          additionalTodayBranchCount[branch] ?? 0;
+
+                      return GestureDetector(
+                        onTap: () {
+                          final bloc = context.read<InventoryBloc>();
+
+                          showDialog(
+                            context: context,
+                            builder: (_) => BlocProvider.value(
+                              value: bloc,
+                              child: BranchAnalyticsDialog(branch: branch),
                             ),
+                          );
+                        },
 
-                            const Spacer(),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 250),
+                          padding: const EdgeInsets.all(16),
 
-                            /// ADDITIONAL REQUEST BADGE
-                            if (additionalToday > 0)
-                              Container(
-                                margin: const EdgeInsets.only(right: 6),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.red,
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  "$additionalToday req",
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
+                          decoration: BoxDecoration(
+                            gradient: isSelected
+                                ? const LinearGradient(
+                                    colors: [
+                                      Color(0xff4a6cf7),
+                                      Color(0xff2f4dd9),
+                                    ],
+                                  )
+                                : null,
 
-                            /// EDITS BADGE
-                            if (edits > 0)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange,
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  "$edits edits",
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        Text(
-                          branch,
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
                             color: isSelected
-                                ? Colors.white
-                                : AppColors.secondaryColor,
+                                ? null
+                                : isSubmitted
+                                ? Colors.greenAccent.shade100
+                                : Colors.white,
+
+                            borderRadius: BorderRadius.circular(14),
+
+                            boxShadow: [
+                              BoxShadow(
+                                blurRadius: 14,
+                                color: Colors.black.withValues(alpha: .06),
+                              ),
+                            ],
+                          ),
+
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    isSubmitted
+                                        ? Icons.check_circle
+                                        : Icons.store,
+                                    color: isSelected
+                                        ? Colors.white
+                                        : isSubmitted
+                                        ? Colors.green
+                                        : AppColors.primaryColor,
+                                  ),
+
+                                  const Spacer(),
+
+                                  /// ADDITIONAL REQUEST BADGE
+                                  if (additionalToday > 0)
+                                    Container(
+                                      margin: const EdgeInsets.only(right: 6),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.red,
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        "$additionalToday req",
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+
+                                  /// EDITS BADGE
+                                  if (edits > 0)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.orange,
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        "$edits edits",
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+
+                              const SizedBox(height: 12),
+
+                              Text(
+                                branch,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : AppColors.secondaryColor,
+                                ),
+                              ),
+
+                              const SizedBox(height: 6),
+
+                              Text(
+                                isSubmitted
+                                    ? "Order Submitted"
+                                    : "Waiting Submission",
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isSelected
+                                      ? Colors.white70
+                                      : Colors.grey,
+                                ),
+                              ),
+
+                              const SizedBox(height: 8),
+
+                              _DeadlinePill(
+                                hour: endHour,
+                                isSelected: isSelected,
+                                isSubmitted: isSubmitted,
+                              ),
+                            ],
                           ),
                         ),
-
-                        const SizedBox(height: 6),
-
-                        Text(
-                          isSubmitted
-                              ? "Order Submitted"
-                              : "Waiting Submission",
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: isSelected ? Colors.white70 : Colors.grey,
-                          ),
-                        ),
-
-                        const SizedBox(height: 8),
-
-                        _DeadlinePill(
-                          hour: endHour,
-                          isSelected: isSelected,
-                          isSubmitted: isSubmitted,
-                        ),
-                      ],
-                    ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
           ),
         ],
       ),
@@ -264,6 +277,68 @@ class InventoryBranchGrid extends StatelessWidget {
       if (_branchKey(entry.key) == key) return entry.value;
     }
     return null;
+  }
+}
+
+class _NoBranchesToday extends StatelessWidget {
+  const _NoBranchesToday();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.all(18),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: .76),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white),
+          boxShadow: [
+            BoxShadow(
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+              color: Colors.black.withValues(alpha: .05),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: const Color(0xffE0F2FE),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(
+                Icons.event_available_rounded,
+                color: AppColors.primaryColor,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'No Branches Ordering Today',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: AppColors.secondaryColor,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'There are no active branches scheduled for this order date.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.blueGrey.shade500,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

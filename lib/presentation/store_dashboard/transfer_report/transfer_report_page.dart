@@ -221,7 +221,7 @@ class TransferReportPage extends StatelessWidget {
           color: active ? const Color(0xff243B53) : Colors.white,
           borderRadius: BorderRadius.circular(10),
         ),
-        child: SelectableText(
+        child: Text(
           value,
           style: TextStyle(
             color: active ? Colors.white : Colors.black,

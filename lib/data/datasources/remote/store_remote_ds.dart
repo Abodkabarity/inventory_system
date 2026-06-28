@@ -403,8 +403,45 @@ item_name,
 total_final_reorder_today
 ''')
         .eq('run_date', runDate)
-        .inFilter('branch', branches);
+        .inFilter('branch', branches)
+        .gt('total_final_reorder_today', 0);
 
     return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchDailyOrderMovementsForBranches({
+    required List<String> branches,
+    required String runDate,
+  }) async {
+    if (branches.isEmpty) return [];
+
+    const batchSize = 5000;
+    final rows = <Map<String, dynamic>>[];
+    var from = 0;
+
+    while (true) {
+      final to = from + batchSize - 1;
+
+      final res = await client
+          .from('product_movement_history')
+          .select('branch,movement_date,item_code,item_name,qty')
+          .eq('movement_date', runDate)
+          .eq('movement_type', 'daily_order')
+          .inFilter('branch', branches)
+          .order('branch', ascending: true)
+          .order('item_code', ascending: true)
+          .range(from, to);
+
+      final batch = List<Map<String, dynamic>>.from(res);
+      rows.addAll(batch);
+
+      if (batch.length < batchSize) {
+        break;
+      }
+
+      from += batchSize;
+    }
+
+    return rows;
   }
 }
