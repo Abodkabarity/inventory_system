@@ -94,6 +94,40 @@ class InventoryRemoteDs {
     return result;
   }
 
+  Future<void> submitBranchOrder({
+    required String runDate,
+    required String branch,
+  }) async {
+    final branchRow = await client
+        .from('branches')
+        .select('zone')
+        .eq('branch_name', branch)
+        .maybeSingle();
+
+    final zone = (branchRow?['zone'] ?? '').toString();
+    final now = DateTime.now().toIso8601String();
+
+    await client.from('order_submissions').upsert({
+      'run_date': runDate,
+      'zone': zone,
+      'branch_name': branch,
+      'status': 'submitted',
+      'submitted_at': now,
+      'updated_at': now,
+    }, onConflict: 'run_date,branch_name');
+  }
+
+  Future<void> deleteBranchSubmission({
+    required String runDate,
+    required String branch,
+  }) async {
+    await client
+        .from('order_submissions')
+        .delete()
+        .eq('run_date', runDate)
+        .eq('branch_name', branch);
+  }
+
   Future<List<BranchSetting>> fetchBranchSettings() async {
     final res = await client
         .from('branches')

@@ -233,7 +233,11 @@ class _DrawerToggleButton extends StatelessWidget {
 Widget _buildPage(InventoryState state, bool isSubmitted, String runDate) {
   switch (state.currentPage) {
     case InventoryPageType.dashboard:
-      return InventoryDashboardBody(state: state, isSubmitted: isSubmitted);
+      return InventoryDashboardBody(
+        state: state,
+        isSubmitted: isSubmitted,
+        runDate: runDate,
+      );
 
     case InventoryPageType.mismatch:
       return const MismatchPage();

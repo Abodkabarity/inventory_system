@@ -3,7 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../bloc/inventory_bloc.dart';
-import 'branch_analytics_dialog.dart';
+import '../bloc/inventory_event.dart';
 
 class InventoryBranchGrid extends StatelessWidget {
   final List<String> branches;
@@ -11,6 +11,7 @@ class InventoryBranchGrid extends StatelessWidget {
   final Map<String, DateTime> submittedBranchTimes;
   final Map<String, int> submitEndHours;
   final Map<String, int> editsCount;
+  final String runDate;
 
   /// NEW
   final Map<String, int> additionalTodayBranchCount;
@@ -24,6 +25,7 @@ class InventoryBranchGrid extends StatelessWidget {
     required this.submittedBranchTimes,
     required this.submitEndHours,
     required this.editsCount,
+    required this.runDate,
     required this.additionalTodayBranchCount,
     required this.selectedBranch,
   });
@@ -111,7 +113,11 @@ class InventoryBranchGrid extends StatelessWidget {
                             context: context,
                             builder: (_) => BlocProvider.value(
                               value: bloc,
-                              child: BranchAnalyticsDialog(branch: branch),
+                              child: _SubmitBranchDialog(
+                                branch: branch,
+                                runDate: runDate,
+                                isSubmitted: isSubmitted,
+                              ),
                             ),
                           );
                         },
@@ -336,6 +342,296 @@ class _NoBranchesToday extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SubmitBranchDialog extends StatefulWidget {
+  final String branch;
+  final String runDate;
+  final bool isSubmitted;
+
+  const _SubmitBranchDialog({
+    required this.branch,
+    required this.runDate,
+    required this.isSubmitted,
+  });
+
+  @override
+  State<_SubmitBranchDialog> createState() => _SubmitBranchDialogState();
+}
+
+class _SubmitBranchDialogState extends State<_SubmitBranchDialog> {
+  bool _submitting = false;
+
+  Future<void> _waitForBranchAction(InventoryBloc bloc) {
+    return bloc.stream.firstWhere(
+      (state) =>
+          !state.isBulkLoading &&
+          (state.bulkMessage ?? '').contains(widget.branch),
+    );
+  }
+
+  void _showResultSnack(InventoryBloc bloc) {
+    final result = bloc.state;
+    final success = result.bulkSuccess == true;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: success ? const Color(0xff16A34A) : Colors.red,
+        content: Row(
+          children: [
+            Icon(
+              success
+                  ? Icons.check_circle_rounded
+                  : Icons.error_outline_rounded,
+              color: Colors.white,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                result.bulkMessage ??
+                    (success ? 'Action completed' : 'Action failed'),
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _submit() async {
+    if (_submitting || widget.isSubmitted) return;
+
+    setState(() => _submitting = true);
+
+    final bloc = context.read<InventoryBloc>();
+    bloc.add(SubmitBranchFromInventory(widget.branch));
+
+    await _waitForBranchAction(bloc);
+
+    if (!mounted) return;
+
+    Navigator.of(context).pop();
+    _showResultSnack(bloc);
+  }
+
+  Future<void> _deleteSubmit() async {
+    if (_submitting || !widget.isSubmitted) return;
+
+    setState(() => _submitting = true);
+
+    final bloc = context.read<InventoryBloc>();
+    bloc.add(DeleteBranchSubmissionFromInventory(widget.branch));
+
+    await _waitForBranchAction(bloc);
+
+    if (!mounted) return;
+
+    Navigator.of(context).pop();
+    _showResultSnack(bloc);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final alreadySubmitted = widget.isSubmitted;
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 430),
+        child: Container(
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: [
+              BoxShadow(
+                blurRadius: 28,
+                offset: const Offset(0, 14),
+                color: Colors.black.withValues(alpha: .14),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: alreadySubmitted
+                          ? const Color(0xffDCFCE7)
+                          : const Color(0xffE0F2FE),
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: Icon(
+                      alreadySubmitted
+                          ? Icons.undo_rounded
+                          : Icons.assignment_turned_in_rounded,
+                      color: alreadySubmitted
+                          ? Colors.red
+                          : AppColors.primaryColor,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          alreadySubmitted
+                              ? 'Delete Branch Submit?'
+                              : 'Submit Branch Order?',
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            color: AppColors.secondaryColor,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          widget.runDate,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.blueGrey.shade500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: _submitting
+                        ? null
+                        : () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xffF8FAFC),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xffE2E8F0)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.branch,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.secondaryColor,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      alreadySubmitted
+                          ? 'This branch is currently submitted. If you continue, its submit row will be deleted from order_submissions and it will return to Waiting Submission.'
+                          : '',
+                      style: TextStyle(
+                        height: 1.35,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.blueGrey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _submitting
+                          ? null
+                          : () => Navigator.pop(context),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  if (alreadySubmitted) ...[
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _submitting ? null : _deleteSubmit,
+                        style: ElevatedButton.styleFrom(
+                          elevation: 0,
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        icon: _submitting
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.delete_outline_rounded),
+                        label: Text(
+                          _submitting ? 'Removing...' : 'Delete Submit',
+                        ),
+                      ),
+                    ),
+                  ] else ...[
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _submitting ? null : _submit,
+                        style: ElevatedButton.styleFrom(
+                          elevation: 0,
+                          backgroundColor: const Color(0xff16A34A),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        icon: _submitting
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.check_circle_rounded),
+                        label: Text(
+                          _submitting ? 'Submitting...' : 'Yes, Submit',
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -27,6 +27,24 @@ class SelectBranch extends InventoryEvent {
   List<Object?> get props => [branch];
 }
 
+class SubmitBranchFromInventory extends InventoryEvent {
+  final String branch;
+
+  SubmitBranchFromInventory(this.branch);
+
+  @override
+  List<Object?> get props => [branch];
+}
+
+class DeleteBranchSubmissionFromInventory extends InventoryEvent {
+  final String branch;
+
+  DeleteBranchSubmissionFromInventory(this.branch);
+
+  @override
+  List<Object?> get props => [branch];
+}
+
 class ApproveInventoryRequest extends InventoryEvent {
   final String requestId;
   final num qty;

@@ -9,11 +9,13 @@ import 'inventory_stats_cards.dart';
 class InventoryDashboardBody extends StatelessWidget {
   final InventoryState state;
   final bool isSubmitted;
+  final String runDate;
 
   const InventoryDashboardBody({
     super.key,
     required this.state,
     required this.isSubmitted,
+    required this.runDate,
   });
 
   @override
@@ -80,6 +82,7 @@ class InventoryDashboardBody extends StatelessWidget {
                   submittedBranchTimes: state.submittedBranchTimes,
                   submitEndHours: state.submitEndHours,
                   editsCount: state.editsCount,
+                  runDate: runDate,
                   selectedBranch: state.selectedBranch,
                   additionalTodayBranchCount: state.additionalTodayBranchCount,
                 ),

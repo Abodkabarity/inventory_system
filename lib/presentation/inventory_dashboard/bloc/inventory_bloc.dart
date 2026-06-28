@@ -48,6 +48,10 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   InventoryBloc(this.repo) : super(InventoryState.initial()) {
     on<LoadInventoryDashboard>(_onLoad);
     on<SelectBranch>(_onSelectBranch);
+    on<SubmitBranchFromInventory>(_onSubmitBranchFromInventory);
+    on<DeleteBranchSubmissionFromInventory>(
+      _onDeleteBranchSubmissionFromInventory,
+    );
     on<LoadBranchAnalytics>(_onBranchAnalytics);
     on<ApproveInventoryRequest>(_onApproveInventory);
     on<LoadBranchAdditionalStats>(_onBranchAdditionalStats);
@@ -934,6 +938,103 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       emit(state.copyWith(isLoading: false));
 
       print("SelectBranch Inventory Error: $e");
+    }
+  }
+
+  Future<void> _onSubmitBranchFromInventory(
+    SubmitBranchFromInventory event,
+    Emitter<InventoryState> emit,
+  ) async {
+    final branch = event.branch.trim();
+    if (branch.isEmpty) return;
+
+    final alreadySubmitted = state.submittedBranches.any(
+      (e) => _normalizeBranch(e) == _normalizeBranch(branch),
+    );
+    if (alreadySubmitted) return;
+
+    emit(
+      state.copyWith(
+        isBulkLoading: true,
+        bulkMessage: 'Submitting $branch...',
+        bulkSuccess: null,
+      ),
+    );
+
+    try {
+      await repo.submitBranchOrder(runDate: runDate, branch: branch);
+
+      final submitted = [...state.submittedBranches, branch];
+      final submittedTimes = Map<String, DateTime>.from(
+        state.submittedBranchTimes,
+      )..[branch] = DateTime.now();
+
+      emit(
+        state.copyWith(
+          submittedBranches: submitted,
+          submittedBranchTimes: submittedTimes,
+          submittedCount: submitted.length,
+          isBulkLoading: false,
+          bulkMessage: '$branch submitted successfully',
+          bulkSuccess: true,
+        ),
+      );
+    } catch (e) {
+      emit(
+        state.copyWith(
+          isBulkLoading: false,
+          bulkMessage: 'Submit failed: $e',
+          bulkSuccess: false,
+        ),
+      );
+    }
+  }
+
+  Future<void> _onDeleteBranchSubmissionFromInventory(
+    DeleteBranchSubmissionFromInventory event,
+    Emitter<InventoryState> emit,
+  ) async {
+    final branch = event.branch.trim();
+    if (branch.isEmpty) return;
+
+    emit(
+      state.copyWith(
+        isBulkLoading: true,
+        bulkMessage: 'Removing submit for $branch...',
+        bulkSuccess: null,
+      ),
+    );
+
+    try {
+      await repo.deleteBranchSubmission(runDate: runDate, branch: branch);
+
+      final branchKey = _normalizeBranch(branch);
+      final submitted = state.submittedBranches
+          .where((e) => _normalizeBranch(e) != branchKey)
+          .toList();
+
+      final submittedTimes = Map<String, DateTime>.from(
+        state.submittedBranchTimes,
+      )..removeWhere((key, _) => _normalizeBranch(key) == branchKey);
+
+      emit(
+        state.copyWith(
+          submittedBranches: submitted,
+          submittedBranchTimes: submittedTimes,
+          submittedCount: submitted.length,
+          isBulkLoading: false,
+          bulkMessage: '$branch submit removed successfully',
+          bulkSuccess: true,
+        ),
+      );
+    } catch (e) {
+      emit(
+        state.copyWith(
+          isBulkLoading: false,
+          bulkMessage: 'Remove submit failed for $branch: $e',
+          bulkSuccess: false,
+        ),
+      );
     }
   }
 
@@ -3649,6 +3750,10 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   static bool _isPendingAdditionalStatus(String status) {
     final value = status.toLowerCase().trim();
     return value == 'pending' || value == 'pending_inventory';
+  }
+
+  static String _normalizeBranch(String value) {
+    return value.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
   }
 
   static bool _shouldDisplayAdditionalRealtimeRow(Map<String, dynamic> row) {

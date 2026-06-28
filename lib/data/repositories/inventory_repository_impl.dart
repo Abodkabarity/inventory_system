@@ -37,6 +37,22 @@ class InventoryRepositoryImpl implements InventoryRepository {
     return remote.fetchSubmittedBranchTimes(runDate);
   }
 
+  @override
+  Future<void> submitBranchOrder({
+    required String runDate,
+    required String branch,
+  }) {
+    return remote.submitBranchOrder(runDate: runDate, branch: branch);
+  }
+
+  @override
+  Future<void> deleteBranchSubmission({
+    required String runDate,
+    required String branch,
+  }) {
+    return remote.deleteBranchSubmission(runDate: runDate, branch: branch);
+  }
+
   /// ================================
   /// ORDER EDITS
   /// ================================
