@@ -18,6 +18,7 @@ class FinalReorderState extends Equatable {
   final int storeStock;
   final int reorderQtyNum;
   final int totalReorderToday;
+  final int orderStep;
   final bool isNonFormulary;
   final bool isLocked;
   final bool onlyDecrease;
@@ -47,6 +48,7 @@ class FinalReorderState extends Equatable {
     required this.isNonFormulary,
     required this.isLocked,
     required this.onlyDecrease,
+    required this.orderStep,
     required this.capForThisBranch,
     required this.canIncrease,
     required this.canDecrease,
@@ -67,6 +69,7 @@ class FinalReorderState extends Equatable {
     int? oldQty,
     int? storeStock,
     int? reorderQtyNum,
+    int? orderStep,
     bool? isNonFormulary,
     bool? isLocked,
     bool? onlyDecrease,
@@ -90,6 +93,7 @@ class FinalReorderState extends Equatable {
       oldQty: oldQty ?? this.oldQty,
       storeStock: storeStock ?? this.storeStock,
       reorderQtyNum: reorderQtyNum ?? this.reorderQtyNum,
+      orderStep: orderStep ?? this.orderStep,
       isNonFormulary: isNonFormulary ?? this.isNonFormulary,
       isLocked: isLocked ?? this.isLocked,
       onlyDecrease: onlyDecrease ?? this.onlyDecrease,
@@ -115,6 +119,7 @@ class FinalReorderState extends Equatable {
     oldQty,
     storeStock,
     reorderQtyNum,
+    orderStep,
     isNonFormulary,
     isLocked,
     onlyDecrease,

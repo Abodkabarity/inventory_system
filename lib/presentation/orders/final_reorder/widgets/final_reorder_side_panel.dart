@@ -20,7 +20,7 @@ class FinalReorderSidePanel extends StatefulWidget {
   final num orderIncreaseLimit;
   final VoidCallback onClose;
   final Future<void> Function(int newQty, String reason, bool applyMaxAdj)
-      onSave;
+  onSave;
   final VoidCallback onReset;
 
   const FinalReorderSidePanel({
@@ -102,7 +102,7 @@ class _FinalReorderSidePanelState extends State<FinalReorderSidePanel> {
                 builder: (_) =>
                     LimitDialog(title: s.dialog!.title, body: s.dialog!.body),
               );
-              if (mounted) {
+              if (context.mounted) {
                 context.read<FinalReorderBloc>().add(
                   const FinalReorderDialogConsumed(),
                 );
@@ -189,6 +189,8 @@ class _FinalReorderSidePanelState extends State<FinalReorderSidePanel> {
                                     ? 'Quantity editing is disabled.'
                                     : s.onlyDecrease
                                     ? 'You can only decrease from ${s.oldQty}.'
+                                    : s.orderStep > 1
+                                    ? 'Pack step: ${s.orderStep}. Max allowed: ${s.capForThisBranch}.'
                                     : 'Numbers only. Max allowed: ${s.capForThisBranch}.',
                                 onChanged: (v) => context
                                     .read<FinalReorderBloc>()
@@ -250,9 +252,8 @@ class _FinalReorderSidePanelState extends State<FinalReorderSidePanel> {
                                 checked: s.applyMaxAdj,
                                 oldQty: s.oldQty,
                                 newQty: s.qty,
-                                onChanged: (value) => context
-                                    .read<FinalReorderBloc>()
-                                    .add(
+                                onChanged: (value) =>
+                                    context.read<FinalReorderBloc>().add(
                                       FinalReorderApplyMaxAdjChanged(
                                         value ?? false,
                                       ),
@@ -346,7 +347,9 @@ class _ApplyMaxAdjCard extends StatelessWidget {
         ? AppColors.primaryColor.withValues(alpha: 0.55)
         : const Color(0xFFDCE7F0);
     final bgColor = active ? const Color(0xFFEAF8FF) : const Color(0xFFF7FAFD);
-    final textColor = enabled ? const Color(0xFF102A43) : const Color(0xFF8A97A8);
+    final textColor = enabled
+        ? const Color(0xFF102A43)
+        : const Color(0xFF8A97A8);
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
@@ -374,7 +377,9 @@ class _ApplyMaxAdjCard extends StatelessWidget {
               width: 42,
               height: 42,
               decoration: BoxDecoration(
-                color: active ? AppColors.primaryColor : const Color(0xFFE8F1F8),
+                color: active
+                    ? AppColors.primaryColor
+                    : const Color(0xFFE8F1F8),
                 borderRadius: BorderRadius.circular(13),
               ),
               child: Icon(

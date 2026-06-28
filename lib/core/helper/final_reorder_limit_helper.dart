@@ -5,6 +5,7 @@ class FinalReorderLimitHelper {
     required int reorderQtyNum,
     required int totalReorderToday,
     required num orderIncreaseLimit,
+    int orderStep = 1,
   }) {
     if (reorderQtyNum > oldSafe) {
       return oldSafe;
@@ -14,6 +15,11 @@ class FinalReorderLimitHelper {
 
     final extra = (availableStock * (orderIncreaseLimit / 100)).ceil();
 
-    return oldSafe + extra;
+    final rawCap = oldSafe + extra;
+    final step = orderStep <= 1 ? 1 : orderStep;
+
+    if (step == 1) return rawCap;
+
+    return (rawCap ~/ step) * step;
   }
 }

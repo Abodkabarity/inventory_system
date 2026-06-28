@@ -62,6 +62,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     final storeStock = _toInt(row.storeStock);
     final reorderQtyNum = _toInt(row.reorderQtyNum);
     final totalReorderToday = _toInt(row.totalReorderToday);
+    final orderStep = _orderStep(row);
 
     final isNonFormulary =
         (row.branchFormulary ?? '').toString().trim().toUpperCase() == 'NON';
@@ -84,6 +85,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
       reorderQtyNum: reorderQtyNum,
       totalReorderToday: totalReorderToday,
       orderIncreaseLimit: orderIncreaseLimit,
+      orderStep: orderStep,
     );
 
     return _recompute(
@@ -94,6 +96,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
       reorderQtyNum: reorderQtyNum,
       compareQtyInput: compareQtyInput,
       totalReorderToday: totalReorderToday,
+      orderStep: orderStep,
       isNonFormulary: isNonFormulary,
       hasTma: hasTma,
       isLocked: isLocked,
@@ -124,7 +127,10 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     }
 
     final parsed = int.tryParse(e.text.trim()) ?? 0;
-    final nextRaw = parsed.clamp(0, 1000000000);
+    final nextRaw = _normalizeToStep(
+      parsed.clamp(0, 1000000000),
+      state.orderStep,
+    );
 
     // 🔥 TMA → ممنوع decrease
     if (state.hasTma && nextRaw < state.oldQty) {
@@ -165,6 +171,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         reorderQtyNum: state.reorderQtyNum,
         totalReorderToday: state.totalReorderToday,
         orderIncreaseLimit: orderIncreaseLimit,
+        orderStep: state.orderStep,
       );
 
       next = clamped;
@@ -178,6 +185,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
             reorderQtyNum: state.reorderQtyNum,
             totalReorderToday: state.totalReorderToday,
             orderIncreaseLimit: orderIncreaseLimit,
+            orderStep: state.orderStep,
           ),
           onlyDecrease: state.onlyDecrease,
           storeStock: state.storeStock,
@@ -193,6 +201,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         storeStock: state.storeStock,
         reorderQtyNum: state.reorderQtyNum,
         totalReorderToday: state.totalReorderToday,
+        orderStep: state.orderStep,
         isNonFormulary: state.isNonFormulary,
         compareQtyInput: compareQtyInput,
         hasTma: state.hasTma,
@@ -216,9 +225,10 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
       reorderQtyNum: state.reorderQtyNum,
       totalReorderToday: state.totalReorderToday,
       orderIncreaseLimit: orderIncreaseLimit,
+      orderStep: state.orderStep,
     );
 
-    final attempted = state.qty + 1;
+    final attempted = _nextStepValue(state.qty, state.orderStep);
 
     if (attempted > cap || state.isLocked) {
       emit(
@@ -243,6 +253,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         storeStock: state.storeStock,
         reorderQtyNum: state.reorderQtyNum,
         totalReorderToday: state.totalReorderToday,
+        orderStep: state.orderStep,
         isNonFormulary: state.isNonFormulary,
         hasTma: state.hasTma,
         isLocked: state.isLocked,
@@ -262,9 +273,12 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     int next;
 
     if (state.hasTma) {
-      next = (state.qty - 1).clamp(state.oldQty, 999999999);
+      next = _previousStepValue(
+        state.qty,
+        state.orderStep,
+      ).clamp(state.oldQty, 999999999);
     } else {
-      final attempted = state.qty - 1;
+      final attempted = _previousStepValue(state.qty, state.orderStep);
       next = attempted < 0 ? 0 : attempted;
     }
 
@@ -281,6 +295,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         initialApplyMaxAdj: initialApplyMaxAdjInput,
 
         totalReorderToday: state.totalReorderToday,
+        orderStep: state.orderStep,
         isNonFormulary: state.isNonFormulary,
         hasTma: state.hasTma,
         isLocked: state.isLocked,
@@ -303,6 +318,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         compareQtyInput: compareQtyInput,
         reorderQtyNum: state.reorderQtyNum,
         totalReorderToday: state.totalReorderToday,
+        orderStep: state.orderStep,
         isNonFormulary: state.isNonFormulary,
         hasTma: state.hasTma,
         isLocked: state.isLocked,
@@ -329,6 +345,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         compareQtyInput: compareQtyInput,
         reorderQtyNum: state.reorderQtyNum,
         totalReorderToday: state.totalReorderToday,
+        orderStep: state.orderStep,
         isNonFormulary: state.isNonFormulary,
         hasTma: state.hasTma,
         isLocked: state.isLocked,
@@ -356,6 +373,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         reorderQtyNum: state.reorderQtyNum,
         compareQtyInput: compareQtyInput,
         totalReorderToday: state.totalReorderToday,
+        orderStep: state.orderStep,
         isNonFormulary: state.isNonFormulary,
         hasTma: state.hasTma,
         isLocked: state.isLocked,
@@ -397,6 +415,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     required int storeStock,
     required int reorderQtyNum,
     required int totalReorderToday,
+    required int orderStep,
     required bool isNonFormulary,
     required bool hasTma,
     required bool isLocked,
@@ -411,9 +430,10 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
       reorderQtyNum: reorderQtyNum,
       totalReorderToday: totalReorderToday,
       orderIncreaseLimit: orderIncreaseLimit,
+      orderStep: orderStep,
     );
 
-    final cap = qty > calculatedCap ? qty : calculatedCap;
+    final cap = calculatedCap;
 
     if (isNonFormulary) {
       return FinalReorderState(
@@ -423,6 +443,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
         storeStock: storeStock,
         reorderQtyNum: reorderQtyNum,
         totalReorderToday: totalReorderToday,
+        orderStep: orderStep,
         isNonFormulary: true,
         hasTma: hasTma,
         isLocked: true,
@@ -461,6 +482,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
       storeStock: storeStock,
       reorderQtyNum: reorderQtyNum,
       totalReorderToday: totalReorderToday,
+      orderStep: orderStep,
       isNonFormulary: isNonFormulary,
       hasTma: hasTma,
       isLocked: isLocked,
@@ -491,6 +513,32 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     return int.tryParse(s.replaceAll(',', '')) ?? 0;
   }
 
+  static int _orderStep(DailyOrderRow row) {
+    final unit = _toInt(row.minOrderUnit);
+    return unit > 1 ? unit : 1;
+  }
+
+  static int _normalizeToStep(int value, int orderStep) {
+    if (orderStep <= 1 || value <= 0) return value < 0 ? 0 : value;
+    return (value ~/ orderStep) * orderStep;
+  }
+
+  static int _nextStepValue(int value, int orderStep) {
+    if (orderStep <= 1) return value + 1;
+    return ((value ~/ orderStep) + 1) * orderStep;
+  }
+
+  static int _previousStepValue(int value, int orderStep) {
+    if (orderStep <= 1) return value - 1;
+    if (value <= 0) return 0;
+
+    final currentBucket = value ~/ orderStep;
+    if (value % orderStep == 0) {
+      return (currentBucket - 1) * orderStep;
+    }
+    return currentBucket * orderStep;
+  }
+
   static int _clampQty({
     required int v,
     required bool isLocked,
@@ -499,6 +547,7 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
     required int reorderQtyNum,
     required int totalReorderToday,
     required num orderIncreaseLimit,
+    required int orderStep,
   }) {
     if (isLocked) return oldSafe;
 
@@ -508,12 +557,14 @@ class FinalReorderBloc extends Bloc<FinalReorderEvent, FinalReorderState> {
       reorderQtyNum: reorderQtyNum,
       totalReorderToday: totalReorderToday,
       orderIncreaseLimit: orderIncreaseLimit,
+      orderStep: orderStep,
     );
 
-    if (v > cap) return cap;
+    final steppedValue = _normalizeToStep(v, orderStep);
+    if (steppedValue > cap) return cap;
     if (v < 0) return 0;
 
-    return v;
+    return steppedValue;
   }
 
   static FinalReorderDialogPayload _dialogForExceeded({
