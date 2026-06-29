@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 import '../../../core/helper/final_reorder_limit_helper.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/operational_date_helper.dart';
+import '../../../core/utils/uae_date_time_formatter.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
 import '../../auth/bloc/auth_state.dart';
@@ -1934,10 +1935,16 @@ class _StatusChipState extends State<_StatusChip> {
   }
 
   DateTime? get _preparationAt =>
-      DateTime.tryParse(widget.nextPreparationAt ?? '');
+      _parseDisplayDateTime(widget.nextPreparationAt);
 
   DateTime? get _deadlineAt =>
-      DateTime.tryParse(widget.nextPreparationDeadlineAt ?? '');
+      _parseDisplayDateTime(widget.nextPreparationDeadlineAt);
+
+  DateTime? _parseDisplayDateTime(String? value) {
+    final parsed = DateTime.tryParse(value ?? '');
+    if (parsed == null) return null;
+    return UaeDateTimeFormatter.toUae(parsed);
+  }
 
   bool get _shouldCountDown {
     if (widget.isSubmitted) return false;
@@ -2027,6 +2034,7 @@ class _StatusChipState extends State<_StatusChip> {
   String _formatReadableDate(String value) {
     final date = DateTime.tryParse(value);
     if (date == null) return value;
+    final uaeDate = UaeDateTimeFormatter.toUae(date);
 
     const days = [
       'Monday',
@@ -2038,10 +2046,10 @@ class _StatusChipState extends State<_StatusChip> {
       'Sunday',
     ];
 
-    final dayName = days[date.weekday - 1];
-    final d = date.day.toString().padLeft(2, '0');
-    final m = date.month.toString().padLeft(2, '0');
-    final y = date.year.toString().padLeft(4, '0');
+    final dayName = days[uaeDate.weekday - 1];
+    final d = uaeDate.day.toString().padLeft(2, '0');
+    final m = uaeDate.month.toString().padLeft(2, '0');
+    final y = uaeDate.year.toString().padLeft(4, '0');
     return '$dayName $d-$m-$y';
   }
 

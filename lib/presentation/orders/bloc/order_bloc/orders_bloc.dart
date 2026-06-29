@@ -441,8 +441,9 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         submitEndHour: submitEndHour,
       );
       final statusTiming = submissionStatus == 'submitted'
-          ? _branchOrderTiming(
-              now: orderTiming.deadlineAt.add(const Duration(seconds: 1)),
+          ? _submittedNextOrderTiming(
+              runDate: state.runDate,
+              fallbackTiming: orderTiming,
               orderDays: orderDays,
               submitStartHour: submitStartHour,
               submitEndHour: submitEndHour,
@@ -1901,6 +1902,39 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       hasMissedOrderWindow:
           lastEndedTiming != null &&
           _isSameDate(now, lastEndedTiming.orderDate),
+    );
+  }
+
+  _BranchOrderTiming _submittedNextOrderTiming({
+    required String runDate,
+    required _BranchOrderTiming fallbackTiming,
+    required List<String> orderDays,
+    required int submitStartHour,
+    required int submitEndHour,
+  }) {
+    final submittedOrderDate = DateTime.tryParse(runDate);
+    if (submittedOrderDate == null) {
+      return _branchOrderTiming(
+        now: fallbackTiming.deadlineAt.add(const Duration(seconds: 1)),
+        orderDays: orderDays,
+        submitStartHour: submitStartHour,
+        submitEndHour: submitEndHour,
+      );
+    }
+
+    final submittedTiming = _BranchOrderTiming.fromOrderDate(
+      submittedOrderDate,
+      now: OperationalDateHelper.nowUae,
+      submitStartHour: submitStartHour,
+      submitEndHour: submitEndHour,
+      hasMissedOrderWindow: false,
+    );
+
+    return _branchOrderTiming(
+      now: submittedTiming.deadlineAt.add(const Duration(seconds: 1)),
+      orderDays: orderDays,
+      submitStartHour: submitStartHour,
+      submitEndHour: submitEndHour,
     );
   }
 

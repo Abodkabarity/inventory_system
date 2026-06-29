@@ -1,5 +1,6 @@
 import 'package:calendar_date_picker2/calendar_date_picker2.dart';
 import 'package:daily_order/core/theme/app_colors.dart';
+import 'package:daily_order/core/utils/uae_date_time_formatter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -735,13 +736,7 @@ class _TrackRowCard extends StatelessWidget {
   const _TrackRowCard({required this.row});
 
   String _fmtDt(DateTime? d) {
-    if (d == null) return '-';
-    final yy = d.year.toString().padLeft(4, '0');
-    final mm = d.month.toString().padLeft(2, '0');
-    final dd = d.day.toString().padLeft(2, '0');
-    final hh = d.hour.toString().padLeft(2, '0');
-    final mi = d.minute.toString().padLeft(2, '0');
-    return '$yy-$mm-$dd $hh:$mi';
+    return UaeDateTimeFormatter.yMdHm(d);
   }
 
   ({Color bg, Color fg, String label, IconData icon}) _statusStyle(

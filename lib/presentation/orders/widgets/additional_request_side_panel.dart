@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/uae_date_time_formatter.dart';
 import '../../../domain/entities/daily_order_row.dart';
 
 class SentAdditionalRequest {
@@ -110,13 +111,7 @@ class _AdditionalRequestSidePanelState
   }
 
   String _fmtDateTime(DateTime dt) {
-    String two(int v) => v.toString().padLeft(2, '0');
-    final y = dt.year.toString();
-    final m = two(dt.month);
-    final d = two(dt.day);
-    final hh = two(dt.hour);
-    final mm = two(dt.minute);
-    return '$y-$m-$d $hh:$mm';
+    return UaeDateTimeFormatter.yMdHm(dt);
   }
 
   @override
