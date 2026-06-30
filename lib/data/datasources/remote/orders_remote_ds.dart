@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class OrdersRemoteDs {
   final SupabaseClient client;
   OrdersRemoteDs(this.client);
+  bool _additionalRequestRpcSupportsPrintMetadata = true;
 
   // ==========================
   // Fetch ALL rows for a branch (batched + progress)
@@ -284,28 +285,7 @@ total_sales_last_90_days,
 
       await _retryOnTimeout<void>(() async {
         for (final row in part) {
-          await client.rpc(
-            'create_additional_request',
-            params: {
-              'p_request_group_id': row['request_group_id'],
-              'p_run_date': row['run_date'],
-              'p_zone': row['zone'],
-              'p_branch_name': row['branch_name'],
-              'p_item_code': row['item_code'],
-              'p_item_name': row['item_name'],
-              'p_request_qty': row['request_qty'],
-              'p_reason': row['reason'],
-
-              'p_branch_stock': row['branch_stock'],
-              'p_store_stock': row['store_stock'],
-              'p_sales_45d': row['sales_45d'],
-              'p_final_reorder_qty': row['final_reorder_qty'],
-              'p_item_purchase_type': row['item_purchase_type'],
-              'p_max_type': row['max_type'],
-
-              'p_contact_logistic': row['contact_logistic'],
-            },
-          );
+          await _createAdditionalRequest(row);
         }
         final ids = part
             .map((e) => e['draft_id'])
@@ -319,6 +299,65 @@ total_sales_last_90_days,
               .inFilter('id', ids);
         }
       });
+    }
+  }
+
+  Future<void> _createAdditionalRequest(Map<String, dynamic> row) async {
+    final baseParams = {
+      'p_request_group_id': row['request_group_id'],
+      'p_run_date': row['run_date'],
+      'p_zone': row['zone'],
+      'p_branch_name': row['branch_name'],
+      'p_item_code': row['item_code'],
+      'p_item_name': row['item_name'],
+      'p_request_qty': row['request_qty'],
+      'p_reason': row['reason'],
+      'p_branch_stock': row['branch_stock'],
+      'p_store_stock': row['store_stock'],
+      'p_sales_45d': row['sales_45d'],
+      'p_final_reorder_qty': row['final_reorder_qty'],
+      'p_item_purchase_type': row['item_purchase_type'],
+      'p_store_item_classifications': row['store_item_classifications'],
+      'p_max_type': row['max_type'],
+      'p_contact_logistic': row['contact_logistic'],
+    };
+
+    final printParams = {
+      ...baseParams,
+      'p_supplier': row['supplier'],
+      'p_barcode': row['barcode'],
+      'p_category': row['category'],
+    };
+
+    if (_additionalRequestRpcSupportsPrintMetadata) {
+      try {
+        await client.rpc('create_additional_request', params: printParams);
+        return;
+      } catch (_) {
+        _additionalRequestRpcSupportsPrintMetadata = false;
+      }
+    }
+
+    await client.rpc('create_additional_request', params: baseParams);
+    await _tryUpdateAdditionalPrintMetadata(row);
+  }
+
+  Future<void> _tryUpdateAdditionalPrintMetadata(
+    Map<String, dynamic> row,
+  ) async {
+    try {
+      await client
+          .from('additional_requests')
+          .update({
+            'supplier': row['supplier'],
+            'barcode': row['barcode'],
+            'category': row['category'],
+          })
+          .eq('request_group_id', row['request_group_id'])
+          .eq('branch_name', row['branch_name'])
+          .eq('item_code', row['item_code']);
+    } catch (_) {
+      // The print metadata columns are optional until the DB migration is run.
     }
   }
 

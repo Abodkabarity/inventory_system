@@ -196,11 +196,13 @@ abstract class InventoryRepository {
   Future<List<Map<String, dynamic>>> fetchAllocationBranches();
   Future<List<String>> fetchAllocationCategories(String runDate);
   Future<List<String>> fetchAllocationItemStatuses(String runDate);
+  Future<List<String>> fetchAllocationStockCoverOptions(String runDate);
   Future<List<AllocationSourceRow>> fetchAllocationSourceRows({
     required String runDate,
     required List<String> donorBranches,
     required List<String> receiverBranches,
     required List<String> categories,
+    required List<String> itemStatuses,
     void Function(int loaded)? onProgress,
   });
   Future<List<AllocationResultRow>> fetchAllocationResults({

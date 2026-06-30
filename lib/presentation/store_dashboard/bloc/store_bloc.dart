@@ -298,9 +298,33 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
   /// ================================
   /// 🔥 COLLECT (CORE LOGIC)
   /// ================================
-  Future<Map<String, List<Map<String, dynamic>>>> _collect() async {
-    final res = await repo.fetchAllSentToStore();
-    print("DATA: $res");
+  bool _matchesAdditionalPrintClassification(
+    Map<String, dynamic> item,
+    String classification,
+  ) {
+    final selected = classification.trim().toLowerCase();
+    if (selected == 'all') return true;
+
+    final raw = (item['store_item_classifications'] ?? '').toString().trim();
+    final normalized = raw.isEmpty ? 'medicine' : raw.toLowerCase();
+
+    if (selected == 'general') {
+      return normalized == 'general';
+    }
+
+    return normalized != 'general';
+  }
+
+  Future<Map<String, List<Map<String, dynamic>>>> _collect({
+    String classification = 'all',
+  }) async {
+    final allRows = await repo.fetchAllSentToStore();
+    final res = allRows
+        .where(
+          (item) => _matchesAdditionalPrintClassification(item, classification),
+        )
+        .toList();
+
     final Map<String, List<Map<String, dynamic>>> grouped = {};
 
     for (final item in res) {
@@ -326,7 +350,7 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
     emit(state.copyWith(isPrintingMain: true, errorMessage: null));
 
     try {
-      final grouped = await _collect();
+      final grouped = await _collect(classification: event.classification);
 
       if (grouped.isEmpty) {
         emit(
@@ -340,12 +364,14 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
 
       await PrintAdditionalService.printBatch(grouped);
       final res = await repo.fetchProcessingRequests();
+      final additional = await repo.fetchAdditionalRequests();
 
       emit(
         state.copyWith(
           isPrintingMain: false,
           processingList: res,
           filteredList: res,
+          additionalRequests: additional,
         ),
       );
     } catch (e) {
@@ -488,6 +514,8 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
     try {
       final grouped = await _collect();
       await PrintAdditionalService.printBatch(grouped);
+      final additional = await repo.fetchAdditionalRequests();
+      emit(state.copyWith(additionalRequests: additional));
     } catch (e) {
       print("Print Error: $e");
     }

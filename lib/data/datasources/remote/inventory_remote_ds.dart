@@ -33,6 +33,7 @@ class InventoryRemoteDs {
         sales_45d,
         final_reorder_qty,
         item_purchase_type,
+        store_item_classifications,
         max_type
       ''';
 
@@ -929,6 +930,93 @@ item_minimum_order_unit, barcode, store_item_classifications
         .toList();
   }
 
+  Future<List<String>> fetchAllocationStockCoverOptions(String runDate) async {
+    try {
+      final rpcRes = await client.rpc(
+        'get_allocation_stock_cover_options',
+        params: {'p_run_date': runDate},
+      );
+      final raw = List<dynamic>.from(rpcRes);
+      if (raw.every((e) => e is! Map)) {
+        final options = raw
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty && !_isNoDemandStockCover(e))
+            .toList();
+        options.sort(_compareStockCoverLabels);
+        return options;
+      }
+      return _stockCoverOptionsFromRows(List<Map<String, dynamic>>.from(raw));
+    } catch (_) {
+      // Fallback keeps the page working even before the optional RPC is added.
+    }
+
+    final res = await client
+        .from('allocation_base')
+        .select('stock_cover_text, branch_stock_days')
+        .eq('run_date', runDate)
+        .order('branch_stock_days', ascending: true)
+        .limit(50000);
+
+    return _stockCoverOptionsFromRows(List<Map<String, dynamic>>.from(res));
+  }
+
+  List<String> _stockCoverOptionsFromRows(List<Map<String, dynamic>> rows) {
+    final orderMap = <String, num>{};
+    for (final row in rows) {
+      final label = (row['stock_cover_text'] ?? '').toString().trim();
+      if (label.isEmpty || _isNoDemandStockCover(label)) continue;
+
+      final days = row['branch_stock_days'] is num
+          ? row['branch_stock_days'] as num
+          : num.tryParse((row['branch_stock_days'] ?? '0').toString()) ?? 0;
+      final current = orderMap[label];
+      if (current == null || days < current) {
+        orderMap[label] = days;
+      }
+    }
+
+    final options = orderMap.keys.toList()..sort(_compareStockCoverLabels);
+
+    return options;
+  }
+
+  bool _isNoDemandStockCover(String label) {
+    return label.trim().toLowerCase() == 'no demand';
+  }
+
+  int _stockCoverGroup(String label) {
+    final text = label.trim().toLowerCase();
+    if (text.contains('no stock')) return 0;
+    if (text.contains('less than')) return 1;
+    if (text.contains('day')) return 2;
+    if (text.contains('week')) return 3;
+    if (text.contains('month')) return 4;
+    if (text.contains('year')) return 5;
+    return 9;
+  }
+
+  num _stockCoverUnitValue(String label) {
+    final text = label.trim().toLowerCase();
+    if (text.contains('no stock')) return 0;
+    if (text.contains('less than')) return 0.5;
+    return num.tryParse(
+          RegExp(r'\d+(\.\d+)?').firstMatch(text)?.group(0) ?? '',
+        ) ??
+        0;
+  }
+
+  int _compareStockCoverLabels(String a, String b) {
+    final groupCompare = _stockCoverGroup(a).compareTo(_stockCoverGroup(b));
+    if (groupCompare != 0) return groupCompare;
+
+    final valueCompare = _stockCoverUnitValue(
+      a,
+    ).compareTo(_stockCoverUnitValue(b));
+    if (valueCompare != 0) return valueCompare;
+
+    return a.toLowerCase().compareTo(b.toLowerCase());
+  }
+
   Future<List<Map<String, dynamic>>> fetchAllocationResults({
     required String runDate,
     required List<String> donorBranches,
@@ -957,6 +1045,7 @@ item_minimum_order_unit, barcode, store_item_classifications
     required List<String> donorBranches,
     required List<String> receiverBranches,
     required List<String> categories,
+    required List<String> itemStatuses,
     void Function(int loaded)? onProgress,
   }) async {
     const cols = '''
@@ -964,18 +1053,32 @@ branch,
 item_code,
 item_name,
 category,
-extra_qty_more_than_month,
+item_purchase_type,
+extra_qty,
 reorder_qty,
-final_reorder_qty_store_stock_gt_0
+final_reorder_qty,
+shortage,
+branch_stock,
+demand_for_30_days,
+branch_stock_days,
+stock_cover_text
 ''';
     const batchSize = 10000;
     final all = <Map<String, dynamic>>[];
     final neededBranches = <String>{...donorBranches, ...receiverBranches};
+    const noSelection = '__NO_ALLOCATION_SELECTION__';
+
+    if (neededBranches.contains(noSelection) ||
+        categories.contains(noSelection) ||
+        itemStatuses.contains(noSelection)) {
+      return all;
+    }
+
     var from = 0;
 
     while (true) {
       var query = client
-          .from('daily_order')
+          .from('allocation_base')
           .select(cols)
           .eq('run_date', runDate);
 
@@ -985,6 +1088,10 @@ final_reorder_qty_store_stock_gt_0
 
       if (categories.isNotEmpty) {
         query = query.inFilter('category', categories);
+      }
+
+      if (itemStatuses.isNotEmpty) {
+        query = query.inFilter('item_purchase_type', itemStatuses);
       }
 
       final res = await query.range(from, from + batchSize - 1);

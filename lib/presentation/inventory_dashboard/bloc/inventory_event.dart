@@ -449,6 +449,9 @@ class RunAllocation extends InventoryEvent {
   final List<String> priorityBranches;
   final List<String> categories;
   final List<String> itemStatuses;
+  final List<String> donorStockCovers;
+  final List<String> receiverStockCovers;
+  final int? minimumDemandFor30Days;
 
   RunAllocation({
     required this.runDate,
@@ -457,6 +460,9 @@ class RunAllocation extends InventoryEvent {
     required this.priorityBranches,
     required this.categories,
     required this.itemStatuses,
+    this.donorStockCovers = const [],
+    this.receiverStockCovers = const [],
+    this.minimumDemandFor30Days,
   });
 
   @override
@@ -467,10 +473,15 @@ class RunAllocation extends InventoryEvent {
     priorityBranches,
     categories,
     itemStatuses,
+    donorStockCovers,
+    receiverStockCovers,
+    minimumDemandFor30Days,
   ];
 }
 
 class ExportAllocationResults extends InventoryEvent {}
+
+class ExportAllocationShortage extends InventoryEvent {}
 
 class ImportAllocationFile extends InventoryEvent {
   final List<String> priorityBranches;

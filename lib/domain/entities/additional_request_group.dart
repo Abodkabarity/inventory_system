@@ -8,6 +8,8 @@ class AdditionalRequestGroup {
   final String? storeStatus;
   final String itemNames;
   final String contactLogistic;
+  final List<String> classifications;
+  final List<String> pendingClassifications;
   final num? requestQty;
   final String itemCodes;
   final num? branchStock;
@@ -29,6 +31,8 @@ class AdditionalRequestGroup {
     required this.status,
     required this.itemNames,
     required this.itemCodes,
+    this.classifications = const [],
+    this.pendingClassifications = const [],
     this.storeStatus,
     required this.contactLogistic,
     this.requestQty,

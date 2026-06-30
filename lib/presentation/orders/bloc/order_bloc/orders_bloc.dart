@@ -449,8 +449,11 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
               submitEndHour: submitEndHour,
             )
           : orderTiming;
-      final isOrderDay = orderTiming.isPreparationWindowActive;
-      final isMissingOrder = orderTiming.hasMissedOrderWindow;
+      final hasOrderOnRunDate = _hasOrderOnRunDate(state.runDate, orderDays);
+      final isOrderDay =
+          hasOrderOnRunDate && orderTiming.isPreparationWindowActive;
+      final isMissingOrder =
+          hasOrderOnRunDate && orderTiming.hasMissedOrderWindow;
       final nextOrderDate = _dateKey(statusTiming.orderDate);
 
       print('Order date: $nextOrderDate | preparation active: $isOrderDay');
@@ -459,7 +462,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
         startHour: submitStartHour,
         endHour: submitEndHour,
       );
-      final isOrderWindowClosed = forceOffWindow;
+      final isOrderWindowClosed = !hasOrderOnRunDate || forceOffWindow;
       final forcedNumericFinalOnly = !isOrderDay
           ? false
           : forceOffWindow
@@ -1131,6 +1134,10 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
           'sales_45d': row?.qty30DaysFromLast45d,
           'final_reorder_qty': row?.finalReorderQtyStoreStockGt0,
           'item_purchase_type': row?.itemPurchaseType,
+          'store_item_classifications': row?.storeItemClassifications,
+          'supplier': row?.supplier,
+          'barcode': row?.barcode,
+          'category': row?.category,
           'max_type': null,
         };
       }).toList();
@@ -1940,6 +1947,29 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
 
   bool _isSameDate(DateTime a, DateTime b) {
     return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  bool _hasOrderOnRunDate(String runDate, List<String> orderDays) {
+    const dayNumbers = {
+      'monday': 1,
+      'tuesday': 2,
+      'wednesday': 3,
+      'thursday': 4,
+      'friday': 5,
+      'saturday': 6,
+      'sunday': 7,
+    };
+
+    final date = DateTime.tryParse(runDate);
+    if (date == null) return false;
+
+    final normalized = orderDays
+        .map((e) => e.trim().toLowerCase())
+        .where(dayNumbers.containsKey)
+        .map((e) => dayNumbers[e]!)
+        .toSet();
+
+    return normalized.contains(date.weekday);
   }
 
   String _dateKey(DateTime date) {

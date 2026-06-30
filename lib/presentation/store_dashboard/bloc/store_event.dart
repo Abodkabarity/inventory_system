@@ -49,7 +49,14 @@ class LoadAdditionalHistory extends StoreEvent {
   List<Object?> get props => [from, to];
 }
 
-class CollectAndPrintAdditional extends StoreEvent {}
+class CollectAndPrintAdditional extends StoreEvent {
+  final String classification;
+
+  CollectAndPrintAdditional({this.classification = 'all'});
+
+  @override
+  List<Object?> get props => [classification];
+}
 
 class CollectAdditionalAndPrint extends StoreEvent {}
 

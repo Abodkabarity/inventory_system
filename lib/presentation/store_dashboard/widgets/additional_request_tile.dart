@@ -16,10 +16,6 @@ class AdditionalRequestTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    print(
-      'GROUP=${request.groupId} STATUS=[${request.status}] STORE=[${request.storeStatus}]',
-    );
-
     Color statusColor;
     String statusText;
 

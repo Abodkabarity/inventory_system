@@ -107,12 +107,20 @@ class TransferReportBloc
               'branch': branch,
               'item_code': code,
               'item_name': (row['item_name'] ?? '').toString(),
+              'store_item_classifications':
+                  (row['store_item_classifications'] ?? '').toString(),
               'required_qty': qty,
             };
           } else {
             existing['required_qty'] =
                 (double.tryParse(existing['required_qty'].toString()) ?? 0) +
                 qty;
+            final classification =
+                (existing['store_item_classifications'] ?? '').toString();
+            if (classification.trim().isEmpty) {
+              existing['store_item_classifications'] =
+                  (row['store_item_classifications'] ?? '').toString();
+            }
           }
         }
 
@@ -156,6 +164,8 @@ class TransferReportBloc
                 runDate: runDate,
                 itemCode: code,
                 itemName: item['item_name']?.toString() ?? '',
+                storeItemClassifications:
+                    item['store_item_classifications']?.toString() ?? '',
                 requiredQty: requiredQty,
                 transferredQty: transferred,
                 status: status,
@@ -180,6 +190,7 @@ class TransferReportBloc
                 runDate: runDate,
                 itemCode: code,
                 itemName: names[entry.key] ?? '',
+                storeItemClassifications: '',
                 requiredQty: 0,
                 transferredQty: entry.value,
                 status: TransferStatus.notInDailyOrder,

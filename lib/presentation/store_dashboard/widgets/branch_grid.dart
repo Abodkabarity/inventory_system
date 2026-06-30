@@ -50,8 +50,8 @@ class BranchGrid extends StatelessWidget {
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
                 mainAxisSpacing: 14,
-                crossAxisSpacing: 14,
-                childAspectRatio: 2.45,
+                crossAxisSpacing: 5,
+                childAspectRatio: 2.2,
               ),
 
               itemCount: branches.length,

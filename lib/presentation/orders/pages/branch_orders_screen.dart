@@ -377,6 +377,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
               startHour: s.submitStartHour,
               endHour: s.submitEndHour,
             );
+        final canEditFinalReorder = !s.isSubmitted && s.isOrderDay;
         final orderedColumns = showFullOrderColumns
             ? BranchOrdersSelectors.orderedVisibleColumns(s)
             : ['item_code', 'item_name', 'branch_stock', 'store_stock'];
@@ -1770,17 +1771,11 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                               submitStartHour:
                                                   s.submitStartHour,
                                               submitEndHour: s.submitEndHour,
+                                              canEditFinalReorder:
+                                                  canEditFinalReorder,
                                               onTapFinalReorder: (row) {
                                                 final locked =
-                                                    s.isSubmitted ||
-                                                    s.isMissingOrder ||
-                                                    (s.isOrderDay &&
-                                                        OperationalDateHelper.isMissingWindowForBranch(
-                                                          startHour:
-                                                              s.submitStartHour,
-                                                          endHour:
-                                                              s.submitEndHour,
-                                                        ));
+                                                    !canEditFinalReorder;
 
                                                 if (locked) {
                                                   return;

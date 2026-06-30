@@ -5,6 +5,7 @@ class TransferReportRow {
   final String runDate;
   final String itemCode;
   final String itemName;
+  final String storeItemClassifications;
 
   final double requiredQty;
   final double transferredQty;
@@ -16,6 +17,7 @@ class TransferReportRow {
     required this.runDate,
     required this.itemCode,
     required this.itemName,
+    this.storeItemClassifications = '',
     required this.requiredQty,
     required this.transferredQty,
     required this.status,

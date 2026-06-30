@@ -7,7 +7,6 @@ import '../bloc/store_bloc.dart';
 import '../bloc/store_event.dart';
 import '../bloc/store_state.dart';
 import 'ProcessingAdditionalDialog.dart';
-import 'additional_history_dialog.dart';
 import 'additional_request_tile.dart';
 
 class AdditionalPanel extends StatefulWidget {
@@ -20,6 +19,31 @@ class AdditionalPanel extends StatefulWidget {
 }
 
 class _AdditionalPanelState extends State<AdditionalPanel> {
+  Future<void> _handlePrintPendingAdditional(StoreBloc bloc) async {
+    final hasPending = bloc.state.additionalRequests.any(
+      (request) => request.status == 'sent_to_store',
+    );
+
+    if (!hasPending) {
+      await showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text("Notice"),
+          content: const Text("No pending additional requests"),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("OK"),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    bloc.add(CollectAndPrintAdditional());
+  }
+
   @override
   Widget build(BuildContext context) {
     List<AdditionalRequestGroup> list = [...widget.requests];
@@ -52,22 +76,15 @@ class _AdditionalPanelState extends State<AdditionalPanel> {
         return 99;
       }
 
-      list.sort((a, b) {
-        final pa = getPriority(a);
-        final pb = getPriority(b);
-
-        if (pa != pb) {
-          return pa.compareTo(pb);
-        }
-
-        return b.createdAt.compareTo(a.createdAt);
-      });
+      final pa = getPriority(a);
+      final pb = getPriority(b);
+      if (pa != pb) return pa.compareTo(pb);
 
       if (a.status == "sent_to_store" && b.status != "sent_to_store") return -1;
       if (b.status == "sent_to_store" && a.status != "sent_to_store") return 1;
 
       /// 🔴 rejected next
-      if (a.status == "rejected" && b.status != "rejected") return -1;
+      if (a.status == "rejected" && b.status != "rejected") return 1;
       if (b.status == "rejected" && a.status != "rejected") return 1;
 
       return b.createdAt.compareTo(a.createdAt);
@@ -158,33 +175,9 @@ class _AdditionalPanelState extends State<AdditionalPanel> {
                     ),
                     onPressed: state.isPrintingMain
                         ? null
-                        : () {
-                            final bloc = context.read<StoreBloc>();
-
-                            final hasPending = bloc.state.additionalRequests
-                                .any((e) => e.status == 'sent_to_store');
-
-                            if (!hasPending) {
-                              showDialog(
-                                context: context,
-                                builder: (_) => AlertDialog(
-                                  title: const Text("Notice"),
-                                  content: const Text(
-                                    "No pending additional requests",
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(context),
-                                      child: const Text("OK"),
-                                    ),
-                                  ],
-                                ),
-                              );
-                              return;
-                            }
-
-                            bloc.add(CollectAndPrintAdditional());
-                          },
+                        : () => _handlePrintPendingAdditional(
+                            context.read<StoreBloc>(),
+                          ),
                   ),
 
                   const SizedBox(width: 10),
@@ -284,7 +277,7 @@ class _AdditionalPanelState extends State<AdditionalPanel> {
                         ),
                     ],
                   ),
-                  Spacer(),
+                  /*  Spacer(),
 
                   /// 🟣 HISTORY
                   ElevatedButton.icon(
@@ -316,7 +309,7 @@ class _AdditionalPanelState extends State<AdditionalPanel> {
                         },
                       );
                     },
-                  ),
+                  ),*/
                 ],
               ),
             ),

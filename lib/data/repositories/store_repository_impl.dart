@@ -99,9 +99,30 @@ class StoreRepositoryImpl implements StoreRepository {
   Future<List<AdditionalRequestGroup>> fetchAdditionalRequests() async {
     final rows = await remote.fetchAdditionalRequestGroups();
 
-    final Map<String, List<Map<String, dynamic>>> grouped = {};
+    final uniqueRows = <Map<String, dynamic>>[];
+    final seenRows = <String>{};
 
     for (final row in rows) {
+      final id = (row['id'] ?? '').toString();
+      final fallbackKey = [
+        row['request_group_id'],
+        row['branch_name'],
+        row['created_at'],
+        row['item_code'],
+        row['request_qty'],
+        row['status'],
+        row['store_status'],
+      ].map((e) => (e ?? '').toString()).join('|');
+
+      final key = id.trim().isNotEmpty ? 'id:$id' : 'fallback:$fallbackKey';
+      if (seenRows.add(key)) {
+        uniqueRows.add(row);
+      }
+    }
+
+    final Map<String, List<Map<String, dynamic>>> grouped = {};
+
+    for (final row in uniqueRows) {
       final groupId = (row['request_group_id'] ?? '').toString();
 
       grouped.putIfAbsent(groupId, () => []);
@@ -150,6 +171,40 @@ class StoreRepositoryImpl implements StoreRepository {
       final isProcessing = validItems.any(
         (e) => e['store_status'] == 'processing',
       );
+      final pendingItems = validItems.where((e) {
+        final status = (e['status'] ?? '').toString();
+        final storeStatus = (e['store_status'] ?? '').toString();
+        return status == 'sent_to_store' && storeStatus != 'processing';
+      }).toList();
+      final classifications =
+          validItems
+              .map((e) => (e['store_item_classifications'] ?? '').toString())
+              .map((e) => e.trim().isEmpty ? 'MEDICINE' : e.trim())
+              .toSet()
+              .toList()
+            ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      final pendingClassifications =
+          pendingItems
+              .map((e) => (e['store_item_classifications'] ?? '').toString())
+              .map((e) => e.trim().isEmpty ? 'MEDICINE' : e.trim())
+              .toSet()
+              .toList()
+            ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      final itemCodes =
+          validItems
+              .map((e) => (e['item_code'] ?? '').toString().trim())
+              .where((e) => e.isNotEmpty)
+              .toSet()
+              .toList()
+            ..sort();
+      final itemNames =
+          validItems
+              .map((e) => (e['item_name'] ?? '').toString().trim())
+              .where((e) => e.isNotEmpty)
+              .toSet()
+              .toList()
+            ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
       result.add(
         AdditionalRequestGroup(
           groupId: groupId,
@@ -157,17 +212,35 @@ class StoreRepositoryImpl implements StoreRepository {
           createdAt: created,
           itemsCount: validItems.length,
           status: status,
-          itemNames: '',
-          itemCodes: '',
+          itemNames: itemNames.join(', '),
+          itemCodes: itemCodes.join(', '),
+          classifications: classifications,
+          pendingClassifications: pendingClassifications,
           storeStatus: isProcessing ? 'processing' : null,
           contactLogistic: isUrgent ? 'urgent' : '',
         ),
       );
     });
 
-    result.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final deduped = <String, AdditionalRequestGroup>{};
+    for (final group in result) {
+      final key = [
+        group.branchName,
+        group.createdAt.toIso8601String(),
+        group.status,
+        group.storeStatus ?? '',
+        group.itemCodes,
+        group.itemNames,
+        group.itemsCount,
+      ].join('|');
 
-    return result;
+      deduped.putIfAbsent(key, () => group);
+    }
+
+    final finalResult = deduped.values.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    return finalResult;
   }
 
   /// ================================

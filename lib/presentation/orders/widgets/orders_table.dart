@@ -9,7 +9,6 @@ import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../../../core/utils/operational_date_helper.dart';
 import '../../../domain/entities/daily_order_row.dart';
 import '../bloc/order_bloc/orders_state.dart';
 import 'orders_grid_controller.dart';
@@ -34,6 +33,7 @@ class OrdersTable extends StatefulWidget {
 
   // ✅ NEW: submitted flag (locks final reorder tap + hides edit icon)
   final bool isSubmitted;
+  final bool canEditFinalReorder;
   final bool showAdditionalRowActions;
   final int submitStartHour;
   final int submitEndHour;
@@ -60,6 +60,7 @@ class OrdersTable extends StatefulWidget {
     required this.gridController,
     required this.onColumnResized,
     required this.isSubmitted, // ✅ NEW
+    required this.canEditFinalReorder,
     required this.showAdditionalRowActions,
     this.controller,
     required this.submitStartHour,
@@ -202,12 +203,11 @@ class _OrdersTableState extends State<OrdersTable> {
       rows: widget.rows,
       columns: _columns,
       finalEdits: widget.finalEdits,
-      submitStartHour: widget.submitStartHour,
-      submitEndHour: widget.submitEndHour,
       additionalEdits: widget.additionalEdits,
       sentAdditionalQtyByItemCode: widget.sentAdditionalQtyByItemCode,
       onTapAdditionalRequest: widget.onTapAdditionalRequest,
       isSubmitted: widget.isSubmitted, // ✅ NEW
+      canEditFinalReorder: widget.canEditFinalReorder,
       showAdditionalRowActions: widget.showAdditionalRowActions,
     );
 
@@ -233,6 +233,8 @@ class _OrdersTableState extends State<OrdersTable> {
         );
 
     final submittedChanged = oldWidget.isSubmitted != widget.isSubmitted;
+    final finalEditPermissionChanged =
+        oldWidget.canEditFinalReorder != widget.canEditFinalReorder;
     final additionalActionsChanged =
         oldWidget.showAdditionalRowActions != widget.showAdditionalRowActions;
 
@@ -241,16 +243,16 @@ class _OrdersTableState extends State<OrdersTable> {
         editsChanged ||
         addChanged ||
         submittedChanged ||
+        finalEditPermissionChanged ||
         additionalActionsChanged) {
       _source.update(
         rows: widget.rows,
         columns: _columns,
         finalEdits: widget.finalEdits,
-        submitStartHour: widget.submitStartHour,
-        submitEndHour: widget.submitEndHour,
         additionalEdits: widget.additionalEdits,
         sentAdditionalQtyByItemCode: widget.sentAdditionalQtyByItemCode,
         isSubmitted: widget.isSubmitted, // ✅ NEW
+        canEditFinalReorder: widget.canEditFinalReorder,
         showAdditionalRowActions: widget.showAdditionalRowActions,
       );
 
@@ -478,21 +480,19 @@ class _OrdersDataSource extends DataGridSource {
 
   // ✅ NEW
   bool _isSubmitted = false;
+  bool _canEditFinalReorder = true;
   bool _showAdditionalRowActions = true;
-  int _submitStartHour = 21;
-  int _submitEndHour = 9;
   late final ValueChanged<DailyOrderRow> _onTapAdditionalRequest;
   final Map<DataGridRow, int> _rowToIndex = {};
 
   _OrdersDataSource({
     required List<DailyOrderRow> rows,
     required List<String> columns,
-    required int submitStartHour,
-    required int submitEndHour,
     required Map<String, FinalReorderEdit> finalEdits,
     required Map<String, AdditionalRequestEdit> additionalEdits,
     required Map<String, num> sentAdditionalQtyByItemCode,
     required bool isSubmitted,
+    required bool canEditFinalReorder,
     required bool showAdditionalRowActions,
     required ValueChanged<DailyOrderRow> onTapAdditionalRequest, // ✅ NEW
   }) {
@@ -502,10 +502,9 @@ class _OrdersDataSource extends DataGridSource {
       columns: columns,
       finalEdits: finalEdits,
       additionalEdits: additionalEdits,
-      submitStartHour: submitStartHour,
-      submitEndHour: submitEndHour,
       sentAdditionalQtyByItemCode: sentAdditionalQtyByItemCode,
       isSubmitted: isSubmitted, // ✅ NEW
+      canEditFinalReorder: canEditFinalReorder,
       showAdditionalRowActions: showAdditionalRowActions,
     );
   }
@@ -513,22 +512,20 @@ class _OrdersDataSource extends DataGridSource {
   void update({
     required List<DailyOrderRow> rows,
     required List<String> columns,
-    required int submitStartHour,
-    required int submitEndHour,
     required Map<String, FinalReorderEdit> finalEdits,
     required Map<String, AdditionalRequestEdit> additionalEdits,
     required Map<String, num> sentAdditionalQtyByItemCode,
     required bool isSubmitted, // ✅ NEW
+    required bool canEditFinalReorder,
     required bool showAdditionalRowActions,
   }) {
     _rows = rows;
     _columns = columns;
     _edits = finalEdits;
-    _submitStartHour = submitStartHour;
-    _submitEndHour = submitEndHour;
     _additionalEdits = additionalEdits;
     _sentAdditionalQtyByItemCode = sentAdditionalQtyByItemCode;
     _isSubmitted = isSubmitted; // ✅ NEW
+    _canEditFinalReorder = canEditFinalReorder;
     _showAdditionalRowActions = showAdditionalRowActions;
 
     _gridRows = rows.asMap().entries.map((entry) {
@@ -975,12 +972,7 @@ class _OrdersDataSource extends DataGridSource {
           final main = showNew
               ? newQty.toString()
               : (text.isEmpty ? '—' : text);
-          final locked =
-              _isSubmitted ||
-              OperationalDateHelper.isMissingWindowForBranch(
-                startHour: _submitStartHour,
-                endHour: _submitEndHour,
-              );
+          final locked = _isSubmitted || !_canEditFinalReorder;
           return Container(
             alignment: Alignment.center,
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),

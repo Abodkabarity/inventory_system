@@ -9,8 +9,6 @@ class TransferReportExcelExporter {
   static Future<void> export(List<TransferReportRow> rows) async {
     final workbook = xlsio.Workbook();
 
-    final sheet = workbook.worksheets[0];
-
     final headers = [
       'Status',
       'Branch',
@@ -23,9 +21,62 @@ class TransferReportExcelExporter {
       'Completion %',
     ];
 
+    final medicineRows = rows
+        .where(
+          (row) =>
+              row.storeItemClassifications.trim().toLowerCase() != 'general',
+        )
+        .toList();
+    final generalRows = rows
+        .where(
+          (row) =>
+              row.storeItemClassifications.trim().toLowerCase() == 'general',
+        )
+        .toList();
+
+    final medicineSheet = workbook.worksheets[0];
+    medicineSheet.name = 'MEDICINE';
+    _writeSheet(medicineSheet, medicineRows, headers);
+
+    final generalSheet = workbook.worksheets.addWithName('General');
+    _writeSheet(generalSheet, generalRows, headers);
+
     /// =========================
-    /// HEADER
+    /// SAVE
     /// =========================
+
+    final bytes = workbook.saveAsStream();
+
+    workbook.dispose();
+
+    final blob = html.Blob([Uint8List.fromList(bytes)]);
+
+    final url = html.Url.createObjectUrlFromBlob(blob);
+
+    final branchName = rows.isNotEmpty
+        ? rows.first.branch
+              .replaceAll('/', '_')
+              .replaceAll('\\', '_')
+              .replaceAll(' ', '_')
+        : 'UNKNOWN_BRANCH';
+
+    final date = DateTime.now().toString().split(' ').first;
+
+    final fileName = 'Transfer_Report_${branchName}_$date.xlsx';
+
+    html.AnchorElement(href: url)
+      ..setAttribute('download', fileName)
+      ..click();
+
+    html.Url.revokeObjectUrl(url);
+  }
+
+  static void _writeSheet(
+    xlsio.Worksheet sheet,
+    List<TransferReportRow> rows,
+    List<String> headers,
+  ) {
+    sheet.showGridlines = false;
 
     for (int i = 0; i < headers.length; i++) {
       final cell = sheet.getRangeByIndex(1, i + 1);
@@ -96,6 +147,15 @@ class TransferReportExcelExporter {
       }
     }
 
+    final usedRange = sheet.getRangeByIndex(
+      1,
+      1,
+      rows.length + 1,
+      headers.length,
+    );
+    usedRange.cellStyle.borders.all.lineStyle = xlsio.LineStyle.thin;
+    usedRange.cellStyle.borders.all.color = '#D9E2EC';
+
     /// =========================
     /// COLUMN WIDTHS
     /// =========================
@@ -105,34 +165,5 @@ class TransferReportExcelExporter {
         .autoFitColumns();
 
     sheet.getRangeByIndex(1, 5).columnWidth = 40;
-
-    /// =========================
-    /// SAVE
-    /// =========================
-
-    final bytes = workbook.saveAsStream();
-
-    workbook.dispose();
-
-    final blob = html.Blob([Uint8List.fromList(bytes)]);
-
-    final url = html.Url.createObjectUrlFromBlob(blob);
-
-    final branchName = rows.isNotEmpty
-        ? rows.first.branch
-              .replaceAll('/', '_')
-              .replaceAll('\\', '_')
-              .replaceAll(' ', '_')
-        : 'UNKNOWN_BRANCH';
-
-    final date = DateTime.now().toString().split(' ').first;
-
-    final fileName = 'Transfer_Report_${branchName}_$date.xlsx';
-
-    html.AnchorElement(href: url)
-      ..setAttribute('download', fileName)
-      ..click();
-
-    html.Url.revokeObjectUrl(url);
   }
 }

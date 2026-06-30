@@ -1076,11 +1076,17 @@ class InventoryRepositoryImpl implements InventoryRepository {
   }
 
   @override
+  Future<List<String>> fetchAllocationStockCoverOptions(String runDate) {
+    return remote.fetchAllocationStockCoverOptions(runDate);
+  }
+
+  @override
   Future<List<AllocationSourceRow>> fetchAllocationSourceRows({
     required String runDate,
     required List<String> donorBranches,
     required List<String> receiverBranches,
     required List<String> categories,
+    required List<String> itemStatuses,
     void Function(int loaded)? onProgress,
   }) async {
     final rows = await remote.fetchAllocationSourceRows(
@@ -1088,6 +1094,7 @@ class InventoryRepositoryImpl implements InventoryRepository {
       donorBranches: donorBranches,
       receiverBranches: receiverBranches,
       categories: categories,
+      itemStatuses: itemStatuses,
       onProgress: onProgress,
     );
 

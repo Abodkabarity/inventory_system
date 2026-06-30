@@ -19,6 +19,7 @@ import '../../../core/utils/tma_export.dart';
 import '../../../core/utils/web_notification.dart';
 import '../../../domain/entities/additional_request_group.dart';
 import '../../../domain/entities/allocation_result_row.dart';
+import '../../../domain/entities/allocation_source_row.dart';
 import '../../../domain/entities/daily_order_row.dart';
 import '../../../domain/entities/inventory_page.dart';
 import '../../../domain/entities/mismatch_item.dart';
@@ -90,6 +91,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     on<LoadAllocationFilters>(_onLoadAllocationFilters);
     on<RunAllocation>(_onRunAllocation);
     on<ExportAllocationResults>(_onExportAllocationResults);
+    on<ExportAllocationShortage>(_onExportAllocationShortage);
     on<ImportAllocationFile>(_onImportAllocationFile);
     on<AllocationProgressUpdated>((event, emit) {
       emit(state.copyWith(allocationLoadedRows: event.loadedRows));
@@ -1339,12 +1341,16 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       final itemStatuses = await repo.fetchAllocationItemStatuses(
         event.runDate,
       );
+      final stockCoverOptions = await repo.fetchAllocationStockCoverOptions(
+        event.runDate,
+      );
 
       emit(
         state.copyWith(
           allocationBranches: branches,
           allocationCategories: categories,
           allocationItemStatuses: itemStatuses,
+          allocationStockCoverOptions: stockCoverOptions,
           isAllocationFiltersLoading: false,
         ),
       );
@@ -1369,21 +1375,68 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           allocationLoadedRows: 0,
           allocationError: '',
           allocationResults: [],
+          allocationSourceRows: [],
         ),
       );
 
-      final results = await repo.fetchAllocationResults(
+      final shouldUseLocalAllocation =
+          event.donorStockCovers.isNotEmpty ||
+          event.receiverStockCovers.isNotEmpty ||
+          event.minimumDemandFor30Days != null;
+
+      final sourceDonorBranches =
+          event.donorBranches.isEmpty || event.receiverBranches.isEmpty
+          ? <String>[]
+          : event.donorBranches;
+      final sourceReceiverBranches =
+          event.donorBranches.isEmpty || event.receiverBranches.isEmpty
+          ? <String>[]
+          : event.receiverBranches;
+
+      final sourceRows = await repo.fetchAllocationSourceRows(
         runDate: event.runDate,
-        donorBranches: event.donorBranches,
-        receiverBranches: event.receiverBranches,
-        priorityBranches: event.priorityBranches,
+        donorBranches: sourceDonorBranches,
+        receiverBranches: sourceReceiverBranches,
         categories: event.categories,
         itemStatuses: event.itemStatuses,
       );
 
+      final results = shouldUseLocalAllocation
+          ? _buildFilteredAllocationResults(
+              sourceRows: sourceRows,
+              donorBranches: event.donorBranches,
+              receiverBranches: event.receiverBranches,
+              priorityBranches: event.priorityBranches,
+              donorStockCovers: event.donorStockCovers,
+              receiverStockCovers: event.receiverStockCovers,
+              minimumDemandFor30Days: event.minimumDemandFor30Days,
+            )
+          : await repo.fetchAllocationResults(
+              runDate: event.runDate,
+              donorBranches: event.donorBranches,
+              receiverBranches: event.receiverBranches,
+              priorityBranches: event.priorityBranches,
+              categories: event.categories,
+              itemStatuses: event.itemStatuses,
+            );
+
+      final shortageSourceRows = sourceRows.where((row) {
+        return _allocationBranchAllowed(event.receiverBranches, row.branch) &&
+            _allocationCoverAllowed(
+              event.receiverStockCovers,
+              row.stockCoverText,
+            ) &&
+            _allocationDemandAllowed(
+              event.minimumDemandFor30Days,
+              row.demandFor30Days,
+            ) &&
+            row.itemPurchaseType.trim() == '1#NORMAL PURCHASE';
+      }).toList();
+
       emit(
         state.copyWith(
           allocationResults: results,
+          allocationSourceRows: shortageSourceRows,
           isAllocationLoading: false,
           allocationLoadedRows: results.length,
         ),
@@ -1398,12 +1451,199 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     }
   }
 
+  List<AllocationResultRow> _buildFilteredAllocationResults({
+    required List<AllocationSourceRow> sourceRows,
+    required List<String> donorBranches,
+    required List<String> receiverBranches,
+    required List<String> priorityBranches,
+    required List<String> donorStockCovers,
+    required List<String> receiverStockCovers,
+    required int? minimumDemandFor30Days,
+  }) {
+    final rowsByItem = <String, List<AllocationSourceRow>>{};
+    for (final row in sourceRows) {
+      if (row.itemCode.trim().isEmpty) continue;
+      rowsByItem.putIfAbsent(row.itemCode, () => []).add(row);
+    }
+
+    final priority = priorityBranches.map(_allocationKey).toSet();
+    final output = <AllocationResultRow>[];
+
+    for (final itemRows in rowsByItem.values) {
+      final donors =
+          itemRows.where((row) {
+            return row.extraQtyMoreThanMonth > 0 &&
+                _allocationBranchAllowed(donorBranches, row.branch) &&
+                _allocationCoverAllowed(donorStockCovers, row.stockCoverText);
+          }).toList()..sort((a, b) {
+            final extraCompare = b.extraQtyMoreThanMonth.compareTo(
+              a.extraQtyMoreThanMonth,
+            );
+            if (extraCompare != 0) return extraCompare;
+            return a.branch.toLowerCase().compareTo(b.branch.toLowerCase());
+          });
+
+      final receivers =
+          itemRows.where((row) {
+            return row.shortage > 0 &&
+                _allocationBranchAllowed(receiverBranches, row.branch) &&
+                _allocationCoverAllowed(
+                  receiverStockCovers,
+                  row.stockCoverText,
+                ) &&
+                _allocationDemandAllowed(
+                  minimumDemandFor30Days,
+                  row.demandFor30Days,
+                );
+          }).toList()..sort((a, b) {
+            final aPriority = priority.contains(_allocationKey(a.branch));
+            final bPriority = priority.contains(_allocationKey(b.branch));
+            if (aPriority != bPriority) return aPriority ? -1 : 1;
+
+            final shortageCompare = b.shortage.compareTo(a.shortage);
+            if (shortageCompare != 0) return shortageCompare;
+            return a.branch.toLowerCase().compareTo(b.branch.toLowerCase());
+          });
+
+      final donorRemaining = {
+        for (final donor in donors) donor.branch: donor.extraQtyMoreThanMonth,
+      };
+
+      for (final receiver in receivers) {
+        var need = receiver.shortage;
+        if (need <= 0) continue;
+
+        for (final donor in donors) {
+          if (_allocationKey(donor.branch) == _allocationKey(receiver.branch)) {
+            continue;
+          }
+
+          final available = donorRemaining[donor.branch] ?? 0;
+          if (available <= 0) continue;
+
+          final qty = available < need ? available : need;
+          if (qty <= 0) continue;
+
+          output.add(
+            AllocationResultRow(
+              fromBranch: donor.branch,
+              itemCode: receiver.itemCode,
+              itemName: receiver.itemName,
+              qty: qty,
+              toBranch: receiver.branch,
+              category: receiver.category,
+            ),
+          );
+
+          donorRemaining[donor.branch] = available - qty;
+          need -= qty;
+          if (need <= 0) break;
+        }
+      }
+    }
+
+    return output;
+  }
+
+  bool _allocationBranchAllowed(List<String> selectedBranches, String branch) {
+    const noSelection = '__NO_ALLOCATION_SELECTION__';
+    if (selectedBranches.contains(noSelection)) return false;
+    if (selectedBranches.isEmpty) return true;
+    return selectedBranches
+        .map(_allocationKey)
+        .contains(_allocationKey(branch));
+  }
+
+  bool _allocationCoverAllowed(List<String> selectedCovers, String cover) {
+    if (selectedCovers.isEmpty) return true;
+    return selectedCovers.map(_allocationKey).contains(_allocationKey(cover));
+  }
+
+  bool _allocationDemandAllowed(int? minimumDemand, num demand) {
+    if (minimumDemand == null) return true;
+    return demand >= minimumDemand;
+  }
+
+  String _allocationKey(String value) => value.trim().toLowerCase();
+
   Future<void> _onExportAllocationResults(
     ExportAllocationResults event,
     Emitter<InventoryState> emit,
   ) async {
     if (state.allocationResults.isEmpty) return;
     await AllocationExcelExporter.export(state.allocationResults);
+  }
+
+  Future<void> _onExportAllocationShortage(
+    ExportAllocationShortage event,
+    Emitter<InventoryState> emit,
+  ) async {
+    if (state.allocationSourceRows.isEmpty) return;
+
+    final rows = _buildAllocationShortageRows(
+      sourceRows: state.allocationSourceRows,
+      allocatedRows: state.allocationResults,
+    );
+
+    if (rows.isEmpty) {
+      emit(
+        state.copyWith(
+          allocationError:
+              'No remaining shortage. Allocation covered all selected shortage.',
+        ),
+      );
+      return;
+    }
+
+    await AllocationExcelExporter.exportShortage(rows);
+  }
+
+  List<AllocationShortageExportRow> _buildAllocationShortageRows({
+    required List<AllocationSourceRow> sourceRows,
+    required List<AllocationResultRow> allocatedRows,
+  }) {
+    String key(String branch, String itemCode) {
+      return '${branch.trim().toLowerCase()}|${itemCode.trim().toLowerCase()}';
+    }
+
+    final allocatedByReceiver = <String, num>{};
+    for (final row in allocatedRows) {
+      final mapKey = key(row.toBranch, row.itemCode);
+      allocatedByReceiver[mapKey] =
+          (allocatedByReceiver[mapKey] ?? 0) + row.qty;
+    }
+
+    final shortageByItem = <String, AllocationShortageExportRow>{};
+    for (final row in sourceRows) {
+      if (row.itemPurchaseType.trim() != '1#NORMAL PURCHASE') continue;
+
+      final originalShortage = row.shortage;
+      if (originalShortage <= 0) continue;
+
+      final remaining =
+          originalShortage -
+          (allocatedByReceiver[key(row.branch, row.itemCode)] ?? 0);
+      if (remaining <= 0) continue;
+
+      final mapKey = key(row.branch, row.itemCode);
+      shortageByItem[mapKey] = AllocationShortageExportRow(
+        branch: row.branch,
+        itemCode: row.itemCode,
+        itemName: row.itemName,
+        shortageQty: remaining,
+      );
+    }
+
+    final rows = shortageByItem.values.toList()
+      ..sort((a, b) {
+        final branchCompare = a.branch.toLowerCase().compareTo(
+          b.branch.toLowerCase(),
+        );
+        if (branchCompare != 0) return branchCompare;
+        return a.itemCode.compareTo(b.itemCode);
+      });
+
+    return rows;
   }
 
   Future<void> _onLoadPurchaseShortage(

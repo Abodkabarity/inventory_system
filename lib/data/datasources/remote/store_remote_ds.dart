@@ -147,8 +147,6 @@ order_days
         if (e.toString().contains('statement timeout')) {
           retry++;
 
-          print("Retry fetchBranchItems $retry");
-
           await Future.delayed(const Duration(milliseconds: 500));
 
           continue;
@@ -171,7 +169,7 @@ order_days
     final res = await client
         .from('additional_requests')
         .select(
-          'request_group_id, branch_name, created_at, status, done_at, inventory_qty,store_status ,contact_logistic',
+          'id,request_group_id,branch_name,created_at,status,done_at,inventory_qty,request_qty,item_code,item_name,store_status,contact_logistic,store_item_classifications',
         )
         .or(
           'status.eq.sent_to_store,'
@@ -236,6 +234,8 @@ order_days
   }
 
   Future<void> markAsProcessing(List<String> ids) async {
+    if (ids.isEmpty) return;
+
     await client
         .from('additional_requests')
         .update({'store_status': 'processing'})
@@ -424,7 +424,9 @@ total_final_reorder_today
 
       final res = await client
           .from('product_movement_history')
-          .select('branch,movement_date,item_code,item_name,qty')
+          .select(
+            'branch,movement_date,item_code,item_name,qty,store_item_classifications',
+          )
           .eq('movement_date', runDate)
           .eq('movement_type', 'daily_order')
           .inFilter('branch', branches)

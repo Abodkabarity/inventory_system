@@ -23,6 +23,9 @@ class _AllocationPageState extends State<AllocationPage> {
   final Set<String> _priorityBranches = {};
   final Set<String> _categories = {};
   final Set<String> _itemStatuses = {};
+  final Set<String> _donorStockCovers = {};
+  final Set<String> _receiverStockCovers = {};
+  int? _minimumDemandFor30Days;
   final TextEditingController _allocationSearchController =
       TextEditingController();
   String _allocationSearch = '';
@@ -53,6 +56,9 @@ class _AllocationPageState extends State<AllocationPage> {
     _priorityBranches.clear();
     _categories.clear();
     _itemStatuses.clear();
+    _donorStockCovers.clear();
+    _receiverStockCovers.clear();
+    _minimumDemandFor30Days = null;
     _donorsInitialized = false;
     _receiversInitialized = false;
     _categoriesInitialized = false;
@@ -73,6 +79,18 @@ class _AllocationPageState extends State<AllocationPage> {
         if (!state.isAllocationFiltersLoading) {
           _selectDefaults(state);
         }
+        final pullStockCoverOptions = _pullStockCoverOptions(
+          state.allocationStockCoverOptions,
+        );
+        final supplyStockCoverOptions = _supplyStockCoverOptions(
+          state.allocationStockCoverOptions,
+        );
+        _donorStockCovers.removeWhere(
+          (value) => !pullStockCoverOptions.contains(value),
+        );
+        _receiverStockCovers.removeWhere(
+          (value) => !supplyStockCoverOptions.contains(value),
+        );
         final visibleResults = _filterResults(state.allocationResults);
 
         return Container(
@@ -91,6 +109,11 @@ class _AllocationPageState extends State<AllocationPage> {
                     : () => context.read<InventoryBloc>().add(
                         ExportAllocationResults(),
                       ),
+                onShortageExport: state.allocationSourceRows.isEmpty
+                    ? null
+                    : () => context.read<InventoryBloc>().add(
+                        ExportAllocationShortage(),
+                      ),
               ),
               Expanded(
                 child: ListView(
@@ -103,11 +126,19 @@ class _AllocationPageState extends State<AllocationPage> {
                         branches: state.allocationBranches,
                         categories: state.allocationCategories,
                         itemStatuses: state.allocationItemStatuses,
+                        pullStockCoverOptions: pullStockCoverOptions,
+                        supplyStockCoverOptions: supplyStockCoverOptions,
                         donorBranches: _donorBranches,
                         receiverBranches: _receiverBranches,
                         priorityBranches: _priorityBranches,
                         selectedCategories: _categories,
                         selectedItemStatuses: _itemStatuses,
+                        donorStockCovers: _donorStockCovers,
+                        receiverStockCovers: _receiverStockCovers,
+                        minimumDemandFor30Days: _minimumDemandFor30Days,
+                        onDemandChanged: (value) {
+                          setState(() => _minimumDemandFor30Days = value);
+                        },
                         onChanged: () => setState(() {}),
                       ),
                     const SizedBox(height: 18),
@@ -168,6 +199,9 @@ class _AllocationPageState extends State<AllocationPage> {
           _itemStatuses,
           context.read<InventoryBloc>().state.allocationItemStatuses,
         ),
+        donorStockCovers: _donorStockCovers.toList(),
+        receiverStockCovers: _receiverStockCovers.toList(),
+        minimumDemandFor30Days: _minimumDemandFor30Days,
       ),
     );
   }
@@ -211,6 +245,82 @@ class _AllocationPageState extends State<AllocationPage> {
           row.itemName.toLowerCase().contains(query);
     }).toList();
   }
+
+  List<String> _pullStockCoverOptions(List<String> options) {
+    return _sortedStockCoverOptions(options).where((option) {
+      return !_isNoDemandStockCover(option) && _stockCoverDays(option) > 30;
+    }).toList();
+  }
+
+  List<String> _supplyStockCoverOptions(List<String> options) {
+    return _sortedStockCoverOptions(options).where((option) {
+      return !_isNoDemandStockCover(option) && _stockCoverDays(option) < 30;
+    }).toList();
+  }
+
+  List<String> _sortedStockCoverOptions(List<String> options) {
+    final sorted = options
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList();
+    sorted.sort(_compareStockCoverLabels);
+    return sorted;
+  }
+
+  num _stockCoverDays(String label) {
+    return _stockCoverDaysValue(label);
+  }
+}
+
+bool _isNoDemandStockCover(String label) {
+  return label.trim().toLowerCase() == 'no demand';
+}
+
+int _stockCoverGroup(String label) {
+  final text = label.trim().toLowerCase();
+  if (text.contains('no stock')) return 0;
+  if (text.contains('less than')) return 1;
+  if (text.contains('day')) return 2;
+  if (text.contains('week')) return 3;
+  if (text.contains('month')) return 4;
+  if (text.contains('year')) return 5;
+  return 9;
+}
+
+num _stockCoverUnitValue(String label) {
+  final text = label.trim().toLowerCase();
+  if (text.contains('no stock')) return 0;
+  if (text.contains('less than')) return 0.5;
+  return num.tryParse(
+        RegExp(r'\d+(\.\d+)?').firstMatch(text)?.group(0) ?? '',
+      ) ??
+      0;
+}
+
+num _stockCoverDaysValue(String label) {
+  final text = label.trim().toLowerCase();
+  final value = _stockCoverUnitValue(label);
+
+  if (text.contains('no stock')) return 0;
+  if (text.contains('less than')) return value;
+  if (text.contains('day')) return value;
+  if (text.contains('week')) return value * 7;
+  if (text.contains('month')) return value * 30;
+  if (text.contains('year')) return value * 365;
+  return value;
+}
+
+int _compareStockCoverLabels(String a, String b) {
+  final groupCompare = _stockCoverGroup(a).compareTo(_stockCoverGroup(b));
+  if (groupCompare != 0) return groupCompare;
+
+  final valueCompare = _stockCoverUnitValue(
+    a,
+  ).compareTo(_stockCoverUnitValue(b));
+  if (valueCompare != 0) return valueCompare;
+
+  return a.toLowerCase().compareTo(b.toLowerCase());
 }
 
 class _Header extends StatelessWidget {
@@ -221,6 +331,7 @@ class _Header extends StatelessWidget {
   final VoidCallback onRun;
   final VoidCallback onImport;
   final VoidCallback? onExport;
+  final VoidCallback? onShortageExport;
 
   const _Header({
     required this.runDate,
@@ -230,6 +341,7 @@ class _Header extends StatelessWidget {
     required this.onRun,
     required this.onImport,
     required this.onExport,
+    required this.onShortageExport,
   });
 
   @override
@@ -338,6 +450,20 @@ class _Header extends StatelessWidget {
               ),
             ),
           ),
+          const SizedBox(width: 10),
+          ElevatedButton.icon(
+            onPressed: isLoading ? null : onShortageExport,
+            icon: const Icon(Icons.report_problem_rounded),
+            label: const Text('Allocation Shortage'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xffDC2626),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -387,22 +513,34 @@ class _FiltersCard extends StatelessWidget {
   final List<Map<String, dynamic>> branches;
   final List<String> categories;
   final List<String> itemStatuses;
+  final List<String> pullStockCoverOptions;
+  final List<String> supplyStockCoverOptions;
   final Set<String> donorBranches;
   final Set<String> receiverBranches;
   final Set<String> priorityBranches;
   final Set<String> selectedCategories;
   final Set<String> selectedItemStatuses;
+  final Set<String> donorStockCovers;
+  final Set<String> receiverStockCovers;
+  final int? minimumDemandFor30Days;
+  final ValueChanged<int?> onDemandChanged;
   final VoidCallback onChanged;
 
   const _FiltersCard({
     required this.branches,
     required this.categories,
     required this.itemStatuses,
+    required this.pullStockCoverOptions,
+    required this.supplyStockCoverOptions,
     required this.donorBranches,
     required this.receiverBranches,
     required this.priorityBranches,
     required this.selectedCategories,
     required this.selectedItemStatuses,
+    required this.donorStockCovers,
+    required this.receiverStockCovers,
+    required this.minimumDemandFor30Days,
+    required this.onDemandChanged,
     required this.onChanged,
   });
 
@@ -505,11 +643,38 @@ class _FiltersCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 14),
-              const Expanded(child: SizedBox.shrink()),
+              Expanded(
+                child: _SelectBox(
+                  title: 'Pull Stock Cover',
+                  subtitle: 'Only branches above one month',
+                  icon: Icons.inventory_2_rounded,
+                  color: const Color(0xff0EA5E9),
+                  options: pullStockCoverOptions,
+                  selected: donorStockCovers,
+                  emptyLabel: 'Off',
+                  onChanged: onChanged,
+                ),
+              ),
               const SizedBox(width: 14),
-              const Expanded(child: SizedBox.shrink()),
+              Expanded(
+                child: _SelectBox(
+                  title: 'Supply Stock Cover',
+                  subtitle: 'Only branches below one month',
+                  icon: Icons.low_priority_rounded,
+                  color: const Color(0xff22C55E),
+                  options: supplyStockCoverOptions,
+                  selected: receiverStockCovers,
+                  emptyLabel: 'Off',
+                  onChanged: onChanged,
+                ),
+              ),
               const SizedBox(width: 14),
-              const Expanded(child: SizedBox.shrink()),
+              Expanded(
+                child: _DemandFilterBox(
+                  value: minimumDemandFor30Days,
+                  onChanged: onDemandChanged,
+                ),
+              ),
             ],
           ),
         ],
@@ -656,6 +821,166 @@ class _LoadingPill extends StatelessWidget {
   }
 }
 
+class _DemandFilterBox extends StatelessWidget {
+  final int? value;
+  final ValueChanged<int?> onChanged;
+
+  const _DemandFilterBox({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    const color = Color(0xffF97316);
+    final label = value == null ? 'Off' : '>= $value';
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () async {
+        final result = await showDialog<int>(
+          context: context,
+          builder: (_) => _DemandFilterDialog(initialValue: value),
+        );
+        if (result == null || result == -1) return;
+        onChanged(result == 0 ? null : result);
+      },
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: .08),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withValues(alpha: .22)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: .16),
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: const Icon(Icons.trending_up_rounded, color: color),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Demand 30D',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xff0F172A),
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Supply branches with demand above',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, color: Color(0xff64748B)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(color: color, fontWeight: FontWeight.w900),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DemandFilterDialog extends StatelessWidget {
+  final int? initialValue;
+
+  const _DemandFilterDialog({required this.initialValue});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget option(String title, String subtitle, int value) {
+      final selected = value == 0
+          ? initialValue == null
+          : initialValue == value;
+      return ListTile(
+        leading: Icon(
+          selected ? Icons.radio_button_checked : Icons.radio_button_off,
+          color: const Color(0xffF97316),
+        ),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+        subtitle: Text(subtitle),
+        onTap: () => Navigator.pop(context, value),
+      );
+    }
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: const Color(0xffF97316).withValues(alpha: .14),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(
+                      Icons.trending_up_rounded,
+                      color: Color(0xffF97316),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Demand 30D Filter',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        Text(
+                          'Optional receiver demand threshold',
+                          style: TextStyle(color: Color(0xff64748B)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context, -1),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              option('Off', 'Keep the default allocation behavior', 0),
+              option('Demand 2+', 'Only supply branches with demand >= 2', 2),
+              option('Demand 3+', 'Only supply branches with demand >= 3', 3),
+              option('Demand 4+', 'Only supply branches with demand >= 4', 4),
+              option('Demand 5+', 'Only supply branches with demand >= 5', 5),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class BranchFilter {
   final String? area;
   final String? branchType;
@@ -686,6 +1011,7 @@ class _SelectBox extends StatelessWidget {
   final Color color;
   final List<String> options;
   final Set<String> selected;
+  final String? emptyLabel;
   final VoidCallback onChanged;
 
   const _SelectBox({
@@ -695,15 +1021,15 @@ class _SelectBox extends StatelessWidget {
     required this.color,
     required this.options,
     required this.selected,
+    this.emptyLabel,
     required this.onChanged,
   });
 
   @override
   Widget build(BuildContext context) {
     final label = selected.isEmpty
-        ? title == 'Priority Branches'
-              ? 'No priority'
-              : 'None selected'
+        ? emptyLabel ??
+              (title == 'Priority Branches' ? 'No priority' : 'None selected')
         : selected.length == options.length
         ? 'All selected'
         : '${selected.length} selected';
@@ -807,8 +1133,14 @@ class _MultiSelectDialogState extends State<_MultiSelectDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final isStockCoverDialog = widget.title.toLowerCase().contains(
+      'stock cover',
+    );
     final sortedOptions = [...widget.options]
-      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      ..sort((a, b) {
+        if (isStockCoverDialog) return _compareStockCoverLabels(a, b);
+        return a.toLowerCase().compareTo(b.toLowerCase());
+      });
     final filtered = sortedOptions
         .where((e) => e.toLowerCase().contains(_query.toLowerCase()))
         .toList();
