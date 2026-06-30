@@ -303,7 +303,7 @@ total_sales_last_90_days,
   }
 
   Future<void> _createAdditionalRequest(Map<String, dynamic> row) async {
-    final baseParams = {
+    final legacyParams = {
       'p_request_group_id': row['request_group_id'],
       'p_run_date': row['run_date'],
       'p_zone': row['zone'],
@@ -317,13 +317,13 @@ total_sales_last_90_days,
       'p_sales_45d': row['sales_45d'],
       'p_final_reorder_qty': row['final_reorder_qty'],
       'p_item_purchase_type': row['item_purchase_type'],
-      'p_store_item_classifications': row['store_item_classifications'],
       'p_max_type': row['max_type'],
       'p_contact_logistic': row['contact_logistic'],
     };
 
     final printParams = {
-      ...baseParams,
+      ...legacyParams,
+      'p_store_item_classifications': row['store_item_classifications'],
       'p_supplier': row['supplier'],
       'p_barcode': row['barcode'],
       'p_category': row['category'],
@@ -338,7 +338,7 @@ total_sales_last_90_days,
       }
     }
 
-    await client.rpc('create_additional_request', params: baseParams);
+    await client.rpc('create_additional_request', params: legacyParams);
     await _tryUpdateAdditionalPrintMetadata(row);
   }
 
@@ -349,6 +349,7 @@ total_sales_last_90_days,
       await client
           .from('additional_requests')
           .update({
+            'store_item_classifications': row['store_item_classifications'],
             'supplier': row['supplier'],
             'barcode': row['barcode'],
             'category': row['category'],
