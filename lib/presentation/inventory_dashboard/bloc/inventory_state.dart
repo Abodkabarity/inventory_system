@@ -3,6 +3,7 @@ import 'package:equatable/equatable.dart';
 import '../../../domain/entities/additional_request_group.dart';
 import '../../../domain/entities/allocation_result_row.dart';
 import '../../../domain/entities/allocation_source_row.dart';
+import '../../../domain/entities/branch_allocation_task.dart';
 import '../../../domain/entities/branch_setting.dart';
 import '../../../domain/entities/daily_order_row.dart';
 import '../../../domain/entities/inventory_edit_item.dart';
@@ -182,6 +183,9 @@ class InventoryState extends Equatable {
   final List<String> allocationStockCoverOptions;
   final List<AllocationResultRow> allocationResults;
   final List<AllocationSourceRow> allocationSourceRows;
+  final bool isAllocationSending;
+  final String allocationMessage;
+  final List<BranchAllocationTask> sentBranchAllocations;
   final bool isPurchaseShortageLoading;
   final String purchaseShortageError;
   final List<Map<String, dynamic>> purchaseShortageRows;
@@ -285,6 +289,9 @@ class InventoryState extends Equatable {
     required this.allocationStockCoverOptions,
     required this.allocationResults,
     required this.allocationSourceRows,
+    required this.isAllocationSending,
+    required this.allocationMessage,
+    required this.sentBranchAllocations,
     required this.isPurchaseShortageLoading,
     required this.purchaseShortageError,
     required this.purchaseShortageRows,
@@ -417,6 +424,9 @@ class InventoryState extends Equatable {
       allocationStockCoverOptions: [],
       allocationResults: [],
       allocationSourceRows: [],
+      isAllocationSending: false,
+      allocationMessage: '',
+      sentBranchAllocations: [],
       isPurchaseShortageLoading: false,
       purchaseShortageError: '',
       purchaseShortageRows: [],
@@ -531,6 +541,9 @@ class InventoryState extends Equatable {
     List<String>? allocationStockCoverOptions,
     List<AllocationResultRow>? allocationResults,
     List<AllocationSourceRow>? allocationSourceRows,
+    bool? isAllocationSending,
+    String? allocationMessage,
+    List<BranchAllocationTask>? sentBranchAllocations,
     bool? isPurchaseShortageLoading,
     String? purchaseShortageError,
     List<Map<String, dynamic>>? purchaseShortageRows,
@@ -660,6 +673,10 @@ class InventoryState extends Equatable {
           allocationStockCoverOptions ?? this.allocationStockCoverOptions,
       allocationResults: allocationResults ?? this.allocationResults,
       allocationSourceRows: allocationSourceRows ?? this.allocationSourceRows,
+      isAllocationSending: isAllocationSending ?? this.isAllocationSending,
+      allocationMessage: allocationMessage ?? this.allocationMessage,
+      sentBranchAllocations:
+          sentBranchAllocations ?? this.sentBranchAllocations,
       isPurchaseShortageLoading:
           isPurchaseShortageLoading ?? this.isPurchaseShortageLoading,
       purchaseShortageError:
@@ -780,6 +797,9 @@ class InventoryState extends Equatable {
     allocationStockCoverOptions,
     allocationResults,
     allocationSourceRows,
+    isAllocationSending,
+    allocationMessage,
+    sentBranchAllocations,
     isPurchaseShortageLoading,
     purchaseShortageError,
     purchaseShortageRows,

@@ -11,6 +11,7 @@ import '../../../../core/utils/operational_date_helper.dart';
 import '../../../../core/utils/order_row_mapper.dart';
 import '../../../../data/models/daily_order_row_model.dart';
 import '../../../../data/models/item_to_order_model.dart';
+import '../../../../domain/entities/branch_allocation_task.dart';
 import '../../../../domain/entities/daily_order_row.dart';
 import '../../../../domain/repositories/orders_repository.dart';
 import '../../../../domain/usecases/fetch_orders_all.dart';
@@ -74,6 +75,10 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
     on<OrdersLoadUiSettings>(_onLoadUiSettings);
     on<OrdersIgnoreItemToOrder>(_onIgnoreItemToOrder);
     on<OrdersLoadAdditionalTracking>(_onLoadAdditionalTracking);
+    on<OrdersLoadBranchAllocationTasks>(_onLoadBranchAllocationTasks);
+    on<OrdersConfirmBranchAllocationTasks>(_onConfirmBranchAllocationTasks);
+    on<OrdersSaveBranchAllocationTask>(_onSaveBranchAllocationTask);
+    on<OrdersFinishBranchAllocationBatch>(_onFinishBranchAllocationBatch);
     on<OrdersSearchMismatchList>(_onSearchMismatchList);
     on<OrdersSearchMismatchItemsCode>(_onSearchByCode);
     on<OrdersSearchMismatchItemsName>(_onSearchByName);
@@ -381,6 +386,10 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
           .toList();
 
       print('📡 Tracking rows: ${trackingRows.length}');
+      final branchAllocationTasks = await repo.fetchBranchAllocationTasks(
+        runDate: state.runDate,
+        branchName: state.branchName,
+      );
       final branchInfo = await repo.fetchBranchInfo(
         branchName: state.branchName,
       );
@@ -421,6 +430,7 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
           additionalOrderLimit: additionalOrderLimit,
           progressMessage: 'Syncing tracking...',
           additionalTrackingRows: trackingRows,
+          branchAllocationTasks: branchAllocationTasks,
         ),
       );
 
@@ -559,6 +569,180 @@ class OrdersBloc extends Bloc<OrdersEvent, OrdersState> {
       emit(state.copyWith(additionalTrackingRows: rows));
     } catch (err) {
       // keep UI stable; do not break whole page
+    }
+  }
+
+  Future<void> _onLoadBranchAllocationTasks(
+    OrdersLoadBranchAllocationTasks e,
+    Emitter<OrdersState> emit,
+  ) async {
+    try {
+      emit(state.copyWith(isBranchAllocationLoading: true));
+      final tasks = await repo.fetchBranchAllocationTasks(
+        runDate: state.runDate,
+        branchName: state.branchName,
+      );
+      emit(
+        state.copyWith(
+          branchAllocationTasks: tasks,
+          isBranchAllocationLoading: false,
+        ),
+      );
+    } catch (err) {
+      emit(
+        state.copyWith(isBranchAllocationLoading: false, error: err.toString()),
+      );
+    }
+  }
+
+  Future<void> _onConfirmBranchAllocationTasks(
+    OrdersConfirmBranchAllocationTasks e,
+    Emitter<OrdersState> emit,
+  ) async {
+    final ids = state.outgoingAllocationTasks
+        .where((task) => task.isSenderPending)
+        .map((task) => task.id)
+        .where((id) => id.trim().isNotEmpty)
+        .toList();
+
+    if (ids.isEmpty) return;
+
+    try {
+      final now = DateTime.now();
+      final currentTasks = state.branchAllocationTasks;
+      final optimisticTasks = currentTasks.map((task) {
+        if (!ids.contains(task.id)) return task;
+        return task.copyWith(
+          senderStatus: 'confirmed',
+          senderNote: e.notesById[task.id] ?? task.senderNote,
+          senderConfirmedAt: now,
+        );
+      }).toList();
+
+      emit(state.copyWith(branchAllocationTasks: optimisticTasks, error: null));
+      await repo.confirmBranchAllocationTasks(ids: ids, notesById: e.notesById);
+      await _finishCompletedAllocationBatches(
+        tasks: optimisticTasks,
+        emit: emit,
+      );
+    } catch (err) {
+      emit(state.copyWith(error: err.toString()));
+    }
+  }
+
+  Future<void> _onSaveBranchAllocationTask(
+    OrdersSaveBranchAllocationTask e,
+    Emitter<OrdersState> emit,
+  ) async {
+    final previousTasks = state.branchAllocationTasks;
+    final savedTask = previousTasks
+        .where((task) => task.id == e.id)
+        .cast<BranchAllocationTask?>()
+        .firstOrNull;
+    final normalizedStatus = e.senderStatus.trim().toLowerCase();
+    final isDone =
+        normalizedStatus == 'confirmed' ||
+        normalizedStatus == 'no_send' ||
+        normalizedStatus == 'rejected' ||
+        normalizedStatus == 'reject';
+    final now = DateTime.now();
+    final optimisticTasks = previousTasks.map((task) {
+      if (task.id != e.id) return task;
+      return task.copyWith(
+        qtySend: e.qtySend,
+        senderStatus: normalizedStatus,
+        senderNote: e.senderNote,
+        senderConfirmedAt: isDone ? now : task.senderConfirmedAt,
+      );
+    }).toList();
+
+    emit(state.copyWith(branchAllocationTasks: optimisticTasks, error: null));
+
+    try {
+      await repo.saveBranchAllocationTask(
+        id: e.id,
+        qtySend: e.qtySend,
+        senderStatus: e.senderStatus,
+        senderNote: e.senderNote,
+      );
+      if (isDone && savedTask != null) {
+        await _finishCompletedAllocationBatches(
+          tasks: optimisticTasks,
+          emit: emit,
+        );
+      }
+    } catch (err) {
+      emit(
+        state.copyWith(
+          branchAllocationTasks: previousTasks,
+          error: err.toString(),
+        ),
+      );
+    }
+  }
+
+  Future<void> _finishCompletedAllocationBatches({
+    required List<BranchAllocationTask> tasks,
+    required Emitter<OrdersState> emit,
+  }) async {
+    final byBatch = <String, List<BranchAllocationTask>>{};
+    for (final task in tasks) {
+      if (task.fromBranch != state.branchName || task.isBatchFinished) {
+        continue;
+      }
+      final key = task.batchId.trim().isEmpty
+          ? '${task.runDate}::${task.fromBranch}'
+          : task.batchId;
+      byBatch.putIfAbsent(key, () => <BranchAllocationTask>[]).add(task);
+    }
+
+    var changed = false;
+    for (final batchRows in byBatch.values) {
+      if (batchRows.isEmpty || !batchRows.every((task) => task.isSenderDone)) {
+        continue;
+      }
+      final first = batchRows.first;
+      await repo.finishBranchAllocationBatch(
+        runDate: first.runDate,
+        branchName: state.branchName,
+        batchId: first.batchId,
+      );
+      changed = true;
+    }
+
+    if (!changed) return;
+    final refreshedTasks = await repo.fetchBranchAllocationTasks(
+      runDate: state.runDate,
+      branchName: state.branchName,
+    );
+    emit(state.copyWith(branchAllocationTasks: refreshedTasks, error: null));
+  }
+
+  Future<void> _onFinishBranchAllocationBatch(
+    OrdersFinishBranchAllocationBatch e,
+    Emitter<OrdersState> emit,
+  ) async {
+    try {
+      emit(state.copyWith(isBranchAllocationLoading: true, error: null));
+      await repo.finishBranchAllocationBatch(
+        runDate: state.runDate,
+        branchName: state.branchName,
+        batchId: e.batchId,
+      );
+      final tasks = await repo.fetchBranchAllocationTasks(
+        runDate: state.runDate,
+        branchName: state.branchName,
+      );
+      emit(
+        state.copyWith(
+          branchAllocationTasks: tasks,
+          isBranchAllocationLoading: false,
+        ),
+      );
+    } catch (err) {
+      emit(
+        state.copyWith(isBranchAllocationLoading: false, error: err.toString()),
+      );
     }
   }
 

@@ -1040,6 +1040,51 @@ item_minimum_order_unit, barcode, store_item_classifications
     return List<Map<String, dynamic>>.from(res);
   }
 
+  Future<void> sendBranchAllocationTasks({
+    required String runDate,
+    required String batchId,
+    required List<Map<String, dynamic>> rows,
+  }) async {
+    if (rows.isEmpty) return;
+
+    final now = DateTime.now().toIso8601String();
+    final payload = rows.map((row) {
+      return {
+        'batch_id': batchId,
+        'run_date': runDate,
+        'from_branch': (row['from_branch'] ?? '').toString(),
+        'to_branch': (row['to_branch'] ?? '').toString(),
+        'item_code': (row['item_code'] ?? '').toString(),
+        'item_name': (row['item_name'] ?? '').toString(),
+        'qty': row['qty'] ?? 0,
+        'qty_send': row['qty'] ?? 0,
+        'category': (row['category'] ?? '').toString(),
+        'sender_status': 'pending',
+        'receiver_status': 'pending',
+        'sent_at': now,
+        'updated_at': now,
+      };
+    }).toList();
+
+    await client
+        .from('branch_allocation_tasks')
+        .delete()
+        .eq('run_date', runDate);
+    await client.from('branch_allocation_tasks').insert(payload);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchSentBranchAllocationTasks({
+    required String runDate,
+  }) async {
+    final res = await client
+        .from('branch_allocation_tasks')
+        .select()
+        .eq('run_date', runDate)
+        .order('sent_at', ascending: false);
+
+    return List<Map<String, dynamic>>.from(res);
+  }
+
   Future<List<Map<String, dynamic>>> fetchAllocationSourceRows({
     required String runDate,
     required List<String> donorBranches,

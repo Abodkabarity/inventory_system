@@ -92,6 +92,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     on<RunAllocation>(_onRunAllocation);
     on<ExportAllocationResults>(_onExportAllocationResults);
     on<ExportAllocationShortage>(_onExportAllocationShortage);
+    on<SendAllocationToBranches>(_onSendAllocationToBranches);
+    on<LoadSentBranchAllocations>(_onLoadSentBranchAllocations);
     on<ImportAllocationFile>(_onImportAllocationFile);
     on<AllocationProgressUpdated>((event, emit) {
       emit(state.copyWith(allocationLoadedRows: event.loadedRows));
@@ -1596,6 +1598,64 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     }
 
     await AllocationExcelExporter.exportShortage(rows);
+  }
+
+  Future<void> _onSendAllocationToBranches(
+    SendAllocationToBranches event,
+    Emitter<InventoryState> emit,
+  ) async {
+    if (state.allocationResults.isEmpty) return;
+
+    try {
+      emit(
+        state.copyWith(
+          isAllocationSending: true,
+          allocationError: '',
+          allocationMessage: '',
+        ),
+      );
+
+      await repo.sendBranchAllocationTasks(
+        runDate: event.runDate,
+        batchTitle: event.batchTitle,
+        rows: state.allocationResults,
+      );
+
+      final sent = await repo.fetchSentBranchAllocationTasks(
+        runDate: event.runDate,
+      );
+
+      emit(
+        state.copyWith(
+          isAllocationSending: false,
+          sentBranchAllocations: sent,
+          allocationMessage:
+              'Allocation sent to branches successfully (${state.allocationResults.length} transfers).',
+        ),
+      );
+    } catch (e) {
+      emit(
+        state.copyWith(
+          isAllocationSending: false,
+          allocationError: e.toString(),
+        ),
+      );
+    }
+  }
+
+  Future<void> _onLoadSentBranchAllocations(
+    LoadSentBranchAllocations event,
+    Emitter<InventoryState> emit,
+  ) async {
+    try {
+      final sent = await repo.fetchSentBranchAllocationTasks(
+        runDate: event.runDate,
+      );
+      emit(state.copyWith(sentBranchAllocations: sent));
+    } catch (_) {
+      // Keep the allocation page usable even if the sent-history table is not
+      // available yet.
+    }
   }
 
   List<AllocationShortageExportRow> _buildAllocationShortageRows({

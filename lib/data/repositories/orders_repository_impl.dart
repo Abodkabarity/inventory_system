@@ -1,4 +1,5 @@
 import '../../domain/entities/daily_order_row.dart';
+import '../../domain/entities/branch_allocation_task.dart';
 import '../../domain/entities/product_info.dart';
 import '../../domain/repositories/orders_repository.dart';
 import '../datasources/remote/orders_remote_ds.dart';
@@ -188,6 +189,54 @@ class OrdersRepositoryImpl implements OrdersRepository {
     return remote.fetchAdditionalRequestsTrackingForBranch(
       runDate: runDate,
       branchName: branchName,
+    );
+  }
+
+  @override
+  Future<List<BranchAllocationTask>> fetchBranchAllocationTasks({
+    required String runDate,
+    required String branchName,
+  }) async {
+    final rows = await remote.fetchBranchAllocationTasks(
+      runDate: runDate,
+      branchName: branchName,
+    );
+    return rows.map(BranchAllocationTask.fromMap).toList();
+  }
+
+  @override
+  Future<void> confirmBranchAllocationTasks({
+    required List<String> ids,
+    required Map<String, String> notesById,
+  }) {
+    return remote.confirmBranchAllocationTasks(ids: ids, notesById: notesById);
+  }
+
+  @override
+  Future<void> saveBranchAllocationTask({
+    required String id,
+    required num qtySend,
+    required String senderStatus,
+    required String senderNote,
+  }) {
+    return remote.saveBranchAllocationTask(
+      id: id,
+      qtySend: qtySend,
+      senderStatus: senderStatus,
+      senderNote: senderNote,
+    );
+  }
+
+  @override
+  Future<void> finishBranchAllocationBatch({
+    required String runDate,
+    required String branchName,
+    required String batchId,
+  }) {
+    return remote.finishBranchAllocationBatch(
+      runDate: runDate,
+      branchName: branchName,
+      batchId: batchId,
     );
   }
 

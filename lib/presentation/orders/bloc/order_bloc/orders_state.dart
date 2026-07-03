@@ -2,6 +2,7 @@
 import 'package:equatable/equatable.dart';
 
 import '../../../../data/models/item_to_order_model.dart';
+import '../../../../domain/entities/branch_allocation_task.dart';
 import '../../../../domain/entities/daily_order_row.dart';
 
 enum OrdersStatus { idle, generating, loading, ready, failure }
@@ -249,6 +250,8 @@ class OrdersState extends Equatable {
   final int submitEndHour;
   // tracking list (flat list of requests rows)
   final List<AdditionalRequestRow> additionalTrackingRows;
+  final List<BranchAllocationTask> branchAllocationTasks;
+  final bool isBranchAllocationLoading;
   final bool isOrderDay;
   final bool isMissingOrder;
   const OrdersState({
@@ -273,6 +276,8 @@ class OrdersState extends Equatable {
     required this.submissionStatus,
     required this.sentAdditionalHistoryByItemCode,
     required this.additionalTrackingRows,
+    required this.branchAllocationTasks,
+    required this.isBranchAllocationLoading,
     this.selectedItemCode,
     this.progressMessage,
     this.error,
@@ -460,6 +465,8 @@ class OrdersState extends Equatable {
       submissionStatus: 'draft',
       selectedItemCode: null,
       additionalTrackingRows: const [],
+      branchAllocationTasks: const [],
+      isBranchAllocationLoading: false,
       mismatchSearch: '',
       maxAdjItems: const [],
       isMaxAdjLoading: false,
@@ -506,6 +513,29 @@ class OrdersState extends Equatable {
 
   int get trackingModifiedQty =>
       additionalTrackingRows.where((r) => r.isModifiedQty).length;
+
+  List<BranchAllocationTask> get outgoingAllocationTasks =>
+      branchAllocationTasks
+          .where(
+            (task) =>
+                task.fromBranch.trim().toLowerCase() ==
+                branchName.trim().toLowerCase(),
+          )
+          .toList();
+
+  List<BranchAllocationTask> get incomingAllocationTasks =>
+      branchAllocationTasks
+          .where(
+            (task) =>
+                task.toBranch.trim().toLowerCase() ==
+                branchName.trim().toLowerCase(),
+          )
+          .toList();
+
+  int get pendingOutgoingAllocationCount =>
+      outgoingAllocationTasks.where((task) => task.isSenderPending).length;
+
+  bool get hasPendingAllocation => pendingOutgoingAllocationCount > 0;
 
   OrdersState copyWith({
     OrdersStatus? status,
@@ -569,6 +599,8 @@ class OrdersState extends Equatable {
 
     num? additionalOrderLimit,
     List<AdditionalRequestRow>? additionalTrackingRows,
+    List<BranchAllocationTask>? branchAllocationTasks,
+    bool? isBranchAllocationLoading,
     List<Map<String, dynamic>>? maxAdjItems,
     bool? isMaxAdjLoading,
     Set<String>? maxAdjZeroItemCodes,
@@ -610,6 +642,10 @@ class OrdersState extends Equatable {
       remainingMaxAdjSlots: remainingMaxAdjSlots ?? this.remainingMaxAdjSlots,
       additionalTrackingRows:
           additionalTrackingRows ?? this.additionalTrackingRows,
+      branchAllocationTasks:
+          branchAllocationTasks ?? this.branchAllocationTasks,
+      isBranchAllocationLoading:
+          isBranchAllocationLoading ?? this.isBranchAllocationLoading,
       maxAdjLimit: maxAdjLimit ?? this.maxAdjLimit,
 
       orderIncreaseLimit: orderIncreaseLimit ?? this.orderIncreaseLimit,
@@ -685,6 +721,8 @@ class OrdersState extends Equatable {
     nextPreparationDeadlineAt,
     selectedItemCode,
     additionalTrackingRows,
+    branchAllocationTasks,
+    isBranchAllocationLoading,
     mismatchSearch,
     lastActionSuccess,
     showMismatchResult,

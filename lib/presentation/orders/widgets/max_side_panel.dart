@@ -675,7 +675,7 @@ class _AddMaxFormState extends State<_AddMaxForm> {
                           }
                           final demandVal = num.tryParse(demand.text) ?? 0;
                           final maxVal = num.tryParse(maxQty.text) ?? 0;
-                          final type = maxVal < demandVal
+                          final type = maxVal <= demandVal
                               ? "DECREASE"
                               : "INCREASE";
                           if (type == 'INCREASE' && isFull) {

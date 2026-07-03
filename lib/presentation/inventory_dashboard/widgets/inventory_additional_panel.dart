@@ -25,6 +25,27 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
   final Map<String, TextEditingController> storeQtyControllers = {};
   final Map<String, TextEditingController> storeNoteControllers = {};
   final Map<String, bool> loadingMap = {};
+  final TextEditingController _searchController = TextEditingController();
+  String _search = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    for (final controller in qtyControllers.values) {
+      controller.dispose();
+    }
+    for (final controller in noteControllers.values) {
+      controller.dispose();
+    }
+    for (final controller in storeQtyControllers.values) {
+      controller.dispose();
+    }
+    for (final controller in storeNoteControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
   Future<void> _confirmAll(BuildContext context) async {
     final List<Map<String, dynamic>> bulk = [];
 
@@ -58,6 +79,14 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
   @override
   Widget build(BuildContext context) {
     List<AdditionalRequestGroup> list = [...widget.requests];
+    final query = _search.trim().toLowerCase();
+    if (query.isNotEmpty) {
+      list = list.where((request) {
+        return request.branchName.toLowerCase().contains(query) ||
+            request.itemCodes.toLowerCase().contains(query) ||
+            request.itemNames.toLowerCase().contains(query);
+      }).toList();
+    }
 
     /// 🔥 GROUP BY PRODUCT
     final Map<String, List<AdditionalRequestGroup>> grouped = {};
@@ -109,7 +138,6 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Padding(
                     padding: EdgeInsets.only(left: 10),
@@ -122,6 +150,46 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
                       ),
                     ),
                   ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: SizedBox(
+                      height: 44,
+                      child: TextField(
+                        controller: _searchController,
+                        onChanged: (value) => setState(() => _search = value),
+                        decoration: InputDecoration(
+                          hintText: 'Search branch, item code, or item name...',
+                          prefixIcon: const Icon(Icons.search_rounded),
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 0,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: const BorderSide(
+                              color: Color(0xffD7E2F0),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: const BorderSide(
+                              color: Color(0xffD7E2F0),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: const BorderSide(
+                              color: AppColors.primaryColor,
+                              width: 1.3,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
                   BlocBuilder<InventoryBloc, InventoryState>(
                     builder: (context, state) {
                       return ElevatedButton(

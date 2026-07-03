@@ -1,4 +1,5 @@
 import '../entities/daily_order_row.dart';
+import '../entities/branch_allocation_task.dart';
 import '../entities/product_info.dart';
 
 abstract class OrdersRepository {
@@ -85,6 +86,25 @@ abstract class OrdersRepository {
   Future<List<Map<String, dynamic>>> fetchAdditionalRequestsTrackingForBranch({
     String? runDate,
     required String branchName,
+  });
+  Future<List<BranchAllocationTask>> fetchBranchAllocationTasks({
+    required String runDate,
+    required String branchName,
+  });
+  Future<void> confirmBranchAllocationTasks({
+    required List<String> ids,
+    required Map<String, String> notesById,
+  });
+  Future<void> saveBranchAllocationTask({
+    required String id,
+    required num qtySend,
+    required String senderStatus,
+    required String senderNote,
+  });
+  Future<void> finishBranchAllocationBatch({
+    required String runDate,
+    required String branchName,
+    required String batchId,
   });
   Future<List<Map<String, dynamic>>> fetchMismatch({required String branch});
 

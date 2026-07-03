@@ -4,6 +4,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../domain/entities/allocation_result_row.dart';
+import '../../../domain/entities/branch_allocation_task.dart';
 import '../bloc/inventory_bloc.dart';
 import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
@@ -28,7 +29,11 @@ class _AllocationPageState extends State<AllocationPage> {
   int? _minimumDemandFor30Days;
   final TextEditingController _allocationSearchController =
       TextEditingController();
+  final TextEditingController _sentAllocationSearchController =
+      TextEditingController();
   String _allocationSearch = '';
+  String _sentAllocationSearch = '';
+  String _sentAllocationStatusFilter = 'all';
   bool _donorsInitialized = false;
   bool _receiversInitialized = false;
   bool _categoriesInitialized = false;
@@ -44,6 +49,9 @@ class _AllocationPageState extends State<AllocationPage> {
   void initState() {
     super.initState();
     context.read<InventoryBloc>().add(LoadAllocationFilters(widget.runDate));
+    context.read<InventoryBloc>().add(
+      LoadSentBranchAllocations(widget.runDate),
+    );
   }
 
   @override
@@ -64,11 +72,15 @@ class _AllocationPageState extends State<AllocationPage> {
     _categoriesInitialized = false;
     _itemStatusesInitialized = false;
     context.read<InventoryBloc>().add(LoadAllocationFilters(widget.runDate));
+    context.read<InventoryBloc>().add(
+      LoadSentBranchAllocations(widget.runDate),
+    );
   }
 
   @override
   void dispose() {
     _allocationSearchController.dispose();
+    _sentAllocationSearchController.dispose();
     super.dispose();
   }
 
@@ -101,9 +113,13 @@ class _AllocationPageState extends State<AllocationPage> {
                 runDate: widget.runDate,
                 resultsCount: state.allocationResults.length,
                 isLoading: state.isAllocationLoading,
+                isSending: state.isAllocationSending,
                 loadedRows: state.allocationLoadedRows,
                 onRun: () => _run(context),
                 onImport: () => _import(context),
+                onSend: state.allocationResults.isEmpty
+                    ? null
+                    : () => _sendAllocation(context),
                 onExport: state.allocationResults.isEmpty
                     ? null
                     : () => context.read<InventoryBloc>().add(
@@ -144,6 +160,8 @@ class _AllocationPageState extends State<AllocationPage> {
                     const SizedBox(height: 18),
                     if (state.allocationError.isNotEmpty)
                       _ErrorBanner(message: state.allocationError),
+                    if (state.allocationMessage.isNotEmpty)
+                      _SuccessBanner(message: state.allocationMessage),
                     _SummaryStrip(results: visibleResults),
                     const SizedBox(height: 18),
                     _ResultsTable(
@@ -155,6 +173,21 @@ class _AllocationPageState extends State<AllocationPage> {
                         setState(() => _allocationSearch = value);
                       },
                     ),
+                    if (state.sentBranchAllocations.isNotEmpty) ...[
+                      const SizedBox(height: 18),
+                      _SentAllocationStatusCard(
+                        rows: state.sentBranchAllocations,
+                        searchController: _sentAllocationSearchController,
+                        query: _sentAllocationSearch,
+                        statusFilter: _sentAllocationStatusFilter,
+                        onQueryChanged: (value) {
+                          setState(() => _sentAllocationSearch = value);
+                        },
+                        onStatusChanged: (value) {
+                          setState(() => _sentAllocationStatusFilter = value);
+                        },
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -204,6 +237,132 @@ class _AllocationPageState extends State<AllocationPage> {
         minimumDemandFor30Days: _minimumDemandFor30Days,
       ),
     );
+  }
+
+  Future<void> _sendAllocation(BuildContext context) async {
+    final title = await _askAllocationBatchTitle(context, widget.runDate);
+    if (!context.mounted || title == null) return;
+
+    context.read<InventoryBloc>().add(
+      SendAllocationToBranches(runDate: widget.runDate, batchTitle: title),
+    );
+  }
+
+  Future<String?> _askAllocationBatchTitle(
+    BuildContext context,
+    String runDate,
+  ) async {
+    final controller = TextEditingController(text: 'Allocation $runDate');
+    String error = '';
+
+    final result = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(22),
+              ),
+              titlePadding: const EdgeInsets.fromLTRB(22, 22, 22, 0),
+              contentPadding: const EdgeInsets.fromLTRB(22, 14, 22, 0),
+              actionsPadding: const EdgeInsets.fromLTRB(22, 16, 22, 18),
+              title: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: const Color(0xffDBEAFE),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(
+                      Icons.drive_file_rename_outline_rounded,
+                      color: Color(0xff2563EB),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Name Allocation Batch',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 520,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'This title will appear for the branch instead of a random batch number.',
+                      style: TextStyle(
+                        color: Color(0xff64748B),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: controller,
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        labelText: 'Batch title',
+                        hintText: 'Example: Dubai allocation 01-07',
+                        errorText: error.isEmpty ? null : error,
+                        prefixIcon: const Icon(Icons.title_rounded),
+                        filled: true,
+                        fillColor: const Color(0xffF8FAFC),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      onSubmitted: (_) {
+                        final value = controller.text.trim();
+                        if (value.isEmpty) {
+                          setDialogState(
+                            () => error = 'Batch title is required',
+                          );
+                          return;
+                        }
+                        Navigator.pop(dialogContext, value);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton.icon(
+                  onPressed: () {
+                    final value = controller.text.trim();
+                    if (value.isEmpty) {
+                      setDialogState(() => error = 'Batch title is required');
+                      return;
+                    }
+                    Navigator.pop(dialogContext, value);
+                  },
+                  icon: const Icon(Icons.send_rounded),
+                  label: const Text('Send Allocation'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xff0F766E),
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    controller.dispose();
+    return result;
   }
 
   void _import(BuildContext context) {
@@ -327,9 +486,11 @@ class _Header extends StatelessWidget {
   final String runDate;
   final int resultsCount;
   final bool isLoading;
+  final bool isSending;
   final int loadedRows;
   final VoidCallback onRun;
   final VoidCallback onImport;
+  final VoidCallback? onSend;
   final VoidCallback? onExport;
   final VoidCallback? onShortageExport;
 
@@ -337,9 +498,11 @@ class _Header extends StatelessWidget {
     required this.runDate,
     required this.resultsCount,
     required this.isLoading,
+    required this.isSending,
     required this.loadedRows,
     required this.onRun,
     required this.onImport,
+    required this.onSend,
     required this.onExport,
     required this.onShortageExport,
   });
@@ -429,6 +592,29 @@ class _Header extends StatelessWidget {
             label: Text(isLoading ? 'Running' : 'Run Allocation'),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xff0F766E),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          ElevatedButton.icon(
+            onPressed: isLoading || isSending ? null : onSend,
+            icon: isSending
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.send_rounded),
+            label: Text(isSending ? 'Sending' : 'Send'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xff14B8A6),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
               shape: RoundedRectangleBorder(
@@ -2009,6 +2195,539 @@ class _SummaryCard extends StatelessWidget {
   }
 }
 
+class _SentAllocationStatusCard extends StatelessWidget {
+  final List<BranchAllocationTask> rows;
+  final TextEditingController searchController;
+  final String query;
+  final String statusFilter;
+  final ValueChanged<String> onQueryChanged;
+  final ValueChanged<String> onStatusChanged;
+
+  const _SentAllocationStatusCard({
+    required this.rows,
+    required this.searchController,
+    required this.query,
+    required this.statusFilter,
+    required this.onQueryChanged,
+    required this.onStatusChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final byBranch = <String, List<BranchAllocationTask>>{};
+    for (final row in rows) {
+      byBranch.putIfAbsent(row.fromBranch, () => []).add(row);
+    }
+
+    final pendingBranches = byBranch.entries
+        .where((entry) => entry.value.any((task) => task.isSenderPending))
+        .length;
+    final confirmedBranches = byBranch.entries
+        .where(
+          (entry) =>
+              entry.value.isNotEmpty &&
+              entry.value.every((task) => task.isBatchFinished),
+        )
+        .length;
+    final pendingItems = rows.where((task) => task.isSenderPending).length;
+    final filteredRows = _filteredRows(rows);
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xffD7E2F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .035),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: const Color(0xffE0F2FE),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.send_and_archive_rounded,
+                  color: Color(0xff0284C7),
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Sent Allocation Follow-up',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xff0F172A),
+                      ),
+                    ),
+                    Text(
+                      'Track which branches confirmed their outgoing allocation.',
+                      style: TextStyle(
+                        color: Color(0xff64748B),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _StatusMiniCard(
+                label: 'Branches',
+                value: byBranch.length.toString(),
+                color: const Color(0xff0284C7),
+              ),
+              const SizedBox(width: 8),
+              _StatusMiniCard(
+                label: 'Confirmed',
+                value: confirmedBranches.toString(),
+                color: const Color(0xff059669),
+              ),
+              const SizedBox(width: 8),
+              _StatusMiniCard(
+                label: 'Pending',
+                value: '$pendingBranches / $pendingItems items',
+                color: const Color(0xffD97706),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 430,
+            child: DefaultTabController(
+              length: 2,
+              child: Column(
+                children: [
+                  const TabBar(
+                    labelColor: Color(0xff0284C7),
+                    unselectedLabelColor: Color(0xff64748B),
+                    indicatorColor: Color(0xff0284C7),
+                    labelStyle: TextStyle(fontWeight: FontWeight.w900),
+                    tabs: [
+                      Tab(text: 'Branch Progress'),
+                      Tab(text: 'Allocation Details'),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: TabBarView(
+                      children: [
+                        _BranchProgressList(byBranch: byBranch),
+                        Column(
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: SizedBox(
+                                    height: 44,
+                                    child: TextField(
+                                      controller: searchController,
+                                      onChanged: onQueryChanged,
+                                      decoration: InputDecoration(
+                                        hintText:
+                                            'Search branch, item code, item name, or note...',
+                                        prefixIcon: const Icon(
+                                          Icons.search_rounded,
+                                        ),
+                                        filled: true,
+                                        fillColor: const Color(0xffF8FAFC),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            14,
+                                          ),
+                                          borderSide: const BorderSide(
+                                            color: Color(0xffD7E2F0),
+                                          ),
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            14,
+                                          ),
+                                          borderSide: const BorderSide(
+                                            color: Color(0xffD7E2F0),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                _StatusFilterButton(
+                                  label: 'All',
+                                  value: 'all',
+                                  current: statusFilter,
+                                  onChanged: onStatusChanged,
+                                ),
+                                _StatusFilterButton(
+                                  label: 'Not Done',
+                                  value: 'pending',
+                                  current: statusFilter,
+                                  onChanged: onStatusChanged,
+                                ),
+                                _StatusFilterButton(
+                                  label: 'Confirmed',
+                                  value: 'confirmed',
+                                  current: statusFilter,
+                                  onChanged: onStatusChanged,
+                                ),
+                                _StatusFilterButton(
+                                  label: 'No Send',
+                                  value: 'no_send',
+                                  current: statusFilter,
+                                  onChanged: onStatusChanged,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Expanded(
+                              child: _AllocationDetailsTable(
+                                rows: filteredRows,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<BranchAllocationTask> _filteredRows(List<BranchAllocationTask> source) {
+    final q = query.trim().toLowerCase();
+    return source.where((row) {
+      final matchesSearch =
+          q.isEmpty ||
+          row.fromBranch.toLowerCase().contains(q) ||
+          row.toBranch.toLowerCase().contains(q) ||
+          row.itemCode.toLowerCase().contains(q) ||
+          row.itemName.toLowerCase().contains(q) ||
+          row.senderNote.toLowerCase().contains(q);
+
+      final matchesStatus = switch (statusFilter) {
+        'pending' => row.isSenderPending,
+        'confirmed' => row.isSenderConfirmed,
+        'no_send' => row.isNoSend,
+        _ => true,
+      };
+
+      return matchesSearch && matchesStatus;
+    }).toList();
+  }
+}
+
+class _BranchProgressList extends StatelessWidget {
+  final Map<String, List<BranchAllocationTask>> byBranch;
+
+  const _BranchProgressList({required this.byBranch});
+
+  @override
+  Widget build(BuildContext context) {
+    if (byBranch.isEmpty) {
+      return const Center(child: Text('No sent allocation yet.'));
+    }
+
+    final entries = byBranch.entries.toList()
+      ..sort((a, b) {
+        final ap = a.value.where((task) => task.isSenderPending).length;
+        final bp = b.value.where((task) => task.isSenderPending).length;
+        if (ap != bp) return bp.compareTo(ap);
+        return a.key.compareTo(b.key);
+      });
+
+    return GridView.builder(
+      itemCount: entries.length,
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 360,
+        mainAxisExtent: 118,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+      ),
+      itemBuilder: (context, index) {
+        final entry = entries[index];
+        final pending = entry.value
+            .where((task) => task.isSenderPending)
+            .length;
+        final confirmed = entry.value
+            .where((task) => task.isSenderConfirmed)
+            .length;
+        final noSend = entry.value.where((task) => task.isNoSend).length;
+        final total = entry.value.length;
+        final done = confirmed + noSend;
+        final ready = pending == 0;
+        final finished =
+            entry.value.isNotEmpty &&
+            entry.value.every((task) => task.isBatchFinished);
+
+        return Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: finished
+                ? const Color(0xffECFDF5)
+                : ready
+                ? const Color(0xffEFF6FF)
+                : const Color(0xffFFFBEB),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: finished
+                  ? const Color(0xffA7F3D0)
+                  : ready
+                  ? const Color(0xffBFDBFE)
+                  : const Color(0xffFDE68A),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    finished
+                        ? Icons.check_circle_rounded
+                        : ready
+                        ? Icons.rule_rounded
+                        : Icons.pending_actions_rounded,
+                    color: finished
+                        ? const Color(0xff059669)
+                        : ready
+                        ? const Color(0xff2563EB)
+                        : const Color(0xffD97706),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      entry.key,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xff0F172A),
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  value: total == 0 ? 0 : done / total,
+                  minHeight: 8,
+                  backgroundColor: Colors.white,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    finished
+                        ? const Color(0xff059669)
+                        : ready
+                        ? const Color(0xff2563EB)
+                        : const Color(0xffF59E0B),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Done $done/$total  -  Confirmed $confirmed  -  No Send $noSend',
+                style: const TextStyle(
+                  color: Color(0xff475569),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _AllocationDetailsTable extends StatelessWidget {
+  final List<BranchAllocationTask> rows;
+
+  const _AllocationDetailsTable({required this.rows});
+
+  @override
+  Widget build(BuildContext context) {
+    if (rows.isEmpty) {
+      return const Center(child: Text('No rows match the selected filters.'));
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xffD7E2F0)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: SingleChildScrollView(
+        child: DataTable(
+          headingRowColor: WidgetStateProperty.all(const Color(0xffEFF6FF)),
+          columnSpacing: 24,
+          columns: const [
+            DataColumn(label: Text('From Branch')),
+            DataColumn(label: Text('To Branch')),
+            DataColumn(label: Text('Item')),
+            DataColumn(label: Text('Qty')),
+            DataColumn(label: Text('Qty Send')),
+            DataColumn(label: Text('Status')),
+            DataColumn(label: Text('Note')),
+          ],
+          rows: rows.map((row) {
+            return DataRow(
+              cells: [
+                DataCell(Text(row.fromBranch)),
+                DataCell(Text(row.toBranch)),
+                DataCell(Text('${row.itemCode}\n${row.itemName}')),
+                DataCell(Text(row.qty.toString())),
+                DataCell(Text(row.qtySend.toString())),
+                DataCell(_SentStatusPill(row: row)),
+                DataCell(
+                  SizedBox(
+                    width: 260,
+                    child: Text(
+                      row.senderNote,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+}
+
+class _SentStatusPill extends StatelessWidget {
+  final BranchAllocationTask row;
+
+  const _SentStatusPill({required this.row});
+
+  @override
+  Widget build(BuildContext context) {
+    final text = row.isNoSend
+        ? 'No Send'
+        : row.isSenderConfirmed
+        ? 'Confirmed'
+        : 'Pending';
+    final color = row.isNoSend
+        ? const Color(0xffDC2626)
+        : row.isSenderConfirmed
+        ? const Color(0xff059669)
+        : const Color(0xffD97706);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w900,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusFilterButton extends StatelessWidget {
+  final String label;
+  final String value;
+  final String current;
+  final ValueChanged<String> onChanged;
+
+  const _StatusFilterButton({
+    required this.label,
+    required this.value,
+    required this.current,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = value == current;
+    return Padding(
+      padding: const EdgeInsets.only(left: 6),
+      child: ChoiceChip(
+        selected: selected,
+        label: Text(label),
+        selectedColor: const Color(0xffDBEAFE),
+        labelStyle: TextStyle(
+          color: selected ? const Color(0xff1D4ED8) : const Color(0xff64748B),
+          fontWeight: FontWeight.w900,
+        ),
+        onSelected: (_) => onChanged(value),
+      ),
+    );
+  }
+}
+
+class _StatusMiniCard extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _StatusMiniCard({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: .22)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ResultsTable extends StatelessWidget {
   final List<AllocationResultRow> rows;
   final int totalRows;
@@ -2214,6 +2933,43 @@ class _ErrorBanner extends StatelessWidget {
           const Icon(Icons.error_outline_rounded, color: Color(0xffDC2626)),
           const SizedBox(width: 10),
           Expanded(child: Text(message)),
+        ],
+      ),
+    );
+  }
+}
+
+class _SuccessBanner extends StatelessWidget {
+  final String message;
+
+  const _SuccessBanner({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xffECFDF5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xff86EFAC)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.check_circle_outline_rounded,
+            color: Color(0xff16A34A),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: Color(0xff166534),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
         ],
       ),
     );

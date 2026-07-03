@@ -494,6 +494,104 @@ total_sales_last_90_days,
         s.contains('statement timeout') ||
         s.contains('canceling statement due to statement timeout');
   }
+
+  Future<List<Map<String, dynamic>>> fetchBranchAllocationTasks({
+    required String runDate,
+    required String branchName,
+  }) async {
+    final outgoing = await client
+        .from('branch_allocation_tasks')
+        .select()
+        .eq('from_branch', branchName)
+        .isFilter('sender_batch_finished_at', null)
+        .order('run_date', ascending: false)
+        .order('sent_at', ascending: false);
+
+    final incoming = await client
+        .from('branch_allocation_tasks')
+        .select()
+        .eq('to_branch', branchName)
+        .order('run_date', ascending: false)
+        .order('sent_at', ascending: false);
+
+    final byId = <String, Map<String, dynamic>>{};
+    for (final row in List<Map<String, dynamic>>.from(outgoing)) {
+      final id = (row['id'] ?? '').toString();
+      if (id.isNotEmpty) byId[id] = row;
+    }
+    for (final row in List<Map<String, dynamic>>.from(incoming)) {
+      final id = (row['id'] ?? '').toString();
+      if (id.isNotEmpty) byId[id] = row;
+    }
+
+    return byId.values.toList();
+  }
+
+  Future<void> confirmBranchAllocationTasks({
+    required List<String> ids,
+    required Map<String, String> notesById,
+  }) async {
+    if (ids.isEmpty) return;
+
+    final now = DateTime.now().toIso8601String();
+    for (final id in ids) {
+      await client
+          .from('branch_allocation_tasks')
+          .update({
+            'sender_note': notesById[id] ?? '',
+            'sender_status': 'confirmed',
+            'sender_confirmed_at': now,
+            'updated_at': now,
+          })
+          .eq('id', id);
+    }
+  }
+
+  Future<void> saveBranchAllocationTask({
+    required String id,
+    required num qtySend,
+    required String senderStatus,
+    required String senderNote,
+  }) async {
+    final normalizedStatus = senderStatus.trim().toLowerCase();
+    final isDone =
+        normalizedStatus == 'confirmed' ||
+        normalizedStatus == 'no_send' ||
+        normalizedStatus == 'rejected' ||
+        normalizedStatus == 'reject';
+    final now = DateTime.now().toIso8601String();
+
+    await client
+        .from('branch_allocation_tasks')
+        .update({
+          'qty_send': qtySend,
+          'sender_note': senderNote,
+          'sender_status': normalizedStatus,
+          'sender_confirmed_at': isDone ? now : null,
+          'updated_at': now,
+        })
+        .eq('id', id);
+  }
+
+  Future<void> finishBranchAllocationBatch({
+    required String runDate,
+    required String branchName,
+    required String batchId,
+  }) async {
+    final now = DateTime.now().toIso8601String();
+    var q = client
+        .from('branch_allocation_tasks')
+        .update({'sender_batch_finished_at': now, 'updated_at': now})
+        .eq('run_date', runDate)
+        .eq('from_branch', branchName);
+
+    if (batchId.trim().isNotEmpty) {
+      q = q.eq('batch_id', batchId);
+    }
+
+    await q;
+  }
+
   // ==========================
   // MISMATCH
   // ==========================

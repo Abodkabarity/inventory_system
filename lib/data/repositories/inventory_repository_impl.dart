@@ -3,6 +3,7 @@ import 'dart:async';
 import '../../domain/entities/additional_request_group.dart';
 import '../../domain/entities/allocation_result_row.dart';
 import '../../domain/entities/allocation_source_row.dart';
+import '../../domain/entities/branch_allocation_task.dart';
 import '../../domain/entities/branch_setting.dart';
 import '../../domain/entities/inventory_edit_item.dart';
 import '../../domain/entities/mismatch_item.dart';
@@ -1120,6 +1121,27 @@ class InventoryRepositoryImpl implements InventoryRepository {
     );
 
     return rows.map(AllocationResultRow.fromMap).toList();
+  }
+
+  @override
+  Future<void> sendBranchAllocationTasks({
+    required String runDate,
+    required String batchTitle,
+    required List<AllocationResultRow> rows,
+  }) {
+    return remote.sendBranchAllocationTasks(
+      runDate: runDate,
+      batchId: batchTitle,
+      rows: rows.map((row) => row.toMap()).toList(),
+    );
+  }
+
+  @override
+  Future<List<BranchAllocationTask>> fetchSentBranchAllocationTasks({
+    required String runDate,
+  }) async {
+    final rows = await remote.fetchSentBranchAllocationTasks(runDate: runDate);
+    return rows.map(BranchAllocationTask.fromMap).toList();
   }
 
   @override

@@ -3,6 +3,7 @@ import 'dart:async';
 import '../entities/additional_request_group.dart';
 import '../entities/allocation_result_row.dart';
 import '../entities/allocation_source_row.dart';
+import '../entities/branch_allocation_task.dart';
 import '../entities/branch_setting.dart';
 import '../entities/inventory_edit_item.dart';
 import '../entities/mismatch_item.dart';
@@ -212,6 +213,14 @@ abstract class InventoryRepository {
     required List<String> priorityBranches,
     required List<String> categories,
     required List<String> itemStatuses,
+  });
+  Future<void> sendBranchAllocationTasks({
+    required String runDate,
+    required String batchTitle,
+    required List<AllocationResultRow> rows,
+  });
+  Future<List<BranchAllocationTask>> fetchSentBranchAllocationTasks({
+    required String runDate,
   });
   Future<List<Map<String, dynamic>>> fetchPurchaseShortage({
     required String runDate,

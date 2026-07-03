@@ -196,6 +196,45 @@ class OrdersSubmitOrderPressed extends OrdersEvent {
 class OrdersLoadAdditionalTracking extends OrdersEvent {
   const OrdersLoadAdditionalTracking();
 }
+
+class OrdersLoadBranchAllocationTasks extends OrdersEvent {
+  const OrdersLoadBranchAllocationTasks();
+}
+
+class OrdersConfirmBranchAllocationTasks extends OrdersEvent {
+  final Map<String, String> notesById;
+
+  const OrdersConfirmBranchAllocationTasks({required this.notesById});
+
+  @override
+  List<Object?> get props => [notesById];
+}
+
+class OrdersSaveBranchAllocationTask extends OrdersEvent {
+  final String id;
+  final num qtySend;
+  final String senderStatus;
+  final String senderNote;
+
+  const OrdersSaveBranchAllocationTask({
+    required this.id,
+    required this.qtySend,
+    required this.senderStatus,
+    required this.senderNote,
+  });
+
+  @override
+  List<Object?> get props => [id, qtySend, senderStatus, senderNote];
+}
+
+class OrdersFinishBranchAllocationBatch extends OrdersEvent {
+  final String batchId;
+
+  const OrdersFinishBranchAllocationBatch({required this.batchId});
+
+  @override
+  List<Object?> get props => [batchId];
+}
 // ==========================
 // MISMATCH
 // ==========================
