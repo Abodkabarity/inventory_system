@@ -1019,11 +1019,10 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                             padding: const EdgeInsets.only(
                                               left: 132,
                                             ),
-                                            child: Wrap(
+                                            child: Row(
                                               spacing: 18,
-                                              runSpacing: 14,
-                                              alignment: WrapAlignment.end,
-                                              runAlignment: WrapAlignment.end,
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.spaceEvenly,
                                               children: [
                                                 SizedBox(
                                                   width: cardWidth,
