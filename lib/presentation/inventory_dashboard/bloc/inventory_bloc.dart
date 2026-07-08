@@ -2249,11 +2249,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
           final current = num.tryParse("${row[4]}") ?? 0;
           final max = num.tryParse("${row[5]}") ?? 0;
-          final type = max > current
-              ? 'INCREASE'
-              : max < current
-              ? 'DECREASE'
-              : 'EQUAL';
+          final type = max <= current ? 'DECREASE' : 'INCREASE';
 
           final data = {
             'branch_name': branch,
