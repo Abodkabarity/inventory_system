@@ -314,6 +314,15 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
     return _parseQty(systemText) != null && _parseQty(actualText) != null;
   }
 
+  bool _hasAnyDraftValue(StockCheckTask row) {
+    final systemText = _systemControllers[row.id]?.text.trim() ?? '';
+    final actualText = _actualControllers[row.id]?.text.trim() ?? '';
+    return systemText.isNotEmpty ||
+        actualText.isNotEmpty ||
+        row.systemQty != null ||
+        row.actualQty != null;
+  }
+
   Future<void> _syncCompletedDrafts() async {
     if (_loading || _saving || _importing || _rows.isEmpty) return;
     final rowsToSync = _rows.where((row) {
@@ -330,7 +339,7 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
     }
   }
 
-  Future<void> _importSystemQty(
+  Future<Set<String>> _importSystemQty(
     List<StockCheckTask> rows, {
     Set<String> editableSubmittedIds = const {},
   }) async {
@@ -341,13 +350,13 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
     );
     final file = result?.files.single;
     final bytes = file?.bytes;
-    if (file == null) return;
+    if (file == null) return const {};
     if (bytes == null) {
       setState(() {
         _error = 'Could not read the selected STK Ledger file.';
         _message = '';
       });
-      return;
+      return const {};
     }
 
     setState(() {
@@ -361,7 +370,7 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
     try {
       await SchedulerBinding.instance.endOfFrame;
       await Future<void>.delayed(const Duration(milliseconds: 350));
-      if (!mounted) return;
+      if (!mounted) return const {};
       setState(() {
         _importProgress = .18;
         _importStage = 'Reading STK Ledger file';
@@ -371,7 +380,7 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
         'bytes': bytes,
         'extension': file.extension?.toLowerCase() ?? '',
       })).map(_ImportedStockQtyRow.fromMap).toList();
-      if (!mounted) return;
+      if (!mounted) return const {};
       setState(() {
         _importProgress = .46;
         _importStage = 'Matching branch items';
@@ -379,17 +388,16 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
       await SchedulerBinding.instance.endOfFrame;
       final byCode = {for (final row in rows) _norm(row.itemCode): row};
       final byName = {for (final row in rows) _norm(row.itemName): row};
-      final protectedSubmittedCount = rows
-          .where(
-            (row) => row.isSubmitted && !editableSubmittedIds.contains(row.id),
-          )
-          .length;
-      var overwriteSubmitted = false;
-      if (protectedSubmittedCount > 0) {
-        final decision = await _askImportSubmittedDecision(
-          protectedSubmittedCount,
+      final protectedExistingRows = rows.where((row) {
+        if (editableSubmittedIds.contains(row.id)) return false;
+        return row.isSubmitted || _hasAnyDraftValue(row);
+      }).toList();
+      var overwriteExisting = false;
+      if (protectedExistingRows.isNotEmpty) {
+        final decision = await _askImportExistingValuesDecision(
+          protectedExistingRows.length,
         );
-        if (!mounted) return;
+        if (!mounted) return const {};
         if (decision == null) {
           setState(() {
             _message = 'STK Ledger import cancelled. No values were changed.';
@@ -398,28 +406,29 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
             _importProgress = 0;
             _importStage = '';
           });
-          return;
+          return const {};
         }
         if (decision) {
           final confirmed = await _confirmOverwriteSubmittedImport(
-            protectedSubmittedCount,
+            protectedExistingRows.length,
           );
-          if (!mounted) return;
+          if (!mounted) return const {};
           if (confirmed != true) {
             setState(() {
               _message =
-                  'STK Ledger import cancelled. Submitted values were not changed.';
+                  'STK Ledger import cancelled. Existing values were not changed.';
               _error = '';
               _importing = false;
               _importProgress = 0;
               _importStage = '';
             });
-            return;
+            return const {};
           }
-          overwriteSubmitted = true;
+          overwriteExisting = true;
         }
       }
       final matchedIds = <String>{};
+      final overwrittenIds = <String>{};
       var applied = 0;
       var protectedSkipped = 0;
       var skippedBranch = 0;
@@ -436,13 +445,18 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
           if (match == null) {
             notFound++;
           } else {
-            final protectedSubmitted =
-                match.isSubmitted &&
+            final protectedExisting =
+                (match.isSubmitted || _hasAnyDraftValue(match)) &&
                 !editableSubmittedIds.contains(match.id) &&
-                !overwriteSubmitted;
-            if (protectedSubmitted) {
+                !overwriteExisting;
+            if (protectedExisting) {
               protectedSkipped++;
               continue;
+            }
+            if (overwriteExisting &&
+                match.isSubmitted &&
+                !editableSubmittedIds.contains(match.id)) {
+              overwrittenIds.add(match.id);
             }
             _systemControllers[match.id]?.text = imported.actualQtyText;
             matchedIds.add(match.id);
@@ -451,7 +465,7 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
         }
 
         if (i % 300 == 0) {
-          if (!mounted) return;
+          if (!mounted) return const {};
           final progress = importedRows.isEmpty ? 1.0 : i / importedRows.length;
           setState(() {
             _importProgress = .46 + (.34 * progress);
@@ -461,7 +475,7 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
         }
       }
 
-      if (!mounted) return;
+      if (!mounted) return const {};
       setState(() {
         _importProgress = .82;
         _importStage = 'Applying missing items as 0';
@@ -471,15 +485,20 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
       for (var i = 0; i < rows.length; i++) {
         final row = rows[i];
         if (matchedIds.contains(row.id)) continue;
-        final protectedSubmitted =
-            row.isSubmitted &&
+        final protectedExisting =
+            (row.isSubmitted || _hasAnyDraftValue(row)) &&
             !editableSubmittedIds.contains(row.id) &&
-            !overwriteSubmitted;
-        if (protectedSubmitted) continue;
+            !overwriteExisting;
+        if (protectedExisting) continue;
+        if (overwriteExisting &&
+            row.isSubmitted &&
+            !editableSubmittedIds.contains(row.id)) {
+          overwrittenIds.add(row.id);
+        }
         _systemControllers[row.id]?.text = '0';
         setToZero++;
         if (i % 150 == 0) {
-          if (!mounted) return;
+          if (!mounted) return const {};
           final progress = rows.isEmpty ? 1.0 : i / rows.length;
           setState(() {
             _importProgress = .82 + (.14 * progress);
@@ -489,18 +508,19 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
         }
       }
 
-      if (!mounted) return;
+      if (!mounted) return const {};
       setState(() {
         _message =
-            'Imported STK Ledger for $applied item(s). $setToZero item(s) not found were set to 0. Protected $protectedSkipped submitted item(s). Skipped $skippedBranch other branch item(s), $notFound unmatched item(s).';
+            'Imported STK Ledger for $applied item(s). $setToZero item(s) not found were set to 0. Protected $protectedSkipped existing item(s). Skipped $skippedBranch other branch item(s), $notFound unmatched item(s).';
         _error = '';
         _importing = false;
         _importProgress = 1;
         _importStage = '';
       });
       await _syncCompletedDrafts();
+      return overwrittenIds;
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) return const {};
       setState(() {
         _error = e.toString();
         _message = '';
@@ -508,10 +528,11 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
         _importProgress = 0;
         _importStage = '';
       });
+      return const {};
     }
   }
 
-  Future<bool?> _askImportSubmittedDecision(int submittedCount) {
+  Future<bool?> _askImportExistingValuesDecision(int existingCount) {
     return showDialog<bool?>(
       context: context,
       barrierDismissible: false,
@@ -539,7 +560,7 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
             const SizedBox(width: 12),
             const Expanded(
               child: Text(
-                'Submitted values already exist',
+                'Existing values already found',
                 style: TextStyle(fontWeight: FontWeight.w900),
               ),
             ),
@@ -548,10 +569,10 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
         content: SizedBox(
           width: 520,
           child: Text(
-            'This stock check has $submittedCount submitted item(s). These items may already have quantities entered and confirmed by the branch.\n\n'
+            'This stock check has $existingCount item(s) with saved or submitted quantities. These may include values entered by the branch earlier, even if Submit was not pressed yet.\n\n'
             'Choose what the import should do:\n\n'
-            '- Pending only: update items that are not submitted yet. Submitted items will stay exactly as they are.\n'
-            '- Overwrite submitted: allow the new STK Ledger import to replace old System Qty values for submitted items too.\n\n'
+            '- Pending only: update only empty items. Items that already have values will stay exactly as they are.\n'
+            '- Overwrite existing: allow the new STK Ledger import to replace old System Qty values for items that already have values.\n\n'
             'Items currently opened with the blue Edit button are allowed to update normally.',
             style: const TextStyle(
               color: Color(0xFF334155),
@@ -586,14 +607,14 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
               backgroundColor: const Color(0xFFDC2626),
             ),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Overwrite submitted'),
+            child: const Text('Overwrite existing'),
           ),
         ],
       ),
     );
   }
 
-  Future<bool?> _confirmOverwriteSubmittedImport(int submittedCount) {
+  Future<bool?> _confirmOverwriteSubmittedImport(int existingCount) {
     return showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -611,7 +632,7 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
           width: 500,
           child: Text(
             'Are you completely sure?\n\n'
-            'If you continue, the import can change System Qty for $submittedCount submitted item(s). This means values the branch already confirmed may be replaced by the new STK Ledger values. Items missing from the file may become 0.\n\n'
+            'If you continue, the import can change System Qty for $existingCount item(s) that already have saved or submitted values. This means values entered before may be replaced by the new STK Ledger values. Items missing from the file may become 0.\n\n'
             'Press Confirm only if this is intentional.',
             style: const TextStyle(
               color: Color(0xFF334155),
@@ -1537,7 +1558,7 @@ class _BatchEditor extends StatefulWidget {
   final String importStage;
   final ValueChanged<StockCheckTask> onRowChanged;
   final VoidCallback onBack;
-  final Future<void> Function(Set<String> editableSubmittedIds) onImport;
+  final Future<Set<String>> Function(Set<String> editableSubmittedIds) onImport;
   final VoidCallback onSubmit;
 
   const _BatchEditor({
@@ -1646,7 +1667,15 @@ class _BatchEditorState extends State<_BatchEditor> {
               OutlinedButton.icon(
                 onPressed: widget.importing || widget.saving || widget.expired
                     ? null
-                    : () => widget.onImport({..._editingSubmittedIds}),
+                    : () async {
+                        final openedIds = await widget.onImport({
+                          ..._editingSubmittedIds,
+                        });
+                        if (!mounted || openedIds.isEmpty) return;
+                        setState(() {
+                          _editingSubmittedIds.addAll(openedIds);
+                        });
+                      },
                 style: OutlinedButton.styleFrom(
                   foregroundColor: widget.importing
                       ? const Color(0xFF0891B2)
