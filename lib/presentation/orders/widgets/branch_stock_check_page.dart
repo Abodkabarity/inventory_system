@@ -563,11 +563,23 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, null),
-            child: const Text('Cancel import'),
+            child: const Text(
+              'Cancel import',
+              style: TextStyle(color: AppColors.secondaryColor),
+            ),
           ),
           OutlinedButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Pending only'),
+            style: OutlinedButton.styleFrom(
+              backgroundColor: AppColors.primaryColor,
+            ),
+            child: const Text(
+              'Pending only',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
