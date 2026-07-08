@@ -183,11 +183,12 @@ class _PickListPageState extends State<PickListPage> {
       scanned: scanned,
       itemCode: item.itemCode,
       barcode: item.barcode,
+      validBarcodes: item.validBarcodes,
     )) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Different product scanned. Expected ${item.itemCode} / ${item.barcode.isEmpty ? 'barcode' : item.barcode}',
+            'Different product scanned. Expected ${item.itemCode} / ${item.barcode.isEmpty ? 'valid barcode' : item.barcode}',
           ),
           backgroundColor: Colors.red.shade600,
           behavior: SnackBarBehavior.floating,

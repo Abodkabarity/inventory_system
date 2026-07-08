@@ -1618,6 +1618,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       await repo.sendBranchAllocationTasks(
         runDate: event.runDate,
         batchTitle: event.batchTitle,
+        expiresAt: event.expiresAt,
         rows: state.allocationResults,
       );
 

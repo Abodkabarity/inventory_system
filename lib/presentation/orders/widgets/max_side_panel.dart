@@ -313,6 +313,7 @@ class _AddMaxFormState extends State<_AddMaxForm> {
                             name.text = e['item_name'];
 
                             bloc.add(OrdersFetchItemDemand(e['item_code']));
+
                             print(state.selectedItemDemand);
                             bloc.add(OrdersSearchMismatchItemsCode(''));
 

@@ -246,6 +246,13 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
                       _menuItem(
                         context: context,
                         state: state,
+                        page: InventoryPageType.stockCheck,
+                        icon: Icons.inventory_2_rounded,
+                        title: 'Stock Check',
+                      ),
+                      _menuItem(
+                        context: context,
+                        state: state,
                         page: InventoryPageType.shortage,
                         icon: Icons.production_quantity_limits_rounded,
                         title: 'Shortage',

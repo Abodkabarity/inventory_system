@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/date_utils_uae.dart';
@@ -173,6 +175,13 @@ class MobileOrderRemoteDataSource {
           .toSet()
           .toList(),
     );
+    final validBarcodesByCode = await _fetchItemReportBarcodes(
+      movements
+          .map((e) => (e['item_code'] ?? '').toString())
+          .where((e) => e.isNotEmpty)
+          .toSet()
+          .toList(),
+    );
 
     final grouped = <String, MobileOrderItem>{};
     for (final row in movements) {
@@ -193,6 +202,7 @@ class MobileOrderRemoteDataSource {
           itemCode: itemCode,
           itemName: _firstText([details['item_name'], row['item_name']]),
           barcode: _barcode(details['barcode']),
+          validBarcodes: validBarcodesByCode[itemCode] ?? const [],
           supplier: (details['supplier'] ?? '').toString(),
           category: (details['category'] ?? '').toString(),
           classification: _firstText([
@@ -210,6 +220,7 @@ class MobileOrderRemoteDataSource {
           itemCode: old.itemCode,
           itemName: old.itemName,
           barcode: old.barcode,
+          validBarcodes: old.validBarcodes,
           supplier: old.supplier,
           category: old.category,
           classification: old.classification,
@@ -244,6 +255,28 @@ class MobileOrderRemoteDataSource {
       for (final row in List<Map<String, dynamic>>.from(rows)) {
         final code = (row['item_code'] ?? '').toString();
         if (code.isNotEmpty) out[code] = row;
+      }
+    }
+    return out;
+  }
+
+  Future<Map<String, List<String>>> _fetchItemReportBarcodes(
+    List<String> itemCodes,
+  ) async {
+    final out = <String, List<String>>{};
+    const size = 200;
+    for (var i = 0; i < itemCodes.length; i += size) {
+      final batch = itemCodes.skip(i).take(size).toList();
+      final rows = await client
+          .from('item_report')
+          .select('item_code,all_barcode')
+          .inFilter('item_code', batch);
+
+      for (final row in List<Map<String, dynamic>>.from(rows)) {
+        final code = (row['item_code'] ?? '').toString().trim();
+        if (code.isEmpty) continue;
+        final barcodes = _barcodeList(row['all_barcode']);
+        if (barcodes.isNotEmpty) out[code] = barcodes;
       }
     }
     return out;
@@ -411,5 +444,27 @@ class MobileOrderRemoteDataSource {
   String _barcode(dynamic value) {
     final text = (value ?? '').toString().trim();
     return text.endsWith('.0') ? text.substring(0, text.length - 2) : text;
+  }
+
+  List<String> _barcodeList(dynamic value) {
+    if (value == null) return const [];
+    var rawItems = value is List ? value : <dynamic>[value];
+    if (value is String) {
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is List) rawItems = decoded;
+      } catch (_) {
+        rawItems = [value];
+      }
+    }
+    final seen = <String>{};
+    final out = <String>[];
+    for (final raw in rawItems) {
+      final barcode = _barcode(raw);
+      if (barcode.isEmpty || seen.contains(barcode)) continue;
+      seen.add(barcode);
+      out.add(barcode);
+    }
+    return out;
   }
 }

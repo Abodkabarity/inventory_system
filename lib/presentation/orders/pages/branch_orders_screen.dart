@@ -10,6 +10,7 @@ import '../../../core/helper/final_reorder_limit_helper.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/operational_date_helper.dart';
 import '../../../core/utils/uae_date_time_formatter.dart';
+import '../../../domain/entities/branch_allocation_task.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
 import '../../auth/bloc/auth_state.dart';
@@ -17,8 +18,9 @@ import '../bloc/order_bloc/orders_bloc.dart';
 import '../bloc/order_bloc/orders_event.dart';
 import '../bloc/order_bloc/orders_state.dart';
 import '../final_reorder/widgets/limit_dialog.dart';
-import '../widgets/branch_zone_cubit.dart';
 import '../widgets/branch_allocation_dialog.dart';
+import '../widgets/branch_stock_check_page.dart';
+import '../widgets/branch_zone_cubit.dart';
 import '../widgets/items_to_order_dialog.dart';
 import '../widgets/max_allowed_dialog.dart';
 import '../widgets/orders_grid_controller.dart';
@@ -40,10 +42,17 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
   late final OrdersGridController _grid;
   RealtimeChannel? _jobChannel;
   Timer? _operationalTimer;
+  Timer? _pendingWorkTimer;
 
   bool _newDayDialogVisible = false;
   bool _ordersDrawerOpen = false;
   bool _showAllocationPage = false;
+  bool _showStockCheckPage = false;
+  bool _stockCheckLoading = false;
+  String _stockCheckBranchName = '';
+  _StockCheckPendingInfo _stockCheckInfo = _StockCheckPendingInfo.empty();
+
+  bool get _showMaxZeroKpiCard => false;
 
   String? _lastDialogDate;
   @override
@@ -55,8 +64,53 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
     _startOperationalWatcher();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      final state = context.read<OrdersBloc>().state;
       context.read<OrdersBloc>().add(const OrdersLoadBranchAllocationTasks());
+      _loadPendingStockChecks(state.branchName);
     });
+    _pendingWorkTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (!mounted) return;
+      final branchName = context.read<OrdersBloc>().state.branchName;
+      _loadPendingStockChecks(branchName, showLoading: false);
+      setState(() {});
+    });
+  }
+
+  Future<void> _loadPendingStockChecks(
+    String branchName, {
+    bool showLoading = true,
+  }) async {
+    if (branchName.trim().isEmpty) return;
+    if (showLoading) {
+      setState(() {
+        _stockCheckLoading = true;
+        _stockCheckBranchName = branchName;
+      });
+    } else {
+      _stockCheckBranchName = branchName;
+    }
+    try {
+      final rows = await Supabase.instance.client
+          .from('stock_check_tasks')
+          .select('id,batch_id,title,source,sent_at,expires_at')
+          .eq('branch_name', branchName)
+          .eq('status', 'pending')
+          .order('sent_at');
+      final info = _StockCheckPendingInfo.fromRows(
+        List<Map<String, dynamic>>.from(rows),
+      );
+      if (!mounted) return;
+      setState(() {
+        _stockCheckInfo = info;
+        _stockCheckLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _stockCheckInfo = _StockCheckPendingInfo.empty();
+        _stockCheckLoading = false;
+      });
+    }
   }
 
   void _startOperationalWatcher() {
@@ -74,7 +128,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
       final nextOperationalDate = OperationalDateHelper.operationalDate;
       final currentRunDate = context.read<OrdersBloc>().state.runDate;
 
-      // 🔥 already on latest operational order
+      // Already on latest operational order
       if (currentRunDate == nextOperationalDate) {
         // prevent dialog showing repeatedly
         _lastDialogDate = nextOperationalDate;
@@ -104,17 +158,32 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
   void _openBranchAllocationPage(BuildContext context) {
     setState(() {
       _showAllocationPage = true;
+      _showStockCheckPage = false;
       _ordersDrawerOpen = false;
     });
     context.read<OrdersBloc>().add(const OrdersLoadBranchAllocationTasks());
   }
 
-  void _openOrderPage() {
+  void _openBranchStockCheckPage() {
     setState(() {
+      _showStockCheckPage = true;
       _showAllocationPage = false;
       _ordersDrawerOpen = false;
     });
-    context.read<OrdersBloc>().add(const OrdersLoadBranchAllocationTasks());
+  }
+
+  void _openOrderPage() {
+    final branchName = context.read<OrdersBloc>().state.branchName;
+    setState(() {
+      _showAllocationPage = false;
+      _showStockCheckPage = false;
+      _ordersDrawerOpen = false;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<OrdersBloc>().add(const OrdersLoadBranchAllocationTasks());
+      _loadPendingStockChecks(branchName, showLoading: false);
+    });
   }
 
   Future<void> _showNewOrderDialog(String operationalDate) async {
@@ -369,6 +438,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
   void dispose() {
     _jobChannel?.unsubscribe();
     _operationalTimer?.cancel();
+    _pendingWorkTimer?.cancel();
     super.dispose();
   }
 
@@ -412,6 +482,15 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
         final additionalLimit = s.additionalOrderLimit.toInt();
         final hasAllocationNotice =
             s.hasPendingAllocation || s.incomingAllocationTasks.isNotEmpty;
+        final allocationInfo = _AllocationPendingInfo.fromTasks([
+          ...s.outgoingAllocationTasks.where((task) => task.isSenderPending),
+          ...s.incomingAllocationTasks,
+        ]);
+        if (_stockCheckBranchName != s.branchName && !_stockCheckLoading) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _loadPendingStockChecks(s.branchName);
+          });
+        }
 
         return Scaffold(
           backgroundColor: const Color(0xFFF6F7FB),
@@ -419,7 +498,12 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
           body: Stack(
             children: [
               SafeArea(
-                child: _showAllocationPage
+                child: _showStockCheckPage
+                    ? BranchStockCheckPage(
+                        branchName: s.branchName,
+                        onBack: _openOrderPage,
+                      )
+                    : _showAllocationPage
                     ? BranchAllocationPage(onBack: _openOrderPage)
                     : Padding(
                         padding: const EdgeInsets.all(18),
@@ -429,7 +513,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                               builder: (context, zs) {
                                 return _TopHeader(
                                   title: s.branchName,
-                                  subtitle: 'Orders • ${s.runDate}',
+                                  subtitle: 'Orders - ${s.runDate}',
                                   right: Row(
                                     children: [
                                       FilledButton.icon(
@@ -480,16 +564,18 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                   SizedBox(height: 12),
 
                                                   Text(
-                                                    '✓ Visible / Hidden Columns',
+                                                    'Check Visible / Hidden Columns',
                                                   ),
 
                                                   SizedBox(height: 4),
 
-                                                  Text('✓ Column Arrangement'),
+                                                  Text(
+                                                    'Check Column Arrangement',
+                                                  ),
 
                                                   SizedBox(height: 4),
 
-                                                  Text('✓ Column Widths'),
+                                                  Text('Check Column Widths'),
 
                                                   SizedBox(height: 12),
 
@@ -719,6 +805,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                         ),
                                       ),
                                       const SizedBox(width: 10),
+
                                       _StatusChip(
                                         isSubmitted: s.isSubmitted,
                                         isOrderDay: s.isOrderDay,
@@ -911,78 +998,152 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
 
                                       LayoutBuilder(
                                         builder: (context, constraints) {
-                                          final double cardWidth = 360.w;
+                                          final showMaxZeroKpiCard =
+                                              _showMaxZeroKpiCard;
+                                          final hasUrgentWork =
+                                              hasAllocationNotice ||
+                                              _stockCheckInfo.hasPending;
+                                          final cardCount =
+                                              3 +
+                                              (hasUrgentWork ? 1 : 0) +
+                                              (showMaxZeroKpiCard ? 1 : 0);
+                                          final cardWidth =
+                                              ((constraints.maxWidth -
+                                                          ((cardCount - 1) *
+                                                              18)) /
+                                                      cardCount)
+                                                  .clamp(250.0, 360.0)
+                                                  .toDouble();
 
-                                          return Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceEvenly,
-                                            children: [
-                                              SizedBox(
-                                                width: cardWidth,
-                                                child: _KpiCard(
-                                                  title: 'Visible Products',
-                                                  value: visibleStats
-                                                      .totalProducts
-                                                      .toString(),
-                                                  subtitle:
-                                                      s.viewRows.length ==
-                                                          s.rows.length
-                                                      ? 'All APG Items'
-                                                      : 'Filtered items',
-                                                  icon: Icons.list_alt_outlined,
-                                                  isSelected: false,
-                                                ),
-                                              ),
-
-                                              SizedBox(
-                                                width: cardWidth,
-                                                child: GestureDetector(
-                                                  onTap: () {
-                                                    context.read<OrdersBloc>().add(
-                                                      OrdersNumericFinalOnlyToggled(
-                                                        !s.numericFinalOnly,
-                                                      ),
-                                                    );
-                                                  },
+                                          return Padding(
+                                            padding: const EdgeInsets.only(
+                                              left: 132,
+                                            ),
+                                            child: Wrap(
+                                              spacing: 18,
+                                              runSpacing: 14,
+                                              alignment: WrapAlignment.end,
+                                              runAlignment: WrapAlignment.end,
+                                              children: [
+                                                SizedBox(
+                                                  width: cardWidth,
                                                   child: _KpiCard(
-                                                    title: 'Items in Order',
+                                                    title: 'Visible Products',
                                                     value: visibleStats
-                                                        .finalReorderCount
-                                                        .round()
+                                                        .totalProducts
                                                         .toString(),
-                                                    subtitle: '',
-                                                    icon: Icons
-                                                        .inventory_2_outlined,
-                                                    isSelected:
-                                                        s.numericFinalOnly,
+                                                    subtitle:
+                                                        s.viewRows.length ==
+                                                            s.rows.length
+                                                        ? 'All APG Items'
+                                                        : 'Filtered items',
+                                                    icon:
+                                                        Icons.list_alt_outlined,
+                                                    isSelected: false,
                                                   ),
                                                 ),
-                                              ),
 
-                                              SizedBox(
-                                                width: cardWidth,
-                                                child: _KpiCard(
-                                                  title: 'Max = 0',
-                                                  value: '${visibleStats.non}',
-                                                  subtitle: '',
-                                                  icon: Icons.layers_outlined,
-                                                  isSelected: false,
+                                                SizedBox(
+                                                  width: cardWidth,
+                                                  child: GestureDetector(
+                                                    onTap: () {
+                                                      context.read<OrdersBloc>().add(
+                                                        OrdersNumericFinalOnlyToggled(
+                                                          !s.numericFinalOnly,
+                                                        ),
+                                                      );
+                                                    },
+                                                    child: _KpiCard(
+                                                      title: 'Items in Order',
+                                                      value: visibleStats
+                                                          .finalReorderCount
+                                                          .round()
+                                                          .toString(),
+                                                      subtitle: '',
+                                                      icon: Icons
+                                                          .inventory_2_outlined,
+                                                      isSelected:
+                                                          s.numericFinalOnly,
+                                                    ),
+                                                  ),
                                                 ),
-                                              ),
 
-                                              SizedBox(
-                                                width: cardWidth,
-                                                child: _KpiCard(
-                                                  title:
-                                                      'Additional Orders Today',
-                                                  value:
-                                                      '$usedAdditional/$additionalLimit',
-                                                  subtitle: '',
-                                                  icon: Icons.add_box_outlined,
-                                                  isSelected: false,
+                                                if (hasUrgentWork)
+                                                  SizedBox(
+                                                    width: cardWidth,
+                                                    child: _BranchUrgentWorkBanner(
+                                                      hasAllocation:
+                                                          hasAllocationNotice,
+                                                      allocationCount:
+                                                          s.pendingOutgoingAllocationCount +
+                                                          s
+                                                              .incomingAllocationTasks
+                                                              .length,
+                                                      overdueAllocationCount:
+                                                          allocationInfo
+                                                              .overdueCount,
+                                                      hasStockCheck:
+                                                          _stockCheckInfo
+                                                              .hasPending,
+                                                      stockCheckCount:
+                                                          _stockCheckInfo
+                                                              .pendingCount,
+                                                      overdueStockCheckCount:
+                                                          _stockCheckInfo
+                                                              .overdueCount,
+                                                      stockCheckLoading:
+                                                          _stockCheckLoading,
+                                                      onTap: () {
+                                                        if (hasAllocationNotice &&
+                                                            _stockCheckInfo
+                                                                .hasPending) {
+                                                          setState(() {
+                                                            _ordersDrawerOpen =
+                                                                true;
+                                                          });
+                                                          return;
+                                                        }
+                                                        if (_stockCheckInfo
+                                                            .hasPending) {
+                                                          _openBranchStockCheckPage();
+                                                          return;
+                                                        }
+                                                        _openBranchAllocationPage(
+                                                          context,
+                                                        );
+                                                      },
+                                                    ),
+                                                  ),
+
+                                                if (showMaxZeroKpiCard)
+                                                  SizedBox(
+                                                    width: cardWidth,
+                                                    child: _KpiCard(
+                                                      title: 'Max = 0',
+                                                      value:
+                                                          '${visibleStats.non}',
+                                                      subtitle: '',
+                                                      icon:
+                                                          Icons.layers_outlined,
+                                                      isSelected: false,
+                                                    ),
+                                                  ),
+
+                                                SizedBox(
+                                                  width: cardWidth,
+                                                  child: _KpiCard(
+                                                    title:
+                                                        'Additional Orders Today',
+                                                    value:
+                                                        '$usedAdditional/$additionalLimit',
+                                                    subtitle: '',
+                                                    icon:
+                                                        Icons.add_box_outlined,
+                                                    isSelected: false,
+                                                  ),
                                                 ),
-                                              ),
-                                            ],
+                                              ],
+                                            ),
                                           );
                                         },
                                       ),
@@ -1969,21 +2130,31 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                 open: _ordersDrawerOpen,
                 branchName: s.branchName,
                 showAllocationPage: _showAllocationPage,
+                showStockCheckPage: _showStockCheckPage,
                 hasPendingAllocation: hasAllocationNotice,
                 pendingToSend: s.pendingOutgoingAllocationCount,
                 incomingCount: s.incomingAllocationTasks.length,
+                overdueAllocationCount: allocationInfo.overdueCount,
+                pendingStockCheckCount: _stockCheckInfo.pendingCount,
+                overdueStockCheckCount: _stockCheckInfo.overdueCount,
                 isLoading: s.isBranchAllocationLoading,
+                stockCheckLoading: _stockCheckLoading,
                 onOpenOrders: _openOrderPage,
                 onOpenAllocation: () => _openBranchAllocationPage(context),
+                onOpenStockCheck: _openBranchStockCheckPage,
               ),
               _OrdersDrawerToggleButton(
                 open: _ordersDrawerOpen,
                 showAllocationPage: _showAllocationPage,
+                showStockCheckPage: _showStockCheckPage,
                 hasPendingAllocation: hasAllocationNotice,
                 pendingToSend: s.pendingOutgoingAllocationCount,
                 incomingCount: s.incomingAllocationTasks.length,
+                overdueAllocationCount: allocationInfo.overdueCount,
+                pendingStockCheckCount: _stockCheckInfo.pendingCount,
+                overdueStockCheckCount: _stockCheckInfo.overdueCount,
                 onPressed: () {
-                  if (_showAllocationPage) {
+                  if (_showAllocationPage || _showStockCheckPage) {
                     _openOrderPage();
                     return;
                   }
@@ -2025,34 +2196,452 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
   }
 }
 
+class _StockCheckPendingInfo {
+  final int pendingCount;
+  final int overdueCount;
+  final DateTime? oldestSentAt;
+
+  const _StockCheckPendingInfo({
+    required this.pendingCount,
+    required this.overdueCount,
+    required this.oldestSentAt,
+  });
+
+  bool get hasPending => pendingCount > 0;
+
+  factory _StockCheckPendingInfo.empty() {
+    return const _StockCheckPendingInfo(
+      pendingCount: 0,
+      overdueCount: 0,
+      oldestSentAt: null,
+    );
+  }
+
+  factory _StockCheckPendingInfo.fromRows(List<Map<String, dynamic>> rows) {
+    final now = DateTime.now();
+    DateTime? oldest;
+    var overdue = 0;
+    for (final row in rows) {
+      final sentAt = DateTime.tryParse((row['sent_at'] ?? '').toString());
+      final expiresAt = DateTime.tryParse((row['expires_at'] ?? '').toString());
+      if (sentAt != null) {
+        if (oldest == null || sentAt.isBefore(oldest)) oldest = sentAt;
+      }
+      final delayedFullDay =
+          sentAt != null && now.difference(sentAt.toLocal()).inHours >= 24;
+      final dueWithinDay =
+          expiresAt != null &&
+          expiresAt.toLocal().difference(now).inHours <= 24;
+      if (delayedFullDay || dueWithinDay) overdue++;
+    }
+    return _StockCheckPendingInfo(
+      pendingCount: rows.length,
+      overdueCount: overdue,
+      oldestSentAt: oldest,
+    );
+  }
+}
+
+class _AllocationPendingInfo {
+  final int pendingCount;
+  final int overdueCount;
+
+  const _AllocationPendingInfo({
+    required this.pendingCount,
+    required this.overdueCount,
+  });
+
+  factory _AllocationPendingInfo.fromTasks(List<BranchAllocationTask> tasks) {
+    final now = DateTime.now();
+    var overdue = 0;
+    for (final task in tasks) {
+      final expiresAt = task.expiresAt?.toLocal();
+      if (expiresAt == null) continue;
+      final remaining = expiresAt.difference(now);
+      if (remaining.isNegative || remaining.inHours <= 24) {
+        overdue++;
+      }
+    }
+    return _AllocationPendingInfo(
+      pendingCount: tasks.length,
+      overdueCount: overdue,
+    );
+  }
+}
+
+class _BranchUrgentWorkBanner extends StatefulWidget {
+  final bool hasAllocation;
+  final int allocationCount;
+  final int overdueAllocationCount;
+  final bool hasStockCheck;
+  final int stockCheckCount;
+  final int overdueStockCheckCount;
+  final bool stockCheckLoading;
+  final VoidCallback onTap;
+
+  const _BranchUrgentWorkBanner({
+    required this.hasAllocation,
+    required this.allocationCount,
+    required this.overdueAllocationCount,
+    required this.hasStockCheck,
+    required this.stockCheckCount,
+    required this.overdueStockCheckCount,
+    required this.stockCheckLoading,
+    required this.onTap,
+  });
+
+  @override
+  State<_BranchUrgentWorkBanner> createState() =>
+      _BranchUrgentWorkBannerState();
+}
+
+class _BranchUrgentWorkBannerState extends State<_BranchUrgentWorkBanner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasOverdue =
+        widget.overdueStockCheckCount > 0 || widget.overdueAllocationCount > 0;
+    final borderColor = hasOverdue
+        ? const Color(0xFF7F1D1D)
+        : widget.hasStockCheck
+        ? const Color(0xFF2563EB)
+        : const Color(0xFFF59E0B);
+    final background = hasOverdue
+        ? const Color(0xFFFEE2E2)
+        : widget.hasStockCheck
+        ? const Color(0xFFEFF6FF)
+        : const Color(0xFFFFFBEB);
+    final title = hasOverdue
+        ? 'Pending Work Needs Action'
+        : widget.hasStockCheck && widget.hasAllocation
+        ? 'Pending Work'
+        : widget.hasStockCheck
+        ? 'Stock Check pending'
+        : 'Allocation pending';
+    final subtitle = hasOverdue
+        ? _criticalSubtitle()
+        : widget.hasStockCheck && widget.hasAllocation
+        ? 'Allocation ${widget.allocationCount} - Stock Check ${widget.stockCheckCount}'
+        : widget.hasStockCheck
+        ? '${widget.stockCheckCount} item(s) need confirmation'
+        : '${widget.allocationCount} item(s) need attention';
+    final icon = hasOverdue
+        ? Icons.notification_important_rounded
+        : widget.hasStockCheck
+        ? Icons.inventory_2_rounded
+        : Icons.call_made_rounded;
+
+    return AnimatedBuilder(
+      animation: _pulseController,
+      builder: (context, child) {
+        final pulse = hasOverdue ? 1 + (_pulseController.value * .018) : 1.0;
+        return Transform.scale(scale: pulse, child: child);
+      },
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 240),
+            height: 98,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: background,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: borderColor, width: 1.6),
+              boxShadow: [
+                BoxShadow(
+                  color: borderColor.withValues(alpha: .16),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(15),
+                    border: Border.all(
+                      color: borderColor.withValues(alpha: .25),
+                    ),
+                  ),
+                  child: widget.stockCheckLoading
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(icon, color: borderColor, size: 24),
+                ),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF0F172A),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          height: 1.25,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Click to open pending work',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: borderColor,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w900,
+                              decoration: TextDecoration.underline,
+                              decorationColor: borderColor,
+                              decorationThickness: 1.4,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.touch_app_rounded,
+                            color: borderColor,
+                            size: 14,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  widget.hasAllocation && widget.hasStockCheck
+                      ? Icons.dashboard_customize_rounded
+                      : Icons.arrow_forward_rounded,
+                  color: borderColor,
+                  size: 22,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _criticalSubtitle() {
+    final parts = <String>[];
+    if (widget.overdueAllocationCount > 0) {
+      parts.add('Allocation ${widget.overdueAllocationCount} urgent');
+    }
+    if (widget.overdueStockCheckCount > 0) {
+      parts.add('Stock Check ${widget.overdueStockCheckCount} urgent');
+    }
+    if (parts.isEmpty) return 'Please Complete Pending Work Now.';
+    return parts.join(' - ');
+  }
+}
+
+class _DrawerAlertSummary extends StatelessWidget {
+  final int allocationCount;
+  final int overdueAllocationCount;
+  final int stockCheckCount;
+  final int overdueStockCheckCount;
+  final bool loading;
+
+  const _DrawerAlertSummary({
+    required this.allocationCount,
+    required this.overdueAllocationCount,
+    required this.stockCheckCount,
+    required this.overdueStockCheckCount,
+    required this.loading,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasOverdue = overdueStockCheckCount > 0 || overdueAllocationCount > 0;
+    final title = hasOverdue ? 'Urgent pending work' : 'Pending work';
+    final subtitle = hasOverdue
+        ? 'Allocation $overdueAllocationCount urgent - Stock Check $overdueStockCheckCount urgent'
+        : 'Allocation $allocationCount - Stock Check $stockCheckCount';
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: hasOverdue
+                  ? const Color(0xFFFFF1F2)
+                  : const Color(0xFFFFF7ED),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: loading
+                ? const Padding(
+                    padding: EdgeInsets.all(9),
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(
+                    hasOverdue
+                        ? Icons.notification_important_rounded
+                        : Icons.notifications_active_rounded,
+                    color: hasOverdue
+                        ? const Color(0xFF7F1D1D)
+                        : const Color(0xFFF97316),
+                    size: 19,
+                  ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PendingTabIcon extends StatelessWidget {
+  final IconData icon;
+  final int count;
+  final Color color;
+
+  const _PendingTabIcon({
+    required this.icon,
+    required this.count,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: color, size: 21),
+        const SizedBox(width: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: .10),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: color.withValues(alpha: .25)),
+          ),
+          child: Text(
+            count.toString(),
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w900,
+              fontSize: 11,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _OrdersOverlayDrawer extends StatelessWidget {
   static const double width = 292;
 
   final bool open;
   final String branchName;
   final bool showAllocationPage;
+  final bool showStockCheckPage;
   final bool hasPendingAllocation;
   final int pendingToSend;
   final int incomingCount;
+  final int overdueAllocationCount;
+  final int pendingStockCheckCount;
+  final int overdueStockCheckCount;
   final bool isLoading;
+  final bool stockCheckLoading;
   final VoidCallback onOpenOrders;
   final VoidCallback onOpenAllocation;
+  final VoidCallback onOpenStockCheck;
 
   const _OrdersOverlayDrawer({
     required this.open,
     required this.branchName,
     required this.showAllocationPage,
+    required this.showStockCheckPage,
     required this.hasPendingAllocation,
     required this.pendingToSend,
     required this.incomingCount,
+    required this.overdueAllocationCount,
+    required this.pendingStockCheckCount,
+    required this.overdueStockCheckCount,
     required this.isLoading,
+    required this.stockCheckLoading,
     required this.onOpenOrders,
     required this.onOpenAllocation,
+    required this.onOpenStockCheck,
   });
 
   @override
   Widget build(BuildContext context) {
     final totalAllocation = pendingToSend + incomingCount;
+    final hasPendingStockCheck = pendingStockCheckCount > 0;
 
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 280),
@@ -2140,62 +2729,14 @@ class _OrdersOverlayDrawer extends StatelessWidget {
                             ),
                           ],
                         ),
-                        if (hasPendingAllocation) ...[
+                        if (hasPendingAllocation || hasPendingStockCheck) ...[
                           const SizedBox(height: 14),
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 34,
-                                  height: 34,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFFF7ED),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: isLoading
-                                      ? const Padding(
-                                          padding: EdgeInsets.all(9),
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : const Icon(
-                                          Icons.notifications_active_rounded,
-                                          color: Color(0xFFF97316),
-                                          size: 19,
-                                        ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      const Text(
-                                        'Allocation pending',
-                                        style: TextStyle(
-                                          color: Color(0xFF0F172A),
-                                          fontWeight: FontWeight.w900,
-                                        ),
-                                      ),
-                                      Text(
-                                        '$totalAllocation item(s) need attention',
-                                        style: const TextStyle(
-                                          color: Color(0xFF64748B),
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
+                          _DrawerAlertSummary(
+                            allocationCount: totalAllocation,
+                            overdueAllocationCount: overdueAllocationCount,
+                            stockCheckCount: pendingStockCheckCount,
+                            overdueStockCheckCount: overdueStockCheckCount,
+                            loading: isLoading || stockCheckLoading,
                           ),
                         ],
                       ],
@@ -2210,7 +2751,8 @@ class _OrdersOverlayDrawer extends StatelessWidget {
                             icon: Icons.shopping_cart_checkout_rounded,
                             title: 'Orders',
                             subtitle: 'Daily order workspace',
-                            selected: !showAllocationPage,
+                            selected:
+                                !showAllocationPage && !showStockCheckPage,
                             color: const Color(0xFF0EA5E9),
                             onTap: onOpenOrders,
                           ),
@@ -2219,14 +2761,38 @@ class _OrdersOverlayDrawer extends StatelessWidget {
                             icon: Icons.account_tree_rounded,
                             title: 'Allocation',
                             subtitle: pendingToSend > 0 || incomingCount > 0
-                                ? 'To send $pendingToSend • Incoming $incomingCount'
+                                ? overdueAllocationCount > 0
+                                      ? '$totalAllocation pending - $overdueAllocationCount urgent'
+                                      : 'To send $pendingToSend - Incoming $incomingCount'
                                 : 'No pending allocation',
                             selected: showAllocationPage,
-                            color: const Color(0xFFF59E0B),
+                            color: overdueAllocationCount > 0
+                                ? const Color(0xFF7F1D1D)
+                                : const Color(0xFFF59E0B),
                             badge: totalAllocation > 0
                                 ? totalAllocation.toString()
                                 : null,
                             onTap: onOpenAllocation,
+                          ),
+                          const SizedBox(height: 10),
+                          _OrdersDrawerItem(
+                            icon: overdueStockCheckCount > 0
+                                ? Icons.notification_important_rounded
+                                : Icons.inventory_2_rounded,
+                            title: 'Stock Check',
+                            subtitle: pendingStockCheckCount > 0
+                                ? overdueStockCheckCount > 0
+                                      ? '$pendingStockCheckCount pending - $overdueStockCheckCount urgent'
+                                      : '$pendingStockCheckCount pending check(s)'
+                                : 'No pending stock check',
+                            selected: showStockCheckPage,
+                            color: overdueStockCheckCount > 0
+                                ? const Color(0xFF7F1D1D)
+                                : const Color(0xFF2563EB),
+                            badge: pendingStockCheckCount > 0
+                                ? pendingStockCheckCount.toString()
+                                : null,
+                            onTap: onOpenStockCheck,
                           ),
                           const Spacer(),
                           Container(
@@ -2375,17 +2941,25 @@ class _OrdersDrawerItem extends StatelessWidget {
 class _OrdersDrawerToggleButton extends StatefulWidget {
   final bool open;
   final bool showAllocationPage;
+  final bool showStockCheckPage;
   final bool hasPendingAllocation;
   final int pendingToSend;
   final int incomingCount;
+  final int overdueAllocationCount;
+  final int pendingStockCheckCount;
+  final int overdueStockCheckCount;
   final VoidCallback onPressed;
 
   const _OrdersDrawerToggleButton({
     required this.open,
     required this.showAllocationPage,
+    required this.showStockCheckPage,
     required this.hasPendingAllocation,
     required this.pendingToSend,
     required this.incomingCount,
+    required this.overdueAllocationCount,
+    required this.pendingStockCheckCount,
+    required this.overdueStockCheckCount,
     required this.onPressed,
   });
 
@@ -2416,21 +2990,33 @@ class _OrdersDrawerToggleButtonState extends State<_OrdersDrawerToggleButton>
   @override
   Widget build(BuildContext context) {
     final total = widget.pendingToSend + widget.incomingCount;
-    final showBackToOrders = widget.showAllocationPage && !widget.open;
+    final hasPendingStockCheck = widget.pendingStockCheckCount > 0;
+    final showBackToOrders =
+        (widget.showAllocationPage || widget.showStockCheckPage) &&
+        !widget.open;
     final showPendingLabel =
-        widget.hasPendingAllocation &&
+        (widget.hasPendingAllocation || hasPendingStockCheck) &&
         !widget.open &&
-        !widget.showAllocationPage;
+        !widget.showAllocationPage &&
+        !widget.showStockCheckPage;
     final compactPendingTab = showPendingLabel;
     final showLabel = showBackToOrders;
-    final label = showBackToOrders ? 'Go to Order Page' : 'Allocation pending';
+    final label = showBackToOrders ? 'Go to Order Page' : 'Pending work';
+    final hasUrgentPending =
+        widget.overdueAllocationCount > 0 || widget.overdueStockCheckCount > 0;
     final foregroundColor = showBackToOrders
         ? Colors.white
+        : hasUrgentPending
+        ? const Color(0xFF991B1B)
         : const Color(0xFF92400E);
     final backgroundColor = showBackToOrders
-        ? const Color(0xFFF59E0B)
+        ? widget.showStockCheckPage
+              ? const Color(0xFF2563EB)
+              : const Color(0xFFF59E0B)
         : widget.showAllocationPage
         ? const Color(0xFFF59E0B)
+        : widget.showStockCheckPage
+        ? const Color(0xFF2563EB)
         : Colors.white;
 
     return AnimatedPositioned(
@@ -2463,7 +3049,7 @@ class _OrdersDrawerToggleButtonState extends State<_OrdersDrawerToggleButton>
             onTap: widget.onPressed,
             child: Tooltip(
               message: compactPendingTab
-                  ? 'Allocation pending: $total item(s)'
+                  ? 'Pending work: allocation $total, stock check ${widget.pendingStockCheckCount}'
                   : label,
               waitDuration: const Duration(milliseconds: 350),
               child: AnimatedContainer(
@@ -2484,26 +3070,38 @@ class _OrdersDrawerToggleButtonState extends State<_OrdersDrawerToggleButton>
                         )
                       : BorderRadius.circular(999),
                   border: Border.all(
-                    color: widget.hasPendingAllocation || showBackToOrders
-                        ? const Color(0xFFF59E0B)
+                    color:
+                        widget.hasPendingAllocation ||
+                            hasPendingStockCheck ||
+                            showBackToOrders
+                        ? hasUrgentPending
+                              ? const Color(0xFF7F1D1D)
+                              : const Color(0xFFF59E0B)
                         : const Color(0xFFD9E8F5),
                     width: showBackToOrders || compactPendingTab ? 1.4 : 1,
                   ),
                   boxShadow: [
                     BoxShadow(
                       color:
-                          (widget.hasPendingAllocation || showBackToOrders
-                                  ? const Color(0xFFF59E0B)
+                          (widget.hasPendingAllocation ||
+                                      hasPendingStockCheck ||
+                                      showBackToOrders
+                                  ? hasUrgentPending
+                                        ? const Color(0xFF7F1D1D)
+                                        : const Color(0xFFF59E0B)
                                   : Colors.black)
                               .withValues(
                                 alpha:
                                     widget.hasPendingAllocation ||
+                                        hasPendingStockCheck ||
                                         showBackToOrders
                                     ? 0.34
                                     : 0.12,
                               ),
                       blurRadius:
-                          widget.hasPendingAllocation || showBackToOrders
+                          widget.hasPendingAllocation ||
+                              hasPendingStockCheck ||
+                              showBackToOrders
                           ? 26
                           : 14,
                       offset: const Offset(0, 9),
@@ -2514,33 +3112,25 @@ class _OrdersDrawerToggleButtonState extends State<_OrdersDrawerToggleButton>
                     ? Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(
-                            Icons.account_tree_rounded,
-                            color: Color(0xFFF59E0B),
-                            size: 21,
-                          ),
-                          const SizedBox(width: 7),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 7,
-                              vertical: 3,
+                          if (widget.hasPendingAllocation)
+                            _PendingTabIcon(
+                              icon: Icons.account_tree_rounded,
+                              count: total,
+                              color: widget.overdueAllocationCount > 0
+                                  ? const Color(0xFF7F1D1D)
+                                  : const Color(0xFFF59E0B),
                             ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFFEDD5),
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                color: const Color(0xFFFED7AA),
-                              ),
+                          if (widget.hasPendingAllocation &&
+                              hasPendingStockCheck)
+                            const SizedBox(width: 7),
+                          if (hasPendingStockCheck)
+                            _PendingTabIcon(
+                              icon: Icons.inventory_2_rounded,
+                              count: widget.pendingStockCheckCount,
+                              color: widget.overdueStockCheckCount > 0
+                                  ? const Color(0xFF7F1D1D)
+                                  : const Color(0xFF2563EB),
                             ),
-                            child: Text(
-                              total.toString(),
-                              style: const TextStyle(
-                                color: Color(0xFFF97316),
-                                fontWeight: FontWeight.w900,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ),
                         ],
                       )
                     : Row(
@@ -2560,7 +3150,9 @@ class _OrdersDrawerToggleButtonState extends State<_OrdersDrawerToggleButton>
                               ),
                               child: Icon(
                                 Icons.keyboard_double_arrow_right_rounded,
-                                color: widget.showAllocationPage
+                                color:
+                                    widget.showAllocationPage ||
+                                        widget.showStockCheckPage
                                     ? Colors.white
                                     : const Color(0xFF0EA5E9),
                                 size: showBackToOrders ? 24 : 21,
@@ -3129,7 +3721,7 @@ class _FiltersBar extends StatelessWidget {
     required this.numericFinalOnly,
     required this.additionalOnly,
 
-    /// 🔥 NEW
+    /// NEW
     required this.isSubmitted,
 
     required this.onAdditionalOnlyChanged,
@@ -3182,7 +3774,7 @@ class _FiltersBar extends StatelessWidget {
                       'NON',
                       'SALES',
                       'TMA',
-                      'NEW ITEM',
+    /// NEW
                     ],
                     onChanged: onFormularyChanged,
                   ),

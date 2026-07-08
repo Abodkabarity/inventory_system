@@ -15,6 +15,7 @@ class BranchAllocationTask extends Equatable {
   final String senderStatus;
   final String receiverStatus;
   final DateTime? sentAt;
+  final DateTime? expiresAt;
   final DateTime? senderConfirmedAt;
   final DateTime? senderBatchFinishedAt;
 
@@ -33,6 +34,7 @@ class BranchAllocationTask extends Equatable {
     required this.senderStatus,
     required this.receiverStatus,
     required this.sentAt,
+    required this.expiresAt,
     required this.senderConfirmedAt,
     required this.senderBatchFinishedAt,
   });
@@ -65,6 +67,7 @@ class BranchAllocationTask extends Equatable {
     String? senderStatus,
     String? receiverStatus,
     DateTime? sentAt,
+    DateTime? expiresAt,
     DateTime? senderConfirmedAt,
     DateTime? senderBatchFinishedAt,
   }) {
@@ -83,6 +86,7 @@ class BranchAllocationTask extends Equatable {
       senderStatus: senderStatus ?? this.senderStatus,
       receiverStatus: receiverStatus ?? this.receiverStatus,
       sentAt: sentAt ?? this.sentAt,
+      expiresAt: expiresAt ?? this.expiresAt,
       senderConfirmedAt: senderConfirmedAt ?? this.senderConfirmedAt,
       senderBatchFinishedAt:
           senderBatchFinishedAt ?? this.senderBatchFinishedAt,
@@ -117,6 +121,7 @@ class BranchAllocationTask extends Equatable {
       senderStatus: (map['sender_status'] ?? 'pending').toString(),
       receiverStatus: (map['receiver_status'] ?? 'pending').toString(),
       sentAt: _dt(map['sent_at']),
+      expiresAt: _dt(map['expires_at']),
       senderConfirmedAt: _dt(map['sender_confirmed_at']),
       senderBatchFinishedAt: _dt(map['sender_batch_finished_at']),
     );
@@ -138,6 +143,7 @@ class BranchAllocationTask extends Equatable {
     senderStatus,
     receiverStatus,
     sentAt,
+    expiresAt,
     senderConfirmedAt,
     senderBatchFinishedAt,
   ];

@@ -396,6 +396,16 @@ class _AllocationBatch {
   int get noSendCount => rows.where((row) => row.isNoSend).length;
   bool get isReadyToFinish => total > 0 && pendingCount == 0;
   bool get isFinished => total > 0 && rows.every((row) => row.isBatchFinished);
+  DateTime? get expiresAt {
+    final dates =
+        rows.map((row) => row.expiresAt).whereType<DateTime>().toList()..sort();
+    return dates.isEmpty ? null : dates.first;
+  }
+
+  bool get isExpired {
+    final deadline = expiresAt?.toLocal();
+    return deadline != null && DateTime.now().isAfter(deadline);
+  }
 
   DateTime get latestSentAt {
     final dates = rows.map((row) => row.sentAt).whereType<DateTime>().toList()
@@ -900,6 +910,8 @@ class _BigBatchCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final statusColor = batch.isFinished
         ? const Color(0xff059669)
+        : batch.isExpired
+        ? const Color(0xFF7F1D1D)
         : incoming
         ? const Color(0xff0284C7)
         : const Color(0xffD97706);
@@ -907,6 +919,8 @@ class _BigBatchCard extends StatelessWidget {
         ? (incoming ? 'Received' : 'Finished')
         : batch.isReadyToFinish
         ? (incoming ? 'Ready to receive' : 'Ready')
+        : batch.isExpired
+        ? 'Expired'
         : (incoming ? 'Incoming' : 'Pending');
     final cardBackground = incoming ? const Color(0xffF0F9FF) : Colors.white;
     final cardBorder = batch.isFinished
@@ -986,6 +1000,19 @@ class _BigBatchCard extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                         ),
                       ),
+                      if (batch.expiresAt != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          _allocationDeadlineLabel(batch.expiresAt!),
+                          style: TextStyle(
+                            color: batch.isExpired
+                                ? const Color(0xFF7F1D1D)
+                                : const Color(0xff0F766E),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1034,6 +1061,8 @@ class _BigBatchCard extends StatelessWidget {
                         ? (incoming
                               ? 'Sender finished this batch'
                               : 'Ready to finish')
+                        : batch.isExpired
+                        ? 'Completion time has ended'
                         : incoming
                         ? '${batch.pendingCount} waiting from sender'
                         : '${batch.pendingCount} pending item(s)',
@@ -1583,6 +1612,10 @@ class _OutgoingTableRowState extends State<_OutgoingTableRow> {
   }
 
   void _confirm(BuildContext context) {
+    if (_isExpired) {
+      _showMessage(context, 'This allocation deadline has expired.', false);
+      return;
+    }
     final qty = num.tryParse(_qtyController.text.trim().replaceAll(',', ''));
     final note = _noteController.text.trim();
     if (qty == null || qty < 0) {
@@ -1622,6 +1655,10 @@ class _OutgoingTableRowState extends State<_OutgoingTableRow> {
   }
 
   void _saveDoneChanges(BuildContext context) {
+    if (_isExpired) {
+      _showMessage(context, 'This allocation deadline has expired.', false);
+      return;
+    }
     final qty = num.tryParse(_qtyController.text.trim().replaceAll(',', ''));
     final note = _noteController.text.trim();
     final currentStatus = widget.task.normalizedSenderStatus;
@@ -1653,6 +1690,10 @@ class _OutgoingTableRowState extends State<_OutgoingTableRow> {
   }
 
   void _reject(BuildContext context) {
+    if (_isExpired) {
+      _showMessage(context, 'This allocation deadline has expired.', false);
+      return;
+    }
     final note = _noteController.text.trim();
     if (note.isEmpty) {
       _showMessage(context, 'Reject requires a clear note.', false);
@@ -1669,6 +1710,11 @@ class _OutgoingTableRowState extends State<_OutgoingTableRow> {
       ),
     );
     _showMessage(context, 'Item rejected with note.', true);
+  }
+
+  bool get _isExpired {
+    final deadline = widget.task.expiresAt?.toLocal();
+    return deadline != null && DateTime.now().isAfter(deadline);
   }
 }
 
@@ -2475,6 +2521,17 @@ String _formatDateTime(DateTime date) {
   final hour = d.hour.toString().padLeft(2, '0');
   final minute = d.minute.toString().padLeft(2, '0');
   return '$day-$month-${d.year} $hour:$minute';
+}
+
+String _allocationDeadlineLabel(DateTime date) {
+  final local = date.toLocal();
+  final remaining = local.difference(DateTime.now());
+  if (remaining.isNegative) return 'Deadline expired ${_formatDateTime(local)}';
+  final days = remaining.inDays;
+  final hours = remaining.inHours % 24;
+  if (days > 0)
+    return 'Deadline ${_formatDateTime(local)} - $days d $hours h left';
+  return 'Deadline ${_formatDateTime(local)} - ${remaining.inHours} h left';
 }
 
 Future<void> _exportAllocationRows(

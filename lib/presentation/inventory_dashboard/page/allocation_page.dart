@@ -8,6 +8,7 @@ import '../../../domain/entities/branch_allocation_task.dart';
 import '../bloc/inventory_bloc.dart';
 import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
+import 'stock_check_page.dart';
 
 class AllocationPage extends StatefulWidget {
   final String runDate;
@@ -240,27 +241,50 @@ class _AllocationPageState extends State<AllocationPage> {
   }
 
   Future<void> _sendAllocation(BuildContext context) async {
-    final title = await _askAllocationBatchTitle(context, widget.runDate);
-    if (!context.mounted || title == null) return;
+    final draft = await _askAllocationBatchTitle(context, widget.runDate);
+    if (!context.mounted || draft == null) return;
 
     context.read<InventoryBloc>().add(
-      SendAllocationToBranches(runDate: widget.runDate, batchTitle: title),
+      SendAllocationToBranches(
+        runDate: widget.runDate,
+        batchTitle: draft.title,
+        expiresAt: draft.expiresAt,
+      ),
     );
   }
 
-  Future<String?> _askAllocationBatchTitle(
+  Future<_AllocationSendDraft?> _askAllocationBatchTitle(
     BuildContext context,
     String runDate,
   ) async {
     final controller = TextEditingController(text: 'Allocation $runDate');
+    var expiresAt = DateTime.now()
+        .add(const Duration(days: 7))
+        .copyWith(hour: 23, minute: 59, second: 59, millisecond: 0);
     String error = '';
 
-    final result = await showDialog<String>(
+    final result = await showDialog<_AllocationSendDraft>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            void finish() {
+              final value = controller.text.trim();
+              if (value.isEmpty) {
+                setDialogState(() => error = 'Batch title is required');
+                return;
+              }
+              if (!expiresAt.isAfter(DateTime.now())) {
+                setDialogState(() => error = 'Choose a future deadline');
+                return;
+              }
+              Navigator.pop(
+                dialogContext,
+                _AllocationSendDraft(title: value, expiresAt: expiresAt),
+              );
+            }
+
             return AlertDialog(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(22),
@@ -319,16 +343,78 @@ class _AllocationPageState extends State<AllocationPage> {
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                      onSubmitted: (_) {
-                        final value = controller.text.trim();
-                        if (value.isEmpty) {
-                          setDialogState(
-                            () => error = 'Batch title is required',
+                      onSubmitted: (_) => finish(),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'Allocation completion deadline',
+                      style: TextStyle(
+                        color: Colors.grey.shade800,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () async {
+                        final now = DateTime.now();
+                        final picked = await showDialog<DateTimeRange>(
+                          context: dialogContext,
+                          builder: (_) => StockCheckDateRangePickerDialog(
+                            initialRange: DateTimeRange(
+                              start: DateTime(now.year, now.month, now.day),
+                              end: expiresAt,
+                            ),
+                            mode: StockCheckDateRangePickerMode.deadline,
+                          ),
+                        );
+                        if (picked == null) return;
+                        final end = picked.end;
+                        setDialogState(() {
+                          expiresAt = DateTime(
+                            end.year,
+                            end.month,
+                            end.day,
+                            23,
+                            59,
+                            59,
                           );
-                          return;
-                        }
-                        Navigator.pop(dialogContext, value);
+                          error = '';
+                        });
                       },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFECFDF5),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFF5EEAD4)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.timer_rounded,
+                              color: Color(0xFF0F766E),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Deadline ${_fmtAllocationDeadline(expiresAt)}',
+                                style: const TextStyle(
+                                  color: Color(0xFF0F766E),
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            const Icon(
+                              Icons.edit_calendar_rounded,
+                              color: Color(0xFF0F766E),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -339,14 +425,7 @@ class _AllocationPageState extends State<AllocationPage> {
                   child: const Text('Cancel'),
                 ),
                 FilledButton.icon(
-                  onPressed: () {
-                    final value = controller.text.trim();
-                    if (value.isEmpty) {
-                      setDialogState(() => error = 'Batch title is required');
-                      return;
-                    }
-                    Navigator.pop(dialogContext, value);
-                  },
+                  onPressed: finish,
                   icon: const Icon(Icons.send_rounded),
                   label: const Text('Send Allocation'),
                   style: FilledButton.styleFrom(
@@ -480,6 +559,22 @@ int _compareStockCoverLabels(String a, String b) {
   if (valueCompare != 0) return valueCompare;
 
   return a.toLowerCase().compareTo(b.toLowerCase());
+}
+
+class _AllocationSendDraft {
+  final String title;
+  final DateTime expiresAt;
+
+  const _AllocationSendDraft({required this.title, required this.expiresAt});
+}
+
+String _fmtAllocationDeadline(DateTime value) {
+  final local = value.toLocal();
+  return '${local.year.toString().padLeft(4, '0')}-'
+      '${local.month.toString().padLeft(2, '0')}-'
+      '${local.day.toString().padLeft(2, '0')} '
+      '${local.hour.toString().padLeft(2, '0')}:'
+      '${local.minute.toString().padLeft(2, '0')}';
 }
 
 class _Header extends StatelessWidget {

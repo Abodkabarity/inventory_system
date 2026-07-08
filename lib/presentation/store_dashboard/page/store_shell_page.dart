@@ -15,6 +15,7 @@ import '../product_movement/bloc/product_movement_event.dart';
 import '../transfer_report/bloc/transfer_report_bloc.dart';
 import '../transfer_report/transfer_report_page.dart';
 import 'product_movement_page.dart';
+import '../../inventory_dashboard/page/stock_check_page.dart';
 
 class StoreShellPage extends StatefulWidget {
   final String runDate;
@@ -27,6 +28,62 @@ class StoreShellPage extends StatefulWidget {
 
 class _StoreShellPageState extends State<StoreShellPage> {
   int selectedIndex = 0;
+  RealtimeChannel? _stockCheckChannel;
+  int _pendingStoreStockChecks = 0;
+  int _overdueStoreStockChecks = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStoreStockCheckBadges();
+    _stockCheckChannel = Supabase.instance.client
+        .channel('store-stock-check-badges')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'stock_check_tasks',
+          callback: (_) => _loadStoreStockCheckBadges(),
+        )
+        .subscribe();
+  }
+
+  @override
+  void dispose() {
+    final channel = _stockCheckChannel;
+    if (channel != null) {
+      Supabase.instance.client.removeChannel(channel);
+    }
+    super.dispose();
+  }
+
+  Future<void> _loadStoreStockCheckBadges() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('stock_check_tasks')
+          .select('id,expires_at')
+          .eq('branch_name', 'STORE')
+          .eq('status', 'pending');
+      final list = List<Map<String, dynamic>>.from(rows);
+      final now = DateTime.now();
+      final overdue = list.where((row) {
+        final expiresAt = DateTime.tryParse(
+          (row['expires_at'] ?? '').toString(),
+        );
+        return expiresAt != null && now.isAfter(expiresAt.toLocal());
+      }).length;
+      if (!mounted) return;
+      setState(() {
+        _pendingStoreStockChecks = list.length;
+        _overdueStoreStockChecks = overdue;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _pendingStoreStockChecks = 0;
+        _overdueStoreStockChecks = 0;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,7 +94,12 @@ class _StoreShellPageState extends State<StoreShellPage> {
     final StoreRepository repo = StoreRepositoryImpl(remote);
 
     final pages = [
-      StoreDashboardPage(runDate: widget.runDate),
+      StoreDashboardPage(
+        runDate: widget.runDate,
+        pendingStockCheckCount: _pendingStoreStockChecks,
+        overdueStockCheckCount: _overdueStoreStockChecks,
+        onOpenStockCheck: () => setState(() => selectedIndex = 4),
+      ),
 
       BlocProvider(
         create: (_) =>
@@ -53,6 +115,15 @@ class _StoreShellPageState extends State<StoreShellPage> {
       BlocProvider(
         create: (_) => BranchOrderBloc(repo)..add(LoadBranchOrderBranches()),
         child: const BranchOrderPage(),
+      ),
+
+      StockCheckPage(
+        runDate: widget.runDate,
+        source: 'store',
+        sourceTitle: 'Store Stock Check',
+        storeInboxPendingCount: _pendingStoreStockChecks,
+        storeInboxOverdueCount: _overdueStoreStockChecks,
+        initialShowStoreInbox: _pendingStoreStockChecks > 0,
       ),
     ];
 
@@ -200,6 +271,15 @@ class _StoreShellPageState extends State<StoreShellPage> {
                   title: "Branch Order",
                 ),
 
+                const SizedBox(height: 8),
+                _buildMenuItem(
+                  index: 4,
+                  icon: Icons.inventory_2_rounded,
+                  title: "Stock Check",
+                  badge: _pendingStoreStockChecks,
+                  dangerBadge: _overdueStoreStockChecks > 0,
+                ),
+
                 const Spacer(),
 
                 // =====================================
@@ -284,6 +364,10 @@ class _StoreShellPageState extends State<StoreShellPage> {
     required IconData icon,
 
     required String title,
+
+    int badge = 0,
+
+    bool dangerBadge = false,
   }) {
     final selected = selectedIndex == index;
 
@@ -357,6 +441,40 @@ class _StoreShellPageState extends State<StoreShellPage> {
                   ),
                 ),
               ),
+              if (badge > 0) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: dangerBadge
+                        ? const Color(0xFFEF4444)
+                        : selected
+                        ? Colors.white.withValues(alpha: .22)
+                        : const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: selected
+                          ? Colors.white.withValues(alpha: .35)
+                          : dangerBadge
+                          ? const Color(0xFFFCA5A5)
+                          : const Color(0xFFBFDBFE),
+                    ),
+                  ),
+                  child: Text(
+                    badge > 999 ? '999+' : badge.toString(),
+                    style: TextStyle(
+                      color: selected || dangerBadge
+                          ? Colors.white
+                          : const Color(0xFF2563EB),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

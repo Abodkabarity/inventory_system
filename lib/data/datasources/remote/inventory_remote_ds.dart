@@ -1043,6 +1043,7 @@ item_minimum_order_unit, barcode, store_item_classifications
   Future<void> sendBranchAllocationTasks({
     required String runDate,
     required String batchId,
+    required DateTime expiresAt,
     required List<Map<String, dynamic>> rows,
   }) async {
     if (rows.isEmpty) return;
@@ -1062,6 +1063,7 @@ item_minimum_order_unit, barcode, store_item_classifications
         'sender_status': 'pending',
         'receiver_status': 'pending',
         'sent_at': now,
+        'expires_at': expiresAt.toIso8601String(),
         'updated_at': now,
       };
     }).toList();

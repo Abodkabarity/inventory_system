@@ -217,6 +217,7 @@ abstract class InventoryRepository {
   Future<void> sendBranchAllocationTasks({
     required String runDate,
     required String batchTitle,
+    required DateTime expiresAt,
     required List<AllocationResultRow> rows,
   });
   Future<List<BranchAllocationTask>> fetchSentBranchAllocationTasks({

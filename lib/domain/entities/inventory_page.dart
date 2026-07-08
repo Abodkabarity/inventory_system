@@ -11,6 +11,7 @@ enum InventoryPageType {
   orderEditAnalysis,
   branchesTracker,
   allocation,
+  stockCheck,
   shortage,
   branchSetting,
 }

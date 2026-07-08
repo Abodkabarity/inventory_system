@@ -23,6 +23,7 @@ class MobileOrderItem extends Equatable {
   final String itemCode;
   final String itemName;
   final String barcode;
+  final List<String> validBarcodes;
   final String supplier;
   final String category;
   final String classification;
@@ -36,6 +37,7 @@ class MobileOrderItem extends Equatable {
     required this.itemCode,
     required this.itemName,
     required this.barcode,
+    required this.validBarcodes,
     required this.supplier,
     required this.category,
     required this.classification,
@@ -53,6 +55,9 @@ class MobileOrderItem extends Equatable {
       itemCode: (json['itemCode'] ?? '').toString(),
       itemName: (json['itemName'] ?? '').toString(),
       barcode: (json['barcode'] ?? '').toString(),
+      validBarcodes: List<dynamic>.from(
+        (json['validBarcodes'] as List?) ?? const [],
+      ).map((e) => e.toString()).toList(),
       supplier: (json['supplier'] ?? '').toString(),
       category: (json['category'] ?? '').toString(),
       classification: (json['classification'] ?? '').toString(),
@@ -69,6 +74,7 @@ class MobileOrderItem extends Equatable {
       'itemCode': itemCode,
       'itemName': itemName,
       'barcode': barcode,
+      'validBarcodes': validBarcodes,
       'supplier': supplier,
       'category': category,
       'classification': classification,
@@ -91,6 +97,7 @@ class MobileOrderItem extends Equatable {
     itemCode,
     itemName,
     barcode,
+    validBarcodes,
     supplier,
     category,
     classification,

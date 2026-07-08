@@ -15,8 +15,17 @@ import '../widgets/store_dashboard_body.dart';
 
 class StoreDashboardPage extends StatelessWidget {
   final String runDate;
+  final int pendingStockCheckCount;
+  final int overdueStockCheckCount;
+  final VoidCallback? onOpenStockCheck;
 
-  const StoreDashboardPage({super.key, required this.runDate});
+  const StoreDashboardPage({
+    super.key,
+    required this.runDate,
+    this.pendingStockCheckCount = 0,
+    this.overdueStockCheckCount = 0,
+    this.onOpenStockCheck,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -27,15 +36,29 @@ class StoreDashboardPage extends StatelessWidget {
 
     return BlocProvider(
       create: (_) => StoreBloc(repo)..add(LoadStoreDashboard(runDate)),
-      child: StoreDashboardView(runDate: runDate),
+      child: StoreDashboardView(
+        runDate: runDate,
+        pendingStockCheckCount: pendingStockCheckCount,
+        overdueStockCheckCount: overdueStockCheckCount,
+        onOpenStockCheck: onOpenStockCheck,
+      ),
     );
   }
 }
 
 class StoreDashboardView extends StatefulWidget {
   final String runDate;
+  final int pendingStockCheckCount;
+  final int overdueStockCheckCount;
+  final VoidCallback? onOpenStockCheck;
 
-  const StoreDashboardView({super.key, required this.runDate});
+  const StoreDashboardView({
+    super.key,
+    required this.runDate,
+    required this.pendingStockCheckCount,
+    required this.overdueStockCheckCount,
+    required this.onOpenStockCheck,
+  });
 
   @override
   State<StoreDashboardView> createState() => _StoreDashboardViewState();
@@ -101,10 +124,11 @@ class _StoreDashboardViewState extends State<StoreDashboardView> {
           /// =========================
           /// 🖨 PRINT FLOW
           if (state.printBatch.isNotEmpty) {
+            final bloc = context.read<StoreBloc>();
             await PrintAdditionalService.printBatch(state.printBatch);
+            if (!context.mounted) return;
 
-            context.read<StoreBloc>().add(ClearPrintBatch());
-            print("BATCH SIZE: ${state.printBatch.length}");
+            bloc.add(ClearPrintBatch());
           }
 
           /// =========================
@@ -138,7 +162,22 @@ class _StoreDashboardViewState extends State<StoreDashboardView> {
 
             return Stack(
               children: [
-                StoreDashboardBody(state: state, isSubmitted: isSubmitted),
+                Column(
+                  children: [
+                    if (widget.pendingStockCheckCount > 0)
+                      _StoreStockCheckNotice(
+                        pendingCount: widget.pendingStockCheckCount,
+                        overdueCount: widget.overdueStockCheckCount,
+                        onTap: widget.onOpenStockCheck,
+                      ),
+                    Expanded(
+                      child: StoreDashboardBody(
+                        state: state,
+                        isSubmitted: isSubmitted,
+                      ),
+                    ),
+                  ],
+                ),
 
                 if (state.isLoading && state.selectedBranch == null)
                   Container(
@@ -152,6 +191,124 @@ class _StoreDashboardViewState extends State<StoreDashboardView> {
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+class _StoreStockCheckNotice extends StatelessWidget {
+  final int pendingCount;
+  final int overdueCount;
+  final VoidCallback? onTap;
+
+  const _StoreStockCheckNotice({
+    required this.pendingCount,
+    required this.overdueCount,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final overdue = overdueCount > 0;
+    final color = overdue ? const Color(0xFFDC2626) : const Color(0xFF2563EB);
+    final bg = overdue ? const Color(0xFFFFF1F2) : const Color(0xFFEFF6FF);
+    final border = overdue ? const Color(0xFFFCA5A5) : const Color(0xFFBFDBFE);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 18, 24, 0),
+      child: Material(
+        color: bg,
+        borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: border, width: 1.3),
+              boxShadow: [
+                BoxShadow(
+                  color: color.withValues(alpha: .12),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: border),
+                  ),
+                  child: Icon(
+                    overdue
+                        ? Icons.notification_important_rounded
+                        : Icons.inventory_2_rounded,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        overdue
+                            ? 'Store Stock Check overdue'
+                            : 'Store Stock Check pending',
+                        style: const TextStyle(
+                          color: Color(0xFF0F172A),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        overdue
+                            ? '$pendingCount item(s) pending - $overdueCount overdue. Open Store Inbox and complete them.'
+                            : '$pendingCount item(s) need system and actual quantity confirmation.',
+                        style: const TextStyle(
+                          color: Color(0xFF475569),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: border),
+                  ),
+                  child: Row(
+                    children: [
+                      Text(
+                        pendingCount.toString(),
+                        style: TextStyle(
+                          color: color,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Icon(Icons.arrow_forward_rounded, color: color, size: 18),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

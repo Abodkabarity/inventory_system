@@ -1127,11 +1127,13 @@ class InventoryRepositoryImpl implements InventoryRepository {
   Future<void> sendBranchAllocationTasks({
     required String runDate,
     required String batchTitle,
+    required DateTime expiresAt,
     required List<AllocationResultRow> rows,
   }) {
     return remote.sendBranchAllocationTasks(
       runDate: runDate,
       batchId: batchTitle,
+      expiresAt: expiresAt,
       rows: rows.map((row) => row.toMap()).toList(),
     );
   }

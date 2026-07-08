@@ -486,11 +486,16 @@ class ExportAllocationShortage extends InventoryEvent {}
 class SendAllocationToBranches extends InventoryEvent {
   final String runDate;
   final String batchTitle;
+  final DateTime expiresAt;
 
-  SendAllocationToBranches({required this.runDate, required this.batchTitle});
+  SendAllocationToBranches({
+    required this.runDate,
+    required this.batchTitle,
+    required this.expiresAt,
+  });
 
   @override
-  List<Object?> get props => [runDate, batchTitle];
+  List<Object?> get props => [runDate, batchTitle, expiresAt];
 }
 
 class LoadSentBranchAllocations extends InventoryEvent {
