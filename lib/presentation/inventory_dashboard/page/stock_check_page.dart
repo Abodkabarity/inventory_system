@@ -6,6 +6,7 @@ import 'package:archive/archive.dart';
 import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import 'package:xml/xml.dart';
@@ -47,6 +48,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
   final _importRows = <_StockCheckDraftRow>[];
   final _selectedBranches = <String>{};
   bool _showStoreInbox = false;
+  String _sentSourceFilter = 'inventory';
   List<String> _branches = [];
   List<StockCheckTask> _sentRows = [];
   String? _selectedBatchId;
@@ -84,6 +86,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
       59,
     ).add(const Duration(days: 1));
     _showStoreInbox = _hasStoreInbox && widget.initialShowStoreInbox;
+    _sentSourceFilter = widget.source.trim().toLowerCase();
     _titleController.text = '${widget.sourceTitle} ${widget.runDate}';
     _load();
   }
@@ -122,7 +125,10 @@ class _StockCheckPageState extends State<StockCheckPage> {
         final rows = await _client
             .from('stock_check_tasks')
             .select()
-            .eq('source', widget.source)
+            .inFilter(
+              'source',
+              _canSendToStore ? ['inventory', 'store'] : [widget.source],
+            )
             .order('sent_at', ascending: false);
         sentRows = List<Map<String, dynamic>>.from(
           rows,
@@ -149,9 +155,15 @@ class _StockCheckPageState extends State<StockCheckPage> {
         });
         _branches = destinations;
         _sentRows = sentRows;
+        final visibleSentRows = sentRows.where((row) {
+          return row.source.trim().toLowerCase() ==
+              _sentSourceFilter.trim().toLowerCase();
+        }).toList();
         if (_selectedBatchId == null ||
-            !sentRows.any((row) => row.batchId == _selectedBatchId)) {
-          _selectedBatchId = sentRows.isEmpty ? null : sentRows.first.batchId;
+            !visibleSentRows.any((row) => row.batchId == _selectedBatchId)) {
+          _selectedBatchId = visibleSentRows.isEmpty
+              ? null
+              : visibleSentRows.first.batchId;
         }
         _error = tableError;
         _loading = false;
@@ -429,10 +441,22 @@ class _StockCheckPageState extends State<StockCheckPage> {
 
   List<StockCheckTask> _filteredSentRows() {
     return _sentRows.where((row) {
+      if (row.source.trim().toLowerCase() !=
+          _sentSourceFilter.trim().toLowerCase()) {
+        return false;
+      }
       final sentAt = row.sentAt;
       if (sentAt == null) return false;
       return !sentAt.isBefore(_sentFrom) && !sentAt.isAfter(_sentTo);
     }).toList();
+  }
+
+  int _sourceBatchCount(String source) {
+    return _sentRows
+        .where((row) => row.source.trim().toLowerCase() == source)
+        .map((row) => row.batchId)
+        .toSet()
+        .length;
   }
 
   List<StockCheckTask> _selectedBatchRows(List<_StockCheckBatch> batches) {
@@ -443,8 +467,12 @@ class _StockCheckPageState extends State<StockCheckPage> {
 
   @override
   Widget build(BuildContext context) {
-    final pending = _sentRows.where((e) => e.isPending).length;
-    final submitted = _sentRows.where((e) => e.isSubmitted).length;
+    final visibleSourceRows = _sentRows.where((row) {
+      return row.source.trim().toLowerCase() ==
+          _sentSourceFilter.trim().toLowerCase();
+    }).toList();
+    final pending = visibleSourceRows.where((e) => e.isPending).length;
+    final submitted = visibleSourceRows.where((e) => e.isSubmitted).length;
     final batches = _batches();
     final selectedRows = _selectedBatchRows(batches);
 
@@ -461,7 +489,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
                     title: widget.sourceTitle,
                     pending: pending,
                     submitted: submitted,
-                    total: _sentRows.length,
+                    total: visibleSourceRows.length,
                     onRefresh: _load,
                     onExport: selectedRows.isEmpty
                         ? null
@@ -679,6 +707,20 @@ class _StockCheckPageState extends State<StockCheckPage> {
                   title: 'Sent Stock Checks',
                 ),
                 const SizedBox(height: 10),
+                if (_canSendToStore) ...[
+                  _SentSourceToggle(
+                    value: _sentSourceFilter,
+                    inventoryCount: _sourceBatchCount('inventory'),
+                    storeCount: _sourceBatchCount('store'),
+                    onChanged: (value) {
+                      setState(() {
+                        _sentSourceFilter = value;
+                        _selectedBatchId = null;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                ],
                 _DateRangeFilterButton(
                   label: '${_fmtDate(_sentFrom)}  to  ${_fmtDate(_sentTo)}',
                   onPressed: _pickSentDateRange,
@@ -696,6 +738,8 @@ class _StockCheckPageState extends State<StockCheckPage> {
                         deleting: _deletingBatchId == batch.id,
                         onTap: () =>
                             setState(() => _selectedBatchId = batch.id),
+                        canManage:
+                            _sentSourceFilter == widget.source.toLowerCase(),
                         onEditDeadline: () => _editBatchDeadline(batch),
                         onDelete: () => _deleteBatch(batch),
                       );
@@ -856,6 +900,10 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
   final _searchController = TextEditingController();
   String _search = '';
   String _branchFilter = 'ALL';
+  String _statusFilter = 'ALL';
+  String _sortColumn = 'branch';
+  bool _sortAscending = true;
+  final _columnFilters = <String, Set<String>>{};
   List<String> _branches = const [];
   List<StockCheckTask> _filteredRows = const [];
   bool _showBarcodeSticker = false;
@@ -873,6 +921,10 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
       _searchController.clear();
       _search = '';
       _branchFilter = 'ALL';
+      _statusFilter = 'ALL';
+      _sortColumn = 'branch';
+      _sortAscending = true;
+      _columnFilters.clear();
     }
     _rebuildIndexes();
   }
@@ -904,14 +956,14 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
             Row(
               children: [
                 SizedBox(
-                  width: 280,
+                  width: 300.w,
                   child: DropdownButtonFormField<String>(
                     initialValue: _branchFilter,
                     decoration: _filterDecoration('Branch'),
                     items: [
                       const DropdownMenuItem(
                         value: 'ALL',
-                        child: Text('All branches'),
+                        child: Text('All Branches'),
                       ),
                       ..._branches.map(
                         (branch) => DropdownMenuItem(
@@ -923,6 +975,31 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
                     onChanged: (value) {
                       setState(() {
                         _branchFilter = value ?? 'ALL';
+                        _rebuildIndexes();
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 180,
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _statusFilter,
+                    decoration: _filterDecoration('Status'),
+                    items: const [
+                      DropdownMenuItem(value: 'ALL', child: Text('All status')),
+                      DropdownMenuItem(
+                        value: 'pending',
+                        child: Text('Pending'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'submitted',
+                        child: Text('Submitted'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        _statusFilter = value ?? 'ALL';
                         _rebuildIndexes();
                       });
                     },
@@ -983,6 +1060,10 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
                     child: _FastStockCheckResultsTable(
                       rows: _filteredRows,
                       showBarcodeSticker: _showBarcodeSticker,
+                      activeFilters: _columnFilters.keys.toSet(),
+                      sortColumn: _sortColumn,
+                      sortAscending: _sortAscending,
+                      onColumnFilter: _openColumnFilter,
                     ),
                   ),
           ),
@@ -1013,22 +1094,29 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
         widget.rows.where((row) {
           final branchOk =
               _branchFilter == 'ALL' || row.branchName.trim() == _branchFilter;
+          final statusOk =
+              _statusFilter == 'ALL' ||
+              (_statusFilter == 'submitted' && row.isSubmitted) ||
+              (_statusFilter == 'pending' && row.isPending);
           final searchOk =
               needle.isEmpty ||
               row.branchName.toLowerCase().contains(needle) ||
               row.itemCode.toLowerCase().contains(needle) ||
               row.itemName.toLowerCase().contains(needle);
-          return branchOk && searchOk;
+          final columnOk = _columnFilters.entries.every((entry) {
+            final selected = entry.value;
+            if (selected.isEmpty) return true;
+            return selected.contains(_columnValue(row, entry.key));
+          });
+          return branchOk && statusOk && searchOk && columnOk;
         }).toList()..sort((a, b) {
-          final branch = a.branchName.toLowerCase().compareTo(
-            b.branchName.toLowerCase(),
-          );
+          final primary = _compareColumn(a, b, _sortColumn);
+          if (primary != 0) return _sortAscending ? primary : -primary;
+          final branch = _compareColumn(a, b, 'branch');
           if (branch != 0) return branch;
-          final name = a.itemName.toLowerCase().compareTo(
-            b.itemName.toLowerCase(),
-          );
+          final name = _compareColumn(a, b, 'itemName');
           if (name != 0) return name;
-          return a.itemCode.toLowerCase().compareTo(b.itemCode.toLowerCase());
+          return _compareColumn(a, b, 'itemCode');
         });
 
     _branches = branches;
@@ -1060,6 +1148,75 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
   static String _yesNo(bool? value) {
     if (value == null) return '';
     return value ? 'Yes' : 'No';
+  }
+
+  int _compareColumn(StockCheckTask a, StockCheckTask b, String column) {
+    if (column == 'system' || column == 'actual' || column == 'diff') {
+      num? number(StockCheckTask row) => switch (column) {
+        'system' => row.systemQty,
+        'actual' => row.actualQty,
+        _ => row.variance,
+      };
+      final av = number(a);
+      final bv = number(b);
+      if (av == null && bv == null) return 0;
+      if (av == null) return -1;
+      if (bv == null) return 1;
+      return av.compareTo(bv);
+    }
+    return _columnValue(
+      a,
+      column,
+    ).toLowerCase().compareTo(_columnValue(b, column).toLowerCase());
+  }
+
+  String _columnValue(StockCheckTask row, String column) {
+    return switch (column) {
+      'branch' => row.branchName,
+      'itemCode' => row.itemCode,
+      'itemName' => row.itemName,
+      'system' => row.systemQty?.toString() ?? '',
+      'actual' => row.actualQty?.toString() ?? '',
+      'diff' => row.variance?.toString() ?? '',
+      'barcode' =>
+        row.includeBarcodeStickerCheck
+            ? _yesNo(row.barcodeStickerIsCorrect)
+            : '',
+      'status' => row.isSubmitted ? 'Submitted' : 'Pending',
+      _ => '',
+    };
+  }
+
+  Future<void> _openColumnFilter(String column, String label) async {
+    final values =
+        widget.rows
+            .map((row) => _columnValue(row, column))
+            .where((value) => value.trim().isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final current = Set<String>.from(_columnFilters[column] ?? values);
+    final result = await showDialog<_ColumnFilterResult>(
+      context: context,
+      barrierColor: Colors.black26,
+      builder: (_) => _ColumnFilterDialog(
+        title: label,
+        values: values,
+        selected: current,
+        sortAscending: _sortColumn == column ? _sortAscending : true,
+      ),
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      _sortColumn = column;
+      _sortAscending = result.sortAscending;
+      if (result.selected.length == values.length) {
+        _columnFilters.remove(column);
+      } else {
+        _columnFilters[column] = result.selected;
+      }
+      _rebuildIndexes();
+    });
   }
 }
 
@@ -1233,22 +1390,298 @@ _StockCheckProductsImport _stockCheckProductsFromTable(
   return _StockCheckProductsImport(products: products, rows: rows);
 }
 
-class _FastStockCheckResultsTable extends StatelessWidget {
+class _ColumnFilterResult {
+  final Set<String> selected;
+  final bool sortAscending;
+
+  const _ColumnFilterResult({
+    required this.selected,
+    required this.sortAscending,
+  });
+}
+
+class _ColumnFilterDialog extends StatefulWidget {
+  final String title;
+  final List<String> values;
+  final Set<String> selected;
+  final bool sortAscending;
+
+  const _ColumnFilterDialog({
+    required this.title,
+    required this.values,
+    required this.selected,
+    required this.sortAscending,
+  });
+
+  @override
+  State<_ColumnFilterDialog> createState() => _ColumnFilterDialogState();
+}
+
+class _ColumnFilterDialogState extends State<_ColumnFilterDialog> {
+  late final TextEditingController _searchController;
+  late Set<String> _selected;
+  late bool _sortAscending;
+  String _search = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController();
+    _selected = Set<String>.from(widget.selected);
+    _sortAscending = widget.sortAscending;
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = widget.values.where((value) {
+      return _search.trim().isEmpty ||
+          value.toLowerCase().contains(_search.trim().toLowerCase());
+    }).toList();
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: SizedBox(
+        width: 390,
+        height: 560,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.filter_alt_rounded,
+                    color: Color(0xFF2563EB),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      widget.title,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => setState(() => _sortAscending = true),
+                      icon: const Icon(
+                        Icons.arrow_upward_rounded,
+                        size: 18,
+                        color: AppColors.secondaryColor,
+                      ),
+                      label: const Text(
+                        'Sort A to Z',
+                        style: TextStyle(color: AppColors.secondaryColor),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: _sortAscending
+                            ? const Color(0xFFEFF6FF)
+                            : Colors.white,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => setState(() => _sortAscending = false),
+                      icon: const Icon(
+                        Icons.arrow_downward_rounded,
+                        size: 18,
+                        color: AppColors.secondaryColor,
+                      ),
+                      label: const Text(
+                        'Sort Z to A',
+                        style: TextStyle(color: AppColors.secondaryColor),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: !_sortAscending
+                            ? const Color(0xFFEFF6FF)
+                            : Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: 'Search values',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  filled: true,
+                  fillColor: AppColors.backgroundWidget,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.primaryColor),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.primaryColor),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.primaryColor),
+                  ),
+                ),
+                onChanged: (value) => setState(() => _search = value),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        _selected = Set<String>.from(widget.values);
+                      });
+                    },
+                    child: const Text(
+                      'Select all',
+                      style: TextStyle(color: AppColors.secondaryColor),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => setState(_selected.clear),
+                    child: const Text(
+                      'Clear',
+                      style: TextStyle(color: AppColors.secondaryColor),
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${_selected.length} selected',
+                    style: const TextStyle(
+                      color: Color(0xFF64748B),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(height: 16),
+              Expanded(
+                child: visible.isEmpty
+                    ? const Center(child: Text('No values'))
+                    : ListView.builder(
+                        itemCount: visible.length,
+                        itemBuilder: (context, index) {
+                          final value = visible[index];
+                          return CheckboxListTile(
+                            dense: true,
+                            activeColor: AppColors.primaryColor,
+                            value: _selected.contains(value),
+                            title: Text(
+                              value,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            onChanged: (checked) {
+                              setState(() {
+                                if (checked == true) {
+                                  _selected.add(value);
+                                } else {
+                                  _selected.remove(value);
+                                }
+                              });
+                            },
+                          );
+                        },
+                      ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  OutlinedButton(
+                    onPressed: () {
+                      Navigator.pop(
+                        context,
+                        _ColumnFilterResult(
+                          selected: Set<String>.from(widget.values),
+                          sortAscending: _sortAscending,
+                        ),
+                      );
+                    },
+                    child: const Text(
+                      'Clear filter',
+                      style: TextStyle(color: AppColors.secondaryColor),
+                    ),
+                  ),
+                  const Spacer(),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primaryColor,
+                    ),
+                    onPressed: () {
+                      Navigator.pop(
+                        context,
+                        _ColumnFilterResult(
+                          selected: _selected,
+                          sortAscending: _sortAscending,
+                        ),
+                      );
+                    },
+                    child: const Text('Apply'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FastStockCheckResultsTable extends StatefulWidget {
   final List<StockCheckTask> rows;
   final bool showBarcodeSticker;
+  final Set<String> activeFilters;
+  final String sortColumn;
+  final bool sortAscending;
+  final void Function(String column, String label) onColumnFilter;
 
   const _FastStockCheckResultsTable({
     required this.rows,
     required this.showBarcodeSticker,
+    required this.activeFilters,
+    required this.sortColumn,
+    required this.sortAscending,
+    required this.onColumnFilter,
   });
 
-  static const double _branchW = 130;
-  static const double _codeW = 130;
-  static const double _nameW = 520;
-  static const double _qtyW = 95;
-  static const double _diffW = 68;
-  static const double _barcodeW = 220;
-  static const double _statusW = 200;
+  @override
+  State<_FastStockCheckResultsTable> createState() =>
+      _FastStockCheckResultsTableState();
+}
+
+class _FastStockCheckResultsTableState
+    extends State<_FastStockCheckResultsTable> {
+  double _branchW = 150;
+  double _codeW = 130;
+  double _nameW = 520;
+  double _qtyW = 95;
+  double _diffW = 68;
+  double _barcodeW = 220;
+  double _statusW = 200;
 
   double get _width =>
       _branchW +
@@ -1256,8 +1689,29 @@ class _FastStockCheckResultsTable extends StatelessWidget {
       _nameW +
       (_qtyW * 2) +
       _diffW +
-      (showBarcodeSticker ? _barcodeW : 0) +
+      (widget.showBarcodeSticker ? _barcodeW : 0) +
       _statusW;
+
+  void _resize(String column, double delta) {
+    setState(() {
+      switch (column) {
+        case 'branch':
+          _branchW = (_branchW + delta).clamp(110, 360);
+        case 'itemCode':
+          _codeW = (_codeW + delta).clamp(110, 260);
+        case 'itemName':
+          _nameW = (_nameW + delta).clamp(260, 820);
+        case 'system':
+          _qtyW = (_qtyW + delta).clamp(82, 180);
+        case 'diff':
+          _diffW = (_diffW + delta).clamp(62, 150);
+        case 'barcode':
+          _barcodeW = (_barcodeW + delta).clamp(180, 360);
+        case 'status':
+          _statusW = (_statusW + delta).clamp(130, 280);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1267,15 +1721,15 @@ class _FastStockCheckResultsTable extends StatelessWidget {
         children: [
           _row(
             cells: [
-              _header('Branch', _branchW),
-              _header('Item Code', _codeW),
-              _header('Item Name', _nameW),
-              _header('System', _qtyW),
-              _header('Actual', _qtyW),
-              _header('Diff', _diffW),
-              if (showBarcodeSticker)
-                _header('Barcode Sticker is Correct', _barcodeW),
-              _header('Status', _statusW),
+              _header('Branch', 'branch', _branchW),
+              _header('Item Code', 'itemCode', _codeW),
+              _header('Item Name', 'itemName', _nameW),
+              _header('System', 'system', _qtyW),
+              _header('Actual', 'actual', _qtyW),
+              _header('Diff', 'diff', _diffW),
+              if (widget.showBarcodeSticker)
+                _header('Barcode Sticker is Correct', 'barcode', _barcodeW),
+              _header('Status', 'status', _statusW),
             ],
             background: const Color(0xFFEFF6FF),
           ),
@@ -1288,11 +1742,11 @@ class _FastStockCheckResultsTable extends StatelessWidget {
                 ),
               ),
               child: ListView.separated(
-                itemCount: rows.length,
+                itemCount: widget.rows.length,
                 separatorBuilder: (_, _) =>
                     const Divider(height: 1, color: Color(0xFFD9E8F5)),
                 itemBuilder: (context, index) {
-                  final row = rows[index];
+                  final row = widget.rows[index];
                   return _row(
                     cells: [
                       _cell(row.branchName, _branchW),
@@ -1301,7 +1755,7 @@ class _FastStockCheckResultsTable extends StatelessWidget {
                       _cell(row.systemQty?.toString() ?? '', _qtyW),
                       _cell(row.actualQty?.toString() ?? '', _qtyW),
                       _cell(row.variance?.toString() ?? '', _diffW),
-                      if (showBarcodeSticker)
+                      if (widget.showBarcodeSticker)
                         _cell(
                           row.includeBarcodeStickerCheck
                               ? _StockCheckResultTableState._yesNo(
@@ -1338,18 +1792,73 @@ class _FastStockCheckResultsTable extends StatelessWidget {
     );
   }
 
-  Widget _header(String text, double width) {
-    return Container(
+  Widget _header(String text, String column, double width) {
+    final filtered = widget.activeFilters.contains(column);
+    final sorted = widget.sortColumn == column;
+    return SizedBox(
       width: width,
       height: 48,
-      alignment: Alignment.center,
-      decoration: const BoxDecoration(
-        border: Border(right: BorderSide(color: Color(0xFFD9E8F5))),
-      ),
-      child: Text(
-        text,
-        textAlign: TextAlign.center,
-        style: const TextStyle(fontWeight: FontWeight.w900),
+      child: Stack(
+        children: [
+          Container(
+            alignment: Alignment.center,
+            padding: const EdgeInsets.only(left: 8, right: 34),
+            decoration: const BoxDecoration(
+              border: Border(right: BorderSide(color: Color(0xFFD9E8F5))),
+            ),
+            child: Text(
+              text,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+          Positioned(
+            right: 14,
+            top: 0,
+            bottom: 0,
+            child: Tooltip(
+              message: 'Filter / sort',
+              child: InkWell(
+                onTap: () => widget.onColumnFilter(column, text),
+                borderRadius: BorderRadius.circular(999),
+                child: Icon(
+                  filtered
+                      ? Icons.filter_alt_rounded
+                      : sorted
+                      ? (widget.sortAscending
+                            ? Icons.arrow_upward_rounded
+                            : Icons.arrow_downward_rounded)
+                      : Icons.filter_list_rounded,
+                  size: 18,
+                  color: filtered || sorted
+                      ? const Color(0xFF2563EB)
+                      : const Color(0xFF64748B),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 0,
+            top: 0,
+            bottom: 0,
+            child: MouseRegion(
+              cursor: SystemMouseCursors.resizeColumn,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onHorizontalDragUpdate: (details) {
+                  _resize(column, details.delta.dx);
+                },
+                child: Container(
+                  width: 10,
+                  alignment: Alignment.center,
+                  child: Container(width: 2, color: const Color(0xFFCBD5E1)),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1730,6 +2239,144 @@ class _PanelTitle extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _SentSourceToggle extends StatelessWidget {
+  final String value;
+  final int inventoryCount;
+  final int storeCount;
+  final ValueChanged<String> onChanged;
+
+  const _SentSourceToggle({
+    required this.value,
+    required this.inventoryCount,
+    required this.storeCount,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFD9E8F5)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _SentSourceTab(
+              selected: value == 'inventory',
+              icon: Icons.inventory_2_rounded,
+              label: 'Inventory',
+              count: inventoryCount,
+              color: const Color(0xFF2563EB),
+              onTap: () => onChanged('inventory'),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: _SentSourceTab(
+              selected: value == 'store',
+              icon: Icons.storefront_rounded,
+              label: 'Store',
+              count: storeCount,
+              color: const Color(0xFF059669),
+              onTap: () => onChanged('store'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SentSourceTab extends StatelessWidget {
+  final bool selected;
+  final IconData icon;
+  final String label;
+  final int count;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _SentSourceTab({
+    required this.selected,
+    required this.icon,
+    required this.label,
+    required this.count,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? Colors.white : Colors.transparent,
+      borderRadius: BorderRadius.circular(11),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(11),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(11),
+            border: selected
+                ? Border.all(color: color.withValues(alpha: .28))
+                : null,
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: color.withValues(alpha: .10),
+                      blurRadius: 12,
+                      offset: const Offset(0, 5),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 17,
+                color: selected ? color : const Color(0xFF64748B),
+              ),
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: selected ? color : const Color(0xFF475569),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 5),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: selected ? color.withValues(alpha: .12) : Colors.white,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  count.toString(),
+                  style: TextStyle(
+                    color: selected ? color : const Color(0xFF64748B),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -3196,6 +3843,7 @@ class _StockCheckBatchCard extends StatelessWidget {
   final _StockCheckBatch batch;
   final bool selected;
   final bool deleting;
+  final bool canManage;
   final VoidCallback onTap;
   final VoidCallback onEditDeadline;
   final VoidCallback onDelete;
@@ -3204,6 +3852,7 @@ class _StockCheckBatchCard extends StatelessWidget {
     required this.batch,
     required this.selected,
     required this.deleting,
+    required this.canManage,
     required this.onTap,
     required this.onEditDeadline,
     required this.onDelete,
@@ -3246,44 +3895,51 @@ class _StockCheckBatchCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Tooltip(
-                    message: 'Edit deadline',
-                    child: IconButton(
-                      onPressed: onEditDeadline,
-                      visualDensity: VisualDensity.compact,
-                      style: IconButton.styleFrom(
-                        foregroundColor: const Color(0xFF0F766E),
-                        backgroundColor: const Color(0xFFF0FDFA),
-                        minimumSize: const Size(32, 32),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  if (canManage) ...[
+                    Tooltip(
+                      message: 'Edit deadline',
+                      child: IconButton(
+                        onPressed: onEditDeadline,
+                        visualDensity: VisualDensity.compact,
+                        style: IconButton.styleFrom(
+                          foregroundColor: const Color(0xFF0F766E),
+                          backgroundColor: const Color(0xFFF0FDFA),
+                          minimumSize: const Size(32, 32),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        icon: const Icon(Icons.edit_calendar_rounded, size: 18),
                       ),
-                      icon: const Icon(Icons.edit_calendar_rounded, size: 18),
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  Tooltip(
-                    message: 'Delete stock check',
-                    child: IconButton(
-                      onPressed: deleting ? null : onDelete,
-                      visualDensity: VisualDensity.compact,
-                      style: IconButton.styleFrom(
-                        foregroundColor: const Color(0xFFDC2626),
-                        backgroundColor: const Color(0xFFFFF1F2),
-                        disabledForegroundColor: const Color(0xFF94A3B8),
-                        disabledBackgroundColor: const Color(0xFFF1F5F9),
-                        minimumSize: const Size(32, 32),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    const SizedBox(width: 6),
+                    Tooltip(
+                      message: 'Delete stock check',
+                      child: IconButton(
+                        onPressed: deleting ? null : onDelete,
+                        visualDensity: VisualDensity.compact,
+                        style: IconButton.styleFrom(
+                          foregroundColor: const Color(0xFFDC2626),
+                          backgroundColor: const Color(0xFFFFF1F2),
+                          disabledForegroundColor: const Color(0xFF94A3B8),
+                          disabledBackgroundColor: const Color(0xFFF1F5F9),
+                          minimumSize: const Size(32, 32),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        icon: deleting
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.delete_outline_rounded,
+                                size: 18,
+                              ),
                       ),
-                      icon: deleting
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.delete_outline_rounded, size: 18),
                     ),
-                  ),
-                  const SizedBox(width: 8),
+                    const SizedBox(width: 8),
+                  ],
                   _StatusDot(done: batch.pending == 0),
                 ],
               ),

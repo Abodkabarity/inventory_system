@@ -138,6 +138,14 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
       return;
     }
 
+    final submitter = await showDialog<_SubmitterInfo>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black38,
+      builder: (_) => const _StockCheckSubmitterDialog(),
+    );
+    if (submitter == null || !mounted) return;
+
     setState(() {
       _saving = true;
       _error = '';
@@ -172,6 +180,8 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
           'sent_at': row.sentAt?.toIso8601String(),
           'expires_at': row.expiresAt?.toIso8601String(),
           'submitted_at': now,
+          'submitted_by_name': submitter.name,
+          'submitted_by_employee_id': submitter.employeeId,
           'updated_at': now,
         });
       }
@@ -942,6 +952,213 @@ class _ImportedStockQtyRow {
       'itemName': itemName,
       'actualQtyText': actualQtyText,
     };
+  }
+}
+
+class _SubmitterInfo {
+  final String name;
+  final String employeeId;
+
+  const _SubmitterInfo({required this.name, required this.employeeId});
+}
+
+class _StockCheckSubmitterDialog extends StatefulWidget {
+  const _StockCheckSubmitterDialog();
+
+  @override
+  State<_StockCheckSubmitterDialog> createState() =>
+      _StockCheckSubmitterDialogState();
+}
+
+class _StockCheckSubmitterDialogState
+    extends State<_StockCheckSubmitterDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _employeeIdController = TextEditingController();
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _employeeIdController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (!_formKey.currentState!.validate()) return;
+    Navigator.pop(
+      context,
+      _SubmitterInfo(
+        name: _nameController.text.trim(),
+        employeeId: _employeeIdController.text.trim(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: Container(
+        width: 470,
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(26),
+          border: Border.all(color: AppColors.border),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.secondaryColor.withValues(alpha: .18),
+              blurRadius: 34,
+              offset: const Offset(0, 18),
+            ),
+          ],
+        ),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: AppColors.backgroundWidget,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: AppColors.primaryColor.withValues(alpha: .35),
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.verified_user_rounded,
+                      color: AppColors.primaryColor,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Confirm stock check submit',
+                          style: TextStyle(
+                            color: AppColors.text,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        SizedBox(height: 3),
+                        Text(
+                          'Enter your details before final submission.',
+                          style: TextStyle(
+                            color: AppColors.subText,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              _SubmitterField(
+                controller: _nameController,
+                label: 'Your name',
+                icon: Icons.person_rounded,
+                textInputAction: TextInputAction.next,
+              ),
+              const SizedBox(height: 12),
+              _SubmitterField(
+                controller: _employeeIdController,
+                label: 'Employee ID',
+                icon: Icons.badge_rounded,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _submit(),
+              ),
+
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.secondaryColor,
+                        side: const BorderSide(color: AppColors.border),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _submit,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.primaryColor,
+                        foregroundColor: AppColors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      icon: const Icon(Icons.check_circle_rounded),
+                      label: const Text('Submit'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SubmitterField extends StatelessWidget {
+  final TextEditingController controller;
+  final String label;
+  final IconData icon;
+  final TextInputAction textInputAction;
+  final ValueChanged<String>? onSubmitted;
+
+  const _SubmitterField({
+    required this.controller,
+    required this.label,
+    required this.icon,
+    required this.textInputAction,
+    this.onSubmitted,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextFormField(
+      controller: controller,
+      textInputAction: textInputAction,
+      onFieldSubmitted: onSubmitted,
+      validator: (value) {
+        if ((value ?? '').trim().isEmpty) return '$label is required';
+        return null;
+      },
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon, color: AppColors.primaryColor),
+        filled: true,
+        fillColor: AppColors.bg,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: AppColors.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(
+            color: AppColors.primaryColor,
+            width: 1.5,
+          ),
+        ),
+      ),
+    );
   }
 }
 
