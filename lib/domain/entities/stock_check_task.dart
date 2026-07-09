@@ -15,6 +15,8 @@ class StockCheckTask {
   final DateTime? sentAt;
   final DateTime? expiresAt;
   final DateTime? submittedAt;
+  final String submittedByName;
+  final String submittedByEmployeeId;
 
   const StockCheckTask({
     required this.id,
@@ -33,6 +35,8 @@ class StockCheckTask {
     required this.sentAt,
     required this.expiresAt,
     required this.submittedAt,
+    required this.submittedByName,
+    required this.submittedByEmployeeId,
   });
 
   bool get isSubmitted => status.trim().toLowerCase() == 'submitted';
@@ -53,6 +57,8 @@ class StockCheckTask {
     String? note,
     DateTime? expiresAt,
     DateTime? submittedAt,
+    String? submittedByName,
+    String? submittedByEmployeeId,
   }) {
     return StockCheckTask(
       id: id,
@@ -76,6 +82,9 @@ class StockCheckTask {
       sentAt: sentAt,
       expiresAt: expiresAt ?? this.expiresAt,
       submittedAt: submittedAt ?? this.submittedAt,
+      submittedByName: submittedByName ?? this.submittedByName,
+      submittedByEmployeeId:
+          submittedByEmployeeId ?? this.submittedByEmployeeId,
     );
   }
 
@@ -129,6 +138,8 @@ class StockCheckTask {
       sentAt: _date(map['sent_at']),
       expiresAt: _date(map['expires_at']),
       submittedAt: _date(map['submitted_at']),
+      submittedByName: (map['submitted_by_name'] ?? '').toString(),
+      submittedByEmployeeId: (map['submitted_by_employee_id'] ?? '').toString(),
     );
   }
 }

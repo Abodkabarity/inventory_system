@@ -206,6 +206,8 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
                 : row.barcodeStickerIsCorrect,
             status: 'submitted',
             submittedAt: DateTime.tryParse(now),
+            submittedByName: submitter.name,
+            submittedByEmployeeId: submitter.employeeId,
           );
         }).toList();
         for (final row in completedRows) {
@@ -1805,6 +1807,7 @@ class _BatchEditorState extends State<_BatchEditor> {
   final _searchController = TextEditingController();
   final _editingSubmittedIds = <String>{};
   String _search = '';
+  String _statusFilter = 'all';
 
   @override
   void dispose() {
@@ -1821,9 +1824,15 @@ class _BatchEditorState extends State<_BatchEditor> {
     final sourceStyle = _StockCheckSourceStyle.fromSource(rows.first.source);
     final filteredRows = rows.where((row) {
       final needle = _search.trim().toLowerCase();
-      if (needle.isEmpty) return true;
-      return row.itemName.toLowerCase().contains(needle) ||
+      final searchOk =
+          needle.isEmpty ||
+          row.itemName.toLowerCase().contains(needle) ||
           row.itemCode.toLowerCase().contains(needle);
+      final statusOk =
+          _statusFilter == 'all' ||
+          (_statusFilter == 'pending' && row.isPending) ||
+          (_statusFilter == 'submitted' && row.isSubmitted);
+      return searchOk && statusOk;
     }).toList();
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1878,6 +1887,45 @@ class _BatchEditorState extends State<_BatchEditor> {
                     ),
                   ),
                   onChanged: (value) => setState(() => _search = value),
+                ),
+              ),
+              const SizedBox(width: 10),
+              SizedBox(
+                width: 160,
+                child: DropdownButtonFormField<String>(
+                  initialValue: _statusFilter,
+                  decoration: InputDecoration(
+                    labelText: 'Status',
+                    prefixIcon: const Icon(Icons.filter_alt_rounded),
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(999),
+                      borderSide: const BorderSide(color: Color(0xFFD9E8F5)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(999),
+                      borderSide: BorderSide(color: sourceStyle.color),
+                    ),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'all', child: Text('All')),
+                    DropdownMenuItem(value: 'pending', child: Text('Pending')),
+                    DropdownMenuItem(
+                      value: 'submitted',
+                      child: Text('Submitted'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    setState(() => _statusFilter = value ?? 'all');
+                  },
                 ),
               ),
               const SizedBox(width: 10),
@@ -2109,6 +2157,14 @@ class _BatchEditorState extends State<_BatchEditor> {
                                         widget.onRowChanged(row);
                                       }
                                     },
+                                  ),
+                                  const SizedBox(width: 12),
+                                ],
+                                if (row.isSubmitted &&
+                                    row.submittedByName.trim().isNotEmpty) ...[
+                                  _SubmittedByChip(
+                                    name: row.submittedByName,
+                                    employeeId: row.submittedByEmployeeId,
                                   ),
                                   const SizedBox(width: 12),
                                 ],
@@ -2818,6 +2874,67 @@ class _SmallChip extends StatelessWidget {
           fontSize: 12,
           fontWeight: FontWeight.w900,
         ),
+      ),
+    );
+  }
+}
+
+class _SubmittedByChip extends StatelessWidget {
+  final String name;
+  final String employeeId;
+
+  const _SubmittedByChip({required this.name, required this.employeeId});
+
+  @override
+  Widget build(BuildContext context) {
+    final id = employeeId.trim();
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 300),
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.primaryColor.withValues(alpha: .12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: AppColors.primaryColor.withValues(alpha: .45),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primaryColor.withValues(alpha: .08),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 22,
+            height: 22,
+            decoration: const BoxDecoration(
+              color: AppColors.white,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.person_pin_rounded,
+              size: 15,
+              color: AppColors.primaryColor,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              id.isEmpty ? 'Checked by $name' : 'Checked by $name - $id',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.secondaryColor,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
