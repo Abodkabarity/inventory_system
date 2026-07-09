@@ -1826,6 +1826,7 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
   String _sortColumn = 'branch';
   bool _sortAscending = true;
   final _columnFilters = <String, Set<String>>{};
+  final _numericFilters = <String, _NumericColumnFilter>{};
   List<String> _branches = const [];
   List<StockCheckTask> _filteredRows = const [];
   bool _showBarcodeSticker = false;
@@ -1847,6 +1848,7 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
       _sortColumn = 'branch';
       _sortAscending = true;
       _columnFilters.clear();
+      _numericFilters.clear();
     }
     _rebuildIndexes();
   }
@@ -1982,7 +1984,10 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
                     child: _FastStockCheckResultsTable(
                       rows: _filteredRows,
                       showBarcodeSticker: _showBarcodeSticker,
-                      activeFilters: _columnFilters.keys.toSet(),
+                      activeFilters: {
+                        ..._columnFilters.keys,
+                        ..._numericFilters.keys,
+                      },
                       sortColumn: _sortColumn,
                       sortAscending: _sortAscending,
                       onColumnFilter: _openColumnFilter,
@@ -2030,7 +2035,10 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
             if (selected.isEmpty) return true;
             return selected.contains(_columnValue(row, entry.key));
           });
-          return branchOk && statusOk && searchOk && columnOk;
+          final numberOk = _numericFilters.entries.every((entry) {
+            return entry.value.matches(_numericColumnValue(row, entry.key));
+          });
+          return branchOk && statusOk && searchOk && columnOk && numberOk;
         }).toList()..sort((a, b) {
           final primary = _compareColumn(a, b, _sortColumn);
           if (primary != 0) return _sortAscending ? primary : -primary;
@@ -2109,6 +2117,15 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
     };
   }
 
+  num? _numericColumnValue(StockCheckTask row, String column) {
+    return switch (column) {
+      'system' => row.systemQty,
+      'actual' => row.actualQty,
+      'diff' => row.variance,
+      _ => null,
+    };
+  }
+
   Future<void> _openColumnFilter(String column, String label) async {
     final values =
         widget.rows
@@ -2118,6 +2135,7 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
             .toList()
           ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     final current = Set<String>.from(_columnFilters[column] ?? values);
+    final isNumeric = {'system', 'actual', 'diff'}.contains(column);
     final result = await showDialog<_ColumnFilterResult>(
       context: context,
       barrierColor: Colors.black26,
@@ -2126,6 +2144,8 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
         values: values,
         selected: current,
         sortAscending: _sortColumn == column ? _sortAscending : true,
+        isNumeric: isNumeric,
+        numericFilter: _numericFilters[column],
       ),
     );
     if (result == null || !mounted) return;
@@ -2136,6 +2156,11 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
         _columnFilters.remove(column);
       } else {
         _columnFilters[column] = result.selected;
+      }
+      if (result.numericFilter?.isValid == true) {
+        _numericFilters[column] = result.numericFilter!;
+      } else {
+        _numericFilters.remove(column);
       }
       _rebuildIndexes();
     });
@@ -2315,11 +2340,46 @@ _StockCheckProductsImport _stockCheckProductsFromTable(
 class _ColumnFilterResult {
   final Set<String> selected;
   final bool sortAscending;
+  final _NumericColumnFilter? numericFilter;
 
   const _ColumnFilterResult({
     required this.selected,
     required this.sortAscending,
+    this.numericFilter,
   });
+}
+
+class _NumericColumnFilter {
+  final String mode;
+  final num? first;
+  final num? second;
+
+  const _NumericColumnFilter({
+    required this.mode,
+    required this.first,
+    required this.second,
+  });
+
+  bool get isValid {
+    if (mode == 'none') return false;
+    if (mode == 'between') return first != null && second != null;
+    return first != null;
+  }
+
+  bool matches(num? value) {
+    if (!isValid) return true;
+    if (value == null) return false;
+    return switch (mode) {
+      'gt' => value > first!,
+      'gte' => value >= first!,
+      'lt' => value < first!,
+      'lte' => value <= first!,
+      'between' =>
+        value >= math.min(first!.toDouble(), second!.toDouble()) &&
+            value <= math.max(first!.toDouble(), second!.toDouble()),
+      _ => true,
+    };
+  }
 }
 
 class _ColumnFilterDialog extends StatefulWidget {
@@ -2327,12 +2387,16 @@ class _ColumnFilterDialog extends StatefulWidget {
   final List<String> values;
   final Set<String> selected;
   final bool sortAscending;
+  final bool isNumeric;
+  final _NumericColumnFilter? numericFilter;
 
   const _ColumnFilterDialog({
     required this.title,
     required this.values,
     required this.selected,
     required this.sortAscending,
+    this.isNumeric = false,
+    this.numericFilter,
   });
 
   @override
@@ -2341,21 +2405,33 @@ class _ColumnFilterDialog extends StatefulWidget {
 
 class _ColumnFilterDialogState extends State<_ColumnFilterDialog> {
   late final TextEditingController _searchController;
+  late final TextEditingController _firstNumberController;
+  late final TextEditingController _secondNumberController;
   late Set<String> _selected;
   late bool _sortAscending;
+  late String _numberMode;
   String _search = '';
 
   @override
   void initState() {
     super.initState();
     _searchController = TextEditingController();
+    _firstNumberController = TextEditingController(
+      text: widget.numericFilter?.first?.toString() ?? '',
+    );
+    _secondNumberController = TextEditingController(
+      text: widget.numericFilter?.second?.toString() ?? '',
+    );
     _selected = Set<String>.from(widget.selected);
     _sortAscending = widget.sortAscending;
+    _numberMode = widget.numericFilter?.mode ?? 'none';
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _firstNumberController.dispose();
+    _secondNumberController.dispose();
     super.dispose();
   }
 
@@ -2369,8 +2445,8 @@ class _ColumnFilterDialogState extends State<_ColumnFilterDialog> {
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: SizedBox(
-        width: 390,
-        height: 560,
+        width: widget.isNumeric ? 430 : 390,
+        height: widget.isNumeric ? 680 : 560,
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -2410,7 +2486,7 @@ class _ColumnFilterDialogState extends State<_ColumnFilterDialog> {
                         color: AppColors.secondaryColor,
                       ),
                       label: const Text(
-                        'Sort A to Z',
+                        'Sort Low to High',
                         style: TextStyle(color: AppColors.secondaryColor),
                       ),
                       style: OutlinedButton.styleFrom(
@@ -2430,7 +2506,7 @@ class _ColumnFilterDialogState extends State<_ColumnFilterDialog> {
                         color: AppColors.secondaryColor,
                       ),
                       label: const Text(
-                        'Sort Z to A',
+                        'Sort High to Low',
                         style: TextStyle(color: AppColors.secondaryColor),
                       ),
                       style: OutlinedButton.styleFrom(
@@ -2442,6 +2518,17 @@ class _ColumnFilterDialogState extends State<_ColumnFilterDialog> {
                   ),
                 ],
               ),
+              if (widget.isNumeric) ...[
+                const SizedBox(height: 12),
+                _NumericFilterPanel(
+                  mode: _numberMode,
+                  firstController: _firstNumberController,
+                  secondController: _secondNumberController,
+                  onModeChanged: (value) {
+                    setState(() => _numberMode = value);
+                  },
+                ),
+              ],
               const SizedBox(height: 10),
               TextField(
                 controller: _searchController,
@@ -2539,6 +2626,7 @@ class _ColumnFilterDialogState extends State<_ColumnFilterDialog> {
                         _ColumnFilterResult(
                           selected: Set<String>.from(widget.values),
                           sortAscending: _sortAscending,
+                          numericFilter: null,
                         ),
                       );
                     },
@@ -2558,6 +2646,7 @@ class _ColumnFilterDialogState extends State<_ColumnFilterDialog> {
                         _ColumnFilterResult(
                           selected: _selected,
                           sortAscending: _sortAscending,
+                          numericFilter: _buildNumericFilter(),
                         ),
                       );
                     },
@@ -2568,6 +2657,117 @@ class _ColumnFilterDialogState extends State<_ColumnFilterDialog> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  _NumericColumnFilter? _buildNumericFilter() {
+    if (!widget.isNumeric || _numberMode == 'none') return null;
+    num? parse(TextEditingController controller) {
+      final text = controller.text.trim().replaceAll(',', '');
+      if (text.isEmpty) return null;
+      return num.tryParse(text);
+    }
+
+    final filter = _NumericColumnFilter(
+      mode: _numberMode,
+      first: parse(_firstNumberController),
+      second: parse(_secondNumberController),
+    );
+    return filter.isValid ? filter : null;
+  }
+}
+
+class _NumericFilterPanel extends StatelessWidget {
+  final String mode;
+  final TextEditingController firstController;
+  final TextEditingController secondController;
+  final ValueChanged<String> onModeChanged;
+
+  const _NumericFilterPanel({
+    required this.mode,
+    required this.firstController,
+    required this.secondController,
+    required this.onModeChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final showSecond = mode == 'between';
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFD9E8F5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.pin_rounded, color: AppColors.primaryColor, size: 18),
+              SizedBox(width: 7),
+              Text(
+                'Number filter',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          DropdownButtonFormField<String>(
+            initialValue: mode,
+            decoration: _StockCheckResultTableState._filterDecoration(
+              'Condition',
+            ),
+            items: const [
+              DropdownMenuItem(value: 'none', child: Text('No number filter')),
+              DropdownMenuItem(value: 'gt', child: Text('Greater than')),
+              DropdownMenuItem(
+                value: 'gte',
+                child: Text('Greater than or equal'),
+              ),
+              DropdownMenuItem(value: 'lt', child: Text('Less than')),
+              DropdownMenuItem(value: 'lte', child: Text('Less than or equal')),
+              DropdownMenuItem(value: 'between', child: Text('Between')),
+            ],
+            onChanged: (value) => onModeChanged(value ?? 'none'),
+          ),
+          if (mode != 'none') ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: firstController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                      signed: true,
+                    ),
+                    decoration: _StockCheckResultTableState._filterDecoration(
+                      showSecond ? 'From' : 'Value',
+                    ),
+                  ),
+                ),
+                if (showSecond) ...[
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextField(
+                      controller: secondController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                        signed: true,
+                      ),
+                      decoration: _StockCheckResultTableState._filterDecoration(
+                        'To',
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ],
       ),
     );
   }
