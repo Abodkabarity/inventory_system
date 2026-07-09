@@ -44,6 +44,7 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
   Timer? _deadlineTicker;
   Timer? _draftSyncTimer;
   List<StockCheckTask> _rows = [];
+  Map<String, _StockCheckItemMeta> _itemMetaByCode = {};
   String? _selectedBatchId;
   bool _loading = true;
   bool _saving = false;
@@ -85,6 +86,7 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
     setState(() {
       _loading = true;
       _error = '';
+      _itemMetaByCode = {};
     });
     try {
       final res = await _client
@@ -120,6 +122,7 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
         _rows = rows;
         _loading = false;
       });
+      unawaited(_refreshItemMeta(rows));
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -127,6 +130,47 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
         _loading = false;
       });
     }
+  }
+
+  Future<void> _refreshItemMeta(List<StockCheckTask> rows) async {
+    final itemMetaByCode = await _loadItemMeta(rows);
+    if (!mounted) return;
+    setState(() => _itemMetaByCode = itemMetaByCode);
+  }
+
+  Future<Map<String, _StockCheckItemMeta>> _loadItemMeta(
+    List<StockCheckTask> rows,
+  ) async {
+    final codes = rows
+        .map((row) => _normalizeItemCode(row.itemCode))
+        .where((code) => code.isNotEmpty)
+        .toSet()
+        .toList();
+    if (codes.isEmpty) return {};
+
+    final result = <String, _StockCheckItemMeta>{};
+    try {
+      for (var i = 0; i < codes.length; i += 800) {
+        final end = (i + 800).clamp(0, codes.length);
+        final chunk = codes.sublist(i, end);
+        final res = await _client
+            .from('item_report')
+            .select('item_code,category,sub_category,company')
+            .inFilter('item_code', chunk);
+        for (final raw in List<Map<String, dynamic>>.from(res)) {
+          final code = _normalizeItemCode((raw['item_code'] ?? '').toString());
+          if (code.isEmpty) continue;
+          result[code] = _StockCheckItemMeta(
+            category: (raw['category'] ?? '').toString().trim(),
+            subCategory: (raw['sub_category'] ?? '').toString().trim(),
+            company: (raw['company'] ?? '').toString().trim(),
+          );
+        }
+      }
+    } catch (_) {
+      return result;
+    }
+    return result;
   }
 
   Future<void> _submitBatch(List<StockCheckTask> rows) async {
@@ -714,6 +758,7 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
                         )
                       : _BatchEditor(
                           rows: selectedRows,
+                          itemMetaByCode: _itemMetaByCode,
                           systemControllers: _systemControllers,
                           actualControllers: _actualControllers,
                           barcodeStickerValues: _barcodeStickerValues,
@@ -1764,6 +1809,7 @@ class _SourceBadge extends StatelessWidget {
 
 class _BatchEditor extends StatefulWidget {
   final List<StockCheckTask> rows;
+  final Map<String, _StockCheckItemMeta> itemMetaByCode;
   final Map<String, TextEditingController> systemControllers;
   final Map<String, TextEditingController> actualControllers;
   final Map<String, bool?> barcodeStickerValues;
@@ -1782,6 +1828,7 @@ class _BatchEditor extends StatefulWidget {
 
   const _BatchEditor({
     required this.rows,
+    required this.itemMetaByCode,
     required this.systemControllers,
     required this.actualControllers,
     required this.barcodeStickerValues,
@@ -1808,6 +1855,9 @@ class _BatchEditorState extends State<_BatchEditor> {
   final _editingSubmittedIds = <String>{};
   String _search = '';
   String _statusFilter = 'all';
+  final _categoryFilters = <String>{};
+  final _subCategoryFilters = <String>{};
+  final _companyFilters = <String>{};
 
   @override
   void dispose() {
@@ -1822,18 +1872,55 @@ class _BatchEditorState extends State<_BatchEditor> {
       (row) => row.includeBarcodeStickerCheck,
     );
     final sourceStyle = _StockCheckSourceStyle.fromSource(rows.first.source);
+    final categories = _optionsFromRows(rows, (meta) => meta.category);
+    _categoryFilters.removeWhere((value) => !categories.contains(value));
+    final categoryScopedRows = _categoryFilters.isEmpty
+        ? rows
+        : rows
+              .where((row) => _categoryFilters.contains(_metaFor(row).category))
+              .toList();
+    final subCategories = _optionsFromRows(
+      categoryScopedRows,
+      (meta) => meta.subCategory,
+    );
+    _subCategoryFilters.removeWhere((value) => !subCategories.contains(value));
+    final subCategoryScopedRows = _subCategoryFilters.isEmpty
+        ? categoryScopedRows
+        : categoryScopedRows
+              .where(
+                (row) =>
+                    _subCategoryFilters.contains(_metaFor(row).subCategory),
+              )
+              .toList();
+    final companies = _optionsFromRows(
+      subCategoryScopedRows,
+      (meta) => meta.company,
+    );
+    _companyFilters.removeWhere((value) => !companies.contains(value));
     final filteredRows = rows.where((row) {
       final needle = _search.trim().toLowerCase();
+      final meta = _metaFor(row);
       final searchOk =
           needle.isEmpty ||
           row.itemName.toLowerCase().contains(needle) ||
-          row.itemCode.toLowerCase().contains(needle);
+          row.itemCode.toLowerCase().contains(needle) ||
+          meta.category.toLowerCase().contains(needle) ||
+          meta.subCategory.toLowerCase().contains(needle) ||
+          meta.company.toLowerCase().contains(needle);
       final statusOk =
           _statusFilter == 'all' ||
           (_statusFilter == 'pending' && row.isPending) ||
           (_statusFilter == 'submitted' && row.isSubmitted);
-      return searchOk && statusOk;
+      final categoryOk =
+          _categoryFilters.isEmpty || _categoryFilters.contains(meta.category);
+      final subCategoryOk =
+          _subCategoryFilters.isEmpty ||
+          _subCategoryFilters.contains(meta.subCategory);
+      final companyOk =
+          _companyFilters.isEmpty || _companyFilters.contains(meta.company);
+      return searchOk && statusOk && categoryOk && subCategoryOk && companyOk;
     }).toList();
+    filteredRows.sort(_compareRows);
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -1861,74 +1948,6 @@ class _BatchEditorState extends State<_BatchEditor> {
                   ),
                 ),
               ),
-              SizedBox(
-                width: 360,
-                child: TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: 'Search item code or item name',
-                    prefixIcon: const Icon(Icons.search_rounded),
-                    filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(999),
-                      borderSide: const BorderSide(color: Color(0xFFD9E8F5)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(999),
-                      borderSide: BorderSide(color: sourceStyle.color),
-                    ),
-                  ),
-                  onChanged: (value) => setState(() => _search = value),
-                ),
-              ),
-              const SizedBox(width: 10),
-              SizedBox(
-                width: 160,
-                child: DropdownButtonFormField<String>(
-                  initialValue: _statusFilter,
-                  decoration: InputDecoration(
-                    labelText: 'Status',
-                    prefixIcon: const Icon(Icons.filter_alt_rounded),
-                    filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(999),
-                      borderSide: const BorderSide(color: Color(0xFFD9E8F5)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(999),
-                      borderSide: BorderSide(color: sourceStyle.color),
-                    ),
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: 'all', child: Text('All')),
-                    DropdownMenuItem(value: 'pending', child: Text('Pending')),
-                    DropdownMenuItem(
-                      value: 'submitted',
-                      child: Text('Submitted'),
-                    ),
-                  ],
-                  onChanged: (value) {
-                    setState(() => _statusFilter = value ?? 'all');
-                  },
-                ),
-              ),
-              const SizedBox(width: 10),
               OutlinedButton.icon(
                 onPressed: widget.importing || widget.saving || widget.expired
                     ? null
@@ -2022,6 +2041,132 @@ class _BatchEditorState extends State<_BatchEditor> {
             ],
           ),
           const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search item code or item name',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(999),
+                      borderSide: const BorderSide(color: Color(0xFFD9E8F5)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(999),
+                      borderSide: BorderSide(color: sourceStyle.color),
+                    ),
+                  ),
+                  onChanged: (value) => setState(() => _search = value),
+                ),
+              ),
+              const SizedBox(width: 10),
+              SizedBox(
+                width: 165,
+                child: _StockCheckFilterDropdown(
+                  label: 'Status',
+                  icon: Icons.filter_alt_rounded,
+                  value: _statusFilter,
+                  color: sourceStyle.color,
+                  items: const [
+                    DropdownMenuItem(value: 'all', child: Text('All')),
+                    DropdownMenuItem(value: 'pending', child: Text('Pending')),
+                    DropdownMenuItem(
+                      value: 'submitted',
+                      child: Text('Submitted'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    setState(() => _statusFilter = value ?? 'all');
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _StockCheckMultiFilterButton(
+                  label: 'Category',
+                  icon: Icons.category_rounded,
+                  color: sourceStyle.color,
+                  allLabel: 'All categories (${categories.length})',
+                  selected: _categoryFilters,
+                  options: categories,
+                  onTap: () => _openMultiFilter(
+                    title: 'Select categories',
+                    allLabel: 'All categories (${categories.length})',
+                    options: categories,
+                    selected: _categoryFilters,
+                    onApply: (values) {
+                      setState(() {
+                        _categoryFilters
+                          ..clear()
+                          ..addAll(values);
+                      });
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _StockCheckMultiFilterButton(
+                  label: 'Sub Category',
+                  icon: Icons.account_tree_rounded,
+                  color: sourceStyle.color,
+                  allLabel: 'All sub categories (${subCategories.length})',
+                  selected: _subCategoryFilters,
+                  options: subCategories,
+                  onTap: () => _openMultiFilter(
+                    title: 'Select sub categories',
+                    allLabel: 'All sub categories (${subCategories.length})',
+                    options: subCategories,
+                    selected: _subCategoryFilters,
+                    onApply: (values) {
+                      setState(() {
+                        _subCategoryFilters
+                          ..clear()
+                          ..addAll(values);
+                      });
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _StockCheckMultiFilterButton(
+                  label: 'Company',
+                  icon: Icons.business_rounded,
+                  color: sourceStyle.color,
+                  allLabel: 'All companies (${companies.length})',
+                  selected: _companyFilters,
+                  options: companies,
+                  onTap: () => _openMultiFilter(
+                    title: 'Select companies',
+                    allLabel: 'All companies (${companies.length})',
+                    options: companies,
+                    selected: _companyFilters,
+                    onApply: (values) {
+                      setState(() {
+                        _companyFilters
+                          ..clear()
+                          ..addAll(values);
+                      });
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           _DeadlineStatusBanner(
             expiresAt: widget.expiresAt,
             expired: widget.expired,
@@ -2050,6 +2195,7 @@ class _BatchEditorState extends State<_BatchEditor> {
                   separatorBuilder: (_, _) => const SizedBox(height: 12),
                   itemBuilder: (context, index) {
                     final row = filteredRows[index];
+                    final meta = _metaFor(row);
                     final systemController = widget.systemControllers[row.id]!;
                     final actualController = widget.actualControllers[row.id]!;
                     final editingSubmitted = _editingSubmittedIds.contains(
@@ -2109,10 +2255,12 @@ class _BatchEditorState extends State<_BatchEditor> {
                                   ),
                                 ),
                                 const SizedBox(height: 8),
-                                Row(
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 6,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
                                     _ItemCodeChip(code: row.itemCode),
-                                    const SizedBox(width: 8),
                                     _SmallChip(
                                       text: widget.expired && !row.isSubmitted
                                           ? 'Expired'
@@ -2124,6 +2272,24 @@ class _BatchEditorState extends State<_BatchEditor> {
                                           ? 'Saving'
                                           : 'Pending',
                                     ),
+                                    if (meta.category.isNotEmpty) ...[
+                                      _MetaChip(
+                                        icon: Icons.category_rounded,
+                                        text: meta.category,
+                                      ),
+                                    ],
+                                    if (meta.subCategory.isNotEmpty) ...[
+                                      _MetaChip(
+                                        icon: Icons.account_tree_rounded,
+                                        text: meta.subCategory,
+                                      ),
+                                    ],
+                                    if (meta.company.isNotEmpty) ...[
+                                      _MetaChip(
+                                        icon: Icons.business_rounded,
+                                        text: meta.company,
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ],
@@ -2251,6 +2417,73 @@ class _BatchEditorState extends State<_BatchEditor> {
         ],
       ),
     );
+  }
+
+  _StockCheckItemMeta _metaFor(StockCheckTask row) {
+    return widget.itemMetaByCode[_normalizeItemCode(row.itemCode)] ??
+        const _StockCheckItemMeta();
+  }
+
+  List<String> _optionsFromRows(
+    List<StockCheckTask> rows,
+    String Function(_StockCheckItemMeta meta) select,
+  ) {
+    final options = rows
+        .map((row) => select(_metaFor(row)).trim())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList();
+    options.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return options;
+  }
+
+  int _compareRows(StockCheckTask a, StockCheckTask b) {
+    final keys = <String>['item_name', 'category', 'item_code'];
+    for (final key in keys) {
+      final cmp = _sortValue(a, key).compareTo(_sortValue(b, key));
+      if (cmp != 0) return cmp;
+    }
+    return 0;
+  }
+
+  String _sortValue(StockCheckTask row, String key) {
+    final meta = _metaFor(row);
+    switch (key) {
+      case 'category':
+        return meta.category.toLowerCase();
+      case 'sub_category':
+        return meta.subCategory.toLowerCase();
+      case 'company':
+        return meta.company.toLowerCase();
+      case 'status':
+        return row.status.toLowerCase();
+      case 'item_code':
+        return row.itemCode.toLowerCase();
+      case 'item_name':
+      default:
+        return row.itemName.toLowerCase();
+    }
+  }
+
+  Future<void> _openMultiFilter({
+    required String title,
+    required String allLabel,
+    required List<String> options,
+    required Set<String> selected,
+    required ValueChanged<Set<String>> onApply,
+  }) async {
+    final values = await showDialog<Set<String>>(
+      context: context,
+      barrierColor: Colors.black38,
+      builder: (_) => _StockCheckMultiFilterDialog(
+        title: title,
+        allLabel: allLabel,
+        options: options,
+        selected: selected,
+      ),
+    );
+    if (values == null || !mounted) return;
+    onApply(values);
   }
 
   Future<void> _printRows(List<StockCheckTask> rows) async {
@@ -2541,6 +2774,439 @@ class _DeadlineStatusBanner extends StatelessWidget {
     final local = value.toLocal();
     String two(int n) => n.toString().padLeft(2, '0');
     return '${local.year}-${two(local.month)}-${two(local.day)} ${two(local.hour)}:${two(local.minute)}';
+  }
+}
+
+class _StockCheckItemMeta {
+  final String category;
+  final String subCategory;
+  final String company;
+
+  const _StockCheckItemMeta({
+    this.category = '',
+    this.subCategory = '',
+    this.company = '',
+  });
+}
+
+String _normalizeItemCode(String value) {
+  return value.trim().toUpperCase();
+}
+
+class _StockCheckFilterDropdown extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final String value;
+  final Color color;
+  final List<DropdownMenuItem<String>> items;
+  final ValueChanged<String?> onChanged;
+
+  const _StockCheckFilterDropdown({
+    required this.label,
+    required this.icon,
+    required this.value,
+    required this.color,
+    required this.items,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<String>(
+      initialValue: value,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon),
+        filled: true,
+        fillColor: const Color(0xFFF8FAFC),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 12,
+        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(999)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(999),
+          borderSide: const BorderSide(color: Color(0xFFD9E8F5)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(999),
+          borderSide: BorderSide(color: color),
+        ),
+      ),
+      items: items,
+      onChanged: onChanged,
+    );
+  }
+}
+
+class _StockCheckMultiFilterButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final String allLabel;
+  final Set<String> selected;
+  final List<String> options;
+  final VoidCallback onTap;
+
+  const _StockCheckMultiFilterButton({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.allLabel,
+    required this.selected,
+    required this.options,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final active = selected.isNotEmpty;
+    final valueText = active
+        ? selected.length == 1
+              ? selected.first
+              : '${selected.length} selected'
+        : allLabel;
+    return Tooltip(
+      message: active ? selected.join(', ') : allLabel,
+      waitDuration: const Duration(milliseconds: 400),
+      child: InkWell(
+        onTap: options.isEmpty ? null : onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          height: 56,
+          padding: const EdgeInsets.symmetric(horizontal: 13),
+          decoration: BoxDecoration(
+            color: active
+                ? color.withValues(alpha: .10)
+                : const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: active ? color : const Color(0xFFD9E8F5),
+              width: active ? 1.4 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: active ? color : const Color(0xFF475569)),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      valueText,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: active ? color : const Color(0xFF0F172A),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (active) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: color.withValues(alpha: .25)),
+                  ),
+                  child: Text(
+                    '${selected.length}',
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(width: 7),
+              const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: Color(0xFF475569),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StockCheckMultiFilterDialog extends StatefulWidget {
+  final String title;
+  final String allLabel;
+  final List<String> options;
+  final Set<String> selected;
+
+  const _StockCheckMultiFilterDialog({
+    required this.title,
+    required this.allLabel,
+    required this.options,
+    required this.selected,
+  });
+
+  @override
+  State<_StockCheckMultiFilterDialog> createState() =>
+      _StockCheckMultiFilterDialogState();
+}
+
+class _StockCheckMultiFilterDialogState
+    extends State<_StockCheckMultiFilterDialog> {
+  late final Set<String> _selected = {...widget.selected};
+  final _searchController = TextEditingController();
+  String _search = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final needle = _search.trim().toLowerCase();
+    final visible = widget.options.where((option) {
+      return needle.isEmpty || option.toLowerCase().contains(needle);
+    }).toList();
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 28),
+      child: Container(
+        width: 560,
+        constraints: const BoxConstraints(maxHeight: 680),
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFFD9E8F5)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: .16),
+              blurRadius: 28,
+              offset: const Offset(0, 16),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryColor.withValues(alpha: .12),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.checklist_rounded,
+                    color: AppColors.primaryColor,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.title,
+                        style: const TextStyle(
+                          color: Color(0xFF0F172A),
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      Text(
+                        _selected.isEmpty
+                            ? widget.allLabel
+                            : '${_selected.length} selected',
+                        style: const TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search options',
+                prefixIcon: const Icon(Icons.search_rounded),
+                filled: true,
+                fillColor: const Color(0xFFF8FAFC),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: const BorderSide(color: Color(0xFFD9E8F5)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: const BorderSide(
+                    color: AppColors.primaryColor,
+                    width: 1.4,
+                  ),
+                ),
+              ),
+              onChanged: (value) => setState(() => _search = value),
+            ),
+            const SizedBox(height: 12),
+            Flexible(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: visible.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(28),
+                          child: Text(
+                            'No matching options',
+                            style: TextStyle(
+                              color: Color(0xFF64748B),
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        itemCount: visible.length,
+                        separatorBuilder: (_, _) =>
+                            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                        itemBuilder: (context, index) {
+                          final option = visible[index];
+                          final checked = _selected.contains(option);
+                          return CheckboxListTile(
+                            value: checked,
+                            activeColor: AppColors.primaryColor,
+                            controlAffinity: ListTileControlAffinity.leading,
+                            title: Text(
+                              option,
+                              style: const TextStyle(
+                                color: Color(0xFF0F172A),
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            onChanged: (_) {
+                              setState(() {
+                                if (checked) {
+                                  _selected.remove(option);
+                                } else {
+                                  _selected.add(option);
+                                }
+                              });
+                            },
+                          );
+                        },
+                      ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                TextButton(
+                  onPressed: _selected.isEmpty
+                      ? null
+                      : () => setState(_selected.clear),
+                  child: const Text('Clear selection'),
+                ),
+                const Spacer(),
+                OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 10),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, {..._selected}),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primaryColor,
+                  ),
+                  child: const Text(
+                    'Apply',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MetaChip extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _MetaChip({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 260),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppColors.primaryColor),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.secondaryColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

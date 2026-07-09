@@ -2226,12 +2226,13 @@ class _StockCheckPendingInfo {
       if (sentAt != null) {
         if (oldest == null || sentAt.isBefore(oldest)) oldest = sentAt;
       }
-      final delayedFullDay =
-          sentAt != null && now.difference(sentAt.toLocal()).inHours >= 24;
-      final dueWithinDay =
-          expiresAt != null &&
-          expiresAt.toLocal().difference(now).inHours <= 24;
-      if (delayedFullDay || dueWithinDay) overdue++;
+      if (_isPastHalfCompletionWindow(
+        sentAt: sentAt,
+        expiresAt: expiresAt,
+        now: now,
+      )) {
+        overdue++;
+      }
     }
     return _StockCheckPendingInfo(
       pendingCount: rows.length,
@@ -2254,10 +2255,11 @@ class _AllocationPendingInfo {
     final now = DateTime.now();
     var overdue = 0;
     for (final task in tasks) {
-      final expiresAt = task.expiresAt?.toLocal();
-      if (expiresAt == null) continue;
-      final remaining = expiresAt.difference(now);
-      if (remaining.isNegative || remaining.inHours <= 24) {
+      if (_isPastHalfCompletionWindow(
+        sentAt: task.sentAt,
+        expiresAt: task.expiresAt,
+        now: now,
+      )) {
         overdue++;
       }
     }
@@ -2266,6 +2268,27 @@ class _AllocationPendingInfo {
       overdueCount: overdue,
     );
   }
+}
+
+bool _isPastHalfCompletionWindow({
+  required DateTime? sentAt,
+  required DateTime? expiresAt,
+  required DateTime now,
+}) {
+  final sent = sentAt?.toLocal();
+  final deadline = expiresAt?.toLocal();
+  if (deadline == null) return false;
+  if (now.isAfter(deadline)) return true;
+  if (sent == null || !deadline.isAfter(sent)) return false;
+
+  final totalMinutes = deadline.difference(sent).inMinutes;
+  if (totalMinutes <= 0) return true;
+
+  final halfDaysRoundedUp = (totalMinutes / (Duration.minutesPerDay * 2))
+      .ceil()
+      .clamp(1, 3650);
+  final urgentAt = sent.add(Duration(days: halfDaysRoundedUp));
+  return !now.isBefore(urgentAt);
 }
 
 class _BranchUrgentWorkBanner extends StatefulWidget {

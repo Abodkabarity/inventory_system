@@ -52,6 +52,8 @@ class _StockCheckPageState extends State<StockCheckPage> {
   List<String> _branches = [];
   List<StockCheckTask> _sentRows = [];
   String? _selectedBatchId;
+  bool _showAnalysis = false;
+  final _analysisBatchIds = <String>{};
   late DateTime _sentFrom;
   late DateTime _sentTo;
   late DateTime _deadlineFrom;
@@ -164,6 +166,13 @@ class _StockCheckPageState extends State<StockCheckPage> {
           _selectedBatchId = visibleSentRows.isEmpty
               ? null
               : visibleSentRows.first.batchId;
+        }
+        final visibleBatchIds = visibleSentRows
+            .map((row) => row.batchId)
+            .toSet();
+        _analysisBatchIds.removeWhere((id) => !visibleBatchIds.contains(id));
+        if (_analysisBatchIds.isEmpty && _selectedBatchId != null) {
+          _analysisBatchIds.add(_selectedBatchId!);
         }
         _error = tableError;
         _loading = false;
@@ -465,6 +474,17 @@ class _StockCheckPageState extends State<StockCheckPage> {
     return selected.isEmpty ? batches.first.rows : selected.first.rows;
   }
 
+  List<StockCheckTask> _selectedAnalysisRows(List<_StockCheckBatch> batches) {
+    if (batches.isEmpty) return const [];
+    final ids = _analysisBatchIds.isEmpty
+        ? {_selectedBatchId ?? batches.first.id}
+        : _analysisBatchIds;
+    return batches
+        .where((batch) => ids.contains(batch.id))
+        .expand((batch) => batch.rows)
+        .toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final visibleSourceRows = _sentRows.where((row) {
@@ -475,6 +495,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
     final submitted = visibleSourceRows.where((e) => e.isSubmitted).length;
     final batches = _batches();
     final selectedRows = _selectedBatchRows(batches);
+    final selectedAnalysisRows = _selectedAnalysisRows(batches);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7FB),
@@ -493,10 +514,19 @@ class _StockCheckPageState extends State<StockCheckPage> {
                     onRefresh: _load,
                     onExport: selectedRows.isEmpty
                         ? null
-                        : () => StockCheckExcelExporter.export(
-                            rows: selectedRows,
-                            title: selectedRows.first.title,
-                          ),
+                        : () {
+                            if (_showAnalysis) {
+                              StockCheckExcelExporter.exportAnalysis(
+                                rows: selectedAnalysisRows,
+                                title: 'Stock Check Accuracy Analysis',
+                              );
+                              return;
+                            }
+                            StockCheckExcelExporter.export(
+                              rows: selectedRows,
+                              title: selectedRows.first.title,
+                            );
+                          },
                   );
 
                   if (_showStoreInbox && _hasStoreInbox) {
@@ -532,11 +562,31 @@ class _StockCheckPageState extends State<StockCheckPage> {
                     680.0,
                     constraints.maxHeight * .76,
                   );
+                  final analysisHeight = math.max(
+                    760.0,
+                    constraints.maxHeight - 150,
+                  );
                   return SingleChildScrollView(
                     padding: const EdgeInsets.all(22),
                     child: Column(
                       children: [
                         header,
+                        const SizedBox(height: 16),
+                        _StockCheckTopTabs(
+                          analysis: _showAnalysis,
+                          onChanged: (value) {
+                            setState(() {
+                              _showAnalysis = value;
+                              if (_showAnalysis &&
+                                  _analysisBatchIds.isEmpty &&
+                                  batches.isNotEmpty) {
+                                _analysisBatchIds.add(
+                                  _selectedBatchId ?? batches.first.id,
+                                );
+                              }
+                            });
+                          },
+                        ),
                         const SizedBox(height: 16),
                         if (_hasStoreInbox) ...[
                           _StoreStockCheckTabs(
@@ -549,12 +599,29 @@ class _StockCheckPageState extends State<StockCheckPage> {
                           ),
                           const SizedBox(height: 16),
                         ],
-                        _buildComposer(),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          height: workspaceHeight,
-                          child: _buildWorkspace(batches, selectedRows),
-                        ),
+                        if (_showAnalysis)
+                          SizedBox(
+                            height: analysisHeight,
+                            child: _StockCheckAnalysisPanel(
+                              batches: batches,
+                              selectedBatchIds: _analysisBatchIds,
+                              rows: selectedAnalysisRows,
+                              onSelectBatches: () =>
+                                  _openAnalysisBatchPicker(batches),
+                            ),
+                          )
+                        else ...[
+                          _buildComposer(),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            height: workspaceHeight,
+                            child: _buildWorkspace(
+                              batches,
+                              selectedRows,
+                              selectedAnalysisRows,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   );
@@ -686,6 +753,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
   Widget _buildWorkspace(
     List<_StockCheckBatch> batches,
     List<StockCheckTask> selectedRows,
+    List<StockCheckTask> selectedAnalysisRows,
   ) {
     if (batches.isEmpty) {
       return const _EmptyState();
@@ -736,8 +804,14 @@ class _StockCheckPageState extends State<StockCheckPage> {
                         batch: batch,
                         selected: batch.id == effectiveSelectedBatchId,
                         deleting: _deletingBatchId == batch.id,
-                        onTap: () =>
-                            setState(() => _selectedBatchId = batch.id),
+                        onTap: () => setState(() {
+                          _selectedBatchId = batch.id;
+                          if (!_showAnalysis) {
+                            _analysisBatchIds
+                              ..clear()
+                              ..add(batch.id);
+                          }
+                        }),
                         canManage:
                             _sentSourceFilter == widget.source.toLowerCase(),
                         onEditDeadline: () => _editBatchDeadline(batch),
@@ -751,9 +825,34 @@ class _StockCheckPageState extends State<StockCheckPage> {
           ),
         ),
         const SizedBox(width: 16),
-        Expanded(child: _StockCheckResultTable(rows: selectedRows)),
+        Expanded(
+          child: _showAnalysis
+              ? _StockCheckAnalysisPanel(
+                  batches: batches,
+                  selectedBatchIds: _analysisBatchIds,
+                  rows: selectedAnalysisRows,
+                  onSelectBatches: () => _openAnalysisBatchPicker(batches),
+                )
+              : _StockCheckResultTable(rows: selectedRows),
+        ),
       ],
     );
+  }
+
+  Future<void> _openAnalysisBatchPicker(List<_StockCheckBatch> batches) async {
+    final selected = await showDialog<Set<String>>(
+      context: context,
+      builder: (_) => _AnalysisBatchPickerDialog(
+        batches: batches,
+        selectedBatchIds: _analysisBatchIds,
+      ),
+    );
+    if (selected == null || !mounted) return;
+    setState(() {
+      _analysisBatchIds
+        ..clear()
+        ..addAll(selected.isEmpty ? {batches.first.id} : selected);
+    });
   }
 
   InputDecoration _decoration(String hint) {
@@ -894,6 +993,829 @@ class _StockCheckResultTable extends StatefulWidget {
 
   @override
   State<_StockCheckResultTable> createState() => _StockCheckResultTableState();
+}
+
+class _StockCheckAnalysisPanel extends StatefulWidget {
+  final List<_StockCheckBatch> batches;
+  final Set<String> selectedBatchIds;
+  final List<StockCheckTask> rows;
+  final VoidCallback onSelectBatches;
+
+  const _StockCheckAnalysisPanel({
+    required this.batches,
+    required this.selectedBatchIds,
+    required this.rows,
+    required this.onSelectBatches,
+  });
+
+  @override
+  State<_StockCheckAnalysisPanel> createState() =>
+      _StockCheckAnalysisPanelState();
+}
+
+class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
+  final _searchController = TextEditingController();
+  String _search = '';
+  String _status = 'ALL';
+  String _sortBy = 'accuracy';
+  bool _sortDescending = false;
+  bool _exporting = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final report = _StockCheckAnalysisReport(widget.rows);
+    var branches = report.branches;
+    final needle = _search.trim().toLowerCase();
+    branches = branches.where((branch) {
+      final statusOk = switch (_status) {
+        'warning' => branch.hasDeadlineRisk,
+        'incomplete' => branch.pending > 0,
+        'complete' => branch.pending == 0,
+        _ => true,
+      };
+      final searchOk =
+          needle.isEmpty || branch.branch.toLowerCase().contains(needle);
+      return statusOk && searchOk;
+    }).toList();
+    branches.sort((a, b) {
+      final aValue = _sortBy == 'completion'
+          ? a.completionRate
+          : a.accuracyRate;
+      final bValue = _sortBy == 'completion'
+          ? b.completionRate
+          : b.accuracyRate;
+      final primary = aValue.compareTo(bValue);
+      if (primary != 0) return _sortDescending ? -primary : primary;
+      if (a.hasDeadlineRisk != b.hasDeadlineRisk) {
+        return a.hasDeadlineRisk ? -1 : 1;
+      }
+      return a.branch.toLowerCase().compareTo(b.branch.toLowerCase());
+    });
+
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: _PanelTitle(
+                  icon: Icons.analytics_rounded,
+                  title: 'Stock Check Accuracy Analysis',
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: widget.onSelectBatches,
+                icon: const Icon(Icons.rule_folder_rounded),
+                label: Text(
+                  '${widget.selectedBatchIds.length} project(s)',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.icon(
+                onPressed: widget.rows.isEmpty || _exporting
+                    ? null
+                    : _exportAnalysis,
+                icon: _exporting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.download_rounded),
+                label: Text(_exporting ? 'Preparing...' : 'Export Report'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primaryColor,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _AnalysisProjectStrip(
+            batches: widget.batches
+                .where((batch) => widget.selectedBatchIds.contains(batch.id))
+                .toList(),
+            onTap: widget.onSelectBatches,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _AnalysisMetricCard(
+                label: 'Overall accuracy',
+                value: '${report.accuracyRate.toStringAsFixed(1)}%',
+                icon: Icons.verified_rounded,
+                color: _scoreColor(report.accuracyRate),
+              ),
+              const SizedBox(width: 10),
+              _AnalysisMetricCard(
+                label: 'Completion',
+                value: '${report.completionRate.toStringAsFixed(1)}%',
+                icon: Icons.task_alt_rounded,
+                color: AppColors.primaryColor,
+              ),
+              const SizedBox(width: 10),
+              _AnalysisMetricCard(
+                label: 'Different items',
+                value: report.different.toString(),
+                icon: Icons.troubleshoot_rounded,
+                color: const Color(0xFFF97316),
+              ),
+              const SizedBox(width: 10),
+              _AnalysisMetricCard(
+                label: 'Branches at risk',
+                value: report.riskyBranches.toString(),
+                icon: Icons.warning_amber_rounded,
+                color: const Color(0xFFDC2626),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _AnalysisToolbar(
+            searchController: _searchController,
+            status: _status,
+            sortBy: _sortBy,
+            sortDescending: _sortDescending,
+            onSearchChanged: (value) => setState(() => _search = value),
+            onStatusChanged: (value) => setState(() => _status = value),
+            onSortChanged: (value) => setState(() => _sortBy = value),
+            onDirectionToggle: () {
+              setState(() => _sortDescending = !_sortDescending);
+            },
+          ),
+          const SizedBox(height: 12),
+          if (report.comparisonRows.isNotEmpty) ...[
+            _ComparisonSummary(rows: report.comparisonRows.take(4).toList()),
+            const SizedBox(height: 12),
+          ],
+          Expanded(
+            child: branches.isEmpty
+                ? const Center(
+                    child: Text(
+                      'No branch analysis available for the selected projects.',
+                      style: TextStyle(
+                        color: AppColors.subText,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  )
+                : ListView.separated(
+                    itemCount: branches.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) {
+                      return _BranchAccuracyCard(
+                        rank: index + 1,
+                        row: branches[index],
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _scoreColor(double value) {
+    if (value >= 95) return const Color(0xFF16A34A);
+    if (value >= 85) return AppColors.primaryColor;
+    if (value >= 70) return const Color(0xFFF97316);
+    return const Color(0xFFDC2626);
+  }
+
+  Future<void> _exportAnalysis() async {
+    setState(() => _exporting = true);
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    try {
+      await StockCheckExcelExporter.exportAnalysis(
+        rows: widget.rows,
+        title: 'Stock Check Accuracy Analysis',
+      );
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+}
+
+class _AnalysisProjectStrip extends StatelessWidget {
+  final List<_StockCheckBatch> batches;
+  final VoidCallback onTap;
+
+  const _AnalysisProjectStrip({required this.batches, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final label = batches.isEmpty
+        ? 'Choose projects to compare'
+        : batches.map((batch) => batch.title).take(3).join(' - ');
+    return Material(
+      color: const Color(0xFFF0FDFA),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFF99F6E4)),
+          ),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.compare_arrows_rounded,
+                color: Color(0xFF0F766E),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF0F766E),
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const Icon(Icons.keyboard_arrow_down_rounded),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AnalysisToolbar extends StatelessWidget {
+  final TextEditingController searchController;
+  final String status;
+  final String sortBy;
+  final bool sortDescending;
+  final ValueChanged<String> onSearchChanged;
+  final ValueChanged<String> onStatusChanged;
+  final ValueChanged<String> onSortChanged;
+  final VoidCallback onDirectionToggle;
+
+  const _AnalysisToolbar({
+    required this.searchController,
+    required this.status,
+    required this.sortBy,
+    required this.sortDescending,
+    required this.onSearchChanged,
+    required this.onStatusChanged,
+    required this.onSortChanged,
+    required this.onDirectionToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 320,
+            height: 44,
+            child: TextField(
+              controller: searchController,
+              decoration: InputDecoration(
+                hintText: 'Search branch',
+                prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: Color(0xFFD9E8F5)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: Color(0xFFD9E8F5)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(
+                    color: AppColors.primaryColor,
+                    width: 1.4,
+                  ),
+                ),
+              ),
+              onChanged: onSearchChanged,
+            ),
+          ),
+          const SizedBox(width: 12),
+          _ToolbarGroup(
+            label: 'View',
+            children: [
+              _ToolbarChip(
+                label: 'All',
+                icon: Icons.grid_view_rounded,
+                selected: status == 'ALL',
+                onTap: () => onStatusChanged('ALL'),
+              ),
+              _ToolbarChip(
+                label: 'Attention',
+                icon: Icons.warning_amber_rounded,
+                selected: status == 'warning',
+                danger: true,
+                onTap: () => onStatusChanged('warning'),
+              ),
+              _ToolbarChip(
+                label: 'Pending',
+                icon: Icons.hourglass_bottom_rounded,
+                selected: status == 'incomplete',
+                onTap: () => onStatusChanged('incomplete'),
+              ),
+              _ToolbarChip(
+                label: 'Completed',
+                icon: Icons.check_circle_outline_rounded,
+                selected: status == 'complete',
+                onTap: () => onStatusChanged('complete'),
+              ),
+            ],
+          ),
+          const Spacer(),
+          _ToolbarGroup(
+            label: 'Sort',
+            children: [
+              _ToolbarChip(
+                label: 'Accuracy',
+                icon: Icons.verified_rounded,
+                selected: sortBy == 'accuracy',
+                onTap: () => onSortChanged('accuracy'),
+              ),
+              _ToolbarChip(
+                label: 'Completion',
+                icon: Icons.task_alt_rounded,
+                selected: sortBy == 'completion',
+                onTap: () => onSortChanged('completion'),
+              ),
+              Tooltip(
+                message: sortDescending
+                    ? 'Showing highest values first'
+                    : 'Showing lowest values first',
+                child: InkWell(
+                  onTap: onDirectionToggle,
+                  borderRadius: BorderRadius.circular(13),
+                  child: Container(
+                    height: 38,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: AppColors.secondaryColor,
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          sortDescending
+                              ? Icons.south_rounded
+                              : Icons.north_rounded,
+                          color: Colors.white,
+                          size: 17,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          sortDescending ? 'High first' : 'Low first',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ToolbarGroup extends StatelessWidget {
+  final String label;
+  final List<Widget> children;
+
+  const _ToolbarGroup({required this.label, required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.subText,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(color: const Color(0xFFD9E8F5)),
+          ),
+          child: Row(children: children),
+        ),
+      ],
+    );
+  }
+}
+
+class _ToolbarChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final bool danger;
+  final VoidCallback onTap;
+
+  const _ToolbarChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+    this.danger = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedColor = danger
+        ? const Color(0xFFDC2626)
+        : AppColors.primaryColor;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: selected
+                ? selectedColor.withValues(alpha: .12)
+                : Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? selectedColor : Colors.transparent,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: selected ? selectedColor : AppColors.subText,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  color: selected ? selectedColor : AppColors.secondaryColor,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AnalysisMetricCard extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  const _AnalysisMetricCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: .08),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withValues(alpha: .35)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: Icon(icon, color: color),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.subText,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ComparisonSummary extends StatelessWidget {
+  final List<_StockCheckComparisonRow> rows;
+
+  const _ComparisonSummary({required this.rows});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Project comparison by branch',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 8),
+          ...rows.map(
+            (row) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      row.branch,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      '${row.firstAccuracy.toStringAsFixed(1)}% → ${row.lastAccuracy.toStringAsFixed(1)}%',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      '${row.delta >= 0 ? '+' : ''}${row.delta.toStringAsFixed(1)} pts',
+                      textAlign: TextAlign.end,
+                      style: TextStyle(
+                        color: row.delta >= 0
+                            ? const Color(0xFF16A34A)
+                            : const Color(0xFFDC2626),
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Text(
+                    'Common ${row.commonItems} • Improved ${row.improved} • Worse ${row.worsened}',
+                    style: const TextStyle(
+                      color: AppColors.subText,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BranchAccuracyCard extends StatelessWidget {
+  final int rank;
+  final _StockCheckBranchAnalysis row;
+
+  const _BranchAccuracyCard({required this.rank, required this.row});
+
+  @override
+  Widget build(BuildContext context) {
+    final accuracyColor = row.accuracyRate >= 95
+        ? const Color(0xFF16A34A)
+        : row.accuracyRate >= 80
+        ? AppColors.primaryColor
+        : row.accuracyRate >= 60
+        ? const Color(0xFFF97316)
+        : const Color(0xFFDC2626);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: row.hasDeadlineRisk ? const Color(0xFFFFF1F2) : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: row.hasDeadlineRisk
+              ? const Color(0xFFFCA5A5)
+              : const Color(0xFFD9E8F5),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: accuracyColor.withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: Text(
+              '#$rank',
+              style: TextStyle(
+                color: accuracyColor,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 2,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  row.branch,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${row.submitted} submitted / ${row.pending} pending • ${row.zeroZeroIgnored} zero-zero ignored',
+                  style: const TextStyle(
+                    color: AppColors.subText,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: _AnalysisBar(
+              label: 'Accuracy',
+              value: row.accuracyRate / 100,
+              text:
+                  '${row.accuracyRate.toStringAsFixed(1)}% (${row.correct}/${row.counted})',
+              color: accuracyColor,
+            ),
+          ),
+          const SizedBox(width: 18),
+          Expanded(
+            flex: 2,
+            child: _AnalysisBar(
+              label: 'Completion',
+              value: row.completionRate / 100,
+              text: '${row.completionRate.toStringAsFixed(1)}%',
+              color: row.hasDeadlineRisk
+                  ? const Color(0xFFDC2626)
+                  : AppColors.primaryColor,
+            ),
+          ),
+          const SizedBox(width: 18),
+          SizedBox(
+            width: 150,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '${row.different} different',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  row.hasDeadlineRisk
+                      ? 'Needs action within 2 days'
+                      : 'On track',
+                  textAlign: TextAlign.end,
+                  style: TextStyle(
+                    color: row.hasDeadlineRisk
+                        ? const Color(0xFFDC2626)
+                        : const Color(0xFF16A34A),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnalysisBar extends StatelessWidget {
+  final String label;
+  final double value;
+  final String text;
+  final Color color;
+
+  const _AnalysisBar({
+    required this.label,
+    required this.value,
+    required this.text,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                color: AppColors.subText,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const Spacer(),
+            Text(text, style: const TextStyle(fontWeight: FontWeight.w900)),
+          ],
+        ),
+        const SizedBox(height: 7),
+        LinearProgressIndicator(
+          value: value.clamp(0, 1),
+          minHeight: 8,
+          borderRadius: BorderRadius.circular(999),
+          backgroundColor: const Color(0xFFE2E8F0),
+          color: color,
+        ),
+      ],
+    );
+  }
 }
 
 class _StockCheckResultTableState extends State<_StockCheckResultTable> {
@@ -1972,6 +2894,382 @@ class _StockCheckBatch {
   int get submitted => rows.where((row) => row.isSubmitted).length;
   int get branches => rows.map((row) => row.branchName).toSet().length;
   int get products => rows.map((row) => row.itemCode).toSet().length;
+}
+
+class _StockCheckAnalysisReport {
+  final List<StockCheckTask> rows;
+  late final List<_StockCheckBranchAnalysis> branches = _buildBranches();
+  late final List<_StockCheckComparisonRow> comparisonRows =
+      _buildComparisonRows();
+
+  _StockCheckAnalysisReport(this.rows);
+
+  int get submitted => rows.where((row) => row.isSubmitted).length;
+  int get pending => rows.length - submitted;
+  int get counted => rows.where(_isCounted).length;
+  int get correct => rows.where(_isCorrect).length;
+  int get different => counted - correct;
+  double get accuracyRate => counted == 0 ? 0 : correct * 100 / counted;
+  double get completionRate => rows.isEmpty ? 0 : submitted * 100 / rows.length;
+  int get riskyBranches => branches.where((row) => row.hasDeadlineRisk).length;
+
+  List<_StockCheckBranchAnalysis> _buildBranches() {
+    final byBranch = <String, List<StockCheckTask>>{};
+    for (final row in rows) {
+      byBranch.putIfAbsent(row.branchName.trim(), () => []).add(row);
+    }
+    final result = byBranch.entries
+        .where((entry) => entry.key.isNotEmpty)
+        .map((entry) => _StockCheckBranchAnalysis(entry.key, entry.value))
+        .toList();
+    result.sort((a, b) {
+      if (a.hasDeadlineRisk != b.hasDeadlineRisk) {
+        return a.hasDeadlineRisk ? -1 : 1;
+      }
+      final accuracy = a.accuracyRate.compareTo(b.accuracyRate);
+      if (accuracy != 0) return accuracy;
+      final completion = a.completionRate.compareTo(b.completionRate);
+      if (completion != 0) return completion;
+      return a.branch.toLowerCase().compareTo(b.branch.toLowerCase());
+    });
+    return result;
+  }
+
+  List<_StockCheckComparisonRow> _buildComparisonRows() {
+    final batchIds = rows.map((row) => row.batchId).toSet();
+    if (batchIds.length < 2) return const [];
+    final byBatch = <String, List<StockCheckTask>>{};
+    for (final row in rows) {
+      byBatch.putIfAbsent(row.batchId, () => []).add(row);
+    }
+    final batches = byBatch.entries.toList()
+      ..sort((a, b) {
+        final ad =
+            a.value.first.sentAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bd =
+            b.value.first.sentAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return ad.compareTo(bd);
+      });
+    final firstRows = batches.first.value;
+    final lastRows = batches.last.value;
+
+    final branches = {
+      ...firstRows.map((row) => row.branchName.trim()),
+      ...lastRows.map((row) => row.branchName.trim()),
+    }..removeWhere((branch) => branch.isEmpty);
+
+    final result = <_StockCheckComparisonRow>[];
+    for (final branch in branches) {
+      final firstBranchRows = firstRows
+          .where((row) => row.branchName.trim() == branch)
+          .toList();
+      final lastBranchRows = lastRows
+          .where((row) => row.branchName.trim() == branch)
+          .toList();
+      final first = _StockCheckBranchAnalysis(branch, firstBranchRows);
+      final last = _StockCheckBranchAnalysis(branch, lastBranchRows);
+      final firstByItem = {
+        for (final row in firstBranchRows)
+          row.itemCode.trim().toLowerCase(): row,
+      };
+      var common = 0;
+      var improved = 0;
+      var worsened = 0;
+      for (final row in lastBranchRows) {
+        final previous = firstByItem[row.itemCode.trim().toLowerCase()];
+        if (previous == null || !_isCounted(previous) || !_isCounted(row)) {
+          continue;
+        }
+        common++;
+        final before = (previous.variance ?? 0).abs();
+        final after = (row.variance ?? 0).abs();
+        if (after < before) improved++;
+        if (after > before) worsened++;
+      }
+      result.add(
+        _StockCheckComparisonRow(
+          branch: branch,
+          firstAccuracy: first.accuracyRate,
+          lastAccuracy: last.accuracyRate,
+          commonItems: common,
+          improved: improved,
+          worsened: worsened,
+        ),
+      );
+    }
+    result.sort((a, b) => a.delta.compareTo(b.delta));
+    return result;
+  }
+
+  static bool _isCounted(StockCheckTask row) {
+    if (row.systemQty == null || row.actualQty == null) return false;
+    return !(row.systemQty == 0 && row.actualQty == 0);
+  }
+
+  static bool _isCorrect(StockCheckTask row) {
+    return _isCounted(row) && row.systemQty == row.actualQty;
+  }
+}
+
+bool _isCounted(StockCheckTask row) =>
+    _StockCheckAnalysisReport._isCounted(row);
+bool _isCorrect(StockCheckTask row) =>
+    _StockCheckAnalysisReport._isCorrect(row);
+
+class _StockCheckBranchAnalysis {
+  final String branch;
+  final List<StockCheckTask> rows;
+
+  const _StockCheckBranchAnalysis(this.branch, this.rows);
+
+  int get total => rows.length;
+  int get submitted => rows.where((row) => row.isSubmitted).length;
+  int get pending => total - submitted;
+  int get counted => rows.where(_isCounted).length;
+  int get correct => rows.where(_isCorrect).length;
+  int get different => counted - correct;
+  int get zeroZeroIgnored =>
+      rows.where((row) => row.systemQty == 0 && row.actualQty == 0).length;
+  double get accuracyRate => counted == 0 ? 0 : correct * 100 / counted;
+  double get completionRate => total == 0 ? 0 : submitted * 100 / total;
+  bool get hasDeadlineRisk {
+    if (pending == 0 || completionRate >= 50) return false;
+    final now = DateTime.now();
+    return rows.any((row) {
+      final expiresAt = row.expiresAt?.toLocal();
+      if (expiresAt == null || expiresAt.isBefore(now)) return false;
+      return expiresAt.difference(now) <= const Duration(days: 2);
+    });
+  }
+}
+
+class _StockCheckComparisonRow {
+  final String branch;
+  final double firstAccuracy;
+  final double lastAccuracy;
+  final int commonItems;
+  final int improved;
+  final int worsened;
+
+  const _StockCheckComparisonRow({
+    required this.branch,
+    required this.firstAccuracy,
+    required this.lastAccuracy,
+    required this.commonItems,
+    required this.improved,
+    required this.worsened,
+  });
+
+  double get delta => lastAccuracy - firstAccuracy;
+}
+
+class _StockCheckTopTabs extends StatelessWidget {
+  final bool analysis;
+  final ValueChanged<bool> onChanged;
+
+  const _StockCheckTopTabs({required this.analysis, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 22),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _ModeButton(
+              selected: !analysis,
+              icon: Icons.inventory_2_rounded,
+              label: 'Stock Checks',
+              onTap: () => onChanged(false),
+            ),
+            const SizedBox(width: 18),
+            _ModeButton(
+              selected: analysis,
+              icon: Icons.analytics_rounded,
+              label: 'Accuracy Analysis',
+              onTap: () => onChanged(true),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ModeButton extends StatelessWidget {
+  final bool selected;
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _ModeButton({
+    required this.selected,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        height: 52,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: selected ? AppColors.primaryColor : Colors.transparent,
+              width: 3,
+            ),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 17,
+              color: selected ? AppColors.primaryColor : AppColors.subText,
+            ),
+            const SizedBox(width: 7),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? AppColors.primaryColor : AppColors.subText,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AnalysisBatchPickerDialog extends StatefulWidget {
+  final List<_StockCheckBatch> batches;
+  final Set<String> selectedBatchIds;
+
+  const _AnalysisBatchPickerDialog({
+    required this.batches,
+    required this.selectedBatchIds,
+  });
+
+  @override
+  State<_AnalysisBatchPickerDialog> createState() =>
+      _AnalysisBatchPickerDialogState();
+}
+
+class _AnalysisBatchPickerDialogState
+    extends State<_AnalysisBatchPickerDialog> {
+  late final _selected = {...widget.selectedBatchIds};
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: AppColors.backgroundWidget,
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: const Icon(
+              Icons.compare_arrows_rounded,
+              color: AppColors.primaryColor,
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'Choose projects for analysis',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 520,
+        height: 430,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Select one project for branch accuracy, or multiple projects to compare accuracy changes for the same branch and repeated items.',
+              style: TextStyle(
+                color: AppColors.subText,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: ListView.separated(
+                itemCount: widget.batches.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final batch = widget.batches[index];
+                  final selected = _selected.contains(batch.id);
+                  return CheckboxListTile(
+                    value: selected,
+                    onChanged: (value) {
+                      setState(() {
+                        if (value == true) {
+                          _selected.add(batch.id);
+                        } else {
+                          _selected.remove(batch.id);
+                        }
+                      });
+                    },
+                    title: Text(
+                      batch.title,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    subtitle: Text(
+                      '${batch.branches} branches • ${batch.products} products • ${batch.submitted}/${batch.total} submitted',
+                    ),
+                    activeColor: AppColors.primaryColor,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    tileColor: selected
+                        ? AppColors.primaryColor.withValues(alpha: .08)
+                        : const Color(0xFFF8FAFC),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _selected.isEmpty
+              ? null
+              : () => Navigator.pop(context, _selected),
+          style: FilledButton.styleFrom(
+            backgroundColor: AppColors.primaryColor,
+          ),
+          child: Text('Apply ${_selected.length} project(s)'),
+        ),
+      ],
+    );
+  }
 }
 
 class _Header extends StatelessWidget {
