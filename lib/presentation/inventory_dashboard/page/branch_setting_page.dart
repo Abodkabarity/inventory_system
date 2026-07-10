@@ -47,7 +47,10 @@ class _BranchSettingPageState extends State<BranchSettingPage> {
       final matchesSearch =
           q.isEmpty ||
           b.branchName.toLowerCase().contains(q) ||
+          b.email.toLowerCase().contains(q) ||
           b.zone.toLowerCase().contains(q) ||
+          b.zoneManager.toLowerCase().contains(q) ||
+          b.zoneManagerEmail.toLowerCase().contains(q) ||
           b.area.toLowerCase().contains(q) ||
           b.branchType.toLowerCase().contains(q);
       final matchesZone = _zoneFilter == _allZones || b.zone == _zoneFilter;
@@ -527,7 +530,8 @@ class _Toolbar extends StatelessWidget {
                   controller: controller,
                   onChanged: onChanged,
                   decoration: InputDecoration(
-                    hintText: 'Search branch, zone, area, or type...',
+                    hintText:
+                        'Search branch, email, zone, manager, area, or type...',
                     prefixIcon: const Icon(Icons.search_rounded),
                     filled: true,
                     fillColor: AppColors.backgroundWidget,
@@ -783,6 +787,7 @@ class _BranchesTable extends StatelessWidget {
                   DataColumn(label: Text('Branch')),
                   DataColumn(label: Text('Status')),
                   DataColumn(label: Text('Zone')),
+                  DataColumn(label: Text('Zone Manager')),
                   DataColumn(label: Text('Area')),
                   DataColumn(label: Text('Type')),
                   DataColumn(label: Text('Order Days')),
@@ -806,6 +811,7 @@ class _BranchesTable extends StatelessWidget {
                           width: 110,
                         ),
                       ),
+                      DataCell(_ZoneManagerCell(branch: b)),
                       DataCell(
                         _InfoPill(
                           text: b.area,
@@ -918,6 +924,58 @@ class _InfoPill extends StatelessWidget {
             fontWeight: FontWeight.w900,
             fontSize: 12,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ZoneManagerCell extends StatelessWidget {
+  final BranchSetting branch;
+
+  const _ZoneManagerCell({required this.branch});
+
+  @override
+  Widget build(BuildContext context) {
+    final name = branch.zoneManager.trim();
+    final email = branch.zoneManagerEmail.trim();
+    return SizedBox(
+      width: 220,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: const Color(0xffF0FDFA),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xff99F6E4)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              name.isEmpty ? '-' : name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xff0F766E),
+                fontWeight: FontWeight.w900,
+                fontSize: 12,
+              ),
+            ),
+            if (email.isNotEmpty) ...[
+              const SizedBox(height: 3),
+              Text(
+                email,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xff64748B),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -1089,6 +1147,8 @@ class _BranchSettingDialogState extends State<_BranchSettingDialog> {
   late final TextEditingController _branch;
   late final TextEditingController _email;
   late final TextEditingController _zone;
+  late final TextEditingController _zoneManager;
+  late final TextEditingController _zoneManagerEmail;
   late final TextEditingController _area;
   late final TextEditingController _type;
   late final TextEditingController _start;
@@ -1105,6 +1165,8 @@ class _BranchSettingDialogState extends State<_BranchSettingDialog> {
     _branch = TextEditingController(text: _value.branchName);
     _email = TextEditingController(text: _value.email);
     _zone = TextEditingController(text: _value.zone);
+    _zoneManager = TextEditingController(text: _value.zoneManager);
+    _zoneManagerEmail = TextEditingController(text: _value.zoneManagerEmail);
     _area = TextEditingController(text: _value.area);
     _type = TextEditingController(text: _value.branchType);
     _start = TextEditingController(text: '${_value.submitStartHour}');
@@ -1120,6 +1182,8 @@ class _BranchSettingDialogState extends State<_BranchSettingDialog> {
     _branch.dispose();
     _email.dispose();
     _zone.dispose();
+    _zoneManager.dispose();
+    _zoneManagerEmail.dispose();
     _area.dispose();
     _type.dispose();
     _start.dispose();
@@ -1143,6 +1207,8 @@ class _BranchSettingDialogState extends State<_BranchSettingDialog> {
       branchName: branchName,
       email: _email.text.trim(),
       zone: _zone.text.trim(),
+      zoneManager: _zoneManager.text.trim(),
+      zoneManagerEmail: _zoneManagerEmail.text.trim(),
       area: _area.text.trim(),
       branchType: _type.text.trim(),
       submitStartHour: _int(_start, 21).clamp(0, 24),
@@ -1286,6 +1352,26 @@ class _BranchSettingDialogState extends State<_BranchSettingDialog> {
                             controller: _type,
                             label: 'Branch Type',
                             icon: Icons.account_tree_rounded,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _Input(
+                            controller: _zoneManager,
+                            label: 'Zone Manager',
+                            icon: Icons.supervisor_account_rounded,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _Input(
+                            controller: _zoneManagerEmail,
+                            label: 'Zone Manager Email',
+                            icon: Icons.alternate_email_rounded,
                           ),
                         ),
                       ],

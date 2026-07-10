@@ -130,9 +130,32 @@ class InventoryRemoteDs {
   }
 
   Future<List<BranchSetting>> fetchBranchSettings() async {
-    final res = await client
-        .from('branches')
-        .select('''
+    late final List<dynamic> res;
+    try {
+      res = await client
+          .from('branches')
+          .select('''
+          branch_name,
+          email,
+          zone,
+          zone_manager,
+          zone_manager_email,
+          is_active,
+          order_days,
+          submit_start_hour,
+          submit_end_hour,
+          max_adj_limit,
+          order_increase_limit,
+          order_edit_limit,
+          additional_order_limit,
+          area,
+          branch_type
+        ''')
+          .order('branch_name', ascending: true);
+    } catch (_) {
+      res = await client
+          .from('branches')
+          .select('''
           branch_name,
           email,
           zone,
@@ -147,7 +170,8 @@ class InventoryRemoteDs {
           area,
           branch_type
         ''')
-        .order('branch_name', ascending: true);
+          .order('branch_name', ascending: true);
+    }
 
     return List<Map<String, dynamic>>.from(
       res,

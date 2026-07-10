@@ -20,6 +20,18 @@ import '../../orders/widgets/branch_stock_check_page.dart';
 const _storeStockCheckDestination = 'STORE';
 const double _stockCheckAccuracyTolerance = 0.01;
 
+class _BranchEmailContact {
+  final String email;
+  final String zoneManager;
+  final String zoneManagerEmail;
+
+  const _BranchEmailContact({
+    required this.email,
+    required this.zoneManager,
+    required this.zoneManagerEmail,
+  });
+}
+
 class StockCheckPage extends StatefulWidget {
   final String runDate;
   final String source;
@@ -52,7 +64,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
   bool _showStoreInbox = false;
   String _sentSourceFilter = 'inventory';
   List<String> _branches = [];
-  Map<String, String> _branchEmails = {};
+  Map<String, _BranchEmailContact> _branchContacts = {};
   List<StockCheckTask> _sentRows = [];
   List<StockCheckTask> _visibleDetailRows = [];
   int _sentRowsVersion = 0;
@@ -122,11 +134,20 @@ class _StockCheckPageState extends State<StockCheckPage> {
       _error = '';
     });
     try {
-      final branchesRes = await _client
-          .from('branches')
-          .select('branch_name,email')
-          .eq('is_active', true)
-          .order('branch_name');
+      List<dynamic> branchesRes;
+      try {
+        branchesRes = await _client
+            .from('branches')
+            .select('branch_name,email,zone_manager,zone_manager_email')
+            .eq('is_active', true)
+            .order('branch_name');
+      } catch (_) {
+        branchesRes = await _client
+            .from('branches')
+            .select('branch_name,email')
+            .eq('is_active', true)
+            .order('branch_name');
+      }
 
       var sentRows = <StockCheckTask>[];
       String tableError = '';
@@ -153,11 +174,19 @@ class _StockCheckPageState extends State<StockCheckPage> {
             .map((e) => (e['branch_name'] ?? '').toString())
             .where((e) => e.trim().isNotEmpty)
             .toList();
-        final branchEmails = <String, String>{};
+        final branchContacts = <String, _BranchEmailContact>{};
         for (final branch in List<Map<String, dynamic>>.from(branchesRes)) {
           final name = (branch['branch_name'] ?? '').toString().trim();
           final email = (branch['email'] ?? '').toString().trim();
-          if (name.isNotEmpty && email.isNotEmpty) branchEmails[name] = email;
+          if (name.isNotEmpty && email.isNotEmpty) {
+            branchContacts[name] = _BranchEmailContact(
+              email: email,
+              zoneManager: (branch['zone_manager'] ?? '').toString().trim(),
+              zoneManagerEmail: (branch['zone_manager_email'] ?? '')
+                  .toString()
+                  .trim(),
+            );
+          }
         }
         if (_canSendToStore &&
             !destinations.contains(_storeStockCheckDestination)) {
@@ -169,7 +198,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
           return a.toLowerCase().compareTo(b.toLowerCase());
         });
         _branches = destinations;
-        _branchEmails = branchEmails;
+        _branchContacts = branchContacts;
         _sentRows = sentRows;
         _sentRowsVersion++;
         _batchesCacheKey = null;
@@ -648,7 +677,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
                               batches: batches,
                               selectedBatchIds: _analysisBatchIds,
                               rows: selectedAnalysisRows,
-                              branchEmails: _branchEmails,
+                              branchContacts: _branchContacts,
                               onSelectBatches: () =>
                                   _openAnalysisBatchPicker(batches),
                             ),
@@ -876,7 +905,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
                   batches: batches,
                   selectedBatchIds: _analysisBatchIds,
                   rows: selectedAnalysisRows,
-                  branchEmails: _branchEmails,
+                  branchContacts: _branchContacts,
                   onSelectBatches: () => _openAnalysisBatchPicker(batches),
                 )
               : _StockCheckResultTable(
@@ -1069,14 +1098,14 @@ class _StockCheckAnalysisPanel extends StatefulWidget {
   final List<_StockCheckBatch> batches;
   final Set<String> selectedBatchIds;
   final List<StockCheckTask> rows;
-  final Map<String, String> branchEmails;
+  final Map<String, _BranchEmailContact> branchContacts;
   final VoidCallback onSelectBatches;
 
   const _StockCheckAnalysisPanel({
     required this.batches,
     required this.selectedBatchIds,
     required this.rows,
-    required this.branchEmails,
+    required this.branchContacts,
     required this.onSelectBatches,
   });
 
@@ -1330,7 +1359,7 @@ class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
                       return _BranchAccuracyCard(
                         rank: index + 1,
                         row: branches[index],
-                        email: widget.branchEmails[branches[index].branch],
+                        contact: widget.branchContacts[branches[index].branch],
                       );
                     },
                   ),
@@ -2056,12 +2085,12 @@ class _ComparisonSummary extends StatelessWidget {
 class _BranchAccuracyCard extends StatelessWidget {
   final int rank;
   final _StockCheckBranchAnalysis row;
-  final String? email;
+  final _BranchEmailContact? contact;
 
   const _BranchAccuracyCard({
     required this.rank,
     required this.row,
-    required this.email,
+    required this.contact,
   });
 
   @override
@@ -2175,9 +2204,9 @@ class _BranchAccuracyCard extends StatelessWidget {
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                if ((email ?? '').trim().isNotEmpty) ...[
+                if ((contact?.email ?? '').trim().isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  _EmailReminderButton(branch: row.branch, email: email!),
+                  _EmailReminderButton(branch: row.branch, contact: contact!),
                 ],
               ],
             ),
@@ -2190,9 +2219,9 @@ class _BranchAccuracyCard extends StatelessWidget {
 
 class _EmailReminderButton extends StatelessWidget {
   final String branch;
-  final String email;
+  final _BranchEmailContact contact;
 
-  const _EmailReminderButton({required this.branch, required this.email});
+  const _EmailReminderButton({required this.branch, required this.contact});
 
   @override
   Widget build(BuildContext context) {
@@ -2235,19 +2264,31 @@ class _EmailReminderButton extends StatelessWidget {
   }
 
   Future<void> _openReminderEmail(BuildContext context) async {
-    final subject = Uri.encodeComponent('Stock Check Reminder - $branch');
-    final body = Uri.encodeComponent(
-      'Dear $branch Team,\n\n'
-      'Please complete the pending Stock Check as soon as possible.\n'
-      'Kindly enter the required System Qty and Actual Qty, then submit the stock check from the branch dashboard.\n\n'
-      'Thank you.',
+    final cc = <String>[
+      'Inventory@alain-pharmacy.com',
+      'ahmad.alkouz@alain-pharmacy.com',
+      if (contact.zoneManagerEmail.trim().isNotEmpty)
+        contact.zoneManagerEmail.trim(),
+    ];
+    final body =
+        'Dear $branch Team,\n\n'
+        'Please complete the pending Stock Check as soon as possible.\n'
+        'Kindly enter the required System Qty and Actual Qty, then submit the stock check from the branch dashboard.\n\n'
+        'Thank you.';
+    final uri = Uri(
+      scheme: 'mailto',
+      path: contact.email,
+      queryParameters: {
+        'subject': 'Stock Check Reminder - $branch',
+        'body': body,
+        'cc': cc.join(','),
+      },
     );
-    final uri = Uri.parse('mailto:$email?subject=$subject&body=$body');
     final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!opened && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Could not open email app for $email'),
+          content: Text('Could not open email app for ${contact.email}'),
           backgroundColor: const Color(0xFFDC2626),
         ),
       );
@@ -2302,6 +2343,7 @@ class _AnalysisBar extends StatelessWidget {
 
 class _StockCheckResultTableState extends State<_StockCheckResultTable> {
   final _searchController = TextEditingController();
+  final _horizontalTableController = ScrollController();
   String _search = '';
   final _branchFilters = <String>{};
   String _statusFilter = 'ALL';
@@ -2343,6 +2385,7 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
   @override
   void dispose() {
     _searchController.dispose();
+    _horizontalTableController.dispose();
     super.dispose();
   }
 
@@ -2423,6 +2466,20 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
                   ),
                 ),
                 const SizedBox(width: 12),
+                if (_filteredRows.isNotEmpty) ...[
+                  _TablePanButton(
+                    icon: Icons.keyboard_arrow_left_rounded,
+                    tooltip: 'Scroll table left',
+                    onPressed: () => _scrollTableHorizontally(-420),
+                  ),
+                  const SizedBox(width: 6),
+                  _TablePanButton(
+                    icon: Icons.keyboard_arrow_right_rounded,
+                    tooltip: 'Scroll table right',
+                    onPressed: () => _scrollTableHorizontally(420),
+                  ),
+                  const SizedBox(width: 12),
+                ],
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
@@ -2456,19 +2513,28 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
                       ),
                     ),
                   )
-                : SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: _FastStockCheckResultsTable(
-                      rows: _filteredRows,
-                      showBarcodeSticker: _showBarcodeSticker,
-                      activeFilters: {
-                        ..._columnFilters.keys,
-                        ..._numericFilters.keys,
-                      },
-                      sortColumn: _sortColumn,
-                      sortAscending: _sortAscending,
-                      onColumnFilter: _openColumnFilter,
-                      onRowTap: _openNoteDialog,
+                : Scrollbar(
+                    controller: _horizontalTableController,
+                    thumbVisibility: true,
+                    trackVisibility: true,
+                    interactive: true,
+                    notificationPredicate: (notification) =>
+                        notification.metrics.axis == Axis.horizontal,
+                    child: SingleChildScrollView(
+                      controller: _horizontalTableController,
+                      scrollDirection: Axis.horizontal,
+                      child: _FastStockCheckResultsTable(
+                        rows: _filteredRows,
+                        showBarcodeSticker: _showBarcodeSticker,
+                        activeFilters: {
+                          ..._columnFilters.keys,
+                          ..._numericFilters.keys,
+                        },
+                        sortColumn: _sortColumn,
+                        sortAscending: _sortAscending,
+                        onColumnFilter: _openColumnFilter,
+                        onRowTap: _openNoteDialog,
+                      ),
                     ),
                   ),
           ),
@@ -2479,6 +2545,19 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
 
   static String _batchId(List<StockCheckTask> rows) {
     return rows.isEmpty ? '' : rows.first.batchId;
+  }
+
+  void _scrollTableHorizontally(double delta) {
+    if (!_horizontalTableController.hasClients) return;
+    final next = (_horizontalTableController.offset + delta).clamp(
+      0.0,
+      _horizontalTableController.position.maxScrollExtent,
+    );
+    _horizontalTableController.animateTo(
+      next,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   void _rebuildIndexes() {
@@ -3979,6 +4058,39 @@ class _FastStockCheckResultsTableState
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _TablePanButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  const _TablePanButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: 42,
+          height: 48,
+          decoration: BoxDecoration(
+            color: const Color(0xFFEFF6FF),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFBFDBFE)),
+          ),
+          child: Icon(icon, color: const Color(0xFF2563EB), size: 24),
+        ),
       ),
     );
   }

@@ -6,6 +6,8 @@ class BranchSetting extends Equatable {
   final String branchName;
   final String email;
   final String zone;
+  final String zoneManager;
+  final String zoneManagerEmail;
   final bool isActive;
   final List<String> orderDays;
   final int submitStartHour;
@@ -21,6 +23,8 @@ class BranchSetting extends Equatable {
     required this.branchName,
     required this.email,
     required this.zone,
+    required this.zoneManager,
+    required this.zoneManagerEmail,
     required this.isActive,
     required this.orderDays,
     required this.submitStartHour,
@@ -38,6 +42,8 @@ class BranchSetting extends Equatable {
       branchName: '',
       email: '',
       zone: '',
+      zoneManager: '',
+      zoneManagerEmail: '',
       isActive: true,
       orderDays: [],
       submitStartHour: 21,
@@ -56,6 +62,8 @@ class BranchSetting extends Equatable {
       branchName: (map['branch_name'] ?? '').toString(),
       email: (map['email'] ?? '').toString(),
       zone: (map['zone'] ?? '').toString(),
+      zoneManager: (map['zone_manager'] ?? '').toString(),
+      zoneManagerEmail: (map['zone_manager_email'] ?? '').toString(),
       isActive: _bool(map['is_active']),
       orderDays: _days(map['order_days']),
       submitStartHour: _int(map['submit_start_hour'], 21),
@@ -74,6 +82,8 @@ class BranchSetting extends Equatable {
       'branch_name': branchName.trim(),
       'email': email.trim(),
       'zone': zone.trim(),
+      'zone_manager': zoneManager.trim(),
+      'zone_manager_email': zoneManagerEmail.trim(),
       'is_active': isActive,
       'order_days': orderDays,
       'submit_start_hour': submitStartHour,
@@ -91,6 +101,8 @@ class BranchSetting extends Equatable {
     String? branchName,
     String? email,
     String? zone,
+    String? zoneManager,
+    String? zoneManagerEmail,
     bool? isActive,
     List<String>? orderDays,
     int? submitStartHour,
@@ -106,6 +118,8 @@ class BranchSetting extends Equatable {
       branchName: branchName ?? this.branchName,
       email: email ?? this.email,
       zone: zone ?? this.zone,
+      zoneManager: zoneManager ?? this.zoneManager,
+      zoneManagerEmail: zoneManagerEmail ?? this.zoneManagerEmail,
       isActive: isActive ?? this.isActive,
       orderDays: orderDays ?? this.orderDays,
       submitStartHour: submitStartHour ?? this.submitStartHour,
@@ -159,6 +173,8 @@ class BranchSetting extends Equatable {
     branchName,
     email,
     zone,
+    zoneManager,
+    zoneManagerEmail,
     isActive,
     orderDays,
     submitStartHour,
