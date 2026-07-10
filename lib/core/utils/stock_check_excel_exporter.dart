@@ -7,6 +7,8 @@ import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
 
 import '../../domain/entities/stock_check_task.dart';
 
+const double _stockCheckAccuracyTolerance = 0.01;
+
 class StockCheckExcelExporter {
   static Future<void> export({
     required List<StockCheckTask> rows,
@@ -31,6 +33,8 @@ class StockCheckExcelExporter {
       if (showBarcodeSticker) 'Barcode Sticker is Correct',
       'Status',
       'Note',
+      'Submitted By',
+      'Employee ID',
       'Submitted At',
     ];
 
@@ -71,6 +75,8 @@ class StockCheckExcelExporter {
               : '',
         row.isSubmitted ? 'Submitted' : 'Pending',
         row.note,
+        row.submittedByName,
+        row.submittedByEmployeeId,
         _format(row.submittedAt),
       ];
 
@@ -105,7 +111,9 @@ class StockCheckExcelExporter {
       if (showBarcodeSticker) 9: 28,
       showBarcodeSticker ? 10 : 9: 14,
       showBarcodeSticker ? 11 : 10: 34,
-      showBarcodeSticker ? 12 : 11: 20,
+      showBarcodeSticker ? 12 : 11: 22,
+      showBarcodeSticker ? 13 : 12: 16,
+      showBarcodeSticker ? 14 : 13: 20,
     };
     widths.forEach((column, width) {
       sheet.getRangeByIndex(1, column).columnWidth = width;
@@ -140,13 +148,10 @@ class StockCheckExcelExporter {
       'Total Items',
       'Submitted',
       'Pending',
-      'Completion %',
       'Counted Items',
       'Correct Items',
       'Different Items',
       'Accuracy %',
-      'Zero-Zero Ignored',
-      'Alert',
     ];
 
     for (var i = 0; i < headers.length; i++) {
@@ -171,13 +176,10 @@ class StockCheckExcelExporter {
         row.total,
         row.submitted,
         row.pending,
-        row.completionRate,
         row.counted,
         row.correct,
         row.different,
         row.accuracyRate,
-        row.zeroZeroIgnored,
-        row.alert,
       ];
 
       for (var c = 0; c < values.length; c++) {
@@ -189,16 +191,11 @@ class StockCheckExcelExporter {
           cell.setText(value.toString());
         }
         cell.cellStyle
-          ..hAlign = c == 1 || c == 12
-              ? xlsio.HAlignType.left
-              : xlsio.HAlignType.center
+          ..hAlign = c == 1 ? xlsio.HAlignType.left : xlsio.HAlignType.center
           ..vAlign = xlsio.VAlignType.center;
         cell.cellStyle.borders.all.lineStyle = xlsio.LineStyle.thin;
         cell.cellStyle.borders.all.color = '#CBD5E1';
-        if (row.alert.isNotEmpty) {
-          cell.cellStyle.backColor = '#FEF2F2';
-          cell.cellStyle.fontColor = '#991B1B';
-        } else if (r.isEven) {
+        if (r.isEven) {
           cell.cellStyle.backColor = '#F8FAFC';
         }
       }
@@ -213,6 +210,9 @@ class StockCheckExcelExporter {
       'Actual Qty',
       'Difference',
       'Project',
+      'Submitted By',
+      'Employee ID',
+      'Note',
     ];
     for (var i = 0; i < detailHeaders.length; i++) {
       final cell = detailSheet.getRangeByIndex(1, i + 1);
@@ -242,6 +242,9 @@ class StockCheckExcelExporter {
         row.actualQty ?? '',
         row.variance ?? '',
         row.title,
+        row.submittedByName,
+        row.submittedByEmployeeId,
+        row.note,
       ];
       for (var c = 0; c < values.length; c++) {
         final cell = detailSheet.getRangeByIndex(r + 2, c + 1);
@@ -252,7 +255,7 @@ class StockCheckExcelExporter {
           cell.setText(value.toString());
         }
         cell.cellStyle
-          ..hAlign = c == 2 || c == 6
+          ..hAlign = c == 2 || c == 6 || c == 9
               ? xlsio.HAlignType.left
               : xlsio.HAlignType.center
           ..vAlign = xlsio.VAlignType.center;
@@ -275,17 +278,22 @@ class StockCheckExcelExporter {
       8: 12,
       9: 12,
       10: 12,
-      11: 12,
-      12: 14,
-      13: 34,
     };
     widths.forEach((column, width) {
       sheet.getRangeByIndex(1, column).columnWidth = width;
     });
-    <int, double>{1: 24, 2: 18, 3: 44, 4: 13, 5: 13, 6: 12, 7: 32}.forEach((
-      column,
-      width,
-    ) {
+    <int, double>{
+      1: 24,
+      2: 18,
+      3: 44,
+      4: 13,
+      5: 13,
+      6: 12,
+      7: 32,
+      8: 22,
+      9: 16,
+      10: 34,
+    }.forEach((column, width) {
       detailSheet.getRangeByIndex(1, column).columnWidth = width;
     });
 
@@ -309,68 +317,43 @@ class StockCheckExcelExporter {
     for (final row in rows) {
       byBranch.putIfAbsent(row.branchName, () => []).add(row);
     }
-    final now = DateTime.now();
     final result = byBranch.entries.map((entry) {
       final branchRows = entry.value;
       final submitted = branchRows.where((row) => row.isSubmitted).length;
       final pending = branchRows.length - submitted;
       final counted = branchRows.where(_isCounted).length;
       final correct = branchRows.where(_isCorrect).length;
-      final zeroZero = branchRows.where(_isZeroZero).length;
-      final nearestDeadline = branchRows
-          .map((row) => row.expiresAt?.toLocal())
-          .whereType<DateTime>()
-          .where((date) => date.isAfter(now))
-          .fold<DateTime?>(null, (best, date) {
-            if (best == null || date.isBefore(best)) return date;
-            return best;
-          });
-      final completion = branchRows.isEmpty
-          ? 0.0
-          : submitted * 100 / branchRows.length;
-      final urgent =
-          pending > 0 &&
-          completion < 50 &&
-          nearestDeadline != null &&
-          nearestDeadline.difference(now) <= const Duration(days: 2);
       return _BranchAnalysisExportRow(
         branch: entry.key,
         projects: branchRows.map((row) => row.batchId).toSet().length,
         total: branchRows.length,
         submitted: submitted,
         pending: pending,
-        completionRate: double.parse(completion.toStringAsFixed(1)),
         counted: counted,
         correct: correct,
         different: counted - correct,
         accuracyRate: counted == 0
             ? 0
             : double.parse((correct * 100 / counted).toStringAsFixed(1)),
-        zeroZeroIgnored: zeroZero,
-        alert: urgent
-            ? 'Completion is below 50% and deadline is within 2 days'
-            : '',
       );
     }).toList();
     result.sort((a, b) {
       final accuracy = a.accuracyRate.compareTo(b.accuracyRate);
       if (accuracy != 0) return accuracy;
-      return a.completionRate.compareTo(b.completionRate);
+      return a.pending.compareTo(b.pending);
     });
     return result;
   }
 
   static bool _isCounted(StockCheckTask row) {
     if (row.systemQty == null || row.actualQty == null) return false;
-    return !_isZeroZero(row);
-  }
-
-  static bool _isZeroZero(StockCheckTask row) {
-    return row.systemQty == 0 && row.actualQty == 0;
+    return true;
   }
 
   static bool _isCorrect(StockCheckTask row) {
-    return _isCounted(row) && row.systemQty == row.actualQty;
+    return _isCounted(row) &&
+        (row.variance ?? 0).toDouble().abs() <=
+            _stockCheckAccuracyTolerance + 1e-9;
   }
 
   static String _format(DateTime? value) {
@@ -397,13 +380,10 @@ class _BranchAnalysisExportRow {
   final int total;
   final int submitted;
   final int pending;
-  final double completionRate;
   final int counted;
   final int correct;
   final int different;
   final double accuracyRate;
-  final int zeroZeroIgnored;
-  final String alert;
 
   const _BranchAnalysisExportRow({
     required this.branch,
@@ -411,12 +391,9 @@ class _BranchAnalysisExportRow {
     required this.total,
     required this.submitted,
     required this.pending,
-    required this.completionRate,
     required this.counted,
     required this.correct,
     required this.different,
     required this.accuracyRate,
-    required this.zeroZeroIgnored,
-    required this.alert,
   });
 }

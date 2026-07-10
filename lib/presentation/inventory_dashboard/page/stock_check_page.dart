@@ -8,6 +8,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import 'package:xml/xml.dart';
 
@@ -17,6 +18,7 @@ import '../../../domain/entities/stock_check_task.dart';
 import '../../orders/widgets/branch_stock_check_page.dart';
 
 const _storeStockCheckDestination = 'STORE';
+const double _stockCheckAccuracyTolerance = 0.01;
 
 class StockCheckPage extends StatefulWidget {
   final String runDate;
@@ -50,7 +52,12 @@ class _StockCheckPageState extends State<StockCheckPage> {
   bool _showStoreInbox = false;
   String _sentSourceFilter = 'inventory';
   List<String> _branches = [];
+  Map<String, String> _branchEmails = {};
   List<StockCheckTask> _sentRows = [];
+  List<StockCheckTask> _visibleDetailRows = [];
+  int _sentRowsVersion = 0;
+  int? _batchesCacheKey;
+  List<_StockCheckBatch>? _batchesCache;
   String? _selectedBatchId;
   bool _showAnalysis = false;
   final _analysisBatchIds = <String>{};
@@ -117,7 +124,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
     try {
       final branchesRes = await _client
           .from('branches')
-          .select('branch_name')
+          .select('branch_name,email')
           .eq('is_active', true)
           .order('branch_name');
 
@@ -146,6 +153,12 @@ class _StockCheckPageState extends State<StockCheckPage> {
             .map((e) => (e['branch_name'] ?? '').toString())
             .where((e) => e.trim().isNotEmpty)
             .toList();
+        final branchEmails = <String, String>{};
+        for (final branch in List<Map<String, dynamic>>.from(branchesRes)) {
+          final name = (branch['branch_name'] ?? '').toString().trim();
+          final email = (branch['email'] ?? '').toString().trim();
+          if (name.isNotEmpty && email.isNotEmpty) branchEmails[name] = email;
+        }
         if (_canSendToStore &&
             !destinations.contains(_storeStockCheckDestination)) {
           destinations.add(_storeStockCheckDestination);
@@ -156,7 +169,11 @@ class _StockCheckPageState extends State<StockCheckPage> {
           return a.toLowerCase().compareTo(b.toLowerCase());
         });
         _branches = destinations;
+        _branchEmails = branchEmails;
         _sentRows = sentRows;
+        _sentRowsVersion++;
+        _batchesCacheKey = null;
+        _batchesCache = null;
         final visibleSentRows = sentRows.where((row) {
           return row.source.trim().toLowerCase() ==
               _sentSourceFilter.trim().toLowerCase();
@@ -355,6 +372,9 @@ class _StockCheckPageState extends State<StockCheckPage> {
       if (!mounted) return;
       setState(() {
         _sentRows.removeWhere((row) => row.batchId == batch.id);
+        _sentRowsVersion++;
+        _batchesCacheKey = null;
+        _batchesCache = null;
         if (_selectedBatchId == batch.id) {
           final batches = _batches();
           _selectedBatchId = batches.isEmpty ? null : batches.first.id;
@@ -433,6 +453,15 @@ class _StockCheckPageState extends State<StockCheckPage> {
   }
 
   List<_StockCheckBatch> _batches() {
+    final cacheKey = Object.hash(
+      _sentRowsVersion,
+      _sentSourceFilter,
+      _sentFrom.millisecondsSinceEpoch,
+      _sentTo.millisecondsSinceEpoch,
+    );
+    if (_batchesCacheKey == cacheKey && _batchesCache != null) {
+      return _batchesCache!;
+    }
     final byBatch = <String, List<StockCheckTask>>{};
     for (final row in _filteredSentRows()) {
       byBatch.putIfAbsent(row.batchId, () => []).add(row);
@@ -445,6 +474,8 @@ class _StockCheckPageState extends State<StockCheckPage> {
       final bDate = b.sentAt ?? DateTime.fromMillisecondsSinceEpoch(0);
       return bDate.compareTo(aDate);
     });
+    _batchesCacheKey = cacheKey;
+    _batchesCache = batches;
     return batches;
   }
 
@@ -523,7 +554,9 @@ class _StockCheckPageState extends State<StockCheckPage> {
                               return;
                             }
                             StockCheckExcelExporter.export(
-                              rows: selectedRows,
+                              rows: _visibleDetailRows.isEmpty
+                                  ? selectedRows
+                                  : _visibleDetailRows,
                               title: selectedRows.first.title,
                             );
                           },
@@ -534,6 +567,13 @@ class _StockCheckPageState extends State<StockCheckPage> {
                       padding: const EdgeInsets.all(22),
                       child: Column(
                         children: [
+                          _StockCheckTopTabs(
+                            analysis: _showAnalysis,
+                            onChanged: (value) {
+                              setState(() => _showAnalysis = value);
+                            },
+                          ),
+                          const SizedBox(height: 16),
                           header,
                           const SizedBox(height: 16),
                           _StoreStockCheckTabs(
@@ -570,8 +610,6 @@ class _StockCheckPageState extends State<StockCheckPage> {
                     padding: const EdgeInsets.all(22),
                     child: Column(
                       children: [
-                        header,
-                        const SizedBox(height: 16),
                         _StockCheckTopTabs(
                           analysis: _showAnalysis,
                           onChanged: (value) {
@@ -588,6 +626,10 @@ class _StockCheckPageState extends State<StockCheckPage> {
                           },
                         ),
                         const SizedBox(height: 16),
+                        if (!_showAnalysis) ...[
+                          header,
+                          const SizedBox(height: 16),
+                        ],
                         if (_hasStoreInbox) ...[
                           _StoreStockCheckTabs(
                             showInbox: _showStoreInbox,
@@ -606,6 +648,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
                               batches: batches,
                               selectedBatchIds: _analysisBatchIds,
                               rows: selectedAnalysisRows,
+                              branchEmails: _branchEmails,
                               onSelectBatches: () =>
                                   _openAnalysisBatchPicker(batches),
                             ),
@@ -784,6 +827,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
                       setState(() {
                         _sentSourceFilter = value;
                         _selectedBatchId = null;
+                        _visibleDetailRows = [];
                       });
                     },
                   ),
@@ -806,6 +850,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
                         deleting: _deletingBatchId == batch.id,
                         onTap: () => setState(() {
                           _selectedBatchId = batch.id;
+                          _visibleDetailRows = [];
                           if (!_showAnalysis) {
                             _analysisBatchIds
                               ..clear()
@@ -831,12 +876,31 @@ class _StockCheckPageState extends State<StockCheckPage> {
                   batches: batches,
                   selectedBatchIds: _analysisBatchIds,
                   rows: selectedAnalysisRows,
+                  branchEmails: _branchEmails,
                   onSelectBatches: () => _openAnalysisBatchPicker(batches),
                 )
-              : _StockCheckResultTable(rows: selectedRows),
+              : _StockCheckResultTable(
+                  rows: selectedRows,
+                  onFilteredRowsChanged: (rows) {
+                    _visibleDetailRows = rows;
+                  },
+                  onRowUpdated: _replaceSentRow,
+                ),
         ),
       ],
     );
+  }
+
+  void _replaceSentRow(StockCheckTask updated) {
+    setState(() {
+      final index = _sentRows.indexWhere((row) => row.id == updated.id);
+      if (index >= 0) {
+        _sentRows[index] = updated;
+        _sentRowsVersion++;
+        _batchesCacheKey = null;
+        _batchesCache = null;
+      }
+    });
   }
 
   Future<void> _openAnalysisBatchPicker(List<_StockCheckBatch> batches) async {
@@ -988,8 +1052,14 @@ class _StockCheckPageState extends State<StockCheckPage> {
 
 class _StockCheckResultTable extends StatefulWidget {
   final List<StockCheckTask> rows;
+  final ValueChanged<List<StockCheckTask>>? onFilteredRowsChanged;
+  final ValueChanged<StockCheckTask>? onRowUpdated;
 
-  const _StockCheckResultTable({required this.rows});
+  const _StockCheckResultTable({
+    required this.rows,
+    this.onFilteredRowsChanged,
+    this.onRowUpdated,
+  });
 
   @override
   State<_StockCheckResultTable> createState() => _StockCheckResultTableState();
@@ -999,12 +1069,14 @@ class _StockCheckAnalysisPanel extends StatefulWidget {
   final List<_StockCheckBatch> batches;
   final Set<String> selectedBatchIds;
   final List<StockCheckTask> rows;
+  final Map<String, String> branchEmails;
   final VoidCallback onSelectBatches;
 
   const _StockCheckAnalysisPanel({
     required this.batches,
     required this.selectedBatchIds,
     required this.rows,
+    required this.branchEmails,
     required this.onSelectBatches,
   });
 
@@ -1015,8 +1087,12 @@ class _StockCheckAnalysisPanel extends StatefulWidget {
 
 class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
   final _searchController = TextEditingController();
+  List<StockCheckTask>? _cachedRows;
+  _StockCheckAnalysisReport? _cachedReport;
   String _search = '';
   String _status = 'ALL';
+  String _accuracyBand = 'ALL';
+  String _analysisBranch = 'ALL';
   String _sortBy = 'accuracy';
   bool _sortDescending = false;
   bool _exporting = false;
@@ -1027,21 +1103,42 @@ class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
     super.dispose();
   }
 
+  _StockCheckAnalysisReport _reportFor(List<StockCheckTask> rows) {
+    if (identical(_cachedRows, rows) && _cachedReport != null) {
+      return _cachedReport!;
+    }
+    _cachedRows = rows;
+    _cachedReport = _StockCheckAnalysisReport(rows);
+    return _cachedReport!;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final report = _StockCheckAnalysisReport(widget.rows);
+    final report = _reportFor(widget.rows);
+    final availableBranches = report.branches.map((e) => e.branch).toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final selectedBranch = availableBranches.contains(_analysisBranch)
+        ? _analysisBranch
+        : 'ALL';
     var branches = report.branches;
     final needle = _search.trim().toLowerCase();
     branches = branches.where((branch) {
+      final branchOk =
+          selectedBranch == 'ALL' || branch.branch == selectedBranch;
       final statusOk = switch (_status) {
         'warning' => branch.hasDeadlineRisk,
         'incomplete' => branch.pending > 0,
         'complete' => branch.pending == 0,
         _ => true,
       };
+      final accuracyOk = switch (_accuracyBand) {
+        'gte75' => branch.accuracyRate >= 75,
+        'lt75' => branch.accuracyRate < 75,
+        _ => true,
+      };
       final searchOk =
           needle.isEmpty || branch.branch.toLowerCase().contains(needle);
-      return statusOk && searchOk;
+      return branchOk && statusOk && accuracyOk && searchOk;
     }).toList();
     branches.sort((a, b) {
       final aValue = _sortBy == 'completion'
@@ -1064,10 +1161,10 @@ class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
         children: [
           Row(
             children: [
-              const Expanded(
-                child: _PanelTitle(
-                  icon: Icons.analytics_rounded,
-                  title: 'Stock Check Accuracy Analysis',
+              Expanded(
+                child: _AnalysisHeaderSummary(
+                  report: report,
+                  selectedProjects: widget.selectedBatchIds.length,
                 ),
               ),
               OutlinedButton.icon(
@@ -1101,11 +1198,34 @@ class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
             ],
           ),
           const SizedBox(height: 12),
-          _AnalysisProjectStrip(
-            batches: widget.batches
-                .where((batch) => widget.selectedBatchIds.contains(batch.id))
-                .toList(),
-            onTap: widget.onSelectBatches,
+          Row(
+            children: [
+              Expanded(
+                child: _AnalysisProjectStrip(
+                  batches: widget.batches
+                      .where(
+                        (batch) => widget.selectedBatchIds.contains(batch.id),
+                      )
+                      .toList(),
+                  onTap: widget.onSelectBatches,
+                ),
+              ),
+              const SizedBox(width: 10),
+              SizedBox(
+                width: 320,
+                child: _AnalysisBranchPicker(
+                  value: selectedBranch,
+                  branches: availableBranches,
+                  onChanged: (value) {
+                    setState(() {
+                      _analysisBranch = value;
+                      _search = '';
+                      _searchController.clear();
+                    });
+                  },
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           Row(
@@ -1140,13 +1260,48 @@ class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
             ],
           ),
           const SizedBox(height: 12),
+          Row(
+            children: [
+              _AnalysisMetricCard(
+                label: 'Not started branches',
+                value: report.notStartedBranches.toString(),
+                icon: Icons.flag_circle_rounded,
+                color: const Color(0xFF64748B),
+              ),
+              const SizedBox(width: 10),
+              _AnalysisMetricCard(
+                label: 'Completed branches',
+                value: report.completedBranches.toString(),
+                icon: Icons.verified_user_rounded,
+                color: const Color(0xFF16A34A),
+              ),
+              const SizedBox(width: 10),
+              _AnalysisMetricCard(
+                label: 'Non-zero checked',
+                value: report.nonZeroCounted.toString(),
+                icon: Icons.dataset_rounded,
+                color: const Color(0xFF7C3AED),
+              ),
+              const SizedBox(width: 10),
+              _AnalysisMetricCard(
+                label: 'Below 75%',
+                value: report.below75Branches.toString(),
+                icon: Icons.trending_down_rounded,
+                color: const Color(0xFFEA580C),
+              ),
+            ],
+          ),
           _AnalysisToolbar(
             searchController: _searchController,
             status: _status,
+            accuracyBand: _accuracyBand,
             sortBy: _sortBy,
             sortDescending: _sortDescending,
             onSearchChanged: (value) => setState(() => _search = value),
             onStatusChanged: (value) => setState(() => _status = value),
+            onAccuracyBandChanged: (value) {
+              setState(() => _accuracyBand = value);
+            },
             onSortChanged: (value) => setState(() => _sortBy = value),
             onDirectionToggle: () {
               setState(() => _sortDescending = !_sortDescending);
@@ -1175,6 +1330,7 @@ class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
                       return _BranchAccuracyCard(
                         rank: index + 1,
                         row: branches[index],
+                        email: widget.branchEmails[branches[index].branch],
                       );
                     },
                   ),
@@ -1255,23 +1411,248 @@ class _AnalysisProjectStrip extends StatelessWidget {
   }
 }
 
+class _AnalysisBranchPicker extends StatelessWidget {
+  final String value;
+  final List<String> branches;
+  final ValueChanged<String> onChanged;
+
+  const _AnalysisBranchPicker({
+    required this.value,
+    required this.branches,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final label = value == 'ALL' ? 'All branches' : value;
+    return InkWell(
+      onTap: () async {
+        final selected = await showDialog<String>(
+          context: context,
+          builder: (_) =>
+              _AnalysisBranchSearchDialog(branches: branches, selected: value),
+        );
+        if (selected != null) onChanged(selected);
+      },
+      borderRadius: BorderRadius.circular(14),
+      child: InputDecorator(
+        decoration: _StockCheckResultTableState._filterDecoration(
+          'Branch focus',
+          icon: Icons.storefront_rounded,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+            const Icon(Icons.search_rounded, color: AppColors.subText),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AnalysisBranchSearchDialog extends StatefulWidget {
+  final List<String> branches;
+  final String selected;
+
+  const _AnalysisBranchSearchDialog({
+    required this.branches,
+    required this.selected,
+  });
+
+  @override
+  State<_AnalysisBranchSearchDialog> createState() =>
+      _AnalysisBranchSearchDialogState();
+}
+
+class _AnalysisBranchSearchDialogState
+    extends State<_AnalysisBranchSearchDialog> {
+  final _controller = TextEditingController();
+  String _search = '';
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final needle = _search.trim().toLowerCase();
+    final options = [
+      'ALL',
+      ...widget.branches.where(
+        (branch) => needle.isEmpty || branch.toLowerCase().contains(needle),
+      ),
+    ];
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: SizedBox(
+        width: 430,
+        height: 520,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryColor.withValues(alpha: .12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.storefront_rounded,
+                      color: AppColors.primaryColor,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Focus on branch',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _controller,
+                decoration: _StockCheckResultTableState._filterDecoration(
+                  'Search branch',
+                  icon: Icons.search_rounded,
+                ),
+                onChanged: (value) => setState(() => _search = value),
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: ListView.separated(
+                  itemCount: options.length,
+                  separatorBuilder: (_, _) =>
+                      const Divider(height: 1, color: AppColors.border),
+                  itemBuilder: (context, index) {
+                    final branch = options[index];
+                    final selected = branch == widget.selected;
+                    return ListTile(
+                      selected: selected,
+                      selectedTileColor: AppColors.primaryColor.withValues(
+                        alpha: .08,
+                      ),
+                      leading: Icon(
+                        selected
+                            ? Icons.radio_button_checked_rounded
+                            : Icons.radio_button_off_rounded,
+                        color: selected
+                            ? AppColors.primaryColor
+                            : AppColors.subText,
+                      ),
+                      title: Text(
+                        branch == 'ALL' ? 'All branches' : branch,
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      onTap: () => Navigator.pop(context, branch),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AnalysisHeaderSummary extends StatelessWidget {
+  final _StockCheckAnalysisReport report;
+  final int selectedProjects;
+
+  const _AnalysisHeaderSummary({
+    required this.report,
+    required this.selectedProjects,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: AppColors.primaryColor.withValues(alpha: .12),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: const Icon(
+            Icons.analytics_rounded,
+            color: AppColors.primaryColor,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Stock Check Accuracy Analysis',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                '$selectedProjects project(s) • ${report.branches.length} branch(es) • ${report.submitted} submitted item(s)',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.subText,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _AnalysisToolbar extends StatelessWidget {
   final TextEditingController searchController;
   final String status;
+  final String accuracyBand;
   final String sortBy;
   final bool sortDescending;
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<String> onStatusChanged;
+  final ValueChanged<String> onAccuracyBandChanged;
   final ValueChanged<String> onSortChanged;
   final VoidCallback onDirectionToggle;
 
   const _AnalysisToolbar({
     required this.searchController,
     required this.status,
+    required this.accuracyBand,
     required this.sortBy,
     required this.sortDescending,
     required this.onSearchChanged,
     required this.onStatusChanged,
+    required this.onAccuracyBandChanged,
     required this.onSortChanged,
     required this.onDirectionToggle,
   });
@@ -1348,6 +1729,31 @@ class _AnalysisToolbar extends StatelessWidget {
                 icon: Icons.check_circle_outline_rounded,
                 selected: status == 'complete',
                 onTap: () => onStatusChanged('complete'),
+              ),
+            ],
+          ),
+          const SizedBox(width: 12),
+          _ToolbarGroup(
+            label: 'Accuracy',
+            children: [
+              _ToolbarChip(
+                label: 'All',
+                icon: Icons.all_inclusive_rounded,
+                selected: accuracyBand == 'ALL',
+                onTap: () => onAccuracyBandChanged('ALL'),
+              ),
+              _ToolbarChip(
+                label: '75%+',
+                icon: Icons.trending_up_rounded,
+                selected: accuracyBand == 'gte75',
+                onTap: () => onAccuracyBandChanged('gte75'),
+              ),
+              _ToolbarChip(
+                label: 'Below 75%',
+                icon: Icons.trending_down_rounded,
+                selected: accuracyBand == 'lt75',
+                danger: true,
+                onTap: () => onAccuracyBandChanged('lt75'),
               ),
             ],
           ),
@@ -1650,8 +2056,13 @@ class _ComparisonSummary extends StatelessWidget {
 class _BranchAccuracyCard extends StatelessWidget {
   final int rank;
   final _StockCheckBranchAnalysis row;
+  final String? email;
 
-  const _BranchAccuracyCard({required this.rank, required this.row});
+  const _BranchAccuracyCard({
+    required this.rank,
+    required this.row,
+    required this.email,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1708,7 +2119,7 @@ class _BranchAccuracyCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${row.submitted} submitted / ${row.pending} pending • ${row.zeroZeroIgnored} zero-zero ignored',
+                  '${row.submitted} submitted / ${row.pending} pending • ${row.nonZeroCounted} non-zero • ${row.toleranceCorrect} within tolerance',
                   style: const TextStyle(
                     color: AppColors.subText,
                     fontSize: 12,
@@ -1742,7 +2153,7 @@ class _BranchAccuracyCard extends StatelessWidget {
           ),
           const SizedBox(width: 18),
           SizedBox(
-            width: 150,
+            width: 178,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
@@ -1764,12 +2175,83 @@ class _BranchAccuracyCard extends StatelessWidget {
                     fontWeight: FontWeight.w900,
                   ),
                 ),
+                if ((email ?? '').trim().isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _EmailReminderButton(branch: row.branch, email: email!),
+                ],
               ],
             ),
           ),
         ],
       ),
     );
+  }
+}
+
+class _EmailReminderButton extends StatelessWidget {
+  final String branch;
+  final String email;
+
+  const _EmailReminderButton({required this.branch, required this.email});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Open Outlook reminder email',
+      child: InkWell(
+        onTap: () => _openReminderEmail(context),
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            color: AppColors.primaryColor.withValues(alpha: .10),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: AppColors.primaryColor.withValues(alpha: .28),
+            ),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.mark_email_unread_rounded,
+                size: 15,
+                color: AppColors.primaryColor,
+              ),
+              SizedBox(width: 5),
+              Text(
+                'Email reminder',
+                style: TextStyle(
+                  color: AppColors.primaryColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openReminderEmail(BuildContext context) async {
+    final subject = Uri.encodeComponent('Stock Check Reminder - $branch');
+    final body = Uri.encodeComponent(
+      'Dear $branch Team,\n\n'
+      'Please complete the pending Stock Check as soon as possible.\n'
+      'Kindly enter the required System Qty and Actual Qty, then submit the stock check from the branch dashboard.\n\n'
+      'Thank you.',
+    );
+    final uri = Uri.parse('mailto:$email?subject=$subject&body=$body');
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not open email app for $email'),
+          backgroundColor: const Color(0xFFDC2626),
+        ),
+      );
+    }
   }
 }
 
@@ -1821,7 +2303,7 @@ class _AnalysisBar extends StatelessWidget {
 class _StockCheckResultTableState extends State<_StockCheckResultTable> {
   final _searchController = TextEditingController();
   String _search = '';
-  String _branchFilter = 'ALL';
+  final _branchFilters = <String>{};
   String _statusFilter = 'ALL';
   String _sortColumn = 'branch';
   bool _sortAscending = true;
@@ -1830,6 +2312,10 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
   List<String> _branches = const [];
   List<StockCheckTask> _filteredRows = const [];
   bool _showBarcodeSticker = false;
+  int? _lastNotifiedRowsHash;
+  int? _rowIndexCacheKey;
+  List<String> _cachedBranches = const [];
+  bool _cachedShowBarcodeSticker = false;
 
   @override
   void initState() {
@@ -1843,12 +2329,13 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
     if (_batchId(oldWidget.rows) != _batchId(widget.rows)) {
       _searchController.clear();
       _search = '';
-      _branchFilter = 'ALL';
+      _branchFilters.clear();
       _statusFilter = 'ALL';
       _sortColumn = 'branch';
       _sortAscending = true;
       _columnFilters.clear();
       _numericFilters.clear();
+      _lastNotifiedRowsHash = null;
     }
     _rebuildIndexes();
   }
@@ -1881,24 +2368,14 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
               children: [
                 SizedBox(
                   width: 300.w,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _branchFilter,
-                    decoration: _filterDecoration('Branch'),
-                    items: [
-                      const DropdownMenuItem(
-                        value: 'ALL',
-                        child: Text('All Branches'),
-                      ),
-                      ..._branches.map(
-                        (branch) => DropdownMenuItem(
-                          value: branch,
-                          child: Text(branch, overflow: TextOverflow.ellipsis),
-                        ),
-                      ),
-                    ],
+                  child: _SearchableBranchFilter(
+                    selectedBranches: _branchFilters,
+                    branches: _branches,
                     onChanged: (value) {
                       setState(() {
-                        _branchFilter = value ?? 'ALL';
+                        _branchFilters
+                          ..clear()
+                          ..addAll(value);
                         _rebuildIndexes();
                       });
                     },
@@ -1991,6 +2468,7 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
                       sortColumn: _sortColumn,
                       sortAscending: _sortAscending,
                       onColumnFilter: _openColumnFilter,
+                      onRowTap: _openNoteDialog,
                     ),
                   ),
           ),
@@ -2004,23 +2482,30 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
   }
 
   void _rebuildIndexes() {
-    final branches =
-        widget.rows
-            .map((row) => row.branchName.trim())
-            .where((branch) => branch.isNotEmpty)
-            .toSet()
-            .toList()
-          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-
-    if (_branchFilter != 'ALL' && !branches.contains(_branchFilter)) {
-      _branchFilter = 'ALL';
+    final rowIndexKey = _rowsIndexKey(widget.rows);
+    if (_rowIndexCacheKey != rowIndexKey) {
+      _rowIndexCacheKey = rowIndexKey;
+      _cachedBranches =
+          widget.rows
+              .map((row) => row.branchName.trim())
+              .where((branch) => branch.isNotEmpty)
+              .toSet()
+              .toList()
+            ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      _cachedShowBarcodeSticker = widget.rows.any(
+        (row) => row.includeBarcodeStickerCheck,
+      );
     }
+    final branches = _cachedBranches;
+
+    _branchFilters.removeWhere((branch) => !branches.contains(branch));
 
     final needle = _search.trim().toLowerCase();
     final filtered =
         widget.rows.where((row) {
           final branchOk =
-              _branchFilter == 'ALL' || row.branchName.trim() == _branchFilter;
+              _branchFilters.isEmpty ||
+              _branchFilters.contains(row.branchName.trim());
           final statusOk =
               _statusFilter == 'ALL' ||
               (_statusFilter == 'submitted' && row.isSubmitted) ||
@@ -2051,8 +2536,23 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
 
     _branches = branches;
     _filteredRows = filtered;
-    _showBarcodeSticker = widget.rows.any(
-      (row) => row.includeBarcodeStickerCheck,
+    _showBarcodeSticker = _cachedShowBarcodeSticker;
+    final rowsHash = Object.hashAll(_filteredRows.map((row) => row.id));
+    if (_lastNotifiedRowsHash != rowsHash) {
+      _lastNotifiedRowsHash = rowsHash;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onFilteredRowsChanged?.call(_filteredRows);
+      });
+    }
+  }
+
+  int _rowsIndexKey(List<StockCheckTask> rows) {
+    if (rows.isEmpty) return 0;
+    return Object.hash(
+      rows.length,
+      rows.first.id,
+      rows.last.id,
+      rows.first.batchId,
     );
   }
 
@@ -2112,6 +2612,9 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
         row.includeBarcodeStickerCheck
             ? _yesNo(row.barcodeStickerIsCorrect)
             : '',
+      'submittedByName' => row.submittedByName,
+      'submittedByEmployeeId' => row.submittedByEmployeeId,
+      'note' => row.note,
       'status' => row.isSubmitted ? 'Submitted' : 'Pending',
       _ => '',
     };
@@ -2127,15 +2630,24 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
   }
 
   Future<void> _openColumnFilter(String column, String label) async {
+    final isNumeric = {'system', 'actual', 'diff'}.contains(column);
     final values =
         widget.rows
             .map((row) => _columnValue(row, column))
             .where((value) => value.trim().isNotEmpty)
             .toSet()
             .toList()
-          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+          ..sort((a, b) {
+            if (isNumeric) {
+              final av = num.tryParse(a.replaceAll(',', ''));
+              final bv = num.tryParse(b.replaceAll(',', ''));
+              if (av != null && bv != null) return av.compareTo(bv);
+              if (av != null) return -1;
+              if (bv != null) return 1;
+            }
+            return a.toLowerCase().compareTo(b.toLowerCase());
+          });
     final current = Set<String>.from(_columnFilters[column] ?? values);
-    final isNumeric = {'system', 'actual', 'diff'}.contains(column);
     final result = await showDialog<_ColumnFilterResult>(
       context: context,
       barrierColor: Colors.black26,
@@ -2165,6 +2677,38 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
       _rebuildIndexes();
     });
   }
+
+  Future<void> _openNoteDialog(StockCheckTask row) async {
+    final note = await showDialog<String>(
+      context: context,
+      builder: (_) => _StockCheckNoteDialog(row: row),
+    );
+    if (note == null || !mounted) return;
+    try {
+      await Supabase.instance.client
+          .from('stock_check_tasks')
+          .update({
+            'note': note,
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', row.id);
+      final updated = row.copyWith(note: note);
+      widget.onRowUpdated?.call(updated);
+      setState(() {
+        final index = _filteredRows.indexWhere((item) => item.id == row.id);
+        if (index >= 0) _filteredRows[index] = updated;
+        _rebuildIndexes();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not save note: $e'),
+          backgroundColor: const Color(0xFFDC2626),
+        ),
+      );
+    }
+  }
 }
 
 class _StockCheckItem {
@@ -2172,6 +2716,328 @@ class _StockCheckItem {
   final String itemName;
 
   const _StockCheckItem({required this.itemCode, required this.itemName});
+}
+
+class _SearchableBranchFilter extends StatelessWidget {
+  final Set<String> selectedBranches;
+  final List<String> branches;
+  final ValueChanged<Set<String>> onChanged;
+
+  const _SearchableBranchFilter({
+    required this.selectedBranches,
+    required this.branches,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final label = selectedBranches.isEmpty
+        ? 'All Branches'
+        : selectedBranches.length == 1
+        ? selectedBranches.first
+        : '${selectedBranches.length} branches selected';
+    return InkWell(
+      onTap: () async {
+        final selected = await showDialog<Set<String>>(
+          context: context,
+          builder: (_) => _BranchFilterSearchDialog(
+            branches: branches,
+            selected: selectedBranches,
+          ),
+        );
+        if (selected != null) onChanged(selected);
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: InputDecorator(
+        decoration: _StockCheckResultTableState._filterDecoration('Branch'),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+            const Icon(Icons.search_rounded, color: AppColors.subText),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BranchFilterSearchDialog extends StatefulWidget {
+  final List<String> branches;
+  final Set<String> selected;
+
+  const _BranchFilterSearchDialog({
+    required this.branches,
+    required this.selected,
+  });
+
+  @override
+  State<_BranchFilterSearchDialog> createState() =>
+      _BranchFilterSearchDialogState();
+}
+
+class _BranchFilterSearchDialogState extends State<_BranchFilterSearchDialog> {
+  final _controller = TextEditingController();
+  late final Set<String> _selected;
+  String _search = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = Set<String>.from(widget.selected);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final needle = _search.trim().toLowerCase();
+    final options = widget.branches
+        .where(
+          (branch) => needle.isEmpty || branch.toLowerCase().contains(needle),
+        )
+        .toList();
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: SizedBox(
+        width: 420,
+        height: 520,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.store_rounded,
+                    color: AppColors.primaryColor,
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Select branches',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _controller,
+                decoration: _StockCheckResultTableState._filterDecoration(
+                  'Search branch',
+                  icon: Icons.search_rounded,
+                ),
+                onChanged: (value) => setState(() => _search = value),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  TextButton(
+                    onPressed: () => setState(() {
+                      _selected
+                        ..clear()
+                        ..addAll(widget.branches);
+                    }),
+                    child: const Text('Select all'),
+                  ),
+                  TextButton(
+                    onPressed: () => setState(() => _selected.clear()),
+                    child: const Text('Clear'),
+                  ),
+                  const Spacer(),
+                  Text(
+                    _selected.isEmpty
+                        ? 'All branches'
+                        : '${_selected.length} selected',
+                    style: const TextStyle(
+                      color: AppColors.subText,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Expanded(
+                child: ListView.separated(
+                  itemCount: options.length,
+                  separatorBuilder: (_, _) =>
+                      const Divider(height: 1, color: AppColors.border),
+                  itemBuilder: (context, index) {
+                    final branch = options[index];
+                    final selected = _selected.contains(branch);
+                    return ListTile(
+                      dense: true,
+                      selected: selected,
+                      selectedTileColor: AppColors.primaryColor.withValues(
+                        alpha: .08,
+                      ),
+                      leading: Icon(
+                        selected
+                            ? Icons.check_box_rounded
+                            : Icons.check_box_outline_blank_rounded,
+                        color: selected
+                            ? AppColors.primaryColor
+                            : AppColors.subText,
+                      ),
+                      title: Text(
+                        branch,
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      onTap: () => setState(() {
+                        if (selected) {
+                          _selected.remove(branch);
+                        } else {
+                          _selected.add(branch);
+                        }
+                      }),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel'),
+                  ),
+                  const Spacer(),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(context, _selected),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primaryColor,
+                    ),
+                    child: const Text('Apply'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StockCheckNoteDialog extends StatefulWidget {
+  final StockCheckTask row;
+
+  const _StockCheckNoteDialog({required this.row});
+
+  @override
+  State<_StockCheckNoteDialog> createState() => _StockCheckNoteDialogState();
+}
+
+class _StockCheckNoteDialogState extends State<_StockCheckNoteDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.row.note);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      title: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.backgroundWidget,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.edit_note_rounded,
+              color: AppColors.primaryColor,
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'Stock check note',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 480,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.row.itemName,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${widget.row.branchName} - ${widget.row.itemCode}',
+              style: const TextStyle(
+                color: AppColors.subText,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _controller,
+              minLines: 4,
+              maxLines: 7,
+              decoration: _StockCheckResultTableState._filterDecoration(
+                'Write note for this branch item',
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton.icon(
+          onPressed: () => Navigator.pop(context, _controller.text.trim()),
+          icon: const Icon(Icons.cloud_done_rounded),
+          label: const Text('Save note'),
+          style: FilledButton.styleFrom(
+            backgroundColor: AppColors.primaryColor,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _StockCheckProductsImport {
@@ -2780,6 +3646,7 @@ class _FastStockCheckResultsTable extends StatefulWidget {
   final String sortColumn;
   final bool sortAscending;
   final void Function(String column, String label) onColumnFilter;
+  final ValueChanged<StockCheckTask> onRowTap;
 
   const _FastStockCheckResultsTable({
     required this.rows,
@@ -2788,6 +3655,7 @@ class _FastStockCheckResultsTable extends StatefulWidget {
     required this.sortColumn,
     required this.sortAscending,
     required this.onColumnFilter,
+    required this.onRowTap,
   });
 
   @override
@@ -2803,6 +3671,9 @@ class _FastStockCheckResultsTableState
   double _qtyW = 95;
   double _diffW = 68;
   double _barcodeW = 220;
+  double _submitterW = 180;
+  double _employeeW = 150;
+  double _noteW = 220;
   double _statusW = 200;
 
   double get _width =>
@@ -2812,6 +3683,9 @@ class _FastStockCheckResultsTableState
       (_qtyW * 2) +
       _diffW +
       (widget.showBarcodeSticker ? _barcodeW : 0) +
+      _submitterW +
+      _employeeW +
+      _noteW +
       _statusW;
 
   void _resize(String column, double delta) {
@@ -2829,6 +3703,12 @@ class _FastStockCheckResultsTableState
           _diffW = (_diffW + delta).clamp(62, 150);
         case 'barcode':
           _barcodeW = (_barcodeW + delta).clamp(180, 360);
+        case 'submittedByName':
+          _submitterW = (_submitterW + delta).clamp(140, 320);
+        case 'submittedByEmployeeId':
+          _employeeW = (_employeeW + delta).clamp(120, 260);
+        case 'note':
+          _noteW = (_noteW + delta).clamp(150, 420);
         case 'status':
           _statusW = (_statusW + delta).clamp(130, 280);
       }
@@ -2851,6 +3731,9 @@ class _FastStockCheckResultsTableState
               _header('Diff', 'diff', _diffW),
               if (widget.showBarcodeSticker)
                 _header('Barcode Sticker is Correct', 'barcode', _barcodeW),
+              _header('Submitted By', 'submittedByName', _submitterW),
+              _header('Employee ID', 'submittedByEmployeeId', _employeeW),
+              _header('Note', 'note', _noteW),
               _header('Status', 'status', _statusW),
             ],
             background: const Color(0xFFEFF6FF),
@@ -2873,7 +3756,7 @@ class _FastStockCheckResultsTableState
                     cells: [
                       _cell(row.branchName, _branchW),
                       _cell(row.itemCode, _codeW),
-                      _cell(row.itemName, _nameW, maxLines: 2),
+                      _itemNameCell(row),
                       _cell(row.systemQty?.toString() ?? '', _qtyW),
                       _cell(row.actualQty?.toString() ?? '', _qtyW),
                       _cell(row.variance?.toString() ?? '', _diffW),
@@ -2886,6 +3769,9 @@ class _FastStockCheckResultsTableState
                               : '',
                           _barcodeW,
                         ),
+                      _cell(row.submittedByName, _submitterW, maxLines: 2),
+                      _cell(row.submittedByEmployeeId, _employeeW),
+                      _noteCell(row),
                       _statusCell(row.isSubmitted),
                     ],
                   );
@@ -2994,12 +3880,55 @@ class _FastStockCheckResultsTableState
       decoration: const BoxDecoration(
         border: Border(right: BorderSide(color: Color(0xFFD9E8F5))),
       ),
-      child: Text(
+      child: SelectableText(
         text,
         maxLines: maxLines,
-        overflow: TextOverflow.ellipsis,
         textAlign: TextAlign.center,
         style: const TextStyle(fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+
+  Widget _itemNameCell(StockCheckTask row) {
+    return Container(
+      width: _nameW,
+      height: 54,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: const BoxDecoration(
+        border: Border(right: BorderSide(color: Color(0xFFD9E8F5))),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: SelectableText(
+              row.itemName,
+              maxLines: 2,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Tooltip(
+            message: row.note.trim().isEmpty ? 'Add note' : 'Edit note',
+            child: IconButton(
+              onPressed: () => widget.onRowTap(row),
+              icon: Icon(
+                row.note.trim().isEmpty
+                    ? Icons.note_add_outlined
+                    : Icons.sticky_note_2_rounded,
+                size: 18,
+              ),
+              visualDensity: VisualDensity.compact,
+              style: IconButton.styleFrom(
+                foregroundColor: AppColors.primaryColor,
+                backgroundColor: AppColors.primaryColor.withValues(alpha: .08),
+                minimumSize: const Size(32, 32),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -3016,6 +3945,40 @@ class _FastStockCheckResultsTableState
       child: FittedBox(
         fit: BoxFit.scaleDown,
         child: _StatusChip(done: done),
+      ),
+    );
+  }
+
+  Widget _noteCell(StockCheckTask row) {
+    final hasNote = row.note.trim().isNotEmpty;
+    return Container(
+      width: _noteW,
+      height: 54,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: const BoxDecoration(
+        border: Border(right: BorderSide(color: Color(0xFFD9E8F5))),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            hasNote ? Icons.sticky_note_2_rounded : Icons.add_comment_rounded,
+            size: 17,
+            color: hasNote ? AppColors.primaryColor : AppColors.subText,
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: SelectableText(
+              hasNote ? row.note : 'Add note',
+              maxLines: 1,
+              style: TextStyle(
+                color: hasNote ? AppColors.secondaryColor : AppColors.subText,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -3082,7 +4045,7 @@ class _StockCheckBatch {
   final String id;
   final List<StockCheckTask> rows;
 
-  const _StockCheckBatch({required this.id, required this.rows});
+  _StockCheckBatch({required this.id, required this.rows});
 
   String get title => rows.isEmpty ? 'Stock Check' : rows.first.title;
   DateTime? get sentAt => rows.isEmpty ? null : rows.first.sentAt;
@@ -3090,28 +4053,75 @@ class _StockCheckBatch {
   bool get isExpired =>
       expiresAt != null && DateTime.now().isAfter(expiresAt!.toLocal());
   int get total => rows.length;
-  int get pending => rows.where((row) => row.isPending).length;
-  int get submitted => rows.where((row) => row.isSubmitted).length;
-  int get branches => rows.map((row) => row.branchName).toSet().length;
-  int get products => rows.map((row) => row.itemCode).toSet().length;
+  late final int submitted = rows.where((row) => row.isSubmitted).length;
+  int get pending => total - submitted;
+  late final int branches = rows.map((row) => row.branchName).toSet().length;
+  late final int products = rows.map((row) => row.itemCode).toSet().length;
+}
+
+class _StockCheckRowStats {
+  final int total;
+  final int submitted;
+  final int counted;
+  final int correct;
+  final int nonZero;
+
+  const _StockCheckRowStats({
+    required this.total,
+    required this.submitted,
+    required this.counted,
+    required this.correct,
+    required this.nonZero,
+  });
+
+  factory _StockCheckRowStats.fromRows(List<StockCheckTask> rows) {
+    var submitted = 0;
+    var counted = 0;
+    var correct = 0;
+    var nonZero = 0;
+    for (final row in rows) {
+      if (row.isSubmitted) submitted++;
+      if (row.systemQty == null || row.actualQty == null) continue;
+      counted++;
+      if ((row.systemQty ?? 0) != 0 || (row.actualQty ?? 0) != 0) {
+        nonZero++;
+      }
+      final diff = (row.variance ?? 0).toDouble().abs();
+      if (diff <= _stockCheckAccuracyTolerance + 1e-9) correct++;
+    }
+    return _StockCheckRowStats(
+      total: rows.length,
+      submitted: submitted,
+      counted: counted,
+      correct: correct,
+      nonZero: nonZero,
+    );
+  }
 }
 
 class _StockCheckAnalysisReport {
   final List<StockCheckTask> rows;
+  late final _StockCheckRowStats _stats = _StockCheckRowStats.fromRows(rows);
   late final List<_StockCheckBranchAnalysis> branches = _buildBranches();
   late final List<_StockCheckComparisonRow> comparisonRows =
       _buildComparisonRows();
 
   _StockCheckAnalysisReport(this.rows);
 
-  int get submitted => rows.where((row) => row.isSubmitted).length;
+  int get submitted => _stats.submitted;
   int get pending => rows.length - submitted;
-  int get counted => rows.where(_isCounted).length;
-  int get correct => rows.where(_isCorrect).length;
+  int get counted => _stats.counted;
+  int get correct => _stats.correct;
   int get different => counted - correct;
   double get accuracyRate => counted == 0 ? 0 : correct * 100 / counted;
   double get completionRate => rows.isEmpty ? 0 : submitted * 100 / rows.length;
   int get riskyBranches => branches.where((row) => row.hasDeadlineRisk).length;
+  int get notStartedBranches =>
+      branches.where((row) => row.submitted == 0).length;
+  int get completedBranches => branches.where((row) => row.pending == 0).length;
+  int get below75Branches =>
+      branches.where((row) => row.counted > 0 && row.accuracyRate < 75).length;
+  int get nonZeroCounted => _stats.nonZero;
 
   List<_StockCheckBranchAnalysis> _buildBranches() {
     final byBranch = <String, List<StockCheckTask>>{};
@@ -3150,22 +4160,14 @@ class _StockCheckAnalysisReport {
             b.value.first.sentAt ?? DateTime.fromMillisecondsSinceEpoch(0);
         return ad.compareTo(bd);
       });
-    final firstRows = batches.first.value;
-    final lastRows = batches.last.value;
-
-    final branches = {
-      ...firstRows.map((row) => row.branchName.trim()),
-      ...lastRows.map((row) => row.branchName.trim()),
-    }..removeWhere((branch) => branch.isEmpty);
+    final firstByBranch = _groupRowsByBranch(batches.first.value);
+    final lastByBranch = _groupRowsByBranch(batches.last.value);
+    final branches = {...firstByBranch.keys, ...lastByBranch.keys};
 
     final result = <_StockCheckComparisonRow>[];
     for (final branch in branches) {
-      final firstBranchRows = firstRows
-          .where((row) => row.branchName.trim() == branch)
-          .toList();
-      final lastBranchRows = lastRows
-          .where((row) => row.branchName.trim() == branch)
-          .toList();
+      final firstBranchRows = firstByBranch[branch] ?? const <StockCheckTask>[];
+      final lastBranchRows = lastByBranch[branch] ?? const <StockCheckTask>[];
       final first = _StockCheckBranchAnalysis(branch, firstBranchRows);
       final last = _StockCheckBranchAnalysis(branch, lastBranchRows);
       final firstByItem = {
@@ -3181,8 +4183,8 @@ class _StockCheckAnalysisReport {
           continue;
         }
         common++;
-        final before = (previous.variance ?? 0).abs();
-        final after = (row.variance ?? 0).abs();
+        final before = _effectiveAbsVariance(previous);
+        final after = _effectiveAbsVariance(row);
         if (after < before) improved++;
         if (after > before) worsened++;
       }
@@ -3201,38 +4203,48 @@ class _StockCheckAnalysisReport {
     return result;
   }
 
+  static Map<String, List<StockCheckTask>> _groupRowsByBranch(
+    List<StockCheckTask> rows,
+  ) {
+    final grouped = <String, List<StockCheckTask>>{};
+    for (final row in rows) {
+      final branch = row.branchName.trim();
+      if (branch.isEmpty) continue;
+      grouped.putIfAbsent(branch, () => []).add(row);
+    }
+    return grouped;
+  }
+
   static bool _isCounted(StockCheckTask row) {
     if (row.systemQty == null || row.actualQty == null) return false;
-    return !(row.systemQty == 0 && row.actualQty == 0);
+    return true;
   }
 
-  static bool _isCorrect(StockCheckTask row) {
-    return _isCounted(row) && row.systemQty == row.actualQty;
+  static double _effectiveAbsVariance(StockCheckTask row) {
+    return (row.variance ?? 0).toDouble().abs();
   }
 }
-
-bool _isCounted(StockCheckTask row) =>
-    _StockCheckAnalysisReport._isCounted(row);
-bool _isCorrect(StockCheckTask row) =>
-    _StockCheckAnalysisReport._isCorrect(row);
 
 class _StockCheckBranchAnalysis {
   final String branch;
   final List<StockCheckTask> rows;
+  late final _StockCheckRowStats _stats = _StockCheckRowStats.fromRows(rows);
 
-  const _StockCheckBranchAnalysis(this.branch, this.rows);
+  _StockCheckBranchAnalysis(this.branch, this.rows);
 
-  int get total => rows.length;
-  int get submitted => rows.where((row) => row.isSubmitted).length;
+  int get total => _stats.total;
+  int get submitted => _stats.submitted;
   int get pending => total - submitted;
-  int get counted => rows.where(_isCounted).length;
-  int get correct => rows.where(_isCorrect).length;
+  int get counted => _stats.counted;
+  int get correct => _stats.correct;
   int get different => counted - correct;
-  int get zeroZeroIgnored =>
-      rows.where((row) => row.systemQty == 0 && row.actualQty == 0).length;
+  int get toleranceCorrect => correct;
+  int get nonZeroCounted => _stats.nonZero;
   double get accuracyRate => counted == 0 ? 0 : correct * 100 / counted;
   double get completionRate => total == 0 ? 0 : submitted * 100 / total;
-  bool get hasDeadlineRisk {
+  late final bool hasDeadlineRisk = _computeDeadlineRisk();
+
+  bool _computeDeadlineRisk() {
     if (pending == 0 || completionRate >= 50) return false;
     final now = DateTime.now();
     return rows.any((row) {
