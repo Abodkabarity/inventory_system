@@ -2275,16 +2275,22 @@ class _EmailReminderButton extends StatelessWidget {
         'Please complete the pending Stock Check as soon as possible.\n'
         'Kindly enter the required System Qty and Actual Qty, then submit the stock check from the branch dashboard.\n\n'
         'Thank you.';
-    final uri = Uri(
-      scheme: 'mailto',
-      path: contact.email,
-      queryParameters: {
-        'subject': 'Stock Check Reminder - $branch',
-        'body': body,
-        'cc': cc.join(','),
-      },
+    final subject = Uri.encodeComponent('Stock Check Reminder - $branch');
+
+    final bodyEncoded = Uri.encodeComponent(body);
+
+    final ccEncoded = Uri.encodeComponent(cc.join(';'));
+
+    final mailto =
+        'mailto:${contact.email}'
+        '?subject=$subject'
+        '&body=$bodyEncoded'
+        '&cc=$ccEncoded';
+
+    final opened = await launchUrl(
+      Uri.parse(mailto),
+      mode: LaunchMode.externalApplication,
     );
-    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!opened && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
