@@ -751,7 +751,9 @@ class _BranchesTable extends StatelessWidget {
           if (loading)
             const Padding(
               padding: EdgeInsets.all(42),
-              child: Center(child: CircularProgressIndicator()),
+              child: Center(
+                child: CircularProgressIndicator(color: AppColors.primaryColor),
+              ),
             )
           else if (rows.isEmpty)
             const Padding(
@@ -948,34 +950,15 @@ class _ZoneManagerCell extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: const Color(0xff99F6E4)),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              name.isEmpty ? '-' : name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Color(0xff0F766E),
-                fontWeight: FontWeight.w900,
-                fontSize: 12,
-              ),
-            ),
-            if (email.isNotEmpty) ...[
-              const SizedBox(height: 3),
-              Text(
-                email,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xff64748B),
-                  fontWeight: FontWeight.w700,
-                  fontSize: 11,
-                ),
-              ),
-            ],
-          ],
+        child: Text(
+          name.isEmpty ? '-' : name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: AppColors.secondaryColor,
+            fontWeight: FontWeight.w900,
+            fontSize: 16,
+          ),
         ),
       ),
     );

@@ -1198,10 +1198,16 @@ class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
               ),
               OutlinedButton.icon(
                 onPressed: widget.onSelectBatches,
-                icon: const Icon(Icons.rule_folder_rounded),
+                icon: const Icon(
+                  Icons.rule_folder_rounded,
+                  color: AppColors.secondaryColor,
+                ),
                 label: Text(
-                  '${widget.selectedBatchIds.length} project(s)',
-                  style: const TextStyle(fontWeight: FontWeight.w900),
+                  '${widget.selectedBatchIds.length} Project(s)',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.secondaryColor,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -1466,7 +1472,7 @@ class _AnalysisBranchPicker extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
       child: InputDecorator(
         decoration: _StockCheckResultTableState._filterDecoration(
-          'Branch focus',
+          'Branch Filter',
           icon: Icons.storefront_rounded,
         ),
         child: Row(
@@ -1548,7 +1554,7 @@ class _AnalysisBranchSearchDialogState
                   const SizedBox(width: 10),
                   const Expanded(
                     child: Text(
-                      'Focus on branch',
+                      'Filter on branch',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w900,
@@ -2646,16 +2652,19 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
       labelText: label,
       prefixIcon: icon == null ? null : Icon(icon),
       filled: true,
-      fillColor: const Color(0xFFF8FAFC),
+      fillColor: AppColors.backgroundWidget,
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.primaryColor),
+      ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFD9E8F5)),
+        borderSide: const BorderSide(color: AppColors.primaryColor),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.4),
+        borderSide: const BorderSide(color: AppColors.primaryColor),
       ),
     );
   }
@@ -2942,11 +2951,23 @@ class _BranchFilterSearchDialogState extends State<_BranchFilterSearchDialog> {
                         ..clear()
                         ..addAll(widget.branches);
                     }),
-                    child: const Text('Select all'),
+                    child: const Text(
+                      'Select all',
+                      style: TextStyle(
+                        color: AppColors.secondaryColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                   TextButton(
                     onPressed: () => setState(() => _selected.clear()),
-                    child: const Text('Clear'),
+                    child: const Text(
+                      'Clear',
+                      style: TextStyle(
+                        color: AppColors.secondaryColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                   const Spacer(),
                   Text(
@@ -3003,7 +3024,13 @@ class _BranchFilterSearchDialogState extends State<_BranchFilterSearchDialog> {
                 children: [
                   OutlinedButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel'),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(
+                        color: AppColors.secondaryColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                   const Spacer(),
                   FilledButton(
@@ -3110,7 +3137,13 @@ class _StockCheckNoteDialogState extends State<_StockCheckNoteDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: const Text(
+            'Cancel',
+            style: TextStyle(
+              color: AppColors.secondaryColor,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ),
         FilledButton.icon(
           onPressed: () => Navigator.pop(context, _controller.text.trim()),
@@ -4586,7 +4619,13 @@ class _AnalysisBatchPickerDialogState
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: const Text(
+            'Cancel',
+            style: TextStyle(
+              color: AppColors.secondaryColor,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ),
         FilledButton(
           onPressed: _selected.isEmpty
@@ -5691,7 +5730,13 @@ class StockCheckDateRangePickerDialogState
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             style: TextButton.styleFrom(foregroundColor: _textSec),
-            child: const Text('Cancel'),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(
+                color: AppColors.secondaryColor,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
           const SizedBox(width: 8),
           ElevatedButton(
@@ -6417,7 +6462,13 @@ class _ProductPickerDialogState extends State<_ProductPickerDialog> {
                 Expanded(
                   child: TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel'),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(
+                        color: AppColors.secondaryColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -6733,7 +6784,13 @@ class _DeleteStockCheckDialog extends StatelessWidget {
       actions: [
         OutlinedButton(
           onPressed: () => Navigator.pop(context, false),
-          child: const Text('Cancel'),
+          child: const Text(
+            'Cancel',
+            style: TextStyle(
+              color: AppColors.secondaryColor,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ),
         FilledButton.icon(
           onPressed: () => Navigator.pop(context, true),
