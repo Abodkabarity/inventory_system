@@ -198,6 +198,7 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
     try {
       final now = DateTime.now().toIso8601String();
       final completedRows = <StockCheckTask>[];
+      final submittedByThisUserIds = <String>{};
       final payload = <Map<String, dynamic>>[];
       for (final row in rows) {
         final systemText = _systemControllers[row.id]?.text.trim() ?? '';
@@ -205,7 +206,19 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
         final system = _parseQty(systemText);
         final actual = _parseQty(actualText);
         if (system == null || actual == null) continue;
+        final currentSignature = _draftSignature(row);
+        final alreadySubmitted = row.isSubmitted;
+        final submittedRowChanged =
+            alreadySubmitted &&
+            _lastSavedDraftSignatures[row.id] != currentSignature;
+        final shouldClaimSubmitter = !alreadySubmitted || submittedRowChanged;
+        if (alreadySubmitted && !submittedRowChanged) {
+          continue;
+        }
         completedRows.add(row);
+        if (shouldClaimSubmitter) {
+          submittedByThisUserIds.add(row.id);
+        }
         payload.add({
           'id': row.id,
           'batch_id': row.batchId,
@@ -224,8 +237,9 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
           'sent_at': row.sentAt?.toIso8601String(),
           'expires_at': row.expiresAt?.toIso8601String(),
           'submitted_at': now,
-          'submitted_by_name': submitter.name,
-          'submitted_by_employee_id': submitter.employeeId,
+          if (shouldClaimSubmitter) 'submitted_by_name': submitter.name,
+          if (shouldClaimSubmitter)
+            'submitted_by_employee_id': submitter.employeeId,
           'updated_at': now,
         });
       }
@@ -250,16 +264,21 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
                 : row.barcodeStickerIsCorrect,
             status: 'submitted',
             submittedAt: DateTime.tryParse(now),
-            submittedByName: submitter.name,
-            submittedByEmployeeId: submitter.employeeId,
+            submittedByName: submittedByThisUserIds.contains(row.id)
+                ? submitter.name
+                : row.submittedByName,
+            submittedByEmployeeId: submittedByThisUserIds.contains(row.id)
+                ? submitter.employeeId
+                : row.submittedByEmployeeId,
           );
         }).toList();
         for (final row in completedRows) {
           _dirtyDraftIds.remove(row.id);
           _lastSavedDraftSignatures[row.id] = _draftSignature(row);
         }
-        _message =
-            'Saved ${rows.length} item(s). ${completedRows.length} completed item(s) marked as submitted.';
+        _message = completedRows.isEmpty
+            ? 'No new or edited completed items were submitted. Existing submitted items kept their original checker names.'
+            : 'Saved ${completedRows.length} item(s). Existing submitted items kept their original checker names unless their quantities were edited.';
         _saving = false;
       });
     } catch (e) {
@@ -1136,7 +1155,13 @@ class _StockCheckSubmitterDialogState
                         side: const BorderSide(color: AppColors.border),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
-                      child: const Text('Cancel'),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(
+                          color: AppColors.secondaryColor,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
