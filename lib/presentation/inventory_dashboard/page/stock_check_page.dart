@@ -1486,16 +1486,18 @@ class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
             'Please continue the remaining items and submit the completed stock check as soon as possible.\n\n'
             'Thank you.',
     };
-    final uri = Uri(
-      scheme: 'mailto',
-      path: toEmails.join(','),
-      queryParameters: {
-        'subject': subject,
-        'body': body,
-        'cc': ccEmails.join(','),
-      },
+    final subjectEncoded = Uri.encodeComponent(subject);
+    final bodyEncoded = Uri.encodeComponent(body);
+    final ccEncoded = Uri.encodeComponent(ccEmails.join(';'));
+    final mailto =
+        'mailto:${toEmails.join(';')}'
+        '?subject=$subjectEncoded'
+        '&body=$bodyEncoded'
+        '&cc=$ccEncoded';
+    final opened = await launchUrl(
+      Uri.parse(mailto),
+      mode: LaunchMode.externalApplication,
     );
-    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!opened && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

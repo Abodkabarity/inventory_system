@@ -2383,8 +2383,8 @@ class _BranchUrgentWorkBannerState extends State<_BranchUrgentWorkBanner>
           borderRadius: BorderRadius.circular(18),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 240),
-            height: 98,
-            padding: const EdgeInsets.all(16),
+            height: widget.hasAllocation && widget.hasStockCheck ? 112 : 98,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
             decoration: BoxDecoration(
               color: background,
               borderRadius: BorderRadius.circular(18),
@@ -2432,19 +2432,17 @@ class _BranchUrgentWorkBannerState extends State<_BranchUrgentWorkBanner>
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-                      const SizedBox(height: 5),
-                      Text(
-                        subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF64748B),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          height: 1.25,
-                        ),
+                      const SizedBox(height: 6),
+                      _PendingWorkSubtitle(
+                        hasBoth:
+                            !hasOverdue &&
+                            widget.hasStockCheck &&
+                            widget.hasAllocation,
+                        subtitle: subtitle,
+                        allocationCount: widget.allocationCount,
+                        stockCheckCount: widget.stockCheckCount,
                       ),
-                      const SizedBox(height: 3),
+                      const SizedBox(height: 5),
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -2454,7 +2452,7 @@ class _BranchUrgentWorkBannerState extends State<_BranchUrgentWorkBanner>
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               color: borderColor,
-                              fontSize: 11.5,
+                              fontSize: 11,
                               fontWeight: FontWeight.w900,
                               decoration: TextDecoration.underline,
                               decorationColor: borderColor,
@@ -2498,6 +2496,103 @@ class _BranchUrgentWorkBannerState extends State<_BranchUrgentWorkBanner>
     }
     if (parts.isEmpty) return 'Please Complete Pending Work Now.';
     return parts.join(' - ');
+  }
+}
+
+class _PendingWorkSubtitle extends StatelessWidget {
+  final bool hasBoth;
+  final String subtitle;
+  final int allocationCount;
+  final int stockCheckCount;
+
+  const _PendingWorkSubtitle({
+    required this.hasBoth,
+    required this.subtitle,
+    required this.allocationCount,
+    required this.stockCheckCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!hasBoth) {
+      return Text(
+        subtitle,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: Color(0xFF64748B),
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          height: 1.25,
+        ),
+      );
+    }
+
+    return Wrap(
+      spacing: 5,
+      runSpacing: 3,
+      children: [
+        _PendingWorkTypeChip(
+          label: 'Allocation',
+          count: allocationCount,
+          icon: Icons.call_made_rounded,
+          color: const Color(0xFFF59E0B),
+          italic: true,
+        ),
+        _PendingWorkTypeChip(
+          label: 'Stock Check',
+          count: stockCheckCount,
+          icon: Icons.inventory_2_rounded,
+          color: const Color(0xFF2563EB),
+          italic: false,
+        ),
+      ],
+    );
+  }
+}
+
+class _PendingWorkTypeChip extends StatelessWidget {
+  final String label;
+  final int count;
+  final IconData icon;
+  final Color color;
+  final bool italic;
+
+  const _PendingWorkTypeChip({
+    required this.label,
+    required this.count,
+    required this.icon,
+    required this.color,
+    required this.italic,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .09),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: .24)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: color),
+          const SizedBox(width: 3),
+          Text(
+            '$label $count',
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              fontWeight: italic ? FontWeight.w800 : FontWeight.w900,
+              fontStyle: italic ? FontStyle.italic : FontStyle.normal,
+              height: 1,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
