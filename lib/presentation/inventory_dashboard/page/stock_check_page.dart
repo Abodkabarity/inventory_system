@@ -1183,6 +1183,12 @@ class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
       }
       return a.branch.toLowerCase().compareTo(b.branch.toLowerCase());
     });
+    final notStartedReminderBranches = report.branches
+        .where((branch) => branch.submitted == 0 && branch.pending > 0)
+        .toList();
+    final notFinishedReminderBranches = report.branches
+        .where((branch) => branch.submitted > 0 && branch.pending > 0)
+        .toList();
 
     return _Panel(
       child: Column(
@@ -1196,38 +1202,73 @@ class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
                   selectedProjects: widget.selectedBatchIds.length,
                 ),
               ),
-              OutlinedButton.icon(
-                onPressed: widget.onSelectBatches,
-                icon: const Icon(
-                  Icons.rule_folder_rounded,
-                  color: AppColors.secondaryColor,
-                ),
-                label: Text(
-                  '${widget.selectedBatchIds.length} Project(s)',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.secondaryColor,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton.icon(
-                onPressed: widget.rows.isEmpty || _exporting
-                    ? null
-                    : _exportAnalysis,
-                icon: _exporting
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.2,
-                          color: Colors.white,
+              const SizedBox(width: 12),
+              Flexible(
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: widget.onSelectBatches,
+                      icon: const Icon(
+                        Icons.rule_folder_rounded,
+                        color: AppColors.secondaryColor,
+                      ),
+                      label: Text(
+                        '${widget.selectedBatchIds.length} Project(s)',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.secondaryColor,
                         ),
-                      )
-                    : const Icon(Icons.download_rounded),
-                label: Text(_exporting ? 'Preparing...' : 'Export Report'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.primaryColor,
+                      ),
+                    ),
+                    _BulkReminderButton(
+                      label: 'Email Not Started',
+                      count: notStartedReminderBranches.length,
+                      icon: Icons.forward_to_inbox_rounded,
+                      color: const Color(0xFFEA580C),
+                      onPressed: notStartedReminderBranches.isEmpty
+                          ? null
+                          : () => _openBulkReminderEmail(
+                              branches: notStartedReminderBranches,
+                              type: _BulkReminderType.notStarted,
+                            ),
+                    ),
+                    _BulkReminderButton(
+                      label: 'Email Not Finished',
+                      count: notFinishedReminderBranches.length,
+                      icon: Icons.mark_email_unread_rounded,
+                      color: const Color(0xFFDC2626),
+                      onPressed: notFinishedReminderBranches.isEmpty
+                          ? null
+                          : () => _openBulkReminderEmail(
+                              branches: notFinishedReminderBranches,
+                              type: _BulkReminderType.notFinished,
+                            ),
+                    ),
+                    FilledButton.icon(
+                      onPressed: widget.rows.isEmpty || _exporting
+                          ? null
+                          : _exportAnalysis,
+                      icon: _exporting
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.download_rounded),
+                      label: Text(
+                        _exporting ? 'Preparing...' : 'Export Report',
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.primaryColor,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -1393,6 +1434,88 @@ class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
+  }
+
+  Future<void> _openBulkReminderEmail({
+    required List<_StockCheckBranchAnalysis> branches,
+    required _BulkReminderType type,
+  }) async {
+    final branchContacts = branches
+        .map((branch) => widget.branchContacts[branch.branch])
+        .whereType<_BranchEmailContact>()
+        .where((contact) => contact.email.trim().isNotEmpty)
+        .toList();
+    final toEmails = _distinctEmails(
+      branchContacts.map((contact) => contact.email),
+    );
+    if (toEmails.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No branch emails found for the selected reminder.'),
+          backgroundColor: Color(0xFFDC2626),
+        ),
+      );
+      return;
+    }
+
+    final ccEmails = _distinctEmails([
+      'Inventory@alain-pharmacy.com',
+      'ahmad.alkouz@alain-pharmacy.com',
+      ...branchContacts.map((contact) => contact.zoneManagerEmail),
+    ]);
+    final projectLabel =
+        widget.selectedBatchIds.length == 1 && widget.rows.isNotEmpty
+        ? widget.rows.first.title
+        : '${widget.selectedBatchIds.length} stock check projects';
+    final subject = switch (type) {
+      _BulkReminderType.notStarted =>
+        'Stock Check Reminder - Not Started - $projectLabel',
+      _BulkReminderType.notFinished =>
+        'Stock Check Reminder - Not Finished - $projectLabel',
+    };
+    final body = switch (type) {
+      _BulkReminderType.notStarted =>
+        'Dear Team,\n\n'
+            'Our records show that your branch has not started the assigned Stock Check yet.\n'
+            'Please open the Stock Check page, enter the required quantities, and submit the completed items as soon as possible.\n\n'
+            'Thank you.',
+      _BulkReminderType.notFinished =>
+        'Dear Team,\n\n'
+            'Our records show that your branch started the assigned Stock Check but has not completed it yet.\n'
+            'Please continue the remaining items and submit the completed stock check as soon as possible.\n\n'
+            'Thank you.',
+    };
+    final uri = Uri(
+      scheme: 'mailto',
+      path: toEmails.join(','),
+      queryParameters: {
+        'subject': subject,
+        'body': body,
+        'cc': ccEmails.join(','),
+      },
+    );
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not open the email app.'),
+          backgroundColor: Color(0xFFDC2626),
+        ),
+      );
+    }
+  }
+
+  List<String> _distinctEmails(Iterable<String> emails) {
+    final seen = <String>{};
+    final result = <String>[];
+    for (final email in emails) {
+      final value = email.trim();
+      if (value.isEmpty) continue;
+      final key = value.toLowerCase();
+      if (seen.add(key)) result.add(value);
+    }
+    return result;
   }
 }
 
@@ -2305,6 +2428,51 @@ class _EmailReminderButton extends StatelessWidget {
         ),
       );
     }
+  }
+}
+
+enum _BulkReminderType { notStarted, notFinished }
+
+class _BulkReminderButton extends StatelessWidget {
+  final String label;
+  final int count;
+  final IconData icon;
+  final Color color;
+  final VoidCallback? onPressed;
+
+  const _BulkReminderButton({
+    required this.label,
+    required this.count,
+    required this.icon,
+    required this.color,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 18, color: onPressed == null ? null : color),
+      label: Text(
+        '$label ($count)',
+        style: TextStyle(
+          fontWeight: FontWeight.w900,
+          color: onPressed == null ? null : color,
+        ),
+      ),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: color,
+        disabledForegroundColor: const Color(0xFF94A3B8),
+        side: BorderSide(
+          color: onPressed == null
+              ? const Color(0xFFE2E8F0)
+              : color.withValues(alpha: .55),
+        ),
+        backgroundColor: onPressed == null
+            ? const Color(0xFFF8FAFC)
+            : color.withValues(alpha: .07),
+      ),
+    );
   }
 }
 
