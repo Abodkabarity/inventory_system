@@ -27,14 +27,13 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
 
+  SupabaseConfig.validate();
   await Supabase.initialize(
     url: SupabaseConfig.supabaseUrl,
     anonKey: SupabaseConfig.anonKey,
 
     authOptions: const FlutterAuthClientOptions(autoRefreshToken: true),
   );
-  final user = Supabase.instance.client.auth.currentUser;
-  print('AUTH USER (startup): ${user?.id}');
   // DataSources
   final authDs = SupabaseAuthRemoteDs(Supabase.instance.client);
   final branchDs = SupabaseBranchRemoteDs(Supabase.instance.client);
