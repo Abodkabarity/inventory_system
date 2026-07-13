@@ -64,6 +64,7 @@ class InventoryDashboardBody extends StatelessWidget {
             additionalToday: state.additionalTodayCount,
             additionalMonth: state.additionalMonthCount,
             pendingInventory: state.additionalPendingCount,
+            sentToStore: state.additionalSentToStoreCount,
           ),
         ),
 

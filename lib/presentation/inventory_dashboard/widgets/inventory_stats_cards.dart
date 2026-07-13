@@ -7,6 +7,7 @@ class InventoryStatsCards extends StatelessWidget {
   final int additionalToday;
   final int additionalMonth;
   final int pendingInventory;
+  final int sentToStore;
 
   const InventoryStatsCards({
     super.key,
@@ -15,6 +16,7 @@ class InventoryStatsCards extends StatelessWidget {
     required this.additionalToday,
     required this.additionalMonth,
     required this.pendingInventory,
+    required this.sentToStore,
   });
 
   @override
@@ -24,6 +26,7 @@ class InventoryStatsCards extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
+            flex: 5,
             child: _card(
               title: "Total Orders Today",
               value: totalOrdersToday.toString(),
@@ -32,9 +35,10 @@ class InventoryStatsCards extends StatelessWidget {
             ),
           ),
 
-           SizedBox(width: 10.w),
+          SizedBox(width: 10.w),
 
           Expanded(
+            flex: 5,
             child: _card(
               title: "Submitted Orders",
               value: submitted.toString(),
@@ -43,9 +47,10 @@ class InventoryStatsCards extends StatelessWidget {
             ),
           ),
 
-           SizedBox(width: 10.w),
+          SizedBox(width: 10.w),
 
           Expanded(
+            flex: 5,
             child: _card(
               title: "Additional Today",
               value: additionalToday.toString(),
@@ -54,29 +59,129 @@ class InventoryStatsCards extends StatelessWidget {
             ),
           ),
 
-           SizedBox(width: 10.w),
+          SizedBox(width: 10.w),
 
           Expanded(
+            flex: 5,
             child: _card(
-              title: "Additional This Month",
+              title: "Rejected Additional",
               value: additionalMonth.toString(),
-              icon: Icons.calendar_month,
-              color: Colors.blue,
+              icon: Icons.cancel_rounded,
+              color: Colors.redAccent,
             ),
           ),
 
-           SizedBox(width: 10.w),
+          SizedBox(width: 10.w),
 
           Expanded(
-            child: _card(
-              title: "Pending Inventory Approval",
-              value: pendingInventory.toString(),
+            flex: 6,
+            child: _dualCard(
+              title: "Pending / Sent To Store",
+              leftLabel: "Pending",
+              leftValue: pendingInventory.toString(),
+              rightLabel: "Sent",
+              rightValue: sentToStore.toString(),
               icon: Icons.hourglass_bottom,
-              color: Colors.redAccent,
+              color: Colors.deepOrange,
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _dualCard({
+    required String title,
+    required String leftLabel,
+    required String leftValue,
+    required String rightLabel,
+    required String rightValue,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      height: 100,
+      alignment: Alignment.center,
+      padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            blurRadius: 18,
+            color: Colors.black.withValues(alpha: .05),
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: 26),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _miniValue(leftValue, leftLabel, color),
+                    Container(
+                      width: 1,
+                      height: 26,
+                      margin: const EdgeInsets.symmetric(horizontal: 12),
+                      color: const Color(0xFFE2E8F0),
+                    ),
+                    _miniValue(rightValue, rightLabel, Colors.blueGrey),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniValue(String value, String label, Color color) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 19,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF64748B),
+          ),
+        ),
+      ],
     );
   }
 
@@ -89,7 +194,7 @@ class InventoryStatsCards extends StatelessWidget {
     return Container(
       height: 100,
       alignment: Alignment.center,
-      padding:  EdgeInsets.symmetric(horizontal: 5.w, vertical: 18),
+      padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 18),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),

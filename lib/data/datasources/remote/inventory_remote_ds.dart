@@ -217,7 +217,10 @@ class InventoryRemoteDs {
 
   Future<List<Map<String, dynamic>>> fetchAdditionalRequests() async {
     final now = DateTime.now();
-    final start = DateTime(now.year, now.month, now.day);
+    final todayNinePm = DateTime(now.year, now.month, now.day, 21);
+    final start = now.isBefore(todayNinePm)
+        ? todayNinePm.subtract(const Duration(days: 1))
+        : todayNinePm;
     final end = start.add(const Duration(days: 1));
 
     Future<List<Map<String, dynamic>>> query(
@@ -232,6 +235,13 @@ class InventoryRemoteDs {
           .from('additional_requests')
           .select(_additionalRequestColumns)
           .inFilter('status', ['pending', 'pending_inventory']),
+    );
+
+    final sentToStoreRows = await query(
+      client
+          .from('additional_requests')
+          .select(_additionalRequestColumns)
+          .eq('status', 'sent_to_store'),
     );
 
     final createdTodayRows = await query(
@@ -264,6 +274,7 @@ class InventoryRemoteDs {
     final byId = <String, Map<String, dynamic>>{};
     for (final row in [
       ...pendingRows,
+      ...sentToStoreRows,
       ...createdTodayRows,
       ...inventoryApprovedTodayRows,
       ...storeCompletedTodayRows,

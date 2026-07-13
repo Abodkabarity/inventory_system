@@ -2,6 +2,8 @@ class AdditionalRequestGroup {
   final String groupId;
   final String branchName;
   final DateTime createdAt;
+  final DateTime? inventoryApprovedAt;
+  final DateTime? doneAt;
   final int itemsCount;
 
   final String status;
@@ -27,6 +29,8 @@ class AdditionalRequestGroup {
     required this.groupId,
     required this.branchName,
     required this.createdAt,
+    this.inventoryApprovedAt,
+    this.doneAt,
     required this.itemsCount,
     required this.status,
     required this.itemNames,

@@ -520,12 +520,28 @@ class _StockCheckPageState extends State<StockCheckPage> {
     }).toList();
   }
 
-  int _sourceBatchCount(String source) {
-    return _sentRows
-        .where((row) => row.source.trim().toLowerCase() == source)
-        .map((row) => row.batchId)
-        .toSet()
-        .length;
+  List<_StockCheckBatch> _sourceBatches(String source) {
+    final byBatch = <String, List<StockCheckTask>>{};
+    for (final row in _sentRows) {
+      if (row.source.trim().toLowerCase() != source) continue;
+      final sentAt = row.sentAt;
+      if (sentAt == null) continue;
+      if (sentAt.isBefore(_sentFrom) || sentAt.isAfter(_sentTo)) continue;
+      byBatch.putIfAbsent(row.batchId, () => []).add(row);
+    }
+    return byBatch.entries
+        .map((entry) => _StockCheckBatch(id: entry.key, rows: entry.value))
+        .toList();
+  }
+
+  int _sourcePendingBatchCount(String source) {
+    return _sourceBatches(source).where((batch) => batch.pending > 0).length;
+  }
+
+  bool _sourceHasExpiredPendingBatch(String source) {
+    return _sourceBatches(
+      source,
+    ).any((batch) => batch.pending > 0 && batch.isExpired);
   }
 
   List<StockCheckTask> _selectedBatchRows(List<_StockCheckBatch> batches) {
@@ -850,8 +866,10 @@ class _StockCheckPageState extends State<StockCheckPage> {
                 if (_canSendToStore) ...[
                   _SentSourceToggle(
                     value: _sentSourceFilter,
-                    inventoryCount: _sourceBatchCount('inventory'),
-                    storeCount: _sourceBatchCount('store'),
+                    inventoryCount: _sourcePendingBatchCount('inventory'),
+                    storeCount: _sourcePendingBatchCount('store'),
+                    inventoryDanger: _sourceHasExpiredPendingBatch('inventory'),
+                    storeDanger: _sourceHasExpiredPendingBatch('store'),
                     onChanged: (value) {
                       setState(() {
                         _sentSourceFilter = value;
@@ -2585,7 +2603,10 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
           ),
           if (widget.rows.isNotEmpty) ...[
             const SizedBox(height: 8),
-            _ResultDeadlineStrip(expiresAt: widget.rows.first.expiresAt),
+            _ResultDeadlineStrip(
+              expiresAt: widget.rows.first.expiresAt,
+              completed: widget.rows.every((row) => row.isSubmitted),
+            ),
           ],
           const SizedBox(height: 12),
           if (widget.rows.isNotEmpty) ...[
@@ -4307,13 +4328,19 @@ class _TablePanButton extends StatelessWidget {
 
 class _ResultDeadlineStrip extends StatelessWidget {
   final DateTime? expiresAt;
+  final bool completed;
 
-  const _ResultDeadlineStrip({required this.expiresAt});
+  const _ResultDeadlineStrip({
+    required this.expiresAt,
+    required this.completed,
+  });
 
   @override
   Widget build(BuildContext context) {
     final expired =
-        expiresAt != null && DateTime.now().isAfter(expiresAt!.toLocal());
+        !completed &&
+        expiresAt != null &&
+        DateTime.now().isAfter(expiresAt!.toLocal());
     final color = expired ? const Color(0xFFDC2626) : const Color(0xFF0F766E);
     final bg = expired ? const Color(0xFFFFF1F2) : const Color(0xFFF0FDFA);
     final border = expired ? const Color(0xFFFCA5A5) : const Color(0xFF99F6E4);
@@ -4327,14 +4354,21 @@ class _ResultDeadlineStrip extends StatelessWidget {
       child: Row(
         children: [
           Icon(
-            expired ? Icons.lock_clock_rounded : Icons.timer_outlined,
+            completed
+                ? Icons.check_circle_rounded
+                : expired
+                ? Icons.lock_clock_rounded
+                : Icons.timer_outlined,
             color: color,
             size: 18,
           ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              _StockCheckBatchCard._deadlineText(expiresAt),
+              _StockCheckBatchCard._deadlineText(
+                expiresAt,
+                completed: completed,
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -5084,12 +5118,16 @@ class _SentSourceToggle extends StatelessWidget {
   final String value;
   final int inventoryCount;
   final int storeCount;
+  final bool inventoryDanger;
+  final bool storeDanger;
   final ValueChanged<String> onChanged;
 
   const _SentSourceToggle({
     required this.value,
     required this.inventoryCount,
     required this.storeCount,
+    required this.inventoryDanger,
+    required this.storeDanger,
     required this.onChanged,
   });
 
@@ -5110,6 +5148,7 @@ class _SentSourceToggle extends StatelessWidget {
               icon: Icons.inventory_2_rounded,
               label: 'Inventory',
               count: inventoryCount,
+              danger: inventoryDanger,
               color: const Color(0xFF2563EB),
               onTap: () => onChanged('inventory'),
             ),
@@ -5121,6 +5160,7 @@ class _SentSourceToggle extends StatelessWidget {
               icon: Icons.storefront_rounded,
               label: 'Store',
               count: storeCount,
+              danger: storeDanger,
               color: const Color(0xFF059669),
               onTap: () => onChanged('store'),
             ),
@@ -5136,6 +5176,7 @@ class _SentSourceTab extends StatelessWidget {
   final IconData icon;
   final String label;
   final int count;
+  final bool danger;
   final Color color;
   final VoidCallback onTap;
 
@@ -5144,6 +5185,7 @@ class _SentSourceTab extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.count,
+    required this.danger,
     required this.color,
     required this.onTap,
   });
@@ -5194,22 +5236,38 @@ class _SentSourceTab extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 5),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: selected ? color.withValues(alpha: .12) : Colors.white,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  count.toString(),
-                  style: TextStyle(
-                    color: selected ? color : const Color(0xFF64748B),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
+              if (count > 0) ...[
+                const SizedBox(width: 5),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: danger
+                        ? const Color(0xFFDC2626)
+                        : selected
+                        ? color.withValues(alpha: .12)
+                        : Colors.white,
+                    borderRadius: BorderRadius.circular(999),
+                    border: danger
+                        ? Border.all(color: const Color(0xFFFCA5A5))
+                        : null,
+                  ),
+                  child: Text(
+                    count.toString(),
+                    style: TextStyle(
+                      color: danger
+                          ? Colors.white
+                          : selected
+                          ? color
+                          : const Color(0xFF64748B),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
@@ -6709,8 +6767,9 @@ class _StockCheckBatchCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final deadlineText = _deadlineText(batch.expiresAt);
-    final expired = batch.isExpired;
+    final completed = batch.pending == 0;
+    final deadlineText = _deadlineText(batch.expiresAt, completed: completed);
+    final expired = !completed && batch.isExpired;
     return Material(
       color: selected ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
       borderRadius: BorderRadius.circular(18),
@@ -6789,7 +6848,10 @@ class _StockCheckBatchCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                   ],
-                  _StatusDot(done: batch.pending == 0),
+                  _StatusDot(
+                    done: batch.pending == 0,
+                    overdue: batch.pending > 0 && batch.isExpired,
+                  ),
                 ],
               ),
               const SizedBox(height: 10),
@@ -6813,7 +6875,11 @@ class _StockCheckBatchCard extends StatelessWidget {
                 child: Row(
                   children: [
                     Icon(
-                      expired ? Icons.lock_clock_rounded : Icons.timer_outlined,
+                      completed
+                          ? Icons.check_circle_rounded
+                          : expired
+                          ? Icons.lock_clock_rounded
+                          : Icons.timer_outlined,
                       size: 16,
                       color: expired
                           ? const Color(0xFFDC2626)
@@ -6871,7 +6937,8 @@ class _StockCheckBatchCard extends StatelessWidget {
     );
   }
 
-  static String _deadlineText(DateTime? expiresAt) {
+  static String _deadlineText(DateTime? expiresAt, {bool completed = false}) {
+    if (completed) return 'Completed - all items submitted';
     if (expiresAt == null) return 'No deadline set';
     final local = expiresAt.toLocal();
     final remaining = local.difference(DateTime.now());
@@ -7000,8 +7067,9 @@ class _MiniStat extends StatelessWidget {
 
 class _StatusDot extends StatelessWidget {
   final bool done;
+  final bool overdue;
 
-  const _StatusDot({required this.done});
+  const _StatusDot({required this.done, required this.overdue});
 
   @override
   Widget build(BuildContext context) {
@@ -7009,7 +7077,11 @@ class _StatusDot extends StatelessWidget {
       width: 12,
       height: 12,
       decoration: BoxDecoration(
-        color: done ? const Color(0xFF16A34A) : const Color(0xFFF97316),
+        color: done
+            ? const Color(0xFF16A34A)
+            : overdue
+            ? const Color(0xFFDC2626)
+            : const Color(0xFFF97316),
         shape: BoxShape.circle,
       ),
     );

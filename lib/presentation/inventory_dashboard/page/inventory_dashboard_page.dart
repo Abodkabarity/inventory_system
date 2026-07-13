@@ -16,6 +16,7 @@ import '../widgets/inventory_drawer.dart';
 import 'additional_order_analysis_page.dart';
 import 'allocation_page.dart';
 import 'assortment_page.dart';
+import 'branch_submission_tracker_page.dart';
 import 'branch_setting_page.dart';
 import 'branches_tracker_page.dart';
 import 'formulary_page.dart';
@@ -260,6 +261,8 @@ Widget _buildPage(InventoryState state, bool isSubmitted, String runDate) {
       return const AdditionalOrderAnalysisPage();
     case InventoryPageType.orderEditAnalysis:
       return const OrderEditAnalysisPage();
+    case InventoryPageType.branchSubmissionTracker:
+      return const BranchSubmissionTrackerPage();
     case InventoryPageType.branchesTracker:
       return const BranchesTrackerPage();
     case InventoryPageType.allocation:

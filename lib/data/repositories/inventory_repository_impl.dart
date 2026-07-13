@@ -99,6 +99,10 @@ class InventoryRepositoryImpl implements InventoryRepository {
         branchName: (e['branch_name'] ?? '').toString(),
         createdAt:
             DateTime.tryParse(e['created_at'].toString()) ?? DateTime.now(),
+        inventoryApprovedAt: DateTime.tryParse(
+          (e['inventory_approved_at'] ?? '').toString(),
+        ),
+        doneAt: DateTime.tryParse((e['done_at'] ?? '').toString()),
 
         itemsCount: 1,
         status: (e['status'] ?? 'pending').toString(),

@@ -899,6 +899,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           additionalPendingCount: counters.pending,
           additionalSentToStoreCount: counters.sentToStore,
           additionalTodayCount: counters.today,
+          additionalMonthCount: counters.rejected,
           isLoading: false,
           isDashboardLoaded: true,
         ),
@@ -1285,6 +1286,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           additionalPendingCount: counters.pending,
           additionalSentToStoreCount: counters.sentToStore,
           additionalTodayCount: counters.today,
+          additionalMonthCount: counters.rejected,
           isBulkLoading: false,
           bulkSuccess: true,
           bulkMessage: "All requests approved successfully ✅",
@@ -1320,6 +1322,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           additionalPendingCount: counters.pending,
           additionalSentToStoreCount: counters.sentToStore,
           additionalTodayCount: counters.today,
+          additionalMonthCount: counters.rejected,
           isBulkLoading: false,
         ),
       );
@@ -3957,6 +3960,10 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       createdAt:
           DateTime.tryParse((row['created_at'] ?? '').toString()) ??
           DateTime.now(),
+      inventoryApprovedAt: DateTime.tryParse(
+        (row['inventory_approved_at'] ?? '').toString(),
+      ),
+      doneAt: DateTime.tryParse((row['done_at'] ?? '').toString()),
       itemsCount: 1,
       status: (row['status'] ?? 'pending').toString(),
       itemNames: (row['item_name'] ?? '').toString(),
@@ -3986,7 +3993,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     return list;
   }
 
-  ({int pending, int sentToStore, int today}) _additionalCounters(
+  ({int pending, int sentToStore, int today, int rejected}) _additionalCounters(
     List<AdditionalRequestGroup> requests,
   ) {
     final pending = requests
@@ -3995,9 +4002,25 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     final sentToStore = requests
         .where((e) => e.status.toLowerCase().trim() == 'sent_to_store')
         .length;
-    final today = requests.where(_isCreatedToday).length;
+    final today = requests
+        .where((e) => _isInCurrentOperationDate(e.createdAt))
+        .length;
+    final rejected = requests
+        .where(
+          (e) =>
+              e.status.toLowerCase().trim() == 'rejected' &&
+              _isInCurrentOperationDate(
+                e.doneAt ?? e.inventoryApprovedAt ?? e.createdAt,
+              ),
+        )
+        .length;
 
-    return (pending: pending, sentToStore: sentToStore, today: today);
+    return (
+      pending: pending,
+      sentToStore: sentToStore,
+      today: today,
+      rejected: rejected,
+    );
   }
 
   void _emitAdditionalRequests(
@@ -4014,6 +4037,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         additionalPendingCount: counters.pending,
         additionalSentToStoreCount: counters.sentToStore,
         additionalTodayCount: counters.today,
+        additionalMonthCount: counters.rejected,
         additionalTodayBranchCount:
             additionalTodayBranchCount ?? state.additionalTodayBranchCount,
       ),
@@ -4036,12 +4060,15 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     return updated;
   }
 
-  static bool _isCreatedToday(AdditionalRequestGroup request) {
+  static bool _isInCurrentOperationDate(DateTime value) {
     final now = DateTime.now();
-    final created = request.createdAt.toLocal();
-    return created.year == now.year &&
-        created.month == now.month &&
-        created.day == now.day;
+    final todayNinePm = DateTime(now.year, now.month, now.day, 21);
+    final start = now.isBefore(todayNinePm)
+        ? todayNinePm.subtract(const Duration(days: 1))
+        : todayNinePm;
+    final end = start.add(const Duration(days: 1));
+    final local = value.toLocal();
+    return !local.isBefore(start) && local.isBefore(end);
   }
 
   static bool _isPendingAdditionalStatus(String status) {
@@ -4065,14 +4092,11 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       row['created_at'],
     ];
 
-    final now = DateTime.now();
     for (final raw in dates) {
       final parsed = DateTime.tryParse((raw ?? '').toString())?.toLocal();
       if (parsed == null) continue;
 
-      if (parsed.year == now.year &&
-          parsed.month == now.month &&
-          parsed.day == now.day) {
+      if (_isInCurrentOperationDate(parsed)) {
         return true;
       }
     }

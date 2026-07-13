@@ -230,6 +230,13 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
                       _menuItem(
                         context: context,
                         state: state,
+                        page: InventoryPageType.branchSubmissionTracker,
+                        icon: Icons.assignment_late_rounded,
+                        title: 'Submission Tracker',
+                      ),
+                      _menuItem(
+                        context: context,
+                        state: state,
                         page: InventoryPageType.branchesTracker,
                         icon: Icons.timeline_rounded,
                         title: 'Branches Tracker',
