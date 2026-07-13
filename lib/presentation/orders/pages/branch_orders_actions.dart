@@ -309,6 +309,198 @@ class BranchOrdersActions {
     );
   }
 
+  static Future<void> openNonReceivedExportDialog(BuildContext context) async {
+    final bloc = context.read<OrdersBloc>();
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        backgroundColor: Colors.white,
+        content: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.primaryColor,
+              ),
+            ),
+            SizedBox(width: 16),
+            Text('Loading Non Recived...'),
+          ],
+        ),
+      ),
+    );
+
+    final dates = await bloc.repo.fetchNonReceivedRunDates(
+      branchName: bloc.state.branchName,
+    );
+
+    if (context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+
+    if (!context.mounted) return;
+
+    String? downloadingDate;
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              title: Row(
+                children: [
+                  const Icon(
+                    Icons.inventory_2_outlined,
+                    color: AppColors.primaryColor,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Export Non Recived'),
+                        Text(
+                          '${dates.length} Files',
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                    },
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 450,
+                height: 500,
+                child: dates.isEmpty
+                    ? Center(
+                        child: Text(
+                          'No Non Recived files found',
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
+                      )
+                    : ListView.separated(
+                        itemCount: dates.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (_, i) {
+                          final runDate = dates[i];
+                          final isLoading = downloadingDate == runDate;
+
+                          return Card(
+                            margin: EdgeInsets.only(top: 15),
+                            color: AppColors.white,
+                            elevation: 15,
+                            shape: RoundedRectangleBorder(
+                              side: BorderSide(color: AppColors.primaryColor),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            shadowColor: AppColors.primaryColor,
+                            child: ListTile(
+                              leading: const Icon(Icons.calendar_month),
+                              title: Text(
+                                runDate,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              trailing: isLoading
+                                  ? const SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.download,
+                                      color: AppColors.secondaryColor,
+                                    ),
+                              onTap: downloadingDate != null
+                                  ? null
+                                  : () async {
+                                      setState(() {
+                                        downloadingDate = runDate;
+                                      });
+
+                                      try {
+                                        final fileUrl = await bloc.repo
+                                            .fetchNonReceivedFileUrl(
+                                              branchName:
+                                                  bloc.state.branchName,
+                                              runDate: runDate,
+                                            );
+                                        if (fileUrl == null) {
+                                          throw Exception(
+                                            'Non Recived file not found',
+                                          );
+                                        }
+
+                                        html.window.open(fileUrl, '_blank');
+
+                                        if (dialogContext.mounted) {
+                                          Navigator.pop(dialogContext);
+                                        }
+                                      } catch (e) {
+                                        if (dialogContext.mounted) {
+                                          ScaffoldMessenger.of(
+                                            dialogContext,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(e.toString()),
+                                            ),
+                                          );
+                                        }
+
+                                        setState(() {
+                                          downloadingDate = null;
+                                        });
+                                      }
+                                    },
+                            ),
+                          );
+                        },
+                      ),
+              ),
+              actions: [
+                TextButton.icon(
+                  icon: const Icon(
+                    Icons.close,
+                    color: AppColors.secondaryColor,
+                  ),
+                  label: const Text(
+                    'Close',
+                    style: TextStyle(color: AppColors.secondaryColor),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(dialogContext);
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   static Future<void> openFinalSidePanel({
     required BuildContext context,
     required OrdersState state,

@@ -224,6 +224,11 @@ abstract class OrdersRepository {
     required String branchName,
     required String runDate,
   });
+  Future<List<String>> fetchNonReceivedRunDates({required String branchName});
+  Future<String?> fetchNonReceivedFileUrl({
+    required String branchName,
+    required String runDate,
+  });
   Future<void> deleteFinalReorderDraft({
     required String runDate,
     required String branchName,

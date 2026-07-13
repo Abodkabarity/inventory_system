@@ -1251,6 +1251,57 @@ total_sales_last_90_days,
     return signedUrl;
   }
 
+  Future<List<String>> fetchNonReceivedRunDates({
+    required String branchName,
+  }) async {
+    final res = await client
+        .from('receiving_status_exports')
+        .select('run_date')
+        .eq('branch_name', branchName)
+        .eq('status', 'done')
+        .order('run_date', ascending: false);
+
+    return (res as List).map((e) => e['run_date'].toString()).toSet().toList();
+  }
+
+  Future<String?> fetchNonReceivedFileUrl({
+    required String branchName,
+    required String runDate,
+  }) async {
+    final row = await client
+        .from('receiving_status_exports')
+        .select('storage_path,bucket_name')
+        .eq('branch_name', branchName)
+        .eq('run_date', runDate)
+        .eq('status', 'done')
+        .maybeSingle();
+
+    if (row == null) {
+      return null;
+    }
+
+    final storagePath = row['storage_path']?.toString();
+    final bucketName =
+        row['bucket_name']?.toString().trim().isNotEmpty == true
+        ? row['bucket_name'].toString()
+        : 'non-recived-exports';
+
+    if (storagePath == null || storagePath.isEmpty) {
+      return null;
+    }
+
+    final signedUrl = await client.storage
+        .from(bucketName)
+        .createSignedUrl(storagePath, 60);
+    final downloadName = '${branchName.trim()} Non Recived $runDate.xlsx'
+        .replaceAll(RegExp(r'[\\/:*?"<>|]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    final separator = signedUrl.contains('?') ? '&' : '?';
+
+    return '$signedUrl${separator}download=${Uri.encodeQueryComponent(downloadName)}';
+  }
+
   Future<List<Map<String, dynamic>>> fetchHistoryOrders({
     required String runDate,
     required String branchName,

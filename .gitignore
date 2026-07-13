@@ -1,6 +1,10 @@
 # Miscellaneous
 *.class
 *.log
+*.env
+*.env.*
+!.env.example
+!.env.*.example
 *.pyc
 *.swp
 .DS_Store
@@ -11,6 +15,11 @@
 .svn/
 .swiftpm/
 migrate_working_dir/
+
+# Local automation, Supabase drafts, and helper scripts
+/automation/
+/supabase/
+/scripts/
 
 # IntelliJ related
 *.iml

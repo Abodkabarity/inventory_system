@@ -780,6 +780,34 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
 
                                       FilledButton.icon(
                                         onPressed: () {
+                                          BranchOrdersActions.openNonReceivedExportDialog(
+                                            context,
+                                          );
+                                        },
+                                        icon: const Icon(
+                                          Icons.inventory_2_outlined,
+                                          size: 18,
+                                        ),
+                                        label: const Text(
+                                          'Non Recived',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor: Colors.teal,
+                                          foregroundColor: Colors.white,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              14,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+
+                                      FilledButton.icon(
+                                        onPressed: () {
                                           BranchOrdersActions.openHistoryExportDialog(
                                             context,
                                           );

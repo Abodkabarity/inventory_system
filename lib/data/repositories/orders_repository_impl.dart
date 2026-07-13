@@ -534,6 +534,22 @@ class OrdersRepositoryImpl implements OrdersRepository {
   }
 
   @override
+  Future<List<String>> fetchNonReceivedRunDates({required String branchName}) {
+    return remote.fetchNonReceivedRunDates(branchName: branchName);
+  }
+
+  @override
+  Future<String?> fetchNonReceivedFileUrl({
+    required String branchName,
+    required String runDate,
+  }) {
+    return remote.fetchNonReceivedFileUrl(
+      branchName: branchName,
+      runDate: runDate,
+    );
+  }
+
+  @override
   Future<void> deleteFinalReorderDraft({
     required String runDate,
     required String branchName,
