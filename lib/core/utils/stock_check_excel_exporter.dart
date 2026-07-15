@@ -132,6 +132,103 @@ class StockCheckExcelExporter {
     html.Url.revokeObjectUrl(url);
   }
 
+  static Future<void> exportBranchResult({
+    required List<StockCheckTask> rows,
+    required String title,
+  }) async {
+    final workbook = xlsio.Workbook();
+    final sheet = workbook.worksheets[0];
+    sheet.name = 'Branch Stock Check';
+
+    final headers = [
+      'Branch',
+      'Item Code',
+      'Item Name',
+      'System Qty',
+      'Actual Qty',
+      'Difference',
+      'Submitted By',
+    ];
+
+    for (var i = 0; i < headers.length; i++) {
+      final cell = sheet.getRangeByIndex(1, i + 1);
+      cell.setText(headers[i]);
+      cell.cellStyle
+        ..bold = true
+        ..fontColor = '#FFFFFF'
+        ..backColor = '#2563EB'
+        ..hAlign = xlsio.HAlignType.center
+        ..vAlign = xlsio.VAlignType.center;
+      cell.cellStyle.borders.all.lineStyle = xlsio.LineStyle.thin;
+      cell.cellStyle.borders.all.color = '#0F172A';
+    }
+
+    final sorted = [...rows]
+      ..sort((a, b) {
+        final status = a.isPending == b.isPending
+            ? 0
+            : a.isPending
+            ? -1
+            : 1;
+        if (status != 0) return status;
+        return a.itemName.toLowerCase().compareTo(b.itemName.toLowerCase());
+      });
+
+    for (var r = 0; r < sorted.length; r++) {
+      final row = sorted[r];
+      final values = [
+        row.branchName,
+        row.itemCode,
+        row.itemName,
+        row.systemQty ?? '',
+        row.actualQty ?? '',
+        row.variance ?? '',
+        row.submittedByName,
+      ];
+
+      for (var c = 0; c < values.length; c++) {
+        final cell = sheet.getRangeByIndex(r + 2, c + 1);
+        final value = values[c];
+        if (value is num) {
+          cell.setNumber(value.toDouble());
+        } else {
+          cell.setText(value.toString());
+        }
+        cell.cellStyle
+          ..hAlign = c == 2 ? xlsio.HAlignType.left : xlsio.HAlignType.center
+          ..vAlign = xlsio.VAlignType.center;
+        cell.cellStyle.borders.all.lineStyle = xlsio.LineStyle.thin;
+        cell.cellStyle.borders.all.color = '#CBD5E1';
+        if (r.isEven) cell.cellStyle.backColor = '#F8FAFC';
+      }
+    }
+
+    final widths = <int, double>{
+      1: 24,
+      2: 18,
+      3: 52,
+      4: 14,
+      5: 14,
+      6: 14,
+      7: 28,
+    };
+    widths.forEach((column, width) {
+      sheet.getRangeByIndex(1, column).columnWidth = width;
+    });
+
+    final bytes = workbook.saveAsStream();
+    workbook.dispose();
+
+    final safeTitle = _safe(title.isEmpty ? 'Stock Check' : title);
+    final today = DateTime.now().toIso8601String().split('T').first;
+    final blob = html.Blob([Uint8List.fromList(bytes)]);
+    final url = html.Url.createObjectUrlFromBlob(blob);
+    html.AnchorElement(href: url)
+      ..setAttribute('download', '${safeTitle}_Branch_Result_$today.xlsx')
+      ..click();
+    html.Url.revokeObjectUrl(url);
+  }
+
   static Future<void> exportAnalysis({
     required List<StockCheckTask> rows,
     required String title,

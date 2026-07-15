@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:archive/archive.dart';
 import 'package:csv/csv.dart';
 import 'package:daily_order/core/theme/app_colors.dart';
+import 'package:daily_order/core/utils/stock_check_excel_exporter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -49,6 +50,7 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
   bool _loading = true;
   bool _saving = false;
   bool _importing = false;
+  bool _exporting = false;
   double _importProgress = 0;
   String _importStage = '';
   String _error = '';
@@ -607,6 +609,35 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
     }
   }
 
+  Future<void> _exportBatch(List<StockCheckTask> rows) async {
+    if (rows.isEmpty || _exporting) return;
+    setState(() {
+      _exporting = true;
+      _error = '';
+      _message = '';
+    });
+    try {
+      await SchedulerBinding.instance.endOfFrame;
+      await StockCheckExcelExporter.exportBranchResult(
+        rows: rows,
+        title: rows.first.title,
+      );
+      if (!mounted) return;
+      setState(() {
+        _message = 'Stock check export is ready.';
+        _error = '';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Export failed: $e';
+        _message = '';
+      });
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
   Future<bool?> _askImportExistingValuesDecision(int existingCount) {
     return showDialog<bool?>(
       context: context,
@@ -741,6 +772,31 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
     return map;
   }
 
+  List<List<StockCheckTask>> _sortedBatchLists(
+    Iterable<List<StockCheckTask>> batches,
+  ) {
+    final sorted = batches.map((rows) => [...rows]).toList();
+    sorted.sort((a, b) {
+      final aPending = a.where((row) => row.isPending).length;
+      final bPending = b.where((row) => row.isPending).length;
+      final aHasPending = aPending > 0;
+      final bHasPending = bPending > 0;
+      if (aHasPending != bHasPending) return aHasPending ? -1 : 1;
+      if (aPending != bPending) return bPending.compareTo(aPending);
+      return _latestSentAt(b).compareTo(_latestSentAt(a));
+    });
+    return sorted;
+  }
+
+  DateTime _latestSentAt(List<StockCheckTask> rows) {
+    var latest = DateTime.fromMillisecondsSinceEpoch(0);
+    for (final row in rows) {
+      final sentAt = row.sentAt;
+      if (sentAt != null && sentAt.isAfter(latest)) latest = sentAt;
+    }
+    return latest;
+  }
+
   @override
   Widget build(BuildContext context) {
     final batches = _batches();
@@ -770,7 +826,7 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
                 Expanded(
                   child: selectedRows == null
                       ? _BatchGrid(
-                          batches: batches.values.toList(),
+                          batches: _sortedBatchLists(batches.values),
                           onOpen: (batchId) {
                             setState(() => _selectedBatchId = batchId);
                           },
@@ -790,6 +846,7 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
                           },
                           saving: _saving,
                           importing: _importing,
+                          exporting: _exporting,
                           expired: _batchExpired(selectedRows),
                           expiresAt: _batchExpiresAt(selectedRows),
                           autosavingIds: _autosavingIds,
@@ -805,6 +862,7 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
                             editableSubmittedIds: editableSubmittedIds,
                           ),
                           onSubmit: () => _submitBatch(selectedRows),
+                          onExport: () => _exportBatch(selectedRows),
                         ),
                 ),
               ],
@@ -1841,6 +1899,7 @@ class _BatchEditor extends StatefulWidget {
   final void Function(String id, bool? value) onBarcodeStickerChanged;
   final bool saving;
   final bool importing;
+  final bool exporting;
   final bool expired;
   final DateTime? expiresAt;
   final Set<String> autosavingIds;
@@ -1850,6 +1909,7 @@ class _BatchEditor extends StatefulWidget {
   final VoidCallback onBack;
   final Future<Set<String>> Function(Set<String> editableSubmittedIds) onImport;
   final VoidCallback onSubmit;
+  final VoidCallback onExport;
 
   const _BatchEditor({
     required this.rows,
@@ -1860,6 +1920,7 @@ class _BatchEditor extends StatefulWidget {
     required this.onBarcodeStickerChanged,
     required this.saving,
     required this.importing,
+    required this.exporting,
     required this.expired,
     required this.expiresAt,
     required this.autosavingIds,
@@ -1869,6 +1930,7 @@ class _BatchEditor extends StatefulWidget {
     required this.onBack,
     required this.onImport,
     required this.onSubmit,
+    required this.onExport,
   });
 
   @override
@@ -1974,7 +2036,11 @@ class _BatchEditorState extends State<_BatchEditor> {
                 ),
               ),
               OutlinedButton.icon(
-                onPressed: widget.importing || widget.saving || widget.expired
+                onPressed:
+                    widget.importing ||
+                        widget.saving ||
+                        widget.exporting ||
+                        widget.expired
                     ? null
                     : () async {
                         final openedIds = await widget.onImport({
@@ -2024,7 +2090,7 @@ class _BatchEditorState extends State<_BatchEditor> {
               ),
               const SizedBox(width: 10),
               OutlinedButton.icon(
-                onPressed: filteredRows.isEmpty
+                onPressed: filteredRows.isEmpty || widget.exporting
                     ? null
                     : () => _printRows(filteredRows),
                 icon: const Icon(
@@ -2038,8 +2104,43 @@ class _BatchEditorState extends State<_BatchEditor> {
                 ),
               ),
               const SizedBox(width: 10),
+              OutlinedButton.icon(
+                onPressed:
+                    widget.rows.isEmpty ||
+                        widget.importing ||
+                        widget.saving ||
+                        widget.exporting
+                    ? null
+                    : widget.onExport,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.secondaryColor,
+                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                ),
+                icon: widget.exporting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.primaryColor,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.download_rounded,
+                        size: 18,
+                        color: AppColors.secondaryColor,
+                      ),
+                label: Text(
+                  widget.exporting ? 'Exporting...' : 'Export',
+                  style: const TextStyle(
+                    color: AppColors.secondaryColor,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
               FilledButton.icon(
-                onPressed: widget.saving || widget.expired
+                onPressed: widget.saving || widget.exporting || widget.expired
                     ? null
                     : widget.onSubmit,
                 icon: widget.saving
@@ -2436,6 +2537,18 @@ class _BatchEditorState extends State<_BatchEditor> {
                       ),
                     ),
                   ),
+                if (widget.exporting)
+                  Positioned.fill(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: .76),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: const Center(
+                        child: _ExportingStockCheckIndicator(),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -2607,6 +2720,108 @@ class _ImportingLedgerIndicator extends StatefulWidget {
   @override
   State<_ImportingLedgerIndicator> createState() =>
       _ImportingLedgerIndicatorState();
+}
+
+class _ExportingStockCheckIndicator extends StatefulWidget {
+  const _ExportingStockCheckIndicator();
+
+  @override
+  State<_ExportingStockCheckIndicator> createState() =>
+      _ExportingStockCheckIndicatorState();
+}
+
+class _ExportingStockCheckIndicatorState
+    extends State<_ExportingStockCheckIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 850),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 340,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.primaryColor, width: 1.4),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primaryColor.withValues(alpha: .20),
+            blurRadius: 28,
+            offset: const Offset(0, 14),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          RotationTransition(
+            turns: _controller,
+            child: Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                color: AppColors.primaryColor.withValues(alpha: .12),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: AppColors.primaryColor.withValues(alpha: .55),
+                ),
+              ),
+              child: const Icon(
+                Icons.download_rounded,
+                color: AppColors.primaryColor,
+                size: 30,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Preparing stock check export',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Color(0xFF0F172A),
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 7),
+          const Text(
+            'Building the Excel report with submitted details.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Color(0xFF64748B),
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 14),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: const LinearProgressIndicator(
+              minHeight: 6,
+              backgroundColor: Color(0xFFE0F2FE),
+              color: AppColors.primaryColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ImportingLedgerIndicatorState extends State<_ImportingLedgerIndicator>
