@@ -1,30 +1,19 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
+import 'package:daily_order/domain/entities/purchase_status_record.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:daily_order/main.dart';
-
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  test('purchase record maps its joined status', () {
+    final record = PurchaseStatusRecord.fromMap({
+      'id': 7,
+      'item_code': 'ABC-1',
+      'item_name': 'Example item',
+      'status_id': 3,
+      'status_date': '2026-07-14',
+      'purchase_status_options': {'name': 'AVAILABLE'},
+    });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(record.itemCode, 'ABC-1');
+    expect(record.statusName, 'AVAILABLE');
+    expect(record.statusDate, DateTime(2026, 7, 14));
   });
 }

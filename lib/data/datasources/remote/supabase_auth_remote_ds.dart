@@ -36,8 +36,8 @@ class SupabaseAuthRemoteDs {
       throw Exception('This user is inactive in app_users.');
     }
 
-    // Inventory does NOT require branch_name
-    if (role == 'inventory') {
+    // Back-office roles do not require a branch assignment.
+    if (role == 'inventory' || role == 'purchase') {
       return AppUserModel.fromMap({
         'user_id': data['user_id'],
         'role': data['role'],

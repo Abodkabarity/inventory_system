@@ -21,6 +21,20 @@ migrate_working_dir/
 /supabase/
 /scripts/
 
+# Keep the missing-items sync implementation in source control.
+!/automation/
+/automation/*
+!/automation/missing_items_sync.py
+
+# Keep the deployable Purchase Status migration in source control.
+!/supabase/
+/supabase/*
+!/supabase/sql/
+/supabase/sql/*
+!/supabase/sql/purchase_status_module.sql
+!/supabase/sql/missing_items.sql
+!/supabase/sql/missing_items_purchase_workflow.sql
+
 # IntelliJ related
 *.iml
 *.ipr
