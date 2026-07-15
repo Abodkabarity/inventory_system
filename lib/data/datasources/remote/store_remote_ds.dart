@@ -19,6 +19,37 @@ class StoreRemoteDs {
         .toList();
   }
 
+  Future<List<String>> fetchSeventyOneBranchNames() async {
+    try {
+      final res = await client
+          .from('branches')
+          .select('branch_name, branch_group')
+          .eq('is_active', true)
+          .order('branch_name');
+
+      return List<Map<String, dynamic>>.from(res)
+          .where((row) {
+            final name = (row['branch_name'] ?? '').toString();
+            final group = (row['branch_group'] ?? '').toString().trim();
+            return group == '71' || name.toLowerCase().contains('branch');
+          })
+          .map((e) => (e['branch_name'] ?? '').toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    } catch (_) {
+      final res = await client
+          .from('branches')
+          .select('branch_name')
+          .eq('is_active', true)
+          .order('branch_name');
+
+      return List<Map<String, dynamic>>.from(res)
+          .map((e) => (e['branch_name'] ?? '').toString().trim())
+          .where((e) => e.toLowerCase().contains('branch'))
+          .toList();
+    }
+  }
+
   Future<List<String>> fetchBranchesToday() async {
     final today = DateFormat('EEEE').format(DateTime.now());
 

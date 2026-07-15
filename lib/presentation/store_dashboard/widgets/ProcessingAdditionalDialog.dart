@@ -116,7 +116,6 @@ class _ProcessingAdditionalDialogState
       await client
           .from('additional_requests')
           .update({
-            'inventory_qty': qty,
             'fulfilled_qty': qty,
             'store_note': note,
             'status': status, // ✅ FIX

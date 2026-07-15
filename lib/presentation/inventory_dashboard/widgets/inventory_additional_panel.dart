@@ -28,6 +28,12 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
   final TextEditingController _searchController = TextEditingController();
   String _search = '';
 
+  num _parseQtyOrFallback(String? rawValue, num fallbackQty) {
+    final cleanValue = (rawValue ?? '').trim().replaceAll(',', '');
+    if (cleanValue.isEmpty) return fallbackQty;
+    return num.tryParse(cleanValue) ?? fallbackQty;
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -55,11 +61,7 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
       final id = e.groupId;
 
       final fallbackQty = e.inventoryQty ?? e.requestQty ?? 0;
-      final qty =
-          num.tryParse(
-            (qtyControllers[id]?.text ?? fallbackQty.toString()).trim(),
-          ) ??
-          0;
+      final qty = _parseQtyOrFallback(qtyControllers[id]?.text, fallbackQty);
 
       final note = (noteControllers[id]?.text ?? '').trim();
       bulk.add({
@@ -714,11 +716,12 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
                                           loadingMap[id] = true;
                                         });
 
-                                        final qty =
-                                            int.tryParse(
-                                              qtyControllers[id]?.text ?? '0',
-                                            ) ??
-                                            0;
+                                        final fallbackQty =
+                                            e.inventoryQty ?? e.requestQty ?? 0;
+                                        final qty = _parseQtyOrFallback(
+                                          qtyControllers[id]?.text,
+                                          fallbackQty,
+                                        );
 
                                         context.read<InventoryBloc>().add(
                                           ApproveInventoryRequest(

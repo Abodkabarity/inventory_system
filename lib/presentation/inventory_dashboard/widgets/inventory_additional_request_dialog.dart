@@ -38,6 +38,12 @@ class _InventoryAdditionalRequestDialogState
 
   bool get isEditable => status == 'pending';
 
+  num _parseQtyOrFallback(String? rawValue, num fallbackQty) {
+    final cleanValue = (rawValue ?? '').trim().replaceAll(',', '');
+    if (cleanValue.isEmpty) return fallbackQty;
+    return num.tryParse(cleanValue) ?? fallbackQty;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -120,7 +126,8 @@ class _InventoryAdditionalRequestDialogState
     for (var item in items) {
       final id = item['id'].toString();
 
-      final qty = num.tryParse(qtyControllers[id]!.text.trim()) ?? 0;
+      final fallbackQty = item['inventory_qty'] ?? item['request_qty'] ?? 0;
+      final qty = _parseQtyOrFallback(qtyControllers[id]?.text, fallbackQty);
       final note = noteControllers[id]!.text;
 
       await client

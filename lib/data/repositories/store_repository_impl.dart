@@ -335,6 +335,11 @@ class StoreRepositoryImpl implements StoreRepository {
   }
 
   @override
+  Future<List<String>> fetchSeventyOneBranchNames() {
+    return remote.fetchSeventyOneBranchNames();
+  }
+
+  @override
   Future<void> markAsProcessing(List<String> ids) {
     return remote.markAsProcessing(ids);
   }

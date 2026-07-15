@@ -36,92 +36,138 @@ class TransferReportPage extends StatelessWidget {
           return Stack(
             children: [
               Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 20),
 
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Row(
-                      children: [
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xff243B53),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 14,
-                            ),
-                          ),
-                          onPressed: () async {
-                            final file = await FilePicker.platform.pickFiles(
-                              type: FileType.custom,
-                              allowedExtensions: ['csv'],
-                              withData: true,
-                            );
-
-                            if (file == null) {
-                              return;
-                            }
-
-                            context.read<TransferReportBloc>().add(
-                              ImportTransferFile(
-                                bytes: file.files.first.bytes!,
-                                runDate: runDate,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.start,
+                        children: [
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xff243B53),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 14,
                               ),
-                            );
-                          },
-                          icon: const Icon(Icons.upload_file),
-                          label: const Text('Upload CSV'),
-                        ),
-                        const SizedBox(width: 12),
-
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 14,
                             ),
+                            onPressed: () async {
+                              final file = await FilePicker.platform.pickFiles(
+                                type: FileType.custom,
+                                allowedExtensions: ['csv'],
+                                withData: true,
+                              );
+
+                              if (file == null) {
+                                return;
+                              }
+
+                              if (!context.mounted) return;
+
+                              context.read<TransferReportBloc>().add(
+                                ImportTransferFile(
+                                  bytes: file.files.first.bytes!,
+                                  runDate: runDate,
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.upload_file),
+                            label: const Text('Upload Transfer APG CSV'),
                           ),
-                          onPressed: state.rows.isEmpty
-                              ? null
-                              : () {
-                                  TransferReportExcelExporter.export(
-                                    state.filteredRows,
-                                  );
-                                },
-                          icon: const Icon(Icons.download),
-                          label: const Text('Export'),
-                        ),
+                          const SizedBox(width: 12),
 
-                        const SizedBox(width: 16),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xff0F766E),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 14,
+                              ),
+                            ),
+                            onPressed: () async {
+                              final file = await FilePicker.platform.pickFiles(
+                                type: FileType.custom,
+                                allowedExtensions: ['csv', 'xlsx'],
+                                withData: true,
+                              );
 
-                        _filterChip(context, 'ALL', state.filter),
+                              if (file == null) {
+                                return;
+                              }
 
-                        const SizedBox(width: 8),
+                              final picked = file.files.first;
+                              final bytes = picked.bytes;
+                              if (bytes == null) return;
 
-                        _filterChip(context, 'COMPLETE', state.filter),
+                              if (!context.mounted) return;
 
-                        const SizedBox(width: 8),
+                              context.read<TransferReportBloc>().add(
+                                ImportSeventyOneDvnFile(
+                                  bytes: bytes,
+                                  fileName: picked.name,
+                                  runDate: runDate,
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.storefront_rounded),
+                            label: const Text('Upload 71 DVN'),
+                          ),
+                          const SizedBox(width: 12),
 
-                        _filterChip(context, 'PARTIAL', state.filter),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 14,
+                              ),
+                            ),
+                            onPressed: state.rows.isEmpty
+                                ? null
+                                : () {
+                                    TransferReportExcelExporter.export(
+                                      state.filteredRows,
+                                    );
+                                  },
+                            icon: const Icon(Icons.download),
+                            label: const Text('Export'),
+                          ),
 
-                        const SizedBox(width: 8),
+                          const SizedBox(width: 16),
 
-                        _filterChip(context, 'MISSING', state.filter),
+                          _filterChip(context, 'ALL', state.filter),
 
-                        const SizedBox(width: 8),
+                          const SizedBox(width: 8),
 
-                        _filterChip(context, 'EXTRA', state.filter),
-                        const SizedBox(width: 8),
+                          _filterChip(context, 'COMPLETE', state.filter),
 
-                        _filterChip(
-                          context,
-                          'NOT_IN_DAILY_ORDER',
-                          state.filter,
-                        ),
-                      ],
+                          const SizedBox(width: 8),
+
+                          _filterChip(context, 'PARTIAL', state.filter),
+
+                          const SizedBox(width: 8),
+
+                          _filterChip(context, 'MISSING', state.filter),
+
+                          const SizedBox(width: 8),
+
+                          _filterChip(context, 'EXTRA', state.filter),
+                          const SizedBox(width: 8),
+
+                          _filterChip(
+                            context,
+                            'NOT_IN_DAILY_ORDER',
+                            state.filter,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
 
