@@ -47,6 +47,7 @@ class PurchaseStatusGrid extends StatefulWidget {
 
 class _PurchaseStatusGridState extends State<PurchaseStatusGrid> {
   static const _initialWidths = <String, double>{
+    'report_date': 145,
     'workflow': 145,
     'item_code': 155,
     'item_name': 310,
@@ -129,7 +130,7 @@ class _PurchaseStatusGridState extends State<PurchaseStatusGrid> {
         gridLinesVisibility: GridLinesVisibility.both,
         headerGridLinesVisibility: GridLinesVisibility.both,
         columnWidthMode: ColumnWidthMode.none,
-        frozenColumnsCount: 3,
+        frozenColumnsCount: 4,
         rowHeight: 64,
         headerRowHeight: 66,
         selectionMode: SelectionMode.single,
@@ -141,6 +142,12 @@ class _PurchaseStatusGridState extends State<PurchaseStatusGrid> {
           widget.controller._update(_source.visibleRecords);
         },
         columns: [
+          GridColumn(
+            columnName: 'report_date',
+            width: _columnWidths['report_date']!,
+            minimumWidth: 125,
+            label: _PurchaseGridHeader('REPORT DATE'),
+          ),
           GridColumn(
             columnName: 'workflow',
             width: _columnWidths['workflow']!,
@@ -258,6 +265,10 @@ class _PurchaseStatusDataSource extends DataGridSource {
               : '${record.alternativeItemCode} — ${record.alternativeItemName}';
           final row = DataGridRow(
             cells: [
+              DataGridCell<DateTime?>(
+                columnName: 'report_date',
+                value: record.missingLastReportDate,
+              ),
               DataGridCell<String>(
                 columnName: 'workflow',
                 value: record.workflowStatus,
@@ -324,6 +335,26 @@ class _PurchaseStatusDataSource extends DataGridSource {
       cells: row
           .getCells()
           .map((cell) {
+            if (cell.columnName == 'report_date') {
+              final reportDate = cell.value as DateTime?;
+              return Container(
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                child: SelectableText(
+                  reportDate == null ? '—' : _dateFormat.format(reportDate),
+                  maxLines: 1,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: AppColors.primaryColor,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              );
+            }
             final value = (cell.value ?? '').toString();
             if (cell.columnName == 'workflow') {
               return Center(
