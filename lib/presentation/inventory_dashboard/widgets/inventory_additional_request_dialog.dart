@@ -44,6 +44,12 @@ class _InventoryAdditionalRequestDialogState
     return num.tryParse(cleanValue) ?? fallbackQty;
   }
 
+  num _inventoryFallbackQty(Map<String, dynamic> item) {
+    final inventoryQty = item['inventory_qty'];
+    if (inventoryQty is num && inventoryQty > 0) return inventoryQty;
+    return item['request_qty'] ?? 0;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -126,7 +132,7 @@ class _InventoryAdditionalRequestDialogState
     for (var item in items) {
       final id = item['id'].toString();
 
-      final fallbackQty = item['inventory_qty'] ?? item['request_qty'] ?? 0;
+      final fallbackQty = _inventoryFallbackQty(item);
       final qty = _parseQtyOrFallback(qtyControllers[id]?.text, fallbackQty);
       final note = noteControllers[id]!.text;
 

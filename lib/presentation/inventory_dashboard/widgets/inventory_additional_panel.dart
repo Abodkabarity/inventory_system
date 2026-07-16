@@ -34,6 +34,12 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
     return num.tryParse(cleanValue) ?? fallbackQty;
   }
 
+  num _inventoryFallbackQty(AdditionalRequestGroup request) {
+    final inventoryQty = request.inventoryQty;
+    if (inventoryQty != null && inventoryQty > 0) return inventoryQty;
+    return request.requestQty ?? 0;
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -60,7 +66,7 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
 
       final id = e.groupId;
 
-      final fallbackQty = e.inventoryQty ?? e.requestQty ?? 0;
+      final fallbackQty = _inventoryFallbackQty(e);
       final qty = _parseQtyOrFallback(qtyControllers[id]?.text, fallbackQty);
 
       final note = (noteControllers[id]?.text ?? '').trim();
@@ -717,7 +723,7 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
                                         });
 
                                         final fallbackQty =
-                                            e.inventoryQty ?? e.requestQty ?? 0;
+                                            _inventoryFallbackQty(e);
                                         final qty = _parseQtyOrFallback(
                                           qtyControllers[id]?.text,
                                           fallbackQty,

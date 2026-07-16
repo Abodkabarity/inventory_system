@@ -119,7 +119,7 @@ class InventoryRepositoryImpl implements InventoryRepository {
         todayCount: counts[key] ?? 0,
         fulfilledQty: e['fulfilled_qty'] ?? 0,
         storeNote: e['store_note'] ?? '',
-        inventoryQty: e['inventory_qty'] ?? 0,
+        inventoryQty: e['inventory_qty'],
         inventoryNote: e['inventory_note'] ?? '',
       );
     }).toList();
