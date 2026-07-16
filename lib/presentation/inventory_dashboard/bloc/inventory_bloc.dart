@@ -46,6 +46,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   int _tmaLoadToken = 0;
   String runDate = '';
   RealtimeChannel? mismatchChannel;
+  final Set<String> _notifiedAdditionalRequestGroups = <String>{};
   InventoryBloc(this.repo) : super(InventoryState.initial()) {
     on<LoadInventoryDashboard>(_onLoad);
     on<SelectBranch>(_onSelectBranch);
@@ -473,11 +474,12 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
                 return;
               }
 
+              final groupKey = _additionalRealtimeNotificationKey(row);
+              if (!_notifiedAdditionalRequestGroups.add(groupKey)) {
+                return;
+              }
+
               final branch = (row['branch_name'] ?? '').toString();
-
-              final item = (row['item_name'] ?? '').toString();
-
-              final qty = (row['request_qty'] ?? 0).toString();
 
               try {
                 await _player.play(AssetSource('sounds/notification.mp3'));
@@ -487,7 +489,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
               WebNotification.show(
                 title: 'New Additional Order',
-                body: '$branch\n$item\nQty: $qty',
+                body: '$branch\nAdditional request group received.',
               );
             },
           )
@@ -4074,6 +4076,14 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   static bool _isPendingAdditionalStatus(String status) {
     final value = status.toLowerCase().trim();
     return value == 'pending' || value == 'pending_inventory';
+  }
+
+  static String _additionalRealtimeNotificationKey(Map<String, dynamic> row) {
+    final groupId = (row['request_group_id'] ?? '').toString().trim();
+    if (groupId.isNotEmpty) return groupId;
+    final id = (row['id'] ?? '').toString().trim();
+    if (id.isNotEmpty) return id;
+    return '${row['branch_name'] ?? ''}-${row['created_at'] ?? ''}';
   }
 
   static String _normalizeBranch(String value) {

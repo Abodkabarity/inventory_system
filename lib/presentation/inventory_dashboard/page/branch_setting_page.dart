@@ -16,18 +16,32 @@ class BranchSettingPage extends StatefulWidget {
 
 class _BranchSettingPageState extends State<BranchSettingPage> {
   static const _allZones = 'All Zones';
+  static const _allZoneManagers = 'All Zone Managers';
   static const _allAreas = 'All Areas';
   static const _allTypes = 'All Types';
   static const _allStatuses = 'All Status';
+  static const _allOrderDays = 'All Order Days';
   static const _activeStatus = 'Active';
   static const _inactiveStatus = 'Inactive';
+  static const _weekdayOptions = [
+    _allOrderDays,
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
 
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
   String _zoneFilter = _allZones;
+  String _zoneManagerFilter = _allZoneManagers;
   String _areaFilter = _allAreas;
   String _typeFilter = _allTypes;
   String _statusFilter = _allStatuses;
+  String _orderDayFilter = _allOrderDays;
 
   @override
   void initState() {
@@ -54,6 +68,9 @@ class _BranchSettingPageState extends State<BranchSettingPage> {
           b.area.toLowerCase().contains(q) ||
           b.branchType.toLowerCase().contains(q);
       final matchesZone = _zoneFilter == _allZones || b.zone == _zoneFilter;
+      final matchesZoneManager =
+          _zoneManagerFilter == _allZoneManagers ||
+          b.zoneManager == _zoneManagerFilter;
       final matchesArea = _areaFilter == _allAreas || b.area == _areaFilter;
       final matchesType =
           _typeFilter == _allTypes || b.branchType == _typeFilter;
@@ -61,12 +78,27 @@ class _BranchSettingPageState extends State<BranchSettingPage> {
           _statusFilter == _allStatuses ||
           (_statusFilter == _activeStatus && b.isActive) ||
           (_statusFilter == _inactiveStatus && !b.isActive);
+      final matchesOrderDay =
+          _orderDayFilter == _allOrderDays ||
+          b.orderDays.any((day) => _isSameWeekday(day, _orderDayFilter));
       return matchesSearch &&
           matchesZone &&
+          matchesZoneManager &&
           matchesArea &&
           matchesType &&
-          matchesStatus;
+          matchesStatus &&
+          matchesOrderDay;
     }).toList();
+  }
+
+  bool _isSameWeekday(String value, String selected) {
+    return _weekdayKey(value) == _weekdayKey(selected);
+  }
+
+  String _weekdayKey(String value) {
+    final cleaned = value.trim().toLowerCase();
+    if (cleaned.length <= 3) return cleaned;
+    return cleaned.substring(0, 3);
   }
 
   List<String> _options(Iterable<String> values, String allLabel) {
@@ -122,6 +154,10 @@ class _BranchSettingPageState extends State<BranchSettingPage> {
           state.branchSettings.map((b) => b.zone),
           _allZones,
         );
+        final zoneManagerOptions = _options(
+          state.branchSettings.map((b) => b.zoneManager),
+          _allZoneManagers,
+        );
         final areaOptions = _options(
           state.branchSettings.map((b) => b.area),
           _allAreas,
@@ -134,6 +170,9 @@ class _BranchSettingPageState extends State<BranchSettingPage> {
         final zoneValue = zoneOptions.contains(_zoneFilter)
             ? _zoneFilter
             : _allZones;
+        final zoneManagerValue = zoneManagerOptions.contains(_zoneManagerFilter)
+            ? _zoneManagerFilter
+            : _allZoneManagers;
         final areaValue = areaOptions.contains(_areaFilter)
             ? _areaFilter
             : _allAreas;
@@ -143,10 +182,15 @@ class _BranchSettingPageState extends State<BranchSettingPage> {
         final statusValue = statusOptions.contains(_statusFilter)
             ? _statusFilter
             : _allStatuses;
+        final orderDayValue = _weekdayOptions.contains(_orderDayFilter)
+            ? _orderDayFilter
+            : _allOrderDays;
         _zoneFilter = zoneValue;
+        _zoneManagerFilter = zoneManagerValue;
         _areaFilter = areaValue;
         _typeFilter = typeValue;
         _statusFilter = statusValue;
+        _orderDayFilter = orderDayValue;
         final rows = _filter(state.branchSettings);
         final active = state.branchSettings.where((b) => b.isActive).length;
         final inactive = state.branchSettings.length - active;
@@ -179,28 +223,39 @@ class _BranchSettingPageState extends State<BranchSettingPage> {
                         context.read<InventoryBloc>().add(LoadBranchSettings());
                       },
                       zoneOptions: zoneOptions,
+                      zoneManagerOptions: zoneManagerOptions,
                       areaOptions: areaOptions,
                       typeOptions: typeOptions,
                       statusOptions: statusOptions,
+                      orderDayOptions: _weekdayOptions,
                       zoneValue: zoneValue,
+                      zoneManagerValue: zoneManagerValue,
                       areaValue: areaValue,
                       typeValue: typeValue,
                       statusValue: statusValue,
+                      orderDayValue: orderDayValue,
                       onZoneChanged: (v) =>
                           setState(() => _zoneFilter = v ?? _allZones),
+                      onZoneManagerChanged: (v) => setState(
+                        () => _zoneManagerFilter = v ?? _allZoneManagers,
+                      ),
                       onAreaChanged: (v) =>
                           setState(() => _areaFilter = v ?? _allAreas),
                       onTypeChanged: (v) =>
                           setState(() => _typeFilter = v ?? _allTypes),
                       onStatusChanged: (v) =>
                           setState(() => _statusFilter = v ?? _allStatuses),
+                      onOrderDayChanged: (v) =>
+                          setState(() => _orderDayFilter = v ?? _allOrderDays),
                       onClearFilters: () {
                         setState(() {
                           _query = '';
                           _zoneFilter = _allZones;
+                          _zoneManagerFilter = _allZoneManagers;
                           _areaFilter = _allAreas;
                           _typeFilter = _allTypes;
                           _statusFilter = _allStatuses;
+                          _orderDayFilter = _allOrderDays;
                           _searchController.clear();
                         });
                       },
@@ -465,17 +520,23 @@ class _Toolbar extends StatelessWidget {
   final ValueChanged<String> onChanged;
   final VoidCallback onRefresh;
   final List<String> zoneOptions;
+  final List<String> zoneManagerOptions;
   final List<String> areaOptions;
   final List<String> typeOptions;
   final List<String> statusOptions;
+  final List<String> orderDayOptions;
   final String zoneValue;
+  final String zoneManagerValue;
   final String areaValue;
   final String typeValue;
   final String statusValue;
+  final String orderDayValue;
   final ValueChanged<String?> onZoneChanged;
+  final ValueChanged<String?> onZoneManagerChanged;
   final ValueChanged<String?> onAreaChanged;
   final ValueChanged<String?> onTypeChanged;
   final ValueChanged<String?> onStatusChanged;
+  final ValueChanged<String?> onOrderDayChanged;
   final VoidCallback onClearFilters;
 
   const _Toolbar({
@@ -484,17 +545,23 @@ class _Toolbar extends StatelessWidget {
     required this.onChanged,
     required this.onRefresh,
     required this.zoneOptions,
+    required this.zoneManagerOptions,
     required this.areaOptions,
     required this.typeOptions,
     required this.statusOptions,
+    required this.orderDayOptions,
     required this.zoneValue,
+    required this.zoneManagerValue,
     required this.areaValue,
     required this.typeValue,
     required this.statusValue,
+    required this.orderDayValue,
     required this.onZoneChanged,
+    required this.onZoneManagerChanged,
     required this.onAreaChanged,
     required this.onTypeChanged,
     required this.onStatusChanged,
+    required this.onOrderDayChanged,
     required this.onClearFilters,
   });
 
@@ -503,9 +570,11 @@ class _Toolbar extends StatelessWidget {
     final hasFilters =
         controller.text.trim().isNotEmpty ||
         zoneValue != _BranchSettingPageState._allZones ||
+        zoneManagerValue != _BranchSettingPageState._allZoneManagers ||
         areaValue != _BranchSettingPageState._allAreas ||
         typeValue != _BranchSettingPageState._allTypes ||
-        statusValue != _BranchSettingPageState._allStatuses;
+        statusValue != _BranchSettingPageState._allStatuses ||
+        orderDayValue != _BranchSettingPageState._allOrderDays;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -571,9 +640,13 @@ class _Toolbar extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          Row(
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Expanded(
+              SizedBox(
+                width: 210,
                 child: _FilterDropdown(
                   label: 'Status',
                   icon: Icons.verified_rounded,
@@ -583,8 +656,19 @@ class _Toolbar extends StatelessWidget {
                   color: const Color(0xff10B981),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
+              SizedBox(
+                width: 230,
+                child: _FilterDropdown(
+                  label: 'Order Day',
+                  icon: Icons.event_available_rounded,
+                  value: orderDayValue,
+                  values: orderDayOptions,
+                  onChanged: onOrderDayChanged,
+                  color: const Color(0xffF59E0B),
+                ),
+              ),
+              SizedBox(
+                width: 230,
                 child: _FilterDropdown(
                   label: 'Zone',
                   icon: Icons.place_rounded,
@@ -594,8 +678,19 @@ class _Toolbar extends StatelessWidget {
                   color: const Color(0xff2563EB),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
+              SizedBox(
+                width: 260,
+                child: _FilterDropdown(
+                  label: 'Zone Manager',
+                  icon: Icons.supervisor_account_rounded,
+                  value: zoneManagerValue,
+                  values: zoneManagerOptions,
+                  onChanged: onZoneManagerChanged,
+                  color: AppColors.secondaryColor,
+                ),
+              ),
+              SizedBox(
+                width: 250,
                 child: _FilterDropdown(
                   label: 'Area',
                   icon: Icons.map_rounded,
@@ -605,8 +700,8 @@ class _Toolbar extends StatelessWidget {
                   color: const Color(0xff0D9488),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
+              SizedBox(
+                width: 250,
                 child: _FilterDropdown(
                   label: 'Branch Type',
                   icon: Icons.storefront_rounded,
@@ -616,7 +711,6 @@ class _Toolbar extends StatelessWidget {
                   color: const Color(0xff7C3AED),
                 ),
               ),
-              const SizedBox(width: 12),
               OutlinedButton.icon(
                 onPressed: hasFilters ? onClearFilters : null,
                 icon: const Icon(Icons.filter_alt_off_rounded),
@@ -824,7 +918,7 @@ class _BranchesTable extends StatelessWidget {
                       DataCell(_TypePill(type: b.branchType)),
                       DataCell(_DaysWrap(days: b.orderDays)),
                       DataCell(
-                        Text(
+                        SelectableText(
                           '${b.submitStartHour}:00 -> ${b.submitEndHour}:00',
                           style: const TextStyle(fontWeight: FontWeight.w800),
                         ),
@@ -878,10 +972,9 @@ class _BranchNameCell extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
+            child: SelectableText(
               branch.branchName,
               maxLines: 2,
-              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: Color(0xff0F172A),
                 fontWeight: FontWeight.w900,
@@ -916,10 +1009,9 @@ class _InfoPill extends StatelessWidget {
           borderRadius: BorderRadius.circular(999),
           border: Border.all(color: color.withValues(alpha: .16)),
         ),
-        child: Text(
+        child: SelectableText(
           text.trim().isEmpty ? '-' : text,
           maxLines: 1,
-          overflow: TextOverflow.ellipsis,
           textAlign: TextAlign.center,
           style: TextStyle(
             color: color,
@@ -940,7 +1032,6 @@ class _ZoneManagerCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final name = branch.zoneManager.trim();
-    final email = branch.zoneManagerEmail.trim();
     return SizedBox(
       width: 220,
       child: Container(
@@ -950,10 +1041,9 @@ class _ZoneManagerCell extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: const Color(0xff99F6E4)),
         ),
-        child: Text(
+        child: SelectableText(
           name.isEmpty ? '-' : name,
           maxLines: 1,
-          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             color: AppColors.secondaryColor,
             fontWeight: FontWeight.w900,
@@ -1020,7 +1110,7 @@ class _MiniLimit extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: const Color(0xffCBD5E1)),
       ),
-      child: Text(
+      child: SelectableText(
         '$label $value',
         style: const TextStyle(
           color: Color(0xff334155),
@@ -1047,7 +1137,7 @@ class _StatusPill extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: color.withValues(alpha: .24)),
       ),
-      child: Text(
+      child: SelectableText(
         active ? 'ACTIVE' : 'INACTIVE',
         style: TextStyle(
           color: color,
@@ -1073,7 +1163,7 @@ class _DaysWrap extends StatelessWidget {
         runSpacing: 6,
         children: days.isEmpty
             ? [
-                const Text(
+                const SelectableText(
                   'No days',
                   style: TextStyle(color: Color(0xff94A3B8)),
                 ),
@@ -1090,7 +1180,7 @@ class _DaysWrap extends StatelessWidget {
                         borderRadius: BorderRadius.circular(999),
                         border: Border.all(color: const Color(0xffC7D2FE)),
                       ),
-                      child: Text(
+                      child: SelectableText(
                         day.substring(0, day.length < 3 ? day.length : 3),
                         style: const TextStyle(
                           color: Color(0xff4F46E5),
