@@ -16,8 +16,9 @@ class AvailabilityKpiExcelExporter {
   }) async {
     final workbook = xlsio.Workbook();
     final sheet = workbook.worksheets[0]..name = 'Availability KPI';
+    final lastStudyMonth = _lastStudyMonth(items, stockDate);
 
-    final title = sheet.getRangeByName('A1:P1');
+    final title = sheet.getRangeByName('A1:O1');
     title.merge();
     title.setText('Availability KPI — $branch');
     title.cellStyle
@@ -25,7 +26,7 @@ class AvailabilityKpiExcelExporter {
       ..fontSize = 18
       ..fontColor = '#FFFFFF'
       ..backColor = '#122D40'
-      ..hAlign = xlsio.HAlignType.left
+      ..hAlign = xlsio.HAlignType.center
       ..vAlign = xlsio.VAlignType.center;
     title.rowHeight = 34;
 
@@ -36,7 +37,7 @@ class AvailabilityKpiExcelExporter {
     sheet.getRangeByName('G2').setText('Purchase status');
     sheet.getRangeByName('H2').setText('1#NORMAL PURCHASE');
 
-    const headers = [
+    final headers = [
       'Branch',
       'Item Code',
       'Item Name',
@@ -45,15 +46,17 @@ class AvailabilityKpiExcelExporter {
       'Retail Price',
       'Retail Sales Value',
       'Branch Sales Share %',
-      'Months Sold (1-12)',
+      'Months Sold (1-$lastStudyMonth)',
       'Sold Months Count',
-      'Total Studied Months',
       'Selling Month %',
       'Needed For 7 Days',
       'Current Branch Stock',
       'Units Missing',
       '7-Day Coverage %',
     ];
+    sheet.getRangeByIndex(1, 1, 3, headers.length).cellStyle
+      ..hAlign = xlsio.HAlignType.center
+      ..vAlign = xlsio.VAlignType.center;
     const headerRow = 4;
     for (var column = 1; column <= headers.length; column++) {
       final cell = sheet.getRangeByIndex(headerRow, column);
@@ -82,11 +85,8 @@ class AvailabilityKpiExcelExporter {
         item.retail,
         item.recentSalesValue,
         item.recentSalesShare,
-        item.sellingMonthNumbers.isEmpty
-            ? '${item.sellingMonths} / ${item.totalMonths}'
-            : item.sellingMonthNumbers.join(', '),
+        _soldMonthList(item, lastStudyMonth),
         item.sellingMonths,
-        item.totalMonths,
         item.monthConsistency,
         item.weeklyNeed,
         item.branchStock,
@@ -111,11 +111,11 @@ class AvailabilityKpiExcelExporter {
       }
       sheet.getRangeByIndex(row, 3).cellStyle.hAlign = xlsio.HAlignType.left;
       if (item.stockShortage > 0) {
-        sheet.getRangeByIndex(row, 15).cellStyle
+        sheet.getRangeByIndex(row, 14).cellStyle
           ..fontColor = '#DC2626'
           ..bold = true;
       }
-      sheet.getRangeByIndex(row, 16).cellStyle
+      sheet.getRangeByIndex(row, 15).cellStyle
         ..fontColor = item.availabilityRate >= 95
             ? '#059669'
             : item.availabilityRate >= 80
@@ -147,7 +147,7 @@ class AvailabilityKpiExcelExporter {
     ], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     final url = html.Url.createObjectUrlFromBlob(blob);
     final safeBranch = branch.replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '_');
-    final timestamp = DateFormat('yyyy-MM-dd_HHmm').format(DateTime.now());
+    final timestamp = DateFormat('HHmm').format(DateTime.now());
     html.AnchorElement(href: url)
       ..setAttribute(
         'download',
@@ -162,5 +162,29 @@ class AvailabilityKpiExcelExporter {
     return item.inPareto
         ? 'Top seller — 80% of branch sales value'
         : 'Sold regularly';
+  }
+
+  static int _lastStudyMonth(
+    List<AvailabilityKpiItem> items,
+    String stockDate,
+  ) {
+    for (final item in items) {
+      final asOfDate = item.asOfDate;
+      if (asOfDate != null) return asOfDate.month;
+    }
+    return DateTime.tryParse(stockDate)?.month ?? DateTime.now().month;
+  }
+
+  static String _soldMonthList(AvailabilityKpiItem item, int lastStudyMonth) {
+    if (item.sellingMonthNumbers.isNotEmpty) {
+      return item.sellingMonthNumbers.join(', ');
+    }
+    if (item.sellingMonths == item.totalMonths && item.totalMonths > 0) {
+      return List<int>.generate(
+        lastStudyMonth,
+        (index) => index + 1,
+      ).join(', ');
+    }
+    return '${item.sellingMonths} / ${item.totalMonths}';
   }
 }

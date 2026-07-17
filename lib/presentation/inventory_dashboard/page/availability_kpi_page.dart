@@ -143,9 +143,10 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
     });
 
     try {
-      final data =
+      var data =
           _branchData[branch] ??
           await _remote.fetchBranchData(runDate: _stockDate, branch: branch);
+      data = await _remote.enrichSellingMonths(data);
       if (!mounted ||
           requestSerial != _requestSerial ||
           branch != _selectedBranch) {
@@ -603,15 +604,15 @@ Future<void> _showCalculationDialog(BuildContext context) {
                 number: '3',
                 title: 'Item Coverage',
                 detail:
-                    'Current branch stock is divided by the stock needed for 7 days. Coverage cannot be more than 100%. Example: stock 4 and need 5 gives 80% coverage.',
+                    'Current branch stock is divided by the stock needed for 7 days. Coverage cannot be more than 100%. A difference of 0.25 units or less is ignored. Example: stock 4 and need 5 gives 80% coverage.',
                 formula: 'Current stock ÷ 7-day need',
               ),
               const _CalculationRow(
                 number: '4',
                 title: 'Branch Availability',
                 detail:
-                    'We add the covered need for all items, then divide it by the total 7-day need. Items with higher demand have more effect on the branch result.',
-                formula: 'Covered need ÷ total need × 100',
+                    'We add the 7-day coverage percentage of every item, then divide by the number of items. Every item has the same weight.',
+                formula: 'Total item coverage ÷ item count',
                 last: true,
               ),
             ],
@@ -1086,7 +1087,7 @@ class _SummaryCards extends StatelessWidget {
           _KpiCard(
             title: 'Availability rate',
             value: value == null ? '—' : '${_fmt(value.availabilityRate)}%',
-            subtitle: 'Demand-weighted weekly coverage',
+            subtitle: 'Average 7-day coverage of all KPI items',
             icon: Icons.speed_rounded,
             color: value == null
                 ? const Color(0xff64748B)
@@ -1531,7 +1532,12 @@ class _MasterTableState extends State<_MasterTable> {
                           navigationMode: GridNavigationMode.cell,
                           onFilterChanged: (_) => setState(() {}),
                           onColumnSortChanged: (_, _) => setState(() {}),
-                          columns: _availabilityColumns(),
+                          columns: _availabilityColumns(
+                            _lastStudyMonthForTable(
+                              widget.items,
+                              widget.stockDate,
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -1628,7 +1634,7 @@ class _ExportLoadingOverlay extends StatelessWidget {
   }
 }
 
-List<GridColumn> _availabilityColumns() => [
+List<GridColumn> _availabilityColumns(int lastStudyMonth) => [
   _availabilityColumn('item_code', 'Item Code', 175),
   _availabilityColumn('item_name', 'Item Name', 340),
   _availabilityColumn('selection', 'Selection Reason', 235),
@@ -1636,13 +1642,32 @@ List<GridColumn> _availabilityColumns() => [
   _availabilityColumn('retail', 'Retail\nPrice', 165),
   _availabilityColumn('sales_value', 'Retail Sales\nValue', 190),
   _availabilityColumn('share', 'Branch Sales\nShare', 195),
-  _availabilityColumn('months', 'Months Sold\n(1–12)', 190),
+  _availabilityColumn('months', 'Months Sold\n(1-$lastStudyMonth)', 190),
   _availabilityColumn('consistency', 'Selling\nConsistency', 190),
   _availabilityColumn('weekly_need', '7-Day\nNeed', 170),
   _availabilityColumn('stock', 'Branch\nStock', 170),
   _availabilityColumn('shortage', 'Units\nMissing', 165),
   _availabilityColumn('coverage', '7-Day\nCoverage', 185),
 ];
+
+int _lastStudyMonthForTable(List<AvailabilityKpiItem> items, String stockDate) {
+  for (final item in items) {
+    final asOfDate = item.asOfDate;
+    if (asOfDate != null) return asOfDate.month;
+  }
+  return DateTime.tryParse(stockDate)?.month ?? DateTime.now().month;
+}
+
+String _soldMonthText(AvailabilityKpiItem item) {
+  if (item.sellingMonthNumbers.isNotEmpty) {
+    return item.sellingMonthNumbers.join(', ');
+  }
+  if (item.sellingMonths == item.totalMonths && item.totalMonths > 0) {
+    final lastMonth = item.asOfDate?.month ?? DateTime.now().month;
+    return List<int>.generate(lastMonth, (index) => index + 1).join(', ');
+  }
+  return '${item.sellingMonths} / ${item.totalMonths}';
+}
 
 GridColumn _availabilityColumn(
   String name,
@@ -1724,9 +1749,7 @@ class _AvailabilityKpiGridSource extends DataGridSource {
               ),
               DataGridCell<String>(
                 columnName: 'months',
-                value: item.sellingMonthNumbers.isEmpty
-                    ? '${item.sellingMonths} / ${item.totalMonths}'
-                    : item.sellingMonthNumbers.join(', '),
+                value: _soldMonthText(item),
               ),
               DataGridCell<num>(
                 columnName: 'consistency',
@@ -1821,9 +1844,7 @@ class _AvailabilityKpiGridSource extends DataGridSource {
                   message:
                       'Sold in ${item.sellingMonths} of ${item.totalMonths} studied months',
                   child: SelectableText(
-                    item.sellingMonthNumbers.isEmpty
-                        ? '${item.sellingMonths} / ${item.totalMonths}'
-                        : item.sellingMonthNumbers.join(', '),
+                    _soldMonthText(item),
                     style: const TextStyle(fontWeight: FontWeight.w900),
                   ),
                 );

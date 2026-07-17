@@ -88,6 +88,62 @@ class AvailabilityKpiRemoteDs {
     );
   }
 
+  /// Adds exact sold-month numbers for the branch currently opened by the
+  /// user. This reads only that branch and avoids slowing down the automatic
+  /// all-branch summary preload.
+  Future<AvailabilityBranchData> enrichSellingMonths(
+    AvailabilityBranchData data,
+  ) async {
+    final itemsByCode = <String, AvailabilityKpiItem>{
+      for (final item in data.items)
+        if (item.sellingMonthNumbers.isEmpty &&
+            item.sellingMonths > 0 &&
+            item.sellingMonths < item.totalMonths)
+          item.itemCode: item,
+    };
+    if (itemsByCode.isEmpty) return data;
+
+    final monthsByItem = <String, Set<int>>{};
+    var offset = 0;
+    while (true) {
+      final response = await client
+          .from('sales_history')
+          .select('item_code,month,cash,online,insurance')
+          .eq('branch_name', data.summary.branchName.trim())
+          .order('item_code')
+          .order('month')
+          .range(offset, offset + _batchSize - 1);
+      final batch = List<Map<String, dynamic>>.from(response as List);
+      for (final row in batch) {
+        final itemCode = _text(row['item_code']);
+        final item = itemsByCode[itemCode];
+        if (item == null) continue;
+        final soldQty =
+            _number(row['cash']) +
+            _number(row['online']) +
+            _number(row['insurance']);
+        if (soldQty <= 0) continue;
+        final monthStart = _parseMonth(_text(row['month']));
+        if (monthStart == null || !_isInStudyPeriod(monthStart, item)) {
+          continue;
+        }
+        (monthsByItem[itemCode] ??= <int>{}).add(monthStart.month);
+      }
+      if (batch.length < _batchSize) break;
+      offset += _batchSize;
+    }
+
+    final enrichedItems = data.items
+        .map((item) {
+          final months = monthsByItem[item.itemCode];
+          if (months == null || months.isEmpty) return item;
+          final sortedMonths = months.toList()..sort();
+          return item.withSellingMonthNumbers(sortedMonths);
+        })
+        .toList(growable: false);
+    return AvailabilityBranchData(summary: data.summary, items: enrichedItems);
+  }
+
   Future<List<Map<String, dynamic>>> _fetchMasterRows(String branch) async {
     const columns = '''
 branch_name,item_code,item_name,master_source,in_pareto,in_consistent,
@@ -200,6 +256,7 @@ class AvailabilityBranchSummary {
     num weeklyNeed = 0;
     num branchStock = 0;
     num coveredNeed = 0;
+    num totalItemCoverage = 0;
     var fullyAvailable = 0;
     var paretoItems = 0;
     var consistentItems = 0;
@@ -208,14 +265,15 @@ class AvailabilityBranchSummary {
       weeklyNeed += item.weeklyNeed;
       branchStock += item.branchStock;
       coveredNeed += math.min(item.branchStock, item.weeklyNeed);
+      totalItemCoverage += item.availabilityRate;
       if (item.branchStock >= item.weeklyNeed) fullyAvailable++;
       if (item.inPareto) paretoItems++;
       if (item.inConsistent) consistentItems++;
     }
 
-    final availability = weeklyNeed > 0
-        ? math.min(coveredNeed / weeklyNeed, 1) * 100
-        : 100;
+    final availability = items.isNotEmpty
+        ? totalItemCoverage / items.length
+        : 0;
     return AvailabilityBranchSummary(
       branchName: branchName,
       masterItems: items.length,
@@ -233,6 +291,8 @@ class AvailabilityBranchSummary {
 }
 
 class AvailabilityKpiItem {
+  static const num stockTolerance = 0.16;
+
   final String branchName;
   final String itemCode;
   final String itemName;
@@ -285,12 +345,45 @@ class AvailabilityKpiItem {
     required this.asOfDate,
   });
 
+  AvailabilityKpiItem withSellingMonthNumbers(List<int> months) {
+    return AvailabilityKpiItem(
+      branchName: branchName,
+      itemCode: itemCode,
+      itemName: itemName,
+      masterSource: masterSource,
+      sellingMonthNumbers: List<int>.unmodifiable(months),
+      inPareto: inPareto,
+      inConsistent: inConsistent,
+      recentSales: recentSales,
+      retail: retail,
+      recentSalesValue: recentSalesValue,
+      recentSalesShare: recentSalesShare,
+      cumulativeSalesShare: cumulativeSalesShare,
+      totalSales: totalSales,
+      sellingMonths: sellingMonths,
+      totalMonths: totalMonths,
+      monthConsistency: monthConsistency,
+      recentSellingMonths: recentSellingMonths,
+      weeklyNeed: weeklyNeed,
+      branchStock: branchStock,
+      stockShortage: stockShortage,
+      availabilityRate: availabilityRate,
+      analysisStart: analysisStart,
+      recentStart: recentStart,
+      asOfDate: asOfDate,
+    );
+  }
+
   factory AvailabilityKpiItem.fromMasterMap(
     Map<String, dynamic> map, {
     required num branchStock,
   }) {
-    final weeklyNeed = math.max(_number(map['weekly_need']), 0);
+    final rawWeeklyNeed = math.max(_number(map['weekly_need']), 0);
     final stock = math.max(branchStock, 0);
+    final rawShortage = math.max(rawWeeklyNeed - stock, 0);
+    final weeklyNeed = stock > 0 && rawShortage <= stockTolerance
+        ? math.min(rawWeeklyNeed, stock)
+        : rawWeeklyNeed;
     final recentSales = _number(map['recent_sales']);
     final recentSalesShare = _number(map['recent_sales_share']);
     final branchRecentValue = _number(map['branch_recent_sales']);
@@ -347,4 +440,27 @@ num _number(dynamic value) {
 int _integer(dynamic value) {
   if (value is int) return value;
   return num.tryParse(_text(value))?.toInt() ?? 0;
+}
+
+DateTime? _parseMonth(String value) {
+  final parts = value.split('/');
+  if (parts.length != 2) return null;
+  final month = int.tryParse(parts[0]);
+  final year = int.tryParse(parts[1]);
+  if (month == null || year == null || month < 1 || month > 12) return null;
+  return DateTime(year, month);
+}
+
+bool _isInStudyPeriod(DateTime monthStart, AvailabilityKpiItem item) {
+  final analysisStart = item.analysisStart;
+  final asOfDate = item.asOfDate;
+  if (analysisStart != null) {
+    final firstMonth = DateTime(analysisStart.year, analysisStart.month);
+    if (monthStart.isBefore(firstMonth)) return false;
+  }
+  if (asOfDate != null) {
+    final lastMonth = DateTime(asOfDate.year, asOfDate.month);
+    if (monthStart.isAfter(lastMonth)) return false;
+  }
+  return true;
 }
