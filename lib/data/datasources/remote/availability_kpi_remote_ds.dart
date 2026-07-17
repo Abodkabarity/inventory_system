@@ -180,7 +180,7 @@ weekly_need,analysis_start,recent_start,as_of_date
     while (true) {
       final response = await client
           .from('daily_order')
-          .select('item_code,branch_stock')
+          .select('item_code,branch_stock,total_final_reorder_today')
           .eq('run_date', runDate)
           .eq('branch', branch.trim())
           .order('item_code')
@@ -189,7 +189,11 @@ weekly_need,analysis_start,recent_start,as_of_date
       for (final row in batch) {
         final itemCode = _text(row['item_code']);
         if (itemCode.isEmpty) continue;
-        final stock = math.max(_number(row['branch_stock']), 0);
+        final stock = math.max(
+          _number(row['branch_stock']) +
+              _number(row['total_final_reorder_today']),
+          0,
+        );
         stocks[itemCode] = math.max(stocks[itemCode] ?? 0, stock);
       }
       if (batch.length < _batchSize) break;

@@ -517,7 +517,7 @@ class _MethodCard extends StatelessWidget {
             number: '1',
             title: 'Top sellers',
             detail:
-                'Items that make up 80% of branch sales in the last 3 full months',
+                'Items that make up 80% of branch sales in the last 3 completed months',
           ),
           const Icon(Icons.add_rounded, color: Color(0xff2563EB)),
           const _MethodStep(
@@ -529,7 +529,8 @@ class _MethodCard extends StatelessWidget {
           const _MethodStep(
             number: '3',
             title: '7-day stock need',
-            detail: 'Current stock compared with stock needed for 7 days',
+            detail:
+                'Uses the last 3 completed months and excludes the current month',
           ),
           TextButton.icon(
             onPressed: () => _showCalculationDialog(context),
@@ -591,20 +592,20 @@ Future<void> _showCalculationDialog(BuildContext context) {
                 number: '1',
                 title: 'Items Included',
                 detail:
-                    'An item is included when it is a top seller in the group that makes 80% of branch sales value, or when it was sold in at least 80% of the months studied. Only Normal Purchase items are included.',
+                    'An item is included when it is a top seller in the group that makes 80% of branch sales value during the last 3 completed months, or when it was sold in at least 80% of the months studied. Only Normal Purchase items are included.',
               ),
               const _CalculationRow(
                 number: '2',
                 title: 'Stock Needed for 7 Days',
                 detail:
-                    'We use units sold in the last 3 completed months. The current month is not included.',
-                formula: 'Units sold ÷ days in 3 months × 7',
+                    'We use units sold in the last 3 completed months before the latest sales month. The current month is not included.',
+                formula: '3-month units / calendar days in 3 months x 7',
               ),
               const _CalculationRow(
                 number: '3',
                 title: 'Item Coverage',
                 detail:
-                    'Current branch stock is divided by the stock needed for 7 days. Coverage cannot be more than 100%. A difference of 0.25 units or less is ignored. Example: stock 4 and need 5 gives 80% coverage.',
+                    'Current branch stock is branch_stock plus total_final_reorder_today from daily_order. This total is divided by the stock needed for 7 days. Coverage cannot be more than 100%. A difference of 0.25 units or less is ignored. Example: stock 4 and need 5 gives 80% coverage.',
                 formula: 'Current stock ÷ 7-day need',
               ),
               const _CalculationRow(
@@ -1638,7 +1639,7 @@ List<GridColumn> _availabilityColumns(int lastStudyMonth) => [
   _availabilityColumn('item_code', 'Item Code', 175),
   _availabilityColumn('item_name', 'Item Name', 340),
   _availabilityColumn('selection', 'Selection Reason', 235),
-  _availabilityColumn('sales', '3-Month\nUnits Sold', 185),
+  _availabilityColumn('sales', '3-Month\nUnits Sold', 190),
   _availabilityColumn('retail', 'Retail\nPrice', 165),
   _availabilityColumn('sales_value', 'Retail Sales\nValue', 190),
   _availabilityColumn('share', 'Branch Sales\nShare', 195),

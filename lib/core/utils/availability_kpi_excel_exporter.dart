@@ -42,7 +42,7 @@ class AvailabilityKpiExcelExporter {
       'Item Code',
       'Item Name',
       'Selection Reason',
-      '3 Completed Months Sales',
+      '3-Month Units Sold',
       'Retail Price',
       'Retail Sales Value',
       'Branch Sales Share %',
