@@ -8,6 +8,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:syncfusion_flutter_core/theme.dart';
+import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import 'package:xml/xml.dart';
@@ -79,6 +81,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
   late DateTime _deadlineTo;
   bool _loading = true;
   bool _sending = false;
+  bool _exporting = false;
   String? _deletingBatchId;
   bool _includeBarcodeStickerCheck = false;
   String _message = '';
@@ -91,11 +94,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
   void initState() {
     super.initState();
     final now = DateTime.now();
-    _sentFrom = DateTime(
-      now.year,
-      now.month,
-      now.day,
-    ).subtract(const Duration(days: 6));
+    _sentFrom = DateTime(now.year, 1, 1);
     _sentTo = DateTime(now.year, now.month, now.day, 23, 59, 59);
     _deadlineFrom = DateTime(now.year, now.month, now.day);
     _deadlineTo = DateTime(
@@ -499,6 +498,12 @@ class _StockCheckPageState extends State<StockCheckPage> {
         .map((entry) => _StockCheckBatch(id: entry.key, rows: entry.value))
         .toList();
     batches.sort((a, b) {
+      final pending = (b.pending > 0 ? 1 : 0).compareTo(a.pending > 0 ? 1 : 0);
+      if (pending != 0) return pending;
+      final expiredPending = (b.pending > 0 && b.isExpired ? 1 : 0).compareTo(
+        a.pending > 0 && a.isExpired ? 1 : 0,
+      );
+      if (expiredPending != 0) return expiredPending;
       final aDate = a.sentAt ?? DateTime.fromMillisecondsSinceEpoch(0);
       final bDate = b.sentAt ?? DateTime.fromMillisecondsSinceEpoch(0);
       return bDate.compareTo(aDate);
@@ -576,147 +581,182 @@ class _StockCheckPageState extends State<StockCheckPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7FB),
       body: SafeArea(
-        child: _loading
-            ? const Center(
-                child: CircularProgressIndicator(color: AppColors.primaryColor),
-              )
-            : LayoutBuilder(
-                builder: (context, constraints) {
-                  final header = _Header(
-                    title: widget.sourceTitle,
-                    pending: pending,
-                    submitted: submitted,
-                    total: visibleSourceRows.length,
-                    onRefresh: _load,
-                    onExport: selectedRows.isEmpty
-                        ? null
-                        : () {
-                            if (_showAnalysis) {
-                              StockCheckExcelExporter.exportAnalysis(
-                                rows: selectedAnalysisRows,
-                                title: 'Stock Check Accuracy Analysis',
-                              );
-                              return;
-                            }
-                            StockCheckExcelExporter.export(
-                              rows: _visibleDetailRows.isEmpty
-                                  ? selectedRows
-                                  : _visibleDetailRows,
-                              title: selectedRows.first.title,
-                            );
-                          },
-                  );
-
-                  if (_showStoreInbox && _hasStoreInbox) {
-                    return Padding(
-                      padding: const EdgeInsets.all(22),
-                      child: Column(
-                        children: [
-                          _StockCheckTopTabs(
-                            analysis: _showAnalysis,
-                            onChanged: (value) {
-                              setState(() => _showAnalysis = value);
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                          header,
-                          const SizedBox(height: 16),
-                          _StoreStockCheckTabs(
-                            showInbox: _showStoreInbox,
-                            pendingCount: widget.storeInboxPendingCount,
-                            overdueCount: widget.storeInboxOverdueCount,
-                            onChanged: (value) {
-                              setState(() => _showStoreInbox = value);
-                            },
-                          ),
-                          const SizedBox(height: 10),
-                          Expanded(
-                            child: BranchStockCheckPage(
-                              branchName: _storeStockCheckDestination,
-                              embedded: true,
-                              onBack: () =>
-                                  setState(() => _showStoreInbox = false),
-                            ),
-                          ),
-                        ],
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: _loading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: AppColors.primaryColor,
                       ),
-                    );
-                  }
+                    )
+                  : LayoutBuilder(
+                      builder: (context, constraints) {
+                        final header = _Header(
+                          title: widget.sourceTitle,
+                          pending: pending,
+                          submitted: submitted,
+                          total: visibleSourceRows.length,
+                          onRefresh: _load,
+                          exporting: _exporting,
+                          onExport: selectedRows.isEmpty || _exporting
+                              ? null
+                              : () => _exportSelectedStockCheckRows(
+                                  selectedRows: selectedRows,
+                                  selectedAnalysisRows: selectedAnalysisRows,
+                                  analysis: _showAnalysis,
+                                ),
+                        );
 
-                  final workspaceHeight = math.max(
-                    680.0,
-                    constraints.maxHeight * .76,
-                  );
-                  final analysisHeight = math.max(
-                    760.0,
-                    constraints.maxHeight - 150,
-                  );
-                  return SingleChildScrollView(
-                    padding: const EdgeInsets.all(22),
-                    child: Column(
-                      children: [
-                        _StockCheckTopTabs(
-                          analysis: _showAnalysis,
-                          onChanged: (value) {
-                            setState(() {
-                              _showAnalysis = value;
-                              if (_showAnalysis &&
-                                  _analysisBatchIds.isEmpty &&
-                                  batches.isNotEmpty) {
-                                _analysisBatchIds.add(
-                                  _selectedBatchId ?? batches.first.id,
-                                );
-                              }
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        if (!_showAnalysis) ...[
-                          header,
-                          const SizedBox(height: 16),
-                        ],
-                        if (_hasStoreInbox) ...[
-                          _StoreStockCheckTabs(
-                            showInbox: _showStoreInbox,
-                            pendingCount: widget.storeInboxPendingCount,
-                            overdueCount: widget.storeInboxOverdueCount,
-                            onChanged: (value) {
-                              setState(() => _showStoreInbox = value);
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                        ],
-                        if (_showAnalysis)
-                          SizedBox(
-                            height: analysisHeight,
-                            child: _StockCheckAnalysisPanel(
-                              batches: batches,
-                              selectedBatchIds: _analysisBatchIds,
-                              rows: selectedAnalysisRows,
-                              branchContacts: _branchContacts,
-                              onSelectBatches: () =>
-                                  _openAnalysisBatchPicker(batches),
+                        if (_showStoreInbox && _hasStoreInbox) {
+                          return Padding(
+                            padding: const EdgeInsets.all(22),
+                            child: Column(
+                              children: [
+                                _StockCheckTopTabs(
+                                  analysis: _showAnalysis,
+                                  onChanged: (value) {
+                                    setState(() => _showAnalysis = value);
+                                  },
+                                ),
+                                const SizedBox(height: 16),
+                                header,
+                                const SizedBox(height: 16),
+                                _StoreStockCheckTabs(
+                                  showInbox: _showStoreInbox,
+                                  pendingCount: widget.storeInboxPendingCount,
+                                  overdueCount: widget.storeInboxOverdueCount,
+                                  onChanged: (value) {
+                                    setState(() => _showStoreInbox = value);
+                                  },
+                                ),
+                                const SizedBox(height: 10),
+                                Expanded(
+                                  child: BranchStockCheckPage(
+                                    branchName: _storeStockCheckDestination,
+                                    embedded: true,
+                                    onBack: () =>
+                                        setState(() => _showStoreInbox = false),
+                                  ),
+                                ),
+                              ],
                             ),
-                          )
-                        else ...[
-                          _buildComposer(),
-                          const SizedBox(height: 16),
-                          SizedBox(
-                            height: workspaceHeight,
-                            child: _buildWorkspace(
-                              batches,
-                              selectedRows,
-                              selectedAnalysisRows,
-                            ),
+                          );
+                        }
+
+                        final workspaceHeight = math.max(
+                          680.0,
+                          constraints.maxHeight * .76,
+                        );
+                        final analysisHeight = math.max(
+                          760.0,
+                          constraints.maxHeight - 150,
+                        );
+                        return SingleChildScrollView(
+                          padding: const EdgeInsets.all(22),
+                          child: Column(
+                            children: [
+                              _StockCheckTopTabs(
+                                analysis: _showAnalysis,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _showAnalysis = value;
+                                    if (_showAnalysis &&
+                                        _analysisBatchIds.isEmpty &&
+                                        batches.isNotEmpty) {
+                                      _analysisBatchIds.add(
+                                        _selectedBatchId ?? batches.first.id,
+                                      );
+                                    }
+                                  });
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              if (!_showAnalysis) ...[
+                                header,
+                                const SizedBox(height: 16),
+                              ],
+                              if (_hasStoreInbox) ...[
+                                _StoreStockCheckTabs(
+                                  showInbox: _showStoreInbox,
+                                  pendingCount: widget.storeInboxPendingCount,
+                                  overdueCount: widget.storeInboxOverdueCount,
+                                  onChanged: (value) {
+                                    setState(() => _showStoreInbox = value);
+                                  },
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+                              if (_showAnalysis)
+                                SizedBox(
+                                  height: analysisHeight,
+                                  child: _StockCheckAnalysisPanel(
+                                    batches: batches,
+                                    selectedBatchIds: _analysisBatchIds,
+                                    rows: selectedAnalysisRows,
+                                    branchContacts: _branchContacts,
+                                    onSelectBatches: () =>
+                                        _openAnalysisBatchPicker(batches),
+                                  ),
+                                )
+                              else ...[
+                                _buildComposer(),
+                                const SizedBox(height: 16),
+                                SizedBox(
+                                  height: workspaceHeight,
+                                  child: _buildWorkspace(
+                                    batches,
+                                    selectedRows,
+                                    selectedAnalysisRows,
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
-                        ],
-                      ],
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
+            ),
+            if (_exporting)
+              const Positioned.fill(child: _StockCheckExportOverlay()),
+          ],
+        ),
       ),
     );
+  }
+
+  Future<void> _exportSelectedStockCheckRows({
+    required List<StockCheckTask> selectedRows,
+    required List<StockCheckTask> selectedAnalysisRows,
+    required bool analysis,
+  }) async {
+    if (_exporting || selectedRows.isEmpty) return;
+    setState(() {
+      _exporting = true;
+      _error = '';
+    });
+
+    // Let Flutter paint the loading overlay before the Excel workbook is built.
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+
+    try {
+      if (analysis) {
+        await StockCheckExcelExporter.exportAnalysis(
+          rows: selectedAnalysisRows,
+          title: 'Stock Check Accuracy Analysis',
+        );
+      } else {
+        await StockCheckExcelExporter.export(
+          rows: _visibleDetailRows.isEmpty ? selectedRows : _visibleDetailRows,
+          title: selectedRows.first.title,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
   }
 
   Widget _buildComposer() {
@@ -2543,14 +2583,12 @@ class _AnalysisBar extends StatelessWidget {
 
 class _StockCheckResultTableState extends State<_StockCheckResultTable> {
   final _searchController = TextEditingController();
-  final _horizontalTableController = ScrollController();
+  final _gridController = DataGridController();
   String _search = '';
   final _branchFilters = <String>{};
   String _statusFilter = 'ALL';
   String _sortColumn = 'branch';
   bool _sortAscending = true;
-  final _columnFilters = <String, Set<String>>{};
-  final _numericFilters = <String, _NumericColumnFilter>{};
   List<String> _branches = const [];
   List<StockCheckTask> _filteredRows = const [];
   bool _showBarcodeSticker = false;
@@ -2575,8 +2613,6 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
       _statusFilter = 'ALL';
       _sortColumn = 'branch';
       _sortAscending = true;
-      _columnFilters.clear();
-      _numericFilters.clear();
       _lastNotifiedRowsHash = null;
     }
     _rebuildIndexes();
@@ -2585,7 +2621,7 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
   @override
   void dispose() {
     _searchController.dispose();
-    _horizontalTableController.dispose();
+    _gridController.dispose();
     super.dispose();
   }
 
@@ -2716,29 +2752,12 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
                       ),
                     ),
                   )
-                : Scrollbar(
-                    controller: _horizontalTableController,
-                    thumbVisibility: true,
-                    trackVisibility: true,
-                    interactive: true,
-                    notificationPredicate: (notification) =>
-                        notification.metrics.axis == Axis.horizontal,
-                    child: SingleChildScrollView(
-                      controller: _horizontalTableController,
-                      scrollDirection: Axis.horizontal,
-                      child: _FastStockCheckResultsTable(
-                        rows: _filteredRows,
-                        showBarcodeSticker: _showBarcodeSticker,
-                        activeFilters: {
-                          ..._columnFilters.keys,
-                          ..._numericFilters.keys,
-                        },
-                        sortColumn: _sortColumn,
-                        sortAscending: _sortAscending,
-                        onColumnFilter: _openColumnFilter,
-                        onRowTap: _openNoteDialog,
-                      ),
-                    ),
+                : _FastStockCheckResultsTable(
+                    controller: _gridController,
+                    rows: _filteredRows,
+                    showBarcodeSticker: _showBarcodeSticker,
+                    onVisibleRowsChanged: widget.onFilteredRowsChanged,
+                    onRowTap: _openNoteDialog,
                   ),
           ),
         ],
@@ -2751,16 +2770,8 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
   }
 
   void _scrollTableHorizontally(double delta) {
-    if (!_horizontalTableController.hasClients) return;
-    final next = (_horizontalTableController.offset + delta).clamp(
-      0.0,
-      _horizontalTableController.position.maxScrollExtent,
-    );
-    _horizontalTableController.animateTo(
-      next,
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
-    );
+    final next = math.max(0.0, _gridController.horizontalOffset + delta);
+    _gridController.scrollToHorizontalOffset(next, canAnimate: true);
   }
 
   void _rebuildIndexes() {
@@ -2797,15 +2808,7 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
               row.branchName.toLowerCase().contains(needle) ||
               row.itemCode.toLowerCase().contains(needle) ||
               row.itemName.toLowerCase().contains(needle);
-          final columnOk = _columnFilters.entries.every((entry) {
-            final selected = entry.value;
-            if (selected.isEmpty) return true;
-            return selected.contains(_columnValue(row, entry.key));
-          });
-          final numberOk = _numericFilters.entries.every((entry) {
-            return entry.value.matches(_numericColumnValue(row, entry.key));
-          });
-          return branchOk && statusOk && searchOk && columnOk && numberOk;
+          return branchOk && statusOk && searchOk;
         }).toList()..sort((a, b) {
           final primary = _compareColumn(a, b, _sortColumn);
           if (primary != 0) return _sortAscending ? primary : -primary;
@@ -2903,64 +2906,6 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
       'status' => row.isSubmitted ? 'Submitted' : 'Pending',
       _ => '',
     };
-  }
-
-  num? _numericColumnValue(StockCheckTask row, String column) {
-    return switch (column) {
-      'system' => row.systemQty,
-      'actual' => row.actualQty,
-      'diff' => row.variance,
-      _ => null,
-    };
-  }
-
-  Future<void> _openColumnFilter(String column, String label) async {
-    final isNumeric = {'system', 'actual', 'diff'}.contains(column);
-    final values =
-        widget.rows
-            .map((row) => _columnValue(row, column))
-            .where((value) => value.trim().isNotEmpty)
-            .toSet()
-            .toList()
-          ..sort((a, b) {
-            if (isNumeric) {
-              final av = num.tryParse(a.replaceAll(',', ''));
-              final bv = num.tryParse(b.replaceAll(',', ''));
-              if (av != null && bv != null) return av.compareTo(bv);
-              if (av != null) return -1;
-              if (bv != null) return 1;
-            }
-            return a.toLowerCase().compareTo(b.toLowerCase());
-          });
-    final current = Set<String>.from(_columnFilters[column] ?? values);
-    final result = await showDialog<_ColumnFilterResult>(
-      context: context,
-      barrierColor: Colors.black26,
-      builder: (_) => _ColumnFilterDialog(
-        title: label,
-        values: values,
-        selected: current,
-        sortAscending: _sortColumn == column ? _sortAscending : true,
-        isNumeric: isNumeric,
-        numericFilter: _numericFilters[column],
-      ),
-    );
-    if (result == null || !mounted) return;
-    setState(() {
-      _sortColumn = column;
-      _sortAscending = result.sortAscending;
-      if (result.selected.length == values.length) {
-        _columnFilters.remove(column);
-      } else {
-        _columnFilters[column] = result.selected;
-      }
-      if (result.numericFilter?.isValid == true) {
-        _numericFilters[column] = result.numericFilter!;
-      } else {
-        _numericFilters.remove(column);
-      }
-      _rebuildIndexes();
-    });
   }
 
   Future<void> _openNoteDialog(StockCheckTask row) async {
@@ -3512,458 +3457,18 @@ _StockCheckProductsImport _stockCheckProductsFromTable(
   return _StockCheckProductsImport(products: products, rows: rows);
 }
 
-class _ColumnFilterResult {
-  final Set<String> selected;
-  final bool sortAscending;
-  final _NumericColumnFilter? numericFilter;
-
-  const _ColumnFilterResult({
-    required this.selected,
-    required this.sortAscending,
-    this.numericFilter,
-  });
-}
-
-class _NumericColumnFilter {
-  final String mode;
-  final num? first;
-  final num? second;
-
-  const _NumericColumnFilter({
-    required this.mode,
-    required this.first,
-    required this.second,
-  });
-
-  bool get isValid {
-    if (mode == 'none') return false;
-    if (mode == 'between') return first != null && second != null;
-    return first != null;
-  }
-
-  bool matches(num? value) {
-    if (!isValid) return true;
-    if (value == null) return false;
-    return switch (mode) {
-      'gt' => value > first!,
-      'gte' => value >= first!,
-      'lt' => value < first!,
-      'lte' => value <= first!,
-      'between' =>
-        value >= math.min(first!.toDouble(), second!.toDouble()) &&
-            value <= math.max(first!.toDouble(), second!.toDouble()),
-      _ => true,
-    };
-  }
-}
-
-class _ColumnFilterDialog extends StatefulWidget {
-  final String title;
-  final List<String> values;
-  final Set<String> selected;
-  final bool sortAscending;
-  final bool isNumeric;
-  final _NumericColumnFilter? numericFilter;
-
-  const _ColumnFilterDialog({
-    required this.title,
-    required this.values,
-    required this.selected,
-    required this.sortAscending,
-    this.isNumeric = false,
-    this.numericFilter,
-  });
-
-  @override
-  State<_ColumnFilterDialog> createState() => _ColumnFilterDialogState();
-}
-
-class _ColumnFilterDialogState extends State<_ColumnFilterDialog> {
-  late final TextEditingController _searchController;
-  late final TextEditingController _firstNumberController;
-  late final TextEditingController _secondNumberController;
-  late Set<String> _selected;
-  late bool _sortAscending;
-  late String _numberMode;
-  String _search = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _searchController = TextEditingController();
-    _firstNumberController = TextEditingController(
-      text: widget.numericFilter?.first?.toString() ?? '',
-    );
-    _secondNumberController = TextEditingController(
-      text: widget.numericFilter?.second?.toString() ?? '',
-    );
-    _selected = Set<String>.from(widget.selected);
-    _sortAscending = widget.sortAscending;
-    _numberMode = widget.numericFilter?.mode ?? 'none';
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    _firstNumberController.dispose();
-    _secondNumberController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final visible = widget.values.where((value) {
-      return _search.trim().isEmpty ||
-          value.toLowerCase().contains(_search.trim().toLowerCase());
-    }).toList();
-    return Dialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: SizedBox(
-        width: widget.isNumeric ? 430 : 390,
-        height: widget.isNumeric ? 680 : 560,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(
-                    Icons.filter_alt_rounded,
-                    color: Color(0xFF2563EB),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      widget.title,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => setState(() => _sortAscending = true),
-                      icon: const Icon(
-                        Icons.arrow_upward_rounded,
-                        size: 18,
-                        color: AppColors.secondaryColor,
-                      ),
-                      label: const Text(
-                        'Sort Low to High',
-                        style: TextStyle(color: AppColors.secondaryColor),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        backgroundColor: _sortAscending
-                            ? const Color(0xFFEFF6FF)
-                            : Colors.white,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => setState(() => _sortAscending = false),
-                      icon: const Icon(
-                        Icons.arrow_downward_rounded,
-                        size: 18,
-                        color: AppColors.secondaryColor,
-                      ),
-                      label: const Text(
-                        'Sort High to Low',
-                        style: TextStyle(color: AppColors.secondaryColor),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        backgroundColor: !_sortAscending
-                            ? const Color(0xFFEFF6FF)
-                            : Colors.white,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              if (widget.isNumeric) ...[
-                const SizedBox(height: 12),
-                _NumericFilterPanel(
-                  mode: _numberMode,
-                  firstController: _firstNumberController,
-                  secondController: _secondNumberController,
-                  onModeChanged: (value) {
-                    setState(() => _numberMode = value);
-                  },
-                ),
-              ],
-              const SizedBox(height: 10),
-              TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: 'Search values',
-                  prefixIcon: const Icon(Icons.search_rounded),
-                  filled: true,
-                  fillColor: AppColors.backgroundWidget,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.primaryColor),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.primaryColor),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.primaryColor),
-                  ),
-                ),
-                onChanged: (value) => setState(() => _search = value),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  TextButton(
-                    onPressed: () {
-                      setState(() {
-                        _selected = Set<String>.from(widget.values);
-                      });
-                    },
-                    child: const Text(
-                      'Select all',
-                      style: TextStyle(color: AppColors.secondaryColor),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () => setState(_selected.clear),
-                    child: const Text(
-                      'Clear',
-                      style: TextStyle(color: AppColors.secondaryColor),
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${_selected.length} selected',
-                    style: const TextStyle(
-                      color: Color(0xFF64748B),
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-              const Divider(height: 16),
-              Expanded(
-                child: visible.isEmpty
-                    ? const Center(child: Text('No values'))
-                    : ListView.builder(
-                        itemCount: visible.length,
-                        itemBuilder: (context, index) {
-                          final value = visible[index];
-                          return CheckboxListTile(
-                            dense: true,
-                            activeColor: AppColors.primaryColor,
-                            value: _selected.contains(value),
-                            title: Text(
-                              value,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            onChanged: (checked) {
-                              setState(() {
-                                if (checked == true) {
-                                  _selected.add(value);
-                                } else {
-                                  _selected.remove(value);
-                                }
-                              });
-                            },
-                          );
-                        },
-                      ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  OutlinedButton(
-                    onPressed: () {
-                      Navigator.pop(
-                        context,
-                        _ColumnFilterResult(
-                          selected: Set<String>.from(widget.values),
-                          sortAscending: _sortAscending,
-                          numericFilter: null,
-                        ),
-                      );
-                    },
-                    child: const Text(
-                      'Clear filter',
-                      style: TextStyle(color: AppColors.secondaryColor),
-                    ),
-                  ),
-                  const Spacer(),
-                  FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.primaryColor,
-                    ),
-                    onPressed: () {
-                      Navigator.pop(
-                        context,
-                        _ColumnFilterResult(
-                          selected: _selected,
-                          sortAscending: _sortAscending,
-                          numericFilter: _buildNumericFilter(),
-                        ),
-                      );
-                    },
-                    child: const Text('Apply'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  _NumericColumnFilter? _buildNumericFilter() {
-    if (!widget.isNumeric || _numberMode == 'none') return null;
-    num? parse(TextEditingController controller) {
-      final text = controller.text.trim().replaceAll(',', '');
-      if (text.isEmpty) return null;
-      return num.tryParse(text);
-    }
-
-    final filter = _NumericColumnFilter(
-      mode: _numberMode,
-      first: parse(_firstNumberController),
-      second: parse(_secondNumberController),
-    );
-    return filter.isValid ? filter : null;
-  }
-}
-
-class _NumericFilterPanel extends StatelessWidget {
-  final String mode;
-  final TextEditingController firstController;
-  final TextEditingController secondController;
-  final ValueChanged<String> onModeChanged;
-
-  const _NumericFilterPanel({
-    required this.mode,
-    required this.firstController,
-    required this.secondController,
-    required this.onModeChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final showSecond = mode == 'between';
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFD9E8F5)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.pin_rounded, color: AppColors.primaryColor, size: 18),
-              SizedBox(width: 7),
-              Text(
-                'Number filter',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          DropdownButtonFormField<String>(
-            initialValue: mode,
-            decoration: _StockCheckResultTableState._filterDecoration(
-              'Condition',
-            ),
-            items: const [
-              DropdownMenuItem(value: 'none', child: Text('No number filter')),
-              DropdownMenuItem(value: 'gt', child: Text('Greater than')),
-              DropdownMenuItem(
-                value: 'gte',
-                child: Text('Greater than or equal'),
-              ),
-              DropdownMenuItem(value: 'lt', child: Text('Less than')),
-              DropdownMenuItem(value: 'lte', child: Text('Less than or equal')),
-              DropdownMenuItem(value: 'between', child: Text('Between')),
-            ],
-            onChanged: (value) => onModeChanged(value ?? 'none'),
-          ),
-          if (mode != 'none') ...[
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: firstController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                      signed: true,
-                    ),
-                    decoration: _StockCheckResultTableState._filterDecoration(
-                      showSecond ? 'From' : 'Value',
-                    ),
-                  ),
-                ),
-                if (showSecond) ...[
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: secondController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                        signed: true,
-                      ),
-                      decoration: _StockCheckResultTableState._filterDecoration(
-                        'To',
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
 class _FastStockCheckResultsTable extends StatefulWidget {
+  final DataGridController controller;
   final List<StockCheckTask> rows;
   final bool showBarcodeSticker;
-  final Set<String> activeFilters;
-  final String sortColumn;
-  final bool sortAscending;
-  final void Function(String column, String label) onColumnFilter;
+  final ValueChanged<List<StockCheckTask>>? onVisibleRowsChanged;
   final ValueChanged<StockCheckTask> onRowTap;
 
   const _FastStockCheckResultsTable({
+    required this.controller,
     required this.rows,
     required this.showBarcodeSticker,
-    required this.activeFilters,
-    required this.sortColumn,
-    required this.sortAscending,
-    required this.onColumnFilter,
+    required this.onVisibleRowsChanged,
     required this.onRowTap,
   });
 
@@ -3974,316 +3479,387 @@ class _FastStockCheckResultsTable extends StatefulWidget {
 
 class _FastStockCheckResultsTableState
     extends State<_FastStockCheckResultsTable> {
-  double _branchW = 150;
-  double _codeW = 130;
-  double _nameW = 520;
-  double _qtyW = 95;
-  double _diffW = 68;
-  double _barcodeW = 220;
-  double _submitterW = 180;
-  double _employeeW = 150;
-  double _noteW = 220;
-  double _statusW = 200;
+  static const _baseOrder = <String>[
+    'branch',
+    'itemCode',
+    'itemName',
+    'system',
+    'actual',
+    'diff',
+    'barcode',
+    'submittedByName',
+    'submittedByEmployeeId',
+    'note',
+    'status',
+  ];
+  static const _titles = <String, String>{
+    'branch': 'Branch',
+    'itemCode': 'Item Code',
+    'itemName': 'Item Name',
+    'system': 'System Qty',
+    'actual': 'Actual Qty',
+    'diff': 'Difference',
+    'barcode': 'Barcode Sticker is Correct',
+    'submittedByName': 'Submitted By',
+    'submittedByEmployeeId': 'Employee ID',
+    'note': 'Note',
+    'status': 'Status',
+  };
+  final _widths = <String, double>{
+    'branch': 180,
+    'itemCode': 145,
+    'itemName': 470,
+    'system': 120,
+    'actual': 120,
+    'diff': 105,
+    'barcode': 225,
+    'submittedByName': 190,
+    'submittedByEmployeeId': 150,
+    'note': 240,
+    'status': 145,
+  };
+  late List<String> _columnOrder;
+  late _StockCheckResultsGridSource _source;
 
-  double get _width =>
-      _branchW +
-      _codeW +
-      _nameW +
-      (_qtyW * 2) +
-      _diffW +
-      (widget.showBarcodeSticker ? _barcodeW : 0) +
-      _submitterW +
-      _employeeW +
-      _noteW +
-      _statusW;
+  @override
+  void initState() {
+    super.initState();
+    _columnOrder = _visibleBaseOrder();
+    _source = _StockCheckResultsGridSource(
+      rows: widget.rows,
+      columns: _columnOrder,
+      onNotePressed: widget.onRowTap,
+    );
+  }
 
-  void _resize(String column, double delta) {
-    setState(() {
-      switch (column) {
-        case 'branch':
-          _branchW = (_branchW + delta).clamp(110, 360);
-        case 'itemCode':
-          _codeW = (_codeW + delta).clamp(110, 260);
-        case 'itemName':
-          _nameW = (_nameW + delta).clamp(260, 820);
-        case 'system':
-          _qtyW = (_qtyW + delta).clamp(82, 180);
-        case 'diff':
-          _diffW = (_diffW + delta).clamp(62, 150);
-        case 'barcode':
-          _barcodeW = (_barcodeW + delta).clamp(180, 360);
-        case 'submittedByName':
-          _submitterW = (_submitterW + delta).clamp(140, 320);
-        case 'submittedByEmployeeId':
-          _employeeW = (_employeeW + delta).clamp(120, 260);
-        case 'note':
-          _noteW = (_noteW + delta).clamp(150, 420);
-        case 'status':
-          _statusW = (_statusW + delta).clamp(130, 280);
+  @override
+  void didUpdateWidget(covariant _FastStockCheckResultsTable oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.showBarcodeSticker != widget.showBarcodeSticker) {
+      if (widget.showBarcodeSticker && !_columnOrder.contains('barcode')) {
+        final submittedIndex = _columnOrder.indexOf('submittedByName');
+        _columnOrder.insert(
+          submittedIndex < 0 ? _columnOrder.length : submittedIndex,
+          'barcode',
+        );
+      } else if (!widget.showBarcodeSticker) {
+        _columnOrder.remove('barcode');
       }
+    }
+    _source.update(rows: widget.rows, columns: _columnOrder);
+  }
+
+  List<String> _visibleBaseOrder() => _baseOrder
+      .where((column) => column != 'barcode' || widget.showBarcodeSticker)
+      .toList();
+
+  void _notifyVisibleRows() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.onVisibleRowsChanged?.call(_source.visibleTasks);
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: _width,
-      child: Column(
-        children: [
-          _row(
-            cells: [
-              _header('Branch', 'branch', _branchW),
-              _header('Item Code', 'itemCode', _codeW),
-              _header('Item Name', 'itemName', _nameW),
-              _header('System', 'system', _qtyW),
-              _header('Actual', 'actual', _qtyW),
-              _header('Diff', 'diff', _diffW),
-              if (widget.showBarcodeSticker)
-                _header('Barcode Sticker is Correct', 'barcode', _barcodeW),
-              _header('Submitted By', 'submittedByName', _submitterW),
-              _header('Employee ID', 'submittedByEmployeeId', _employeeW),
-              _header('Note', 'note', _noteW),
-              _header('Status', 'status', _statusW),
-            ],
-            background: const Color(0xFFEFF6FF),
-          ),
-          Expanded(
-            child: DecoratedBox(
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: SfDataGridTheme(
+        data: SfDataGridThemeData(
+          headerColor: AppColors.backgroundWidget,
+          gridLineColor: AppColors.border.withValues(alpha: .9),
+          filterIconColor: AppColors.secondaryColor,
+          sortIconColor: AppColors.primaryColor,
+          selectionColor: AppColors.primaryColor.withValues(alpha: .08),
+        ),
+        child: SfDataGrid(
+          controller: widget.controller,
+          source: _source,
+          allowFiltering: true,
+          allowSorting: true,
+          allowMultiColumnSorting: true,
+          allowTriStateSorting: true,
+          allowColumnsResizing: true,
+          columnResizeMode: ColumnResizeMode.onResize,
+          allowColumnsDragging: true,
+          isScrollbarAlwaysShown: true,
+          gridLinesVisibility: GridLinesVisibility.both,
+          headerGridLinesVisibility: GridLinesVisibility.both,
+          columnWidthMode: ColumnWidthMode.none,
+          frozenColumnsCount: 1,
+          rowHeight: 58,
+          headerRowHeight: 62,
+          onFilterChanged: (_) => _notifyVisibleRows(),
+          onColumnResizeUpdate: (details) {
+            setState(() {
+              _widths[details.column.columnName] = details.width;
+            });
+            return true;
+          },
+          onColumnDragging: (details) {
+            if (details.action != DataGridColumnDragAction.dropping ||
+                details.to == null ||
+                details.from == details.to) {
+              return true;
+            }
+            setState(() {
+              final column = _columnOrder.removeAt(details.from);
+              _columnOrder.insert(details.to!, column);
+              _source.update(rows: widget.rows, columns: _columnOrder);
+            });
+            return true;
+          },
+          columnDragFeedbackBuilder: (context, column) => Material(
+            color: Colors.transparent,
+            child: Container(
+              width: _widths[column.columnName] ?? 160,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xFFD9E8F5)),
-                borderRadius: const BorderRadius.vertical(
-                  bottom: Radius.circular(8),
-                ),
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.primaryColor),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x22000000),
+                    blurRadius: 18,
+                    offset: Offset(0, 8),
+                  ),
+                ],
               ),
-              child: ListView.separated(
-                itemCount: widget.rows.length,
-                separatorBuilder: (_, _) =>
-                    const Divider(height: 1, color: Color(0xFFD9E8F5)),
-                itemBuilder: (context, index) {
-                  final row = widget.rows[index];
-                  return _row(
-                    cells: [
-                      _cell(row.branchName, _branchW),
-                      _cell(row.itemCode, _codeW),
-                      _itemNameCell(row),
-                      _cell(row.systemQty?.toString() ?? '', _qtyW),
-                      _cell(row.actualQty?.toString() ?? '', _qtyW),
-                      _cell(row.variance?.toString() ?? '', _diffW),
-                      if (widget.showBarcodeSticker)
-                        _cell(
-                          row.includeBarcodeStickerCheck
-                              ? _StockCheckResultTableState._yesNo(
-                                  row.barcodeStickerIsCorrect,
-                                )
-                              : '',
-                          _barcodeW,
-                        ),
-                      _cell(row.submittedByName, _submitterW, maxLines: 2),
-                      _cell(row.submittedByEmployeeId, _employeeW),
-                      _noteCell(row),
-                      _statusCell(row.isSubmitted),
-                    ],
-                  );
-                },
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.drag_indicator_rounded,
+                    color: AppColors.primaryColor,
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      _titles[column.columnName] ?? column.columnName,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-        ],
+          columns: _columnOrder.map(_gridColumn).toList(),
+        ),
       ),
     );
   }
 
-  Widget _row({required List<Widget> cells, Color? background}) {
-    return SizedBox(
-      width: _width,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: background ?? Colors.white,
-          border: const Border(
-            left: BorderSide(color: Color(0xFFD9E8F5)),
-            right: BorderSide(color: Color(0xFFD9E8F5)),
+  GridColumn _gridColumn(String name) {
+    return GridColumn(
+      columnName: name,
+      width: _widths[name] ?? 150,
+      minimumWidth: name == 'itemName' ? 240 : 90,
+      label: Container(
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        child: Tooltip(
+          message:
+              '${_titles[name] ?? name} - drag to move, drag edge to resize',
+          child: Text(
+            _titles[name] ?? name,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.headerText,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
           ),
         ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: cells),
       ),
     );
   }
+}
 
-  Widget _header(String text, String column, double width) {
-    final filtered = widget.activeFilters.contains(column);
-    final sorted = widget.sortColumn == column;
-    return SizedBox(
-      width: width,
-      height: 48,
-      child: Stack(
-        children: [
-          Container(
-            alignment: Alignment.center,
-            padding: const EdgeInsets.only(left: 8, right: 34),
-            decoration: const BoxDecoration(
-              border: Border(right: BorderSide(color: Color(0xFFD9E8F5))),
-            ),
-            child: Text(
-              text,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w900),
-            ),
-          ),
-          Positioned(
-            right: 14,
-            top: 0,
-            bottom: 0,
-            child: Tooltip(
-              message: 'Filter / sort',
-              child: InkWell(
-                onTap: () => widget.onColumnFilter(column, text),
-                borderRadius: BorderRadius.circular(999),
-                child: Icon(
-                  filtered
-                      ? Icons.filter_alt_rounded
-                      : sorted
-                      ? (widget.sortAscending
-                            ? Icons.arrow_upward_rounded
-                            : Icons.arrow_downward_rounded)
-                      : Icons.filter_list_rounded,
-                  size: 18,
-                  color: filtered || sorted
-                      ? const Color(0xFF2563EB)
-                      : const Color(0xFF64748B),
-                ),
+class _StockCheckResultsGridSource extends DataGridSource {
+  List<String> _columns;
+  List<DataGridRow> _rows = const [];
+  final _tasksByRow = <DataGridRow, StockCheckTask>{};
+  final ValueChanged<StockCheckTask> onNotePressed;
+
+  _StockCheckResultsGridSource({
+    required List<StockCheckTask> rows,
+    required List<String> columns,
+    required this.onNotePressed,
+  }) : _columns = List<String>.from(columns) {
+    update(rows: rows, columns: columns, notify: false);
+  }
+
+  void update({
+    required List<StockCheckTask> rows,
+    required List<String> columns,
+    bool notify = true,
+  }) {
+    _columns = List<String>.from(columns);
+    _tasksByRow.clear();
+    _rows = rows.map((task) {
+      final row = DataGridRow(
+        cells: _columns
+            .map(
+              (column) => DataGridCell<dynamic>(
+                columnName: column,
+                value: _value(task, column),
               ),
-            ),
-          ),
-          Positioned(
-            right: 0,
-            top: 0,
-            bottom: 0,
-            child: MouseRegion(
-              cursor: SystemMouseCursors.resizeColumn,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onHorizontalDragUpdate: (details) {
-                  _resize(column, details.delta.dx);
-                },
-                child: Container(
-                  width: 10,
-                  alignment: Alignment.center,
-                  child: Container(width: 2, color: const Color(0xFFCBD5E1)),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
+            )
+            .toList(),
+      );
+      _tasksByRow[row] = task;
+      return row;
+    }).toList();
+    if (notify) notifyListeners();
+  }
+
+  @override
+  List<DataGridRow> get rows => _rows;
+
+  List<StockCheckTask> get visibleTasks => effectiveRows
+      .map((row) => _tasksByRow[row])
+      .whereType<StockCheckTask>()
+      .toList(growable: false);
+
+  dynamic _value(StockCheckTask row, String column) {
+    return switch (column) {
+      'branch' => row.branchName,
+      'itemCode' => row.itemCode,
+      'itemName' => row.itemName,
+      'system' => row.systemQty,
+      'actual' => row.actualQty,
+      'diff' => row.variance,
+      'barcode' =>
+        row.includeBarcodeStickerCheck
+            ? _StockCheckResultTableState._yesNo(row.barcodeStickerIsCorrect)
+            : '',
+      'submittedByName' => row.submittedByName,
+      'submittedByEmployeeId' => row.submittedByEmployeeId,
+      'note' => row.note,
+      'status' => row.isSubmitted ? 'Submitted' : 'Pending',
+      _ => '',
+    };
+  }
+
+  @override
+  DataGridRowAdapter buildRow(DataGridRow row) {
+    final task = _tasksByRow[row]!;
+    final submitted = task.isSubmitted;
+    return DataGridRowAdapter(
+      color: submitted
+          ? const Color(0xFF16A34A).withValues(alpha: .035)
+          : Colors.white,
+      cells: row.getCells().map((cell) {
+        if (cell.columnName == 'itemName') {
+          return _StockCheckItemNameGridCell(
+            task: task,
+            onNotePressed: onNotePressed,
+          );
+        }
+        if (cell.columnName == 'status') {
+          return Center(child: _StatusChip(done: submitted));
+        }
+        if (cell.columnName == 'note') {
+          final note = task.note.trim();
+          return _StockCheckGridTextCell(
+            text: note.isEmpty ? 'No note' : note,
+            color: note.isEmpty ? AppColors.subText : AppColors.secondaryColor,
+          );
+        }
+        return _StockCheckGridTextCell(
+          text: _display(cell.value),
+          strong: cell.columnName == 'branch' || cell.columnName == 'itemCode',
+        );
+      }).toList(),
     );
   }
 
-  Widget _cell(String text, double width, {int maxLines = 1}) {
+  static String _display(dynamic value) {
+    if (value == null) return '';
+    if (value is num) return value.toString();
+    return value.toString();
+  }
+}
+
+class _StockCheckGridTextCell extends StatelessWidget {
+  final String text;
+  final bool strong;
+  final Color? color;
+
+  const _StockCheckGridTextCell({
+    required this.text,
+    this.strong = false,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      width: width,
-      height: 54,
       alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: const BoxDecoration(
-        border: Border(right: BorderSide(color: Color(0xFFD9E8F5))),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       child: SelectableText(
         text,
-        maxLines: maxLines,
+        maxLines: 2,
         textAlign: TextAlign.center,
-        style: const TextStyle(fontWeight: FontWeight.w700),
+        style: TextStyle(
+          color: color ?? AppColors.headerText,
+          fontSize: 12.5,
+          fontWeight: strong ? FontWeight.w900 : FontWeight.w700,
+        ),
       ),
     );
   }
+}
 
-  Widget _itemNameCell(StockCheckTask row) {
-    return Container(
-      width: _nameW,
-      height: 54,
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: const BoxDecoration(
-        border: Border(right: BorderSide(color: Color(0xFFD9E8F5))),
-      ),
+class _StockCheckItemNameGridCell extends StatelessWidget {
+  final StockCheckTask task;
+  final ValueChanged<StockCheckTask> onNotePressed;
+
+  const _StockCheckItemNameGridCell({
+    required this.task,
+    required this.onNotePressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasNote = task.note.trim().isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       child: Row(
         children: [
           Expanded(
             child: SelectableText(
-              row.itemName,
+              task.itemName,
               maxLines: 2,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontWeight: FontWeight.w700),
+              style: const TextStyle(
+                color: AppColors.headerText,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
           const SizedBox(width: 6),
           Tooltip(
-            message: row.note.trim().isEmpty ? 'Add note' : 'Edit note',
+            message: hasNote ? 'Edit note' : 'Add note',
             child: IconButton(
-              onPressed: () => widget.onRowTap(row),
+              onPressed: () => onNotePressed(task),
               icon: Icon(
-                row.note.trim().isEmpty
-                    ? Icons.note_add_outlined
-                    : Icons.sticky_note_2_rounded,
+                hasNote ? Icons.sticky_note_2_rounded : Icons.note_add_outlined,
                 size: 18,
               ),
-              visualDensity: VisualDensity.compact,
               style: IconButton.styleFrom(
-                foregroundColor: AppColors.primaryColor,
+                foregroundColor: hasNote
+                    ? AppColors.secondaryColor
+                    : AppColors.primaryColor,
                 backgroundColor: AppColors.primaryColor.withValues(alpha: .08),
                 minimumSize: const Size(32, 32),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _statusCell(bool done) {
-    return Container(
-      width: _statusW,
-      height: 54,
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: const BoxDecoration(
-        border: Border(right: BorderSide(color: Color(0xFFD9E8F5))),
-      ),
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: _StatusChip(done: done),
-      ),
-    );
-  }
-
-  Widget _noteCell(StockCheckTask row) {
-    final hasNote = row.note.trim().isNotEmpty;
-    return Container(
-      width: _noteW,
-      height: 54,
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: const BoxDecoration(
-        border: Border(right: BorderSide(color: Color(0xFFD9E8F5))),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            hasNote ? Icons.sticky_note_2_rounded : Icons.add_comment_rounded,
-            size: 17,
-            color: hasNote ? AppColors.primaryColor : AppColors.subText,
-          ),
-          const SizedBox(width: 6),
-          Flexible(
-            child: SelectableText(
-              hasNote ? row.note : 'Add note',
-              maxLines: 1,
-              style: TextStyle(
-                color: hasNote ? AppColors.secondaryColor : AppColors.subText,
-                fontWeight: FontWeight.w800,
+                maximumSize: const Size(32, 32),
+                padding: EdgeInsets.zero,
               ),
             ),
           ),
@@ -4850,6 +4426,7 @@ class _Header extends StatelessWidget {
   final int pending;
   final int submitted;
   final int total;
+  final bool exporting;
   final VoidCallback onRefresh;
   final VoidCallback? onExport;
 
@@ -4858,6 +4435,7 @@ class _Header extends StatelessWidget {
     required this.pending,
     required this.submitted,
     required this.total,
+    required this.exporting,
     required this.onRefresh,
     required this.onExport,
   });
@@ -4925,14 +4503,83 @@ class _Header extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           FilledButton.icon(
-            onPressed: onExport,
-            icon: const Icon(Icons.download_rounded),
-            label: const Text('Export'),
+            onPressed: exporting ? null : onExport,
+            icon: exporting
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.download_rounded),
+            label: Text(exporting ? 'Exporting...' : 'Export'),
             style: FilledButton.styleFrom(
               backgroundColor: AppColors.primaryColor,
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _StockCheckExportOverlay extends StatelessWidget {
+  const _StockCheckExportOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Colors.white.withValues(alpha: .68),
+      child: Center(
+        child: Container(
+          width: 360,
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: AppColors.primaryColor),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primaryColor.withValues(alpha: .16),
+                blurRadius: 28,
+                offset: const Offset(0, 16),
+              ),
+            ],
+          ),
+          child: const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 46,
+                height: 46,
+                child: CircularProgressIndicator(
+                  color: AppColors.primaryColor,
+                  strokeWidth: 4,
+                ),
+              ),
+              SizedBox(height: 18),
+              Text(
+                'Preparing Excel report',
+                style: TextStyle(
+                  color: AppColors.text,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Please wait while the filtered stock check data is exported.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: AppColors.subText,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

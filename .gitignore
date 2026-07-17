@@ -34,6 +34,8 @@ migrate_working_dir/
 !/supabase/sql/purchase_status_module.sql
 !/supabase/sql/missing_items.sql
 !/supabase/sql/missing_items_purchase_workflow.sql
+!/supabase/sql/availability_kpi_sales_history.sql
+!/supabase/sql/availability_kpi_quick_fix.sql
 
 # IntelliJ related
 *.iml
@@ -66,3 +68,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+!supabase/sql/availability_kpi_last_3_completed_months.sql
+!supabase/sql/availability_kpi_sales_value.sql
+!supabase/sql/availability_kpi_missing_retail_report.sql

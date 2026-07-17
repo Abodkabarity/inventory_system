@@ -486,7 +486,7 @@ class _AllocationPageState extends State<AllocationPage> {
 
   List<String> _pullStockCoverOptions(List<String> options) {
     return _sortedStockCoverOptions(options).where((option) {
-      return !_isNoDemandStockCover(option) && _stockCoverDays(option) > 30;
+      return !_isNoDemandStockCover(option) && _stockCoverDays(option) >= 30;
     }).toList();
   }
 

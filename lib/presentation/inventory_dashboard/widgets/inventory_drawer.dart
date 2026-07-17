@@ -267,6 +267,13 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
                       _menuItem(
                         context: context,
                         state: state,
+                        page: InventoryPageType.availabilityKpi,
+                        icon: Icons.monitor_heart_rounded,
+                        title: 'Availability KPI',
+                      ),
+                      _menuItem(
+                        context: context,
+                        state: state,
                         page: InventoryPageType.branchSetting,
                         icon: Icons.tune_rounded,
                         title: 'Branch Setting',

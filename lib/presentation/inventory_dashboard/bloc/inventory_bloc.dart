@@ -1429,7 +1429,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
       final shortageSourceRows = sourceRows.where((row) {
         return _allocationBranchAllowed(event.receiverBranches, row.branch) &&
-            _allocationCoverAllowed(
+            _allocationReceiverCoverAllowed(
               event.receiverStockCovers,
               row.stockCoverText,
             ) &&
@@ -1481,7 +1481,10 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           itemRows.where((row) {
             return row.extraQtyMoreThanMonth > 0 &&
                 _allocationBranchAllowed(donorBranches, row.branch) &&
-                _allocationCoverAllowed(donorStockCovers, row.stockCoverText);
+                _allocationDonorCoverAllowed(
+                  donorStockCovers,
+                  row.stockCoverText,
+                );
           }).toList()..sort((a, b) {
             final extraCompare = b.extraQtyMoreThanMonth.compareTo(
               a.extraQtyMoreThanMonth,
@@ -1494,7 +1497,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           itemRows.where((row) {
             return row.shortage > 0 &&
                 _allocationBranchAllowed(receiverBranches, row.branch) &&
-                _allocationCoverAllowed(
+                _allocationReceiverCoverAllowed(
                   receiverStockCovers,
                   row.stockCoverText,
                 ) &&
@@ -1561,9 +1564,45 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         .contains(_allocationKey(branch));
   }
 
-  bool _allocationCoverAllowed(List<String> selectedCovers, String cover) {
+  bool _allocationDonorCoverAllowed(List<String> selectedCovers, String cover) {
     if (selectedCovers.isEmpty) return true;
-    return selectedCovers.map(_allocationKey).contains(_allocationKey(cover));
+    if (_allocationKey(cover) == 'no demand') return false;
+    final coverDays = _allocationStockCoverDays(cover);
+    var minimumDays = _allocationStockCoverDays(selectedCovers.first);
+    for (final selected in selectedCovers.skip(1)) {
+      final days = _allocationStockCoverDays(selected);
+      if (days < minimumDays) minimumDays = days;
+    }
+    return coverDays >= minimumDays;
+  }
+
+  bool _allocationReceiverCoverAllowed(
+    List<String> selectedCovers,
+    String cover,
+  ) {
+    if (selectedCovers.isEmpty) return true;
+    if (_allocationKey(cover) == 'no demand') return false;
+    final coverDays = _allocationStockCoverDays(cover);
+    var maximumDays = _allocationStockCoverDays(selectedCovers.first);
+    for (final selected in selectedCovers.skip(1)) {
+      final days = _allocationStockCoverDays(selected);
+      if (days > maximumDays) maximumDays = days;
+    }
+    return coverDays <= maximumDays;
+  }
+
+  num _allocationStockCoverDays(String label) {
+    final text = label.trim().toLowerCase();
+    final match = RegExp(r'\d+(\.\d+)?').firstMatch(text);
+    final value = num.tryParse(match?.group(0) ?? '') ?? 0;
+
+    if (text.contains('no stock')) return 0;
+    if (text.contains('less than')) return value == 0 ? .5 : value;
+    if (text.contains('day')) return value;
+    if (text.contains('week')) return value * 7;
+    if (text.contains('month')) return value * 30;
+    if (text.contains('year')) return value * 365;
+    return value;
   }
 
   bool _allocationDemandAllowed(int? minimumDemand, num demand) {

@@ -15,6 +15,7 @@ import '../widgets/inventory_dashboard_body.dart';
 import '../widgets/inventory_drawer.dart';
 import 'additional_order_analysis_page.dart';
 import 'allocation_page.dart';
+import 'availability_kpi_page.dart';
 import 'assortment_page.dart';
 import 'branch_submission_tracker_page.dart';
 import 'branch_setting_page.dart';
@@ -271,6 +272,8 @@ Widget _buildPage(InventoryState state, bool isSubmitted, String runDate) {
       return StockCheckPage(runDate: runDate);
     case InventoryPageType.shortage:
       return PurchaseShortagePage(runDate: runDate);
+    case InventoryPageType.availabilityKpi:
+      return AvailabilityKpiPage(runDate: runDate);
     case InventoryPageType.branchSetting:
       return const BranchSettingPage();
   }

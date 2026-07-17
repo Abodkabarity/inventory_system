@@ -58,8 +58,8 @@ class BranchSubmissionTrackerExcelExporter {
       'Branch Type',
       'Missed Days',
       'Not Submitted',
-      'Late Submitted',
-      'Max Late Hours',
+      'Not Submitted By Branch',
+      'Max Delay Hours',
       'Last Miss Date',
     ]);
 
@@ -116,8 +116,8 @@ class BranchSubmissionTrackerExcelExporter {
       'Expected Submit By',
       'Submitted At',
       'Status',
-      'Minutes Late',
-      'Hours Late',
+      'Delay Minutes',
+      'Delay Hours',
     ]);
 
     final sorted = [...rows]
@@ -191,12 +191,9 @@ class BranchSubmissionTrackerExcelExporter {
     );
   }
 
-  static String _date(DateTime value) => DateFormat('yyyy-MM-dd').format(value);
+  static String _date(DateTime value) => DateFormat('dd/MM/yyyy').format(value);
   static String _dateTime(DateTime value) =>
-      DateFormat('yyyy-MM-dd HH:mm').format(value.toLocal());
+      DateFormat('dd/MM/yyyy HH:mm').format(value.toLocal());
 
-  static String _status(String status) {
-    if (status == 'late_submitted') return 'Late Submitted';
-    return 'Not Submitted';
-  }
+  static String _status(String _) => 'Not Submitted By Branch';
 }

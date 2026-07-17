@@ -1,0 +1,1935 @@
+import 'dart:async';
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:syncfusion_flutter_core/theme.dart';
+import 'package:syncfusion_flutter_datagrid/datagrid.dart';
+
+import '../../../core/utils/availability_kpi_excel_exporter.dart';
+import '../../../data/datasources/remote/availability_kpi_remote_ds.dart';
+
+class AvailabilityKpiPage extends StatefulWidget {
+  final String runDate;
+
+  const AvailabilityKpiPage({super.key, required this.runDate});
+
+  @override
+  State<AvailabilityKpiPage> createState() => _AvailabilityKpiPageState();
+}
+
+class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
+  late final AvailabilityKpiRemoteDs _remote;
+  final _searchController = TextEditingController();
+  Timer? _searchDebounce;
+
+  List<AvailabilityBranchSummary> _summaries = const [];
+  final Set<String> _loadedSummaryBranches = <String>{};
+  final Map<String, AvailabilityBranchData> _branchData = {};
+  List<AvailabilityKpiItem> _allItems = const [];
+  List<AvailabilityKpiItem> _items = const [];
+  String? _selectedBranch;
+  String _source = 'all';
+  bool _onlyShortage = false;
+  bool _loadingSummary = true;
+  bool _loadingItems = false;
+  String _error = '';
+  int _totalRows = 0;
+  int _requestSerial = 0;
+  late String _stockDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _remote = AvailabilityKpiRemoteDs(Supabase.instance.client);
+    _stockDate = widget.runDate;
+    _loadDashboard();
+  }
+
+  @override
+  void didUpdateWidget(covariant AvailabilityKpiPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.runDate != widget.runDate) {
+      _stockDate = widget.runDate;
+      _loadDashboard();
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  AvailabilityBranchSummary? get _selectedSummary {
+    final branch = _selectedBranch;
+    if (branch == null || !_loadedSummaryBranches.contains(branch)) return null;
+    for (final summary in _summaries) {
+      if (summary.branchName == branch) return summary;
+    }
+    return null;
+  }
+
+  Future<void> _loadDashboard() async {
+    final serial = ++_requestSerial;
+    setState(() {
+      _loadingSummary = true;
+      _loadingItems = true;
+      _error = '';
+    });
+
+    try {
+      final stockDate = await _remote.fetchLatestStockDate(
+        fallback: widget.runDate,
+      );
+      final branches = await _remote.fetchActiveBranches();
+      if (!mounted || serial != _requestSerial) return;
+
+      final previousBranch = _selectedBranch;
+      final availableBranches = branches.toSet();
+      final selected = availableBranches.contains(previousBranch)
+          ? previousBranch
+          : branches.firstOrNull;
+
+      setState(() {
+        _summaries = branches
+            .map(AvailabilityBranchSummary.empty)
+            .toList(growable: false);
+        _loadedSummaryBranches.clear();
+        _branchData.clear();
+        _selectedBranch = selected;
+        _stockDate = stockDate;
+      });
+
+      if (selected == null) {
+        setState(() {
+          _items = const [];
+          _allItems = const [];
+          _totalRows = 0;
+          _loadingSummary = false;
+          _loadingItems = false;
+        });
+        return;
+      }
+      await _loadSelectedBranch(serial: serial);
+      await _preloadAllBranches(
+        serial: serial,
+        branches: branches.where((branch) => branch != selected).toList(),
+      );
+    } catch (error) {
+      if (!mounted || serial != _requestSerial) return;
+      setState(() {
+        _loadingSummary = false;
+        _loadingItems = false;
+        _error = _friendlyError(error);
+      });
+    }
+  }
+
+  Future<void> _loadSelectedBranch({int? serial}) async {
+    final branch = _selectedBranch;
+    if (branch == null) return;
+    final requestSerial = serial ?? _requestSerial;
+
+    setState(() {
+      _loadingSummary = true;
+      _loadingItems = true;
+      _error = '';
+    });
+
+    try {
+      final data =
+          _branchData[branch] ??
+          await _remote.fetchBranchData(runDate: _stockDate, branch: branch);
+      if (!mounted ||
+          requestSerial != _requestSerial ||
+          branch != _selectedBranch) {
+        return;
+      }
+
+      setState(() {
+        _cacheBranchData(branch, data);
+        _loadedSummaryBranches.add(branch);
+        _allItems = data.items;
+        _updateVisibleItems();
+        _loadingSummary = false;
+        _loadingItems = false;
+      });
+    } catch (error) {
+      if (!mounted ||
+          requestSerial != _requestSerial ||
+          branch != _selectedBranch) {
+        return;
+      }
+      setState(() {
+        _loadingSummary = false;
+        _loadingItems = false;
+        _error = _friendlyError(error);
+      });
+    }
+  }
+
+  Future<void> _preloadAllBranches({
+    required int serial,
+    required List<String> branches,
+  }) async {
+    const concurrentLoads = 4;
+    for (var start = 0; start < branches.length; start += concurrentLoads) {
+      if (!mounted || serial != _requestSerial) return;
+      final end = math.min(start + concurrentLoads, branches.length);
+      final batch = branches.sublist(start, end);
+      final loaded = await Future.wait(
+        batch.map((branch) async {
+          try {
+            final data = await _remote.fetchBranchData(
+              runDate: _stockDate,
+              branch: branch,
+            );
+            return MapEntry(branch, data);
+          } catch (_) {
+            return null;
+          }
+        }),
+      );
+      if (!mounted || serial != _requestSerial) return;
+      setState(() {
+        for (final entry
+            in loaded.whereType<MapEntry<String, AvailabilityBranchData>>()) {
+          _cacheBranchData(entry.key, entry.value);
+        }
+      });
+    }
+  }
+
+  void _cacheBranchData(String branch, AvailabilityBranchData data) {
+    _branchData[branch] = data;
+    _loadedSummaryBranches.add(branch);
+    final index = _summaries.indexWhere((entry) => entry.branchName == branch);
+    if (index < 0) return;
+    final updated = List<AvailabilityBranchSummary>.from(_summaries);
+    updated[index] = data.summary;
+    _summaries = updated;
+  }
+
+  void _loadItems() {
+    setState(_updateVisibleItems);
+  }
+
+  void _updateVisibleItems() {
+    final query = _searchController.text.trim().toLowerCase();
+    final filtered = _allItems
+        .where((item) {
+          final matchesSearch =
+              query.isEmpty ||
+              item.itemCode.toLowerCase().contains(query) ||
+              item.itemName.toLowerCase().contains(query);
+          final matchesSource = switch (_source) {
+            'pareto' => item.inPareto,
+            'consistent' => item.inConsistent && !item.inPareto,
+            _ => true,
+          };
+          final matchesShortage =
+              !_onlyShortage || item.branchStock < item.weeklyNeed;
+          return matchesSearch && matchesSource && matchesShortage;
+        })
+        .toList(growable: false);
+
+    _totalRows = filtered.length;
+    _items = filtered;
+  }
+
+  void _selectBranch(String branch) {
+    if (_selectedBranch == branch) return;
+    setState(() {
+      _selectedBranch = branch;
+      _allItems = const [];
+      _items = const [];
+      _totalRows = 0;
+    });
+    _loadSelectedBranch();
+  }
+
+  void _onSearchChanged(String _) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 450), () {
+      if (!mounted) return;
+      _loadItems();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: const Color(0xffF4F7FB),
+      child: Column(
+        children: [
+          _Header(
+            runDate: _stockDate,
+            branchCount: _summaries.length,
+            loading: _loadingSummary || _loadingItems,
+            onRefresh: _loadDashboard,
+          ),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 1050;
+                return ListView(
+                  padding: EdgeInsets.fromLTRB(
+                    compact ? 16 : 26,
+                    20,
+                    compact ? 16 : 26,
+                    32,
+                  ),
+                  children: [
+                    if (_error.isNotEmpty) ...[
+                      _ErrorBanner(message: _error, onRetry: _loadDashboard),
+                      const SizedBox(height: 16),
+                    ],
+                    const _MethodCard(),
+                    const SizedBox(height: 18),
+                    if (_loadingSummary && _summaries.isEmpty)
+                      const _LoadingCard(label: 'Loading branch product list…')
+                    else if (_summaries.isEmpty)
+                      const _EmptyCard(
+                        icon: Icons.query_stats_rounded,
+                        title: 'No KPI product data',
+                        message:
+                            'Refresh the monthly sales data, then open this page again.',
+                      )
+                    else ...[
+                      if (compact)
+                        _CompactBranchPicker(
+                          summaries: _summaries,
+                          loadedBranches: _loadedSummaryBranches,
+                          selectedBranch: _selectedBranch,
+                          onChanged: _selectBranch,
+                        )
+                      else
+                        _BranchOverview(
+                          summaries: _summaries,
+                          loadedBranches: _loadedSummaryBranches,
+                          selectedBranch: _selectedBranch,
+                          onSelected: _selectBranch,
+                        ),
+                      const SizedBox(height: 18),
+                      _SummaryCards(summary: _selectedSummary),
+                      const SizedBox(height: 18),
+                      _Filters(
+                        controller: _searchController,
+                        source: _source,
+                        onlyShortage: _onlyShortage,
+                        onSearchChanged: _onSearchChanged,
+                        onSourceChanged: (value) {
+                          setState(() {
+                            _source = value;
+                          });
+                          _loadItems();
+                        },
+                        onShortageChanged: (value) {
+                          setState(() {
+                            _onlyShortage = value;
+                          });
+                          _loadItems();
+                        },
+                      ),
+                      const SizedBox(height: 14),
+                      _MasterTable(
+                        branch: _selectedBranch ?? '',
+                        stockDate: _stockDate,
+                        items: _items,
+                        loading: _loadingItems,
+                        totalRows: _totalRows,
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Header extends StatelessWidget {
+  final String runDate;
+  final int branchCount;
+  final bool loading;
+  final VoidCallback onRefresh;
+
+  const _Header({
+    required this.runDate,
+    required this.branchCount,
+    required this.loading,
+    required this.onRefresh,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(34, 25, 26, 23),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xff172554), Color(0xff1D4ED8), Color(0xff0EA5E9)],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: .14),
+              borderRadius: BorderRadius.circular(17),
+              border: Border.all(color: Colors.white.withValues(alpha: .22)),
+            ),
+            child: const Icon(
+              Icons.monitor_heart_rounded,
+              color: Colors.white,
+              size: 31,
+            ),
+          ),
+          const SizedBox(width: 17),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Availability KPI',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 29,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -.4,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  'Selected branch products • 7-day stock coverage • Stock date: $runDate',
+                  maxLines: 2,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: .84),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _HeaderPill(label: 'Branches', value: '$branchCount'),
+          const SizedBox(width: 10),
+          FilledButton.icon(
+            onPressed: loading ? null : onRefresh,
+            icon: loading
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.refresh_rounded),
+            label: Text(loading ? 'Updating' : 'Refresh'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xff10B981),
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: Colors.white24,
+              padding: const EdgeInsets.symmetric(horizontal: 19, vertical: 17),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeaderPill extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _HeaderPill({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: .14),
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: Colors.white.withValues(alpha: .2)),
+      ),
+      child: Column(
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: .72),
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 19,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MethodCard extends StatelessWidget {
+  const _MethodCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xffEFF6FF),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xffBFDBFE)),
+      ),
+      child: Wrap(
+        spacing: 20,
+        runSpacing: 14,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          const _MethodStep(
+            number: '1',
+            title: 'Top-selling products',
+            detail:
+                'Normal Purchase items forming 80% of retail sales value in the last 3 completed months',
+          ),
+          const Icon(Icons.add_rounded, color: Color(0xff2563EB)),
+          const _MethodStep(
+            number: '2',
+            title: 'Products sold regularly',
+            detail: 'Sold in at least 80% of all studied months',
+          ),
+          const Icon(Icons.arrow_forward_rounded, color: Color(0xff2563EB)),
+          const _MethodStep(
+            number: '3',
+            title: 'Stock needed for 7 days',
+            detail: 'Current stock divided by the 7-day requirement',
+          ),
+          TextButton.icon(
+            onPressed: () => _showCalculationDialog(context),
+            icon: const Icon(Icons.help_outline_rounded),
+            label: const Text('Explain the calculation'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Future<void> _showCalculationDialog(BuildContext context) {
+  return showDialog<void>(
+    context: context,
+    builder: (context) => Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 760, maxHeight: 720),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(26),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xffDBEAFE),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.calculate_rounded,
+                      color: Color(0xff2563EB),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'طريقة الحساب | How Availability is calculated',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              const _CalculationRow(
+                number: '1',
+                title: 'سبب اختيار المنتج | Why is the product selected?',
+                detail:
+                    'يدخل المنتج إذا كان ضمن المجموعة التي تكوّن 80% من قيمة مبيعات الفرع خلال آخر 3 أشهر مكتملة. قيمة المبيعات = الكمية المباعة × سعر Retail. الشهر الحالي مستبعد، ويضاف أيضاً المنتج المباع في 80% على الأقل من أشهر الدراسة.',
+              ),
+              const _CalculationRow(
+                number: '2',
+                title: 'احتياج 7 أيام | Needed for 7 days',
+                detail:
+                    'مبيعات آخر 3 أشهر مكتملة ÷ مجموع الأيام التقويمية لهذه الأشهر × 7. الشهر الحالي غير المكتمل لا يدخل في المبيعات ولا في عدد الأيام.',
+                formula: '3 completed-month units ÷ calendar days × 7',
+              ),
+              const _CalculationRow(
+                number: '3',
+                title: 'تغطية المنتج | Product coverage',
+                detail:
+                    'مخزون الفرع الحالي ÷ احتياج 7 أيام، وبحد أقصى 100%. مثال: المخزون 4 والاحتياج 5، إذن التغطية 80% والنقص وحدة واحدة.',
+                formula: 'min(stock ÷ 7-day need, 100%)',
+              ),
+              const _CalculationRow(
+                number: '4',
+                title: 'نسبة الفرع | Branch Availability rate',
+                detail:
+                    'نجمع الكمية المغطاة لكل المنتجات ثم نقسمها على مجموع احتياج 7 أيام. بهذه الطريقة يكون تأثير المنتج حسب حجم مبيعاته واحتياجه، وليس مجرد متوسط بسيط.',
+                formula: 'Σ min(stock, need) ÷ Σ need × 100',
+                last: true,
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _CalculationRow extends StatelessWidget {
+  final String number;
+  final String title;
+  final String detail;
+  final String? formula;
+  final bool last;
+
+  const _CalculationRow({
+    required this.number,
+    required this.title,
+    required this.detail,
+    this.formula,
+    this.last = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Column(
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: const Color(0xff2563EB),
+                child: Text(
+                  number,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              if (!last)
+                Expanded(
+                  child: Container(width: 2, color: const Color(0xffDBEAFE)),
+                ),
+            ],
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Color(0xff0F172A),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    detail,
+                    textDirection: TextDirection.rtl,
+                    style: const TextStyle(
+                      color: Color(0xff475569),
+                      height: 1.6,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (formula != null) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 11,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xffF1F5F9),
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: Text(
+                        formula!,
+                        style: const TextStyle(
+                          color: Color(0xff1E3A8A),
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MethodStep extends StatelessWidget {
+  final String number;
+  final String title;
+  final String detail;
+
+  const _MethodStep({
+    required this.number,
+    required this.title,
+    required this.detail,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        CircleAvatar(
+          radius: 18,
+          backgroundColor: const Color(0xff2563EB),
+          child: Text(
+            number,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                color: Color(0xff0F172A),
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            Text(
+              detail,
+              style: const TextStyle(
+                color: Color(0xff64748B),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _BranchOverview extends StatelessWidget {
+  final List<AvailabilityBranchSummary> summaries;
+  final Set<String> loadedBranches;
+  final String? selectedBranch;
+  final ValueChanged<String> onSelected;
+
+  const _BranchOverview({
+    required this.summaries,
+    required this.loadedBranches,
+    required this.selectedBranch,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.storefront_rounded, color: Color(0xff2563EB)),
+              const SizedBox(width: 9),
+              const Text(
+                'Branch availability overview',
+                style: TextStyle(
+                  color: Color(0xff0F172A),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${loadedBranches.length} of ${summaries.length} branches loaded • A–Z',
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 15),
+          SizedBox(
+            height: 136,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: summaries.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 11),
+              itemBuilder: (context, index) {
+                final summary = summaries[index];
+                return _BranchTile(
+                  summary: summary,
+                  loaded: loadedBranches.contains(summary.branchName),
+                  selected: selectedBranch == summary.branchName,
+                  onTap: () => onSelected(summary.branchName),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BranchTile extends StatelessWidget {
+  final AvailabilityBranchSummary summary;
+  final bool loaded;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _BranchTile({
+    required this.summary,
+    required this.loaded,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = loaded
+        ? _rateColor(summary.availabilityRate)
+        : const Color(0xff94A3B8);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          width: 208,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xffEFF6FF) : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: selected
+                  ? const Color(0xff2563EB)
+                  : const Color(0xffE2E8F0),
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      summary.branchName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xff0F172A),
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    loaded ? '${_fmt(summary.availabilityRate)}%' : '—',
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(99),
+                child: LinearProgressIndicator(
+                  value: (summary.availabilityRate / 100)
+                      .clamp(0, loaded ? 1 : 0)
+                      .toDouble(),
+                  minHeight: 8,
+                  color: color,
+                  backgroundColor: color.withValues(alpha: .13),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                loaded
+                    ? '${summary.masterItems} KPI products  •  ${summary.shortageItems} below 7-day need'
+                    : 'Loading KPI data…',
+                style: const TextStyle(
+                  color: Color(0xff64748B),
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactBranchPicker extends StatelessWidget {
+  final List<AvailabilityBranchSummary> summaries;
+  final Set<String> loadedBranches;
+  final String? selectedBranch;
+  final ValueChanged<String> onChanged;
+
+  const _CompactBranchPicker({
+    required this.summaries,
+    required this.loadedBranches,
+    required this.selectedBranch,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      decoration: _cardDecoration(),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          isExpanded: true,
+          value: selectedBranch,
+          icon: const Icon(Icons.expand_more_rounded),
+          items: summaries
+              .map(
+                (summary) => DropdownMenuItem(
+                  value: summary.branchName,
+                  child: Text(
+                    loadedBranches.contains(summary.branchName)
+                        ? '${summary.branchName}  •  ${_fmt(summary.availabilityRate)}%'
+                        : summary.branchName,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            if (value != null) onChanged(value);
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _SummaryCards extends StatelessWidget {
+  final AvailabilityBranchSummary? summary;
+
+  const _SummaryCards({required this.summary});
+
+  @override
+  Widget build(BuildContext context) {
+    final value = summary;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 850;
+        final cards = [
+          _KpiCard(
+            title: 'Availability rate',
+            value: value == null ? '—' : '${_fmt(value.availabilityRate)}%',
+            subtitle: 'Demand-weighted weekly coverage',
+            icon: Icons.speed_rounded,
+            color: value == null
+                ? const Color(0xff64748B)
+                : _rateColor(value.availabilityRate),
+          ),
+          _KpiCard(
+            title: 'KPI product list',
+            value: value == null ? '—' : '${value.masterItems}',
+            subtitle: value == null
+                ? 'Top sellers + products sold regularly'
+                : '${value.paretoItems} top sellers • ${value.consistentItems} regular sellers',
+            icon: Icons.fact_check_rounded,
+            color: const Color(0xff2563EB),
+          ),
+          _KpiCard(
+            title: 'Fully covered',
+            value: value == null ? '—' : '${value.fullyAvailableItems}',
+            subtitle: value == null
+                ? 'Enough stock for one week'
+                : '${value.shortageItems} items below one week',
+            icon: Icons.verified_rounded,
+            color: const Color(0xff10B981),
+          ),
+          _KpiCard(
+            title: 'Weekly shortage',
+            value: value == null ? '—' : _fmt(value.stockShortage),
+            subtitle: value == null
+                ? 'Units needed to reach 100%'
+                : '${_fmt(value.coveredWeeklyNeed)} / ${_fmt(value.weeklyNeed)} need covered',
+            icon: Icons.trending_down_rounded,
+            color: const Color(0xffEF4444),
+          ),
+        ];
+
+        if (narrow) {
+          return Wrap(spacing: 12, runSpacing: 12, children: cards);
+        }
+        return Row(
+          children: [
+            for (var i = 0; i < cards.length; i++) ...[
+              Expanded(child: cards[i]),
+              if (i != cards.length - 1) const SizedBox(width: 12),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _KpiCard extends StatelessWidget {
+  final String title;
+  final String value;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+
+  const _KpiCard({
+    required this.title,
+    required this.value,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 205),
+      padding: const EdgeInsets.all(17),
+      decoration: _cardDecoration(),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: .11),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: color),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xff64748B),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: Color(0xff0F172A),
+                    fontSize: 23,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xff94A3B8),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Filters extends StatelessWidget {
+  final TextEditingController controller;
+  final String source;
+  final bool onlyShortage;
+  final ValueChanged<String> onSearchChanged;
+  final ValueChanged<String> onSourceChanged;
+  final ValueChanged<bool> onShortageChanged;
+
+  const _Filters({
+    required this.controller,
+    required this.source,
+    required this.onlyShortage,
+    required this.onSearchChanged,
+    required this.onSourceChanged,
+    required this.onShortageChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: _cardDecoration(),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 12,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          SizedBox(
+            width: 340,
+            child: TextField(
+              controller: controller,
+              onChanged: onSearchChanged,
+              decoration: _inputDecoration(
+                hint: 'Search item code or product name…',
+                icon: Icons.search_rounded,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 245,
+            child: DropdownButtonFormField<String>(
+              initialValue: source,
+              isExpanded: true,
+              decoration: _inputDecoration(
+                hint: 'Reason for selection',
+                icon: Icons.filter_alt_outlined,
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: 'all',
+                  child: Text('All selected products'),
+                ),
+                DropdownMenuItem(
+                  value: 'pareto',
+                  child: Text('Top seller — 80% of branch sales value'),
+                ),
+                DropdownMenuItem(
+                  value: 'consistent',
+                  child: Text('Products sold regularly'),
+                ),
+              ],
+              onChanged: (value) {
+                if (value != null) onSourceChanged(value);
+              },
+            ),
+          ),
+          FilterChip(
+            selected: onlyShortage,
+            onSelected: onShortageChanged,
+            avatar: Icon(
+              Icons.warning_amber_rounded,
+              size: 18,
+              color: onlyShortage ? Colors.white : const Color(0xffDC2626),
+            ),
+            label: const Text('Stock below 7-day need'),
+            labelStyle: TextStyle(
+              color: onlyShortage ? Colors.white : const Color(0xff991B1B),
+              fontWeight: FontWeight.w800,
+            ),
+            selectedColor: const Color(0xffDC2626),
+            backgroundColor: const Color(0xffFEF2F2),
+            side: const BorderSide(color: Color(0xffFECACA)),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MasterTable extends StatefulWidget {
+  final String branch;
+  final String stockDate;
+  final List<AvailabilityKpiItem> items;
+  final bool loading;
+  final int totalRows;
+
+  const _MasterTable({
+    required this.branch,
+    required this.stockDate,
+    required this.items,
+    required this.loading,
+    required this.totalRows,
+  });
+
+  @override
+  State<_MasterTable> createState() => _MasterTableState();
+}
+
+class _MasterTableState extends State<_MasterTable> {
+  late final _AvailabilityKpiGridSource _source;
+  bool _exporting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _source = _AvailabilityKpiGridSource(widget.items);
+  }
+
+  @override
+  void didUpdateWidget(covariant _MasterTable oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.items, widget.items)) _source.update(widget.items);
+  }
+
+  Future<void> _export() async {
+    final visible = _source.visibleItems;
+    if (visible.isEmpty || _exporting) return;
+    setState(() => _exporting = true);
+    try {
+      // Give Flutter time to paint the export overlay before XLSX generation,
+      // which is CPU intensive on the web UI isolate.
+      await WidgetsBinding.instance.endOfFrame;
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      await AvailabilityKpiExcelExporter.export(
+        branch: widget.branch,
+        stockDate: widget.stockDate,
+        items: visible,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle_rounded, color: Colors.white),
+              const SizedBox(width: 10),
+              Text('${visible.length} filtered products exported.'),
+            ],
+          ),
+          backgroundColor: const Color(0xff059669),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Excel export failed: $error'),
+          backgroundColor: const Color(0xffDC2626),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleRows = _source.visibleItems.length;
+    return Container(
+      decoration: _cardDecoration(),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 13, 14, 13),
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.table_chart_rounded,
+                      color: Color(0xff2563EB),
+                    ),
+                    SizedBox(
+                      width: 470,
+                      child: Text(
+                        '${widget.branch} • Products included in Availability KPI',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xff0F172A),
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '$visibleRows of ${widget.totalRows} products',
+                      style: const TextStyle(
+                        color: Color(0xff64748B),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: widget.loading
+                          ? null
+                          : () {
+                              _source.clearAllFilters();
+                              setState(() {});
+                            },
+                      icon: const Icon(Icons.filter_alt_off_outlined, size: 18),
+                      label: const Text('Clear column filters'),
+                    ),
+                    FilledButton.icon(
+                      onPressed:
+                          widget.loading || visibleRows == 0 || _exporting
+                          ? null
+                          : _export,
+                      icon: _exporting
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.file_download_outlined, size: 19),
+                      label: Text(_exporting ? 'Exporting...' : 'Export Excel'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xff059669),
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (widget.loading)
+                const SizedBox(
+                  height: 260,
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (widget.items.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(48),
+                  child: Center(
+                    child: Text(
+                      'No products match the selected filters.',
+                      style: TextStyle(
+                        color: Color(0xff64748B),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                SizedBox(
+                  height: 660,
+                  child: SfDataGridTheme(
+                    data: SfDataGridThemeData(
+                      headerColor: const Color(0xff0F2454),
+                      gridLineColor: const Color(0xffD7E0EA),
+                      selectionColor: const Color(0xffDBEAFE),
+                      sortIconColor: Colors.white,
+                      filterIconColor: Colors.white,
+                      filterIconHoverColor: const Color(0xff93C5FD),
+                    ),
+                    child: SfDataGrid(
+                      source: _source,
+                      allowFiltering: true,
+                      allowSorting: true,
+                      allowMultiColumnSorting: true,
+                      allowTriStateSorting: true,
+                      allowColumnsResizing: true,
+                      columnResizeMode: ColumnResizeMode.onResize,
+                      gridLinesVisibility: GridLinesVisibility.both,
+                      headerGridLinesVisibility: GridLinesVisibility.both,
+                      columnWidthMode: ColumnWidthMode.none,
+                      frozenColumnsCount: 3,
+                      rowHeight: 62,
+                      headerRowHeight: 70,
+                      selectionMode: SelectionMode.single,
+                      navigationMode: GridNavigationMode.cell,
+                      onFilterChanged: (_) => setState(() {}),
+                      onColumnSortChanged: (_, _) => setState(() {}),
+                      columns: _availabilityColumns(),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          if (_exporting)
+            Positioned.fill(
+              child: _ExportLoadingOverlay(rowCount: visibleRows),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExportLoadingOverlay extends StatelessWidget {
+  final int rowCount;
+
+  const _ExportLoadingOverlay({required this.rowCount});
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: const Color(0xff0F172A).withValues(alpha: .32),
+      child: Center(
+        child: Container(
+          width: 360,
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x330F172A),
+                blurRadius: 30,
+                offset: Offset(0, 12),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: const Color(0xff059669).withValues(alpha: .1),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.table_view_rounded,
+                  color: Color(0xff059669),
+                  size: 30,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Preparing Excel file',
+                style: TextStyle(
+                  color: Color(0xff0F172A),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Formatting $rowCount filtered products…',
+                style: const TextStyle(
+                  color: Color(0xff64748B),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 18),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: const LinearProgressIndicator(
+                  minHeight: 7,
+                  color: Color(0xff10B981),
+                  backgroundColor: Color(0xffD1FAE5),
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'The download will start automatically',
+                style: TextStyle(color: Color(0xff94A3B8), fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+List<GridColumn> _availabilityColumns() => [
+  _availabilityColumn('coverage', '7-DAY\nCOVERAGE', 140),
+  _availabilityColumn('item_code', 'ITEM CODE', 145),
+  _availabilityColumn('product', 'PRODUCT', 310, alignLeft: true),
+  _availabilityColumn('selection', 'WHY SELECTED?', 220, alignLeft: true),
+  _availabilityColumn('sales', '3-MONTH\nUNITS SOLD', 140),
+  _availabilityColumn('retail', 'RETAIL\nPRICE', 120),
+  _availabilityColumn('sales_value', 'RETAIL SALES\nVALUE', 155),
+  _availabilityColumn('share', 'VALUE SHARE OF\nBRANCH SALES %', 155),
+  _availabilityColumn('months', 'MONTHS SOLD\n(1–12)', 175),
+  _availabilityColumn('consistency', 'SELLING MONTH\n%', 145),
+  _availabilityColumn('weekly_need', 'NEEDED FOR\n7 DAYS', 135),
+  _availabilityColumn('stock', 'CURRENT BRANCH\nSTOCK', 150),
+  _availabilityColumn('shortage', 'UNITS\nMISSING', 125),
+];
+
+GridColumn _availabilityColumn(
+  String name,
+  String title,
+  double width, {
+  bool alignLeft = false,
+}) => GridColumn(
+  columnName: name,
+  width: width,
+  minimumWidth: 105,
+  label: Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    alignment: alignLeft ? Alignment.centerLeft : Alignment.center,
+    child: Text(
+      title,
+      textAlign: alignLeft ? TextAlign.left : TextAlign.center,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 11.5,
+        height: 1.2,
+        fontWeight: FontWeight.w900,
+      ),
+    ),
+  ),
+);
+
+class _AvailabilityKpiGridSource extends DataGridSource {
+  List<DataGridRow> _rows = const [];
+  final Map<DataGridRow, AvailabilityKpiItem> _itemByRow = {};
+  final Map<DataGridRow, int> _indexByRow = {};
+
+  _AvailabilityKpiGridSource(List<AvailabilityKpiItem> items) {
+    update(items);
+  }
+
+  void update(List<AvailabilityKpiItem> items) {
+    _itemByRow.clear();
+    _indexByRow.clear();
+    _rows = items
+        .asMap()
+        .entries
+        .map((entry) {
+          final item = entry.value;
+          final row = DataGridRow(
+            cells: [
+              DataGridCell<num>(
+                columnName: 'coverage',
+                value: item.availabilityRate,
+              ),
+              DataGridCell<String>(
+                columnName: 'item_code',
+                value: item.itemCode,
+              ),
+              DataGridCell<String>(columnName: 'product', value: item.itemName),
+              DataGridCell<String>(
+                columnName: 'selection',
+                value: _selectionLabel(item),
+              ),
+              DataGridCell<num>(columnName: 'sales', value: item.recentSales),
+              DataGridCell<num>(columnName: 'retail', value: item.retail),
+              DataGridCell<num>(
+                columnName: 'sales_value',
+                value: item.recentSalesValue,
+              ),
+              DataGridCell<num>(
+                columnName: 'share',
+                value: item.recentSalesShare,
+              ),
+              DataGridCell<String>(
+                columnName: 'months',
+                value: item.sellingMonthNumbers.isEmpty
+                    ? '${item.sellingMonths} / ${item.totalMonths}'
+                    : item.sellingMonthNumbers.join(', '),
+              ),
+              DataGridCell<num>(
+                columnName: 'consistency',
+                value: item.monthConsistency,
+              ),
+              DataGridCell<num>(
+                columnName: 'weekly_need',
+                value: item.weeklyNeed,
+              ),
+              DataGridCell<num>(columnName: 'stock', value: item.branchStock),
+              DataGridCell<num>(
+                columnName: 'shortage',
+                value: item.stockShortage,
+              ),
+            ],
+          );
+          _itemByRow[row] = item;
+          _indexByRow[row] = entry.key;
+          return row;
+        })
+        .toList(growable: false);
+    notifyListeners();
+  }
+
+  void clearAllFilters() => clearFilters();
+
+  List<AvailabilityKpiItem> get visibleItems => effectiveRows
+      .map((row) => _itemByRow[row])
+      .whereType<AvailabilityKpiItem>()
+      .toList(growable: false);
+
+  @override
+  List<DataGridRow> get rows => _rows;
+
+  @override
+  DataGridRowAdapter buildRow(DataGridRow row) {
+    final item = _itemByRow[row]!;
+    return DataGridRowAdapter(
+      color: (_indexByRow[row] ?? 0).isOdd
+          ? const Color(0xffF8FAFC)
+          : Colors.white,
+      cells: row
+          .getCells()
+          .map((cell) {
+            final alignLeft = {
+              'product',
+              'selection',
+            }.contains(cell.columnName);
+            late final Widget child;
+            switch (cell.columnName) {
+              case 'coverage':
+                final color = _rateColor(item.availabilityRate);
+                child = Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${_fmt(item.availabilityRate)}%',
+                        style: TextStyle(
+                          color: color,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      LinearProgressIndicator(
+                        minHeight: 5,
+                        value: (item.availabilityRate / 100)
+                            .clamp(0, 1)
+                            .toDouble(),
+                        color: color,
+                        backgroundColor: color.withValues(alpha: .12),
+                      ),
+                    ],
+                  ),
+                );
+                break;
+              case 'selection':
+                child = _SourceBadge(item: item);
+                break;
+              case 'consistency':
+                child = _ConsistencyBadge(rate: item.monthConsistency);
+                break;
+              case 'share':
+                child = Text('${_fmt(item.recentSalesShare)}%');
+                break;
+              case 'months':
+                child = Tooltip(
+                  message:
+                      'Sold in ${item.sellingMonths} of ${item.totalMonths} studied months',
+                  child: Text(
+                    item.sellingMonthNumbers.isEmpty
+                        ? '${item.sellingMonths} / ${item.totalMonths}'
+                        : item.sellingMonthNumbers.join(', '),
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                );
+                break;
+              case 'shortage':
+                child = Text(
+                  _fmt(item.stockShortage),
+                  style: TextStyle(
+                    color: item.stockShortage > 0
+                        ? const Color(0xffDC2626)
+                        : const Color(0xff059669),
+                    fontWeight: FontWeight.w900,
+                  ),
+                );
+                break;
+              default:
+                child = Text(
+                  cell.value is num ? _fmt(cell.value as num) : '${cell.value}',
+                  maxLines: cell.columnName == 'product' ? 2 : 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: const Color(0xff0F172A),
+                    fontWeight:
+                        {
+                          'item_code',
+                          'product',
+                          'retail',
+                          'sales_value',
+                          'weekly_need',
+                          'stock',
+                        }.contains(cell.columnName)
+                        ? FontWeight.w800
+                        : FontWeight.w600,
+                  ),
+                );
+            }
+            return Container(
+              alignment: alignLeft ? Alignment.centerLeft : Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: child,
+            );
+          })
+          .toList(growable: false),
+    );
+  }
+}
+
+String _selectionLabel(AvailabilityKpiItem item) {
+  return item.inPareto
+      ? 'Top seller — 80% of branch sales value'
+      : 'Sold regularly';
+}
+
+class _SourceBadge extends StatelessWidget {
+  final AvailabilityKpiItem item;
+
+  const _SourceBadge({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final label = item.inPareto
+        ? 'Top seller — 80% of branch sales value'
+        : 'Sold regularly';
+    final color = item.inPareto
+        ? const Color(0xff2563EB)
+        : const Color(0xff0F766E);
+    return _badge(label, color);
+  }
+}
+
+class _ConsistencyBadge extends StatelessWidget {
+  final num rate;
+
+  const _ConsistencyBadge({required this.rate});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = rate >= 80
+        ? const Color(0xff059669)
+        : rate >= 60
+        ? const Color(0xffD97706)
+        : const Color(0xff64748B);
+    return _badge('${_fmt(rate)}%', color);
+  }
+}
+
+class _LoadingCard extends StatelessWidget {
+  final String label;
+
+  const _LoadingCard({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 240,
+      decoration: _cardDecoration(),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 14),
+            Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String message;
+
+  const _EmptyCard({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(46),
+      decoration: _cardDecoration(),
+      child: Column(
+        children: [
+          Icon(icon, size: 46, color: const Color(0xff94A3B8)),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Color(0xff64748B)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ErrorBanner extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+
+  const _ErrorBanner({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xffFEF2F2),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xffFCA5A5)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline_rounded, color: Color(0xffDC2626)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: Color(0xff991B1B),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          TextButton(onPressed: onRetry, child: const Text('Retry')),
+        ],
+      ),
+    );
+  }
+}
+
+BoxDecoration _cardDecoration() {
+  return BoxDecoration(
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(18),
+    border: Border.all(color: const Color(0xffE2E8F0)),
+    boxShadow: [
+      BoxShadow(
+        color: Colors.black.withValues(alpha: .035),
+        blurRadius: 16,
+        offset: const Offset(0, 7),
+      ),
+    ],
+  );
+}
+
+InputDecoration _inputDecoration({
+  required String hint,
+  required IconData icon,
+}) {
+  return InputDecoration(
+    hintText: hint,
+    prefixIcon: Icon(icon),
+    isDense: true,
+    filled: true,
+    fillColor: const Color(0xffF8FAFC),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(13),
+      borderSide: const BorderSide(color: Color(0xffCBD5E1)),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(13),
+      borderSide: const BorderSide(color: Color(0xffCBD5E1)),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(13),
+      borderSide: const BorderSide(color: Color(0xff2563EB), width: 1.5),
+    ),
+  );
+}
+
+Widget _badge(String label, Color color) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: .1),
+      borderRadius: BorderRadius.circular(99),
+      border: Border.all(color: color.withValues(alpha: .22)),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w900),
+    ),
+  );
+}
+
+Color _rateColor(num rate) {
+  if (rate >= 95) return const Color(0xff059669);
+  if (rate >= 80) return const Color(0xffD97706);
+  return const Color(0xffDC2626);
+}
+
+String _fmt(num value) {
+  if (value % 1 == 0) return value.toInt().toString();
+  return value.toStringAsFixed(1);
+}
+
+String _friendlyError(Object error) {
+  final message = error.toString();
+  if (message.contains('No stock snapshot found')) {
+    return message.replaceFirst('Bad state: ', '');
+  }
+  if (message.contains('57014') || message.contains('statement timeout')) {
+    return 'The selected branch stock lookup timed out. Run the latest availability_kpi_quick_fix.sql once to add the daily_order lookup index, then retry.';
+  }
+  if (message.contains('get_availability_branch_summary_fast')) {
+    return 'The fast single-branch Availability function is not installed. Run the latest availability_kpi_quick_fix.sql, then reload the app.';
+  }
+  if (message.contains('get_availability_') ||
+      message.contains('availability_branch_master')) {
+    return 'Availability database functions are not installed yet. Run the Availability KPI SQL migration in Supabase and retry.';
+  }
+  return 'Could not load Availability KPI data. $message';
+}

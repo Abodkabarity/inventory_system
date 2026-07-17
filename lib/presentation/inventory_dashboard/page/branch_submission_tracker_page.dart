@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:syncfusion_flutter_core/theme.dart';
+import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/branch_submission_tracker_excel_exporter.dart';
@@ -23,7 +25,6 @@ class _BranchSubmissionTrackerPageState
 
   final _client = Supabase.instance.client;
   final _searchController = TextEditingController();
-  final _scrollController = ScrollController();
 
   late DateTimeRange _range;
   List<BranchSubmissionMiss> _rows = [];
@@ -49,7 +50,6 @@ class _BranchSubmissionTrackerPageState
   @override
   void dispose() {
     _searchController.dispose();
-    _scrollController.dispose();
     super.dispose();
   }
 
@@ -70,7 +70,7 @@ class _BranchSubmissionTrackerPageState
         _loading = false;
         _message = rows.isEmpty
             ? 'No missed submissions found in this date range.'
-            : 'Tracker updated for ${_fmtDate(_range.start)} to ${_fmtDate(_range.end)}.';
+            : 'Tracker updated for ${_displayDate(_range.start)} to ${_displayDate(_range.end)}.';
       });
     } catch (e) {
       if (!mounted) return;
@@ -86,7 +86,7 @@ class _BranchSubmissionTrackerPageState
     setState(() {
       _scanning = true;
       _error = '';
-      _message = 'Scanning missed and late submissions...';
+      _message = 'Scanning branches not submitted by deadline...';
     });
     try {
       await _scanMisses();
@@ -144,7 +144,7 @@ class _BranchSubmissionTrackerPageState
         if (deadline.isBefore(_trackingActivationAt)) continue;
         if (deadline.isAfter(now)) continue;
 
-        final runDate = _fmtDate(day);
+        final runDate = _dbDate(day);
         final submittedAt = submissionByKey['$runDate|${branch.branchName}'];
         if (submittedAt != null && !submittedAt.isAfter(deadline)) continue;
 
@@ -210,8 +210,8 @@ class _BranchSubmissionTrackerPageState
       final page = await _client
           .from('order_submissions')
           .select('run_date, branch_name, submitted_at, status')
-          .gte('run_date', _fmtDate(_range.start))
-          .lte('run_date', _fmtDate(_range.end))
+          .gte('run_date', _dbDate(_range.start))
+          .lte('run_date', _dbDate(_range.end))
           .eq('status', 'submitted')
           .range(from, from + size - 1);
       final list = List<Map<String, dynamic>>.from(page);
@@ -230,8 +230,8 @@ class _BranchSubmissionTrackerPageState
       final page = await _client
           .from('branch_submission_misses')
           .select()
-          .gte('run_date', _fmtDate(_range.start))
-          .lte('run_date', _fmtDate(_range.end))
+          .gte('run_date', _dbDate(_range.start))
+          .lte('run_date', _dbDate(_range.end))
           .order('run_date', ascending: false)
           .range(from, from + size - 1);
       final list = List<Map<String, dynamic>>.from(page);
@@ -392,7 +392,7 @@ class _BranchSubmissionTrackerPageState
                     Expanded(
                       child: _MetricCard(
                         icon: Icons.schedule_send_rounded,
-                        title: 'Late submitted',
+                        title: 'Not submitted by branch',
                         value: '$lateSubmitted',
                         color: const Color(0xFF7C3AED),
                       ),
@@ -415,7 +415,6 @@ class _BranchSubmissionTrackerPageState
                   selectedStatus: _status,
                   selectedZone: _zone,
                   searchController: _searchController,
-                  scrollController: _scrollController,
                   loading: _loading,
                   onStatusChanged: (value) =>
                       setState(() => _status = value ?? 'all'),
@@ -433,8 +432,10 @@ class _BranchSubmissionTrackerPageState
 
   static DateTime _dateOnly(DateTime value) =>
       DateTime(value.year, value.month, value.day);
-  static String _fmtDate(DateTime value) =>
+  static String _dbDate(DateTime value) =>
       DateFormat('yyyy-MM-dd').format(value);
+  static String _displayDate(DateTime value) =>
+      DateFormat('dd/MM/yyyy').format(value);
   static String _lateLabel(int minutes) {
     if (minutes <= 0) return '0m';
     final days = minutes ~/ 1440;
@@ -519,8 +520,8 @@ class _HeaderBar extends StatelessWidget {
           ),
           _HeaderStat(label: 'Records', value: '$total'),
           _HeaderStat(label: 'Branches', value: '$branches'),
-          _HeaderStat(label: 'Not sent', value: '$notSubmitted'),
-          _HeaderStat(label: 'Late', value: '$lateSubmitted'),
+          _HeaderStat(label: 'Not submitted', value: '$notSubmitted'),
+          _HeaderStat(label: 'After deadline', value: '$lateSubmitted'),
           const SizedBox(width: 10),
           FilledButton.icon(
             onPressed: exporting ? null : onExport,
@@ -692,7 +693,7 @@ class _ControlPanel extends StatelessWidget {
     );
   }
 
-  static String _fmt(DateTime value) => DateFormat('yyyy-MM-dd').format(value);
+  static String _fmt(DateTime value) => DateFormat('dd/MM/yyyy').format(value);
 }
 
 class _MetricCard extends StatelessWidget {
@@ -757,13 +758,12 @@ class _MetricCard extends StatelessWidget {
   }
 }
 
-class _ReportCard extends StatelessWidget {
+class _ReportCard extends StatefulWidget {
   final List<BranchSubmissionMiss> rows;
   final List<String> zones;
   final String selectedStatus;
   final String selectedZone;
   final TextEditingController searchController;
-  final ScrollController scrollController;
   final bool loading;
   final ValueChanged<String?> onStatusChanged;
   final ValueChanged<String?> onZoneChanged;
@@ -775,7 +775,6 @@ class _ReportCard extends StatelessWidget {
     required this.selectedStatus,
     required this.selectedZone,
     required this.searchController,
-    required this.scrollController,
     required this.loading,
     required this.onStatusChanged,
     required this.onZoneChanged,
@@ -783,7 +782,30 @@ class _ReportCard extends StatelessWidget {
   });
 
   @override
+  State<_ReportCard> createState() => _ReportCardState();
+}
+
+class _ReportCardState extends State<_ReportCard> {
+  final Map<String, double> _columnWidths = {
+    'runDate': 120,
+    'branch': 210,
+    'zone': 120,
+    'area': 140,
+    'expectedBy': 175,
+    'submittedAt': 175,
+    'status': 190,
+    'minutesLate': 120,
+    'zoneManager': 190,
+    'type': 140,
+  };
+
+  @override
   Widget build(BuildContext context) {
+    final source = _SubmissionTrackerGridSource(widget.rows);
+    final gridHeight = widget.rows.length < 8
+        ? 112.0 + (widget.rows.length * 58.0)
+        : 620.0;
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -810,8 +832,8 @@ class _ReportCard extends StatelessWidget {
               SizedBox(
                 width: 300,
                 child: TextField(
-                  controller: searchController,
-                  onChanged: onSearchChanged,
+                  controller: widget.searchController,
+                  onChanged: widget.onSearchChanged,
                   decoration: InputDecoration(
                     hintText: 'Search branch, zone, area...',
                     prefixIcon: const Icon(Icons.search_rounded),
@@ -828,49 +850,32 @@ class _ReportCard extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
-              _FilterDropDown(
-                width: 185,
-                label: 'Status',
-                value: selectedStatus,
-                items: const [
-                  DropdownMenuItem(value: 'all', child: Text('All status')),
-                  DropdownMenuItem(
-                    value: 'not_submitted',
-                    child: Text('Not submitted'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'late_submitted',
-                    child: Text('Late submitted'),
-                  ),
-                ],
-                onChanged: onStatusChanged,
-              ),
+
               const SizedBox(width: 10),
               _FilterDropDown(
                 width: 170,
                 label: 'Zone',
-                value: selectedZone,
+                value: widget.selectedZone,
                 items: [
                   const DropdownMenuItem(
                     value: 'all',
                     child: Text('All zones'),
                   ),
-                  ...zones.map(
+                  ...widget.zones.map(
                     (zone) => DropdownMenuItem(value: zone, child: Text(zone)),
                   ),
                 ],
-                onChanged: onZoneChanged,
+                onChanged: widget.onZoneChanged,
               ),
             ],
           ),
           const SizedBox(height: 14),
-          if (loading)
+          if (widget.loading)
             const Padding(
               padding: EdgeInsets.all(36),
               child: CircularProgressIndicator(color: AppColors.primaryColor),
             )
-          else if (rows.isEmpty)
+          else if (widget.rows.isEmpty)
             const Padding(
               padding: EdgeInsets.all(42),
               child: Text(
@@ -882,30 +887,42 @@ class _ReportCard extends StatelessWidget {
               ),
             )
           else
-            Scrollbar(
-              controller: scrollController,
-              thumbVisibility: true,
-              child: SingleChildScrollView(
-                controller: scrollController,
-                scrollDirection: Axis.horizontal,
-                child: SizedBox(
-                  width: 1320,
-                  child: Column(
-                    children: [
-                      const _TableHeader(),
-                      ...rows.take(500).map(_MissRow.new),
-                      if (rows.length > 500)
-                        Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: Text(
-                            'Showing first 500 row(s). Use filters or export for the full report.',
-                            style: TextStyle(
-                              color: Colors.orange.shade700,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                    ],
+            SizedBox(
+              height: gridHeight,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: SfDataGridTheme(
+                  data: SfDataGridThemeData(
+                    headerColor: const Color(0xFFEAF4FF),
+                    gridLineColor: const Color(0xFFDCEBFF),
+                    filterIconColor: AppColors.secondaryColor,
+                    sortIconColor: AppColors.primaryColor,
+                    selectionColor: AppColors.primaryColor.withValues(
+                      alpha: .08,
+                    ),
+                  ),
+                  child: SfDataGrid(
+                    source: source,
+                    allowSorting: true,
+                    allowMultiColumnSorting: true,
+                    allowTriStateSorting: true,
+                    allowFiltering: true,
+                    allowColumnsResizing: true,
+                    columnResizeMode: ColumnResizeMode.onResize,
+                    gridLinesVisibility: GridLinesVisibility.both,
+                    headerGridLinesVisibility: GridLinesVisibility.both,
+                    frozenColumnsCount: 2,
+                    rowHeight: 58,
+                    headerRowHeight: 56,
+                    columnWidthMode: ColumnWidthMode.none,
+                    onColumnResizeUpdate: (details) {
+                      setState(() {
+                        _columnWidths[details.column.columnName] =
+                            details.width;
+                      });
+                      return true;
+                    },
+                    columns: _columns(),
                   ),
                 ),
               ),
@@ -913,6 +930,41 @@ class _ReportCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  List<GridColumn> _columns() {
+    GridColumn column(String name, String label) {
+      return GridColumn(
+        columnName: name,
+        width: _columnWidths[name] ?? 140,
+        label: Container(
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: Text(
+            label,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppColors.headerText,
+              fontWeight: FontWeight.w900,
+              fontSize: 13,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return [
+      column('runDate', 'Run Date'),
+      column('branch', 'Branch'),
+      column('zone', 'Zone'),
+      column('area', 'Area'),
+      column('expectedBy', 'Expected By'),
+      column('submittedAt', 'Submitted At'),
+      column('status', 'Status'),
+      column('minutesLate', 'Delay'),
+      column('zoneManager', 'Zone Manager'),
+      column('type', 'Type'),
+    ];
   }
 }
 
@@ -954,70 +1006,80 @@ class _FilterDropDown extends StatelessWidget {
   }
 }
 
-class _TableHeader extends StatelessWidget {
-  const _TableHeader();
+class _SubmissionTrackerGridSource extends DataGridSource {
+  final List<DataGridRow> _rows;
+
+  _SubmissionTrackerGridSource(List<BranchSubmissionMiss> rows)
+    : _rows = rows
+          .map(
+            (row) => DataGridRow(
+              cells: [
+                DataGridCell<String>(
+                  columnName: 'runDate',
+                  value: _date(row.runDate),
+                ),
+                DataGridCell<String>(
+                  columnName: 'branch',
+                  value: row.branchName,
+                ),
+                DataGridCell<String>(columnName: 'zone', value: row.zone),
+                DataGridCell<String>(columnName: 'area', value: row.area),
+                DataGridCell<String>(
+                  columnName: 'expectedBy',
+                  value: _dateTime(row.expectedSubmitBy),
+                ),
+                DataGridCell<String>(
+                  columnName: 'submittedAt',
+                  value: row.submittedAt == null
+                      ? '-'
+                      : _dateTime(row.submittedAt!),
+                ),
+                DataGridCell<String>(
+                  columnName: 'status',
+                  value: _statusLabel(row.status),
+                ),
+                DataGridCell<int>(
+                  columnName: 'minutesLate',
+                  value: row.minutesLate,
+                ),
+                DataGridCell<String>(
+                  columnName: 'zoneManager',
+                  value: row.zoneManager,
+                ),
+                DataGridCell<String>(columnName: 'type', value: row.branchType),
+              ],
+            ),
+          )
+          .toList();
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 52,
-      decoration: const BoxDecoration(color: Color(0xFFEAF4FF)),
-      child: const Row(
-        children: [
-          _Cell('Run Date', 110, header: true),
-          _Cell('Branch', 190, header: true),
-          _Cell('Zone', 105, header: true),
-          _Cell('Area', 125, header: true),
-          _Cell('Expected By', 170, header: true),
-          _Cell('Submitted At', 170, header: true),
-          _Cell('Status', 140, header: true),
-          _Cell('Late', 95, header: true),
-          _Cell('Zone Manager', 170, header: true),
-          _Cell('Type', 145, header: true),
-        ],
-      ),
-    );
-  }
-}
-
-class _MissRow extends StatelessWidget {
-  final BranchSubmissionMiss row;
-
-  const _MissRow(this.row);
+  List<DataGridRow> get rows => _rows;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(minHeight: 58),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
-      ),
-      child: Row(
-        children: [
-          _Cell(_date(row.runDate), 110),
-          _Cell(row.branchName, 190, strong: true),
-          _Cell(row.zone, 105),
-          _Cell(row.area, 125),
-          _Cell(_dateTime(row.expectedSubmitBy), 170),
-          _Cell(
-            row.submittedAt == null ? '-' : _dateTime(row.submittedAt!),
-            170,
-          ),
-          SizedBox(
-            width: 140,
-            child: Center(child: _StatusChip(row: row)),
-          ),
-          _Cell(_late(row.minutesLate), 95, strong: true),
-          _Cell(row.zoneManager, 170),
-          _Cell(row.branchType, 145),
-        ],
-      ),
+  DataGridRowAdapter buildRow(DataGridRow row) {
+    final cells = row.getCells();
+    return DataGridRowAdapter(
+      color: Colors.white,
+      cells: cells.map((cell) {
+        if (cell.columnName == 'status') {
+          return Center(child: _StatusChip(status: cell.value.toString()));
+        }
+        final text = cell.columnName == 'minutesLate'
+            ? _late(cell.value as int)
+            : cell.value.toString();
+        return _SubmissionGridCell(
+          text,
+          strong:
+              cell.columnName == 'branch' || cell.columnName == 'minutesLate',
+        );
+      }).toList(),
     );
   }
 
-  static String _date(DateTime value) => DateFormat('yyyy-MM-dd').format(value);
+  static String _date(DateTime value) => DateFormat('dd/MM/yyyy').format(value);
   static String _dateTime(DateTime value) =>
-      DateFormat('yyyy-MM-dd HH:mm').format(value.toLocal());
+      DateFormat('dd/MM/yyyy HH:mm').format(value.toLocal());
+  static String _statusLabel(String status) => 'Not submitted by branch';
   static String _late(int minutes) {
     final days = minutes ~/ 1440;
     final hours = (minutes % 1440) ~/ 60;
@@ -1029,14 +1091,15 @@ class _MissRow extends StatelessWidget {
 }
 
 class _StatusChip extends StatelessWidget {
-  final BranchSubmissionMiss row;
+  final String status;
 
-  const _StatusChip({required this.row});
+  const _StatusChip({required this.status});
 
   @override
   Widget build(BuildContext context) {
-    final late = row.isLateSubmitted;
-    final color = late ? const Color(0xFF7C3AED) : const Color(0xFFDC2626);
+    final color = status == 'Not submitted by branch'
+        ? const Color(0xFFDC2626)
+        : const Color(0xFF7C3AED);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -1045,7 +1108,7 @@ class _StatusChip extends StatelessWidget {
         border: Border.all(color: color.withValues(alpha: .35)),
       ),
       child: Text(
-        late ? 'Late submitted' : 'Not submitted',
+        status,
         style: TextStyle(
           color: color,
           fontWeight: FontWeight.w900,
@@ -1056,35 +1119,24 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
-class _Cell extends StatelessWidget {
+class _SubmissionGridCell extends StatelessWidget {
   final String text;
-  final double width;
-  final bool header;
   final bool strong;
 
-  const _Cell(
-    this.text,
-    this.width, {
-    this.header = false,
-    this.strong = false,
-  });
+  const _SubmissionGridCell(this.text, {this.strong = false});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: width,
+      alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      alignment: Alignment.centerLeft,
-      decoration: const BoxDecoration(
-        border: Border(right: BorderSide(color: Color(0xFFDCEBFF))),
-      ),
       child: SelectableText(
         text,
-        maxLines: header ? 1 : 2,
+        maxLines: 2,
         style: TextStyle(
-          color: header ? AppColors.headerText : AppColors.text,
-          fontWeight: header || strong ? FontWeight.w900 : FontWeight.w700,
-          fontSize: header ? 13 : 12.5,
+          color: AppColors.text,
+          fontWeight: strong ? FontWeight.w900 : FontWeight.w700,
+          fontSize: 12.5,
         ),
       ),
     );
