@@ -297,11 +297,11 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
                     const _MethodCard(),
                     const SizedBox(height: 18),
                     if (_loadingSummary && _summaries.isEmpty)
-                      const _LoadingCard(label: 'Loading branch product list…')
+                      const _LoadingCard(label: 'Loading branch item list…')
                     else if (_summaries.isEmpty)
                       const _EmptyCard(
                         icon: Icons.query_stats_rounded,
-                        title: 'No KPI product data',
+                        title: 'No KPI item data',
                         message:
                             'Refresh the monthly sales data, then open this page again.',
                       )
@@ -418,7 +418,7 @@ class _Header extends StatelessWidget {
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  'Selected branch products • 7-day stock coverage • Stock date: $runDate',
+                  'Selected branch items • 7-day stock coverage • Stock date: $runDate',
                   maxLines: 2,
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: .84),
@@ -514,26 +514,29 @@ class _MethodCard extends StatelessWidget {
         children: [
           const _MethodStep(
             number: '1',
-            title: 'Top-selling products',
+            title: 'Top sellers',
             detail:
-                'Normal Purchase items forming 80% of retail sales value in the last 3 completed months',
+                'Items that make up 80% of branch sales in the last 3 full months',
           ),
           const Icon(Icons.add_rounded, color: Color(0xff2563EB)),
           const _MethodStep(
             number: '2',
-            title: 'Products sold regularly',
-            detail: 'Sold in at least 80% of all studied months',
+            title: 'Regular sellers',
+            detail: 'Items sold in at least 80% of the months studied',
           ),
           const Icon(Icons.arrow_forward_rounded, color: Color(0xff2563EB)),
           const _MethodStep(
             number: '3',
-            title: 'Stock needed for 7 days',
-            detail: 'Current stock divided by the 7-day requirement',
+            title: '7-day stock need',
+            detail: 'Current stock compared with stock needed for 7 days',
           ),
           TextButton.icon(
             onPressed: () => _showCalculationDialog(context),
             icon: const Icon(Icons.help_outline_rounded),
-            label: const Text('Explain the calculation'),
+            label: const Text('Explain calculation'),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.secondaryColor,
+            ),
           ),
         ],
       ),
@@ -558,18 +561,18 @@ Future<void> _showCalculationDialog(BuildContext context) {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: const Color(0xffDBEAFE),
+                      color: AppColors.secondaryColor.withValues(alpha: .1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(
                       Icons.calculate_rounded,
-                      color: Color(0xff2563EB),
+                      color: AppColors.secondaryColor,
                     ),
                   ),
                   const SizedBox(width: 12),
                   const Expanded(
                     child: Text(
-                      'طريقة الحساب | How Availability is calculated',
+                      'How Availability Is Calculated',
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w900,
@@ -585,30 +588,30 @@ Future<void> _showCalculationDialog(BuildContext context) {
               const SizedBox(height: 20),
               const _CalculationRow(
                 number: '1',
-                title: 'سبب اختيار المنتج | Why is the product selected?',
+                title: 'Items Included',
                 detail:
-                    'يدخل المنتج إذا كان ضمن المجموعة التي تكوّن 80% من قيمة مبيعات الفرع خلال آخر 3 أشهر مكتملة. قيمة المبيعات = الكمية المباعة × سعر Retail. الشهر الحالي مستبعد، ويضاف أيضاً المنتج المباع في 80% على الأقل من أشهر الدراسة.',
+                    'An item is included when it is a top seller in the group that makes 80% of branch sales value, or when it was sold in at least 80% of the months studied. Only Normal Purchase items are included.',
               ),
               const _CalculationRow(
                 number: '2',
-                title: 'احتياج 7 أيام | Needed for 7 days',
+                title: 'Stock Needed for 7 Days',
                 detail:
-                    'مبيعات آخر 3 أشهر مكتملة ÷ مجموع الأيام التقويمية لهذه الأشهر × 7. الشهر الحالي غير المكتمل لا يدخل في المبيعات ولا في عدد الأيام.',
-                formula: '3 completed-month units ÷ calendar days × 7',
+                    'We use units sold in the last 3 completed months. The current month is not included.',
+                formula: 'Units sold ÷ days in 3 months × 7',
               ),
               const _CalculationRow(
                 number: '3',
-                title: 'تغطية المنتج | Product coverage',
+                title: 'Item Coverage',
                 detail:
-                    'مخزون الفرع الحالي ÷ احتياج 7 أيام، وبحد أقصى 100%. مثال: المخزون 4 والاحتياج 5، إذن التغطية 80% والنقص وحدة واحدة.',
-                formula: 'min(stock ÷ 7-day need, 100%)',
+                    'Current branch stock is divided by the stock needed for 7 days. Coverage cannot be more than 100%. Example: stock 4 and need 5 gives 80% coverage.',
+                formula: 'Current stock ÷ 7-day need',
               ),
               const _CalculationRow(
                 number: '4',
-                title: 'نسبة الفرع | Branch Availability rate',
+                title: 'Branch Availability',
                 detail:
-                    'نجمع الكمية المغطاة لكل المنتجات ثم نقسمها على مجموع احتياج 7 أيام. بهذه الطريقة يكون تأثير المنتج حسب حجم مبيعاته واحتياجه، وليس مجرد متوسط بسيط.',
-                formula: 'Σ min(stock, need) ÷ Σ need × 100',
+                    'We add the covered need for all items, then divide it by the total 7-day need. Items with higher demand have more effect on the branch result.',
+                formula: 'Covered need ÷ total need × 100',
                 last: true,
               ),
             ],
@@ -677,7 +680,7 @@ class _CalculationRow extends StatelessWidget {
                   const SizedBox(height: 6),
                   Text(
                     detail,
-                    textDirection: TextDirection.rtl,
+                    textDirection: TextDirection.ltr,
                     style: const TextStyle(
                       color: Color(0xff475569),
                       height: 1.6,
@@ -767,7 +770,7 @@ class _MethodStep extends StatelessWidget {
   }
 }
 
-class _BranchOverview extends StatelessWidget {
+class _BranchOverview extends StatefulWidget {
   final List<AvailabilityBranchSummary> summaries;
   final Set<String> loadedBranches;
   final Set<String> loadingBranches;
@@ -781,6 +784,33 @@ class _BranchOverview extends StatelessWidget {
     required this.selectedBranch,
     required this.onSelected,
   });
+
+  @override
+  State<_BranchOverview> createState() => _BranchOverviewState();
+}
+
+class _BranchOverviewState extends State<_BranchOverview> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollBy(double direction) {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    final distance = math.max(position.viewportDimension * .82, 440);
+    final target = (position.pixels + (distance * direction))
+        .clamp(position.minScrollExtent, position.maxScrollExtent)
+        .toDouble();
+    _scrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeOutCubic,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -807,31 +837,74 @@ class _BranchOverview extends StatelessWidget {
               ),
               const Spacer(),
               Text(
-                '${loadedBranches.length} of ${summaries.length} branches loaded • A–Z',
+                '${widget.loadedBranches.length} of ${widget.summaries.length} branches loaded • A–Z',
                 style: TextStyle(
                   color: Colors.grey.shade600,
                   fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 12),
+              IconButton(
+                onPressed: () => _scrollBy(-1),
+                tooltip: 'Previous branches',
+                icon: const Icon(Icons.chevron_left_rounded),
+                style: IconButton.styleFrom(
+                  foregroundColor: AppColors.primaryColor,
+                  backgroundColor: AppColors.primaryColor.withValues(
+                    alpha: .09,
+                  ),
+                  side: BorderSide(
+                    color: AppColors.primaryColor.withValues(alpha: .3),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              IconButton(
+                onPressed: () => _scrollBy(1),
+                tooltip: 'Next branches',
+                icon: const Icon(Icons.chevron_right_rounded),
+                style: IconButton.styleFrom(
+                  foregroundColor: AppColors.primaryColor,
+                  backgroundColor: AppColors.primaryColor.withValues(
+                    alpha: .09,
+                  ),
+                  side: BorderSide(
+                    color: AppColors.primaryColor.withValues(alpha: .3),
+                  ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 15),
           SizedBox(
-            height: 136,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: summaries.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 11),
-              itemBuilder: (context, index) {
-                final summary = summaries[index];
-                return _BranchTile(
-                  summary: summary,
-                  loaded: loadedBranches.contains(summary.branchName),
-                  loading: loadingBranches.contains(summary.branchName),
-                  selected: selectedBranch == summary.branchName,
-                  onTap: () => onSelected(summary.branchName),
-                );
-              },
+            height: 150,
+            child: Scrollbar(
+              controller: _scrollController,
+              thumbVisibility: true,
+              trackVisibility: true,
+              thickness: 7,
+              radius: const Radius.circular(99),
+              scrollbarOrientation: ScrollbarOrientation.bottom,
+              child: ListView.separated(
+                controller: _scrollController,
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.only(bottom: 14),
+                physics: const ClampingScrollPhysics(),
+                itemCount: widget.summaries.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 11),
+                itemBuilder: (context, index) {
+                  final summary = widget.summaries[index];
+                  return _BranchTile(
+                    summary: summary,
+                    loaded: widget.loadedBranches.contains(summary.branchName),
+                    loading: widget.loadingBranches.contains(
+                      summary.branchName,
+                    ),
+                    selected: widget.selectedBranch == summary.branchName,
+                    onTap: () => widget.onSelected(summary.branchName),
+                  );
+                },
+              ),
             ),
           ),
         ],
@@ -934,7 +1007,7 @@ class _BranchTile extends StatelessWidget {
               const Spacer(),
               Text(
                 loaded
-                    ? '${summary.masterItems} KPI products  •  ${summary.shortageItems} below 7-day need'
+                    ? '${summary.masterItems} KPI items  •  ${summary.shortageItems} below 7-day need'
                     : loading
                     ? 'Calculating branch KPI…'
                     : 'Waiting to load…',
@@ -1020,10 +1093,10 @@ class _SummaryCards extends StatelessWidget {
                 : _rateColor(value.availabilityRate),
           ),
           _KpiCard(
-            title: 'KPI product list',
+            title: 'KPI item list',
             value: value == null ? '—' : '${value.masterItems}',
             subtitle: value == null
-                ? 'Top sellers + products sold regularly'
+                ? 'Top sellers + regularly sold items'
                 : '${value.paretoItems} top sellers • ${value.consistentItems} regular sellers',
             icon: Icons.fact_check_rounded,
             color: const Color(0xff2563EB),
@@ -1169,7 +1242,7 @@ class _Filters extends StatelessWidget {
               controller: controller,
               onChanged: onSearchChanged,
               decoration: _inputDecoration(
-                hint: 'Search item code or product name…',
+                hint: 'Search item code or item name…',
                 icon: Icons.search_rounded,
               ),
             ),
@@ -1186,7 +1259,7 @@ class _Filters extends StatelessWidget {
               items: const [
                 DropdownMenuItem(
                   value: 'all',
-                  child: Text('All selected products'),
+                  child: Text('All selected items'),
                 ),
                 DropdownMenuItem(
                   value: 'pareto',
@@ -1194,7 +1267,7 @@ class _Filters extends StatelessWidget {
                 ),
                 DropdownMenuItem(
                   value: 'consistent',
-                  child: Text('Products sold regularly'),
+                  child: Text('Items sold regularly'),
                 ),
               ],
               onChanged: (value) {
@@ -1282,7 +1355,7 @@ class _MasterTableState extends State<_MasterTable> {
             children: [
               const Icon(Icons.check_circle_rounded, color: Colors.white),
               const SizedBox(width: 10),
-              Text('${visible.length} filtered products exported.'),
+              Text('${visible.length} filtered items exported.'),
             ],
           ),
           backgroundColor: const Color(0xff059669),
@@ -1330,7 +1403,7 @@ class _MasterTableState extends State<_MasterTable> {
                     SizedBox(
                       width: 470,
                       child: SelectableText(
-                        '${widget.branch} • Products included in Availability KPI',
+                        '${widget.branch} • Items included in Availability KPI',
                         maxLines: 1,
                         style: const TextStyle(
                           color: Color(0xff0F172A),
@@ -1340,7 +1413,7 @@ class _MasterTableState extends State<_MasterTable> {
                       ),
                     ),
                     SelectableText(
-                      '$visibleRows of ${widget.totalRows} products',
+                      '$visibleRows of ${widget.totalRows} items',
                       style: const TextStyle(
                         color: Color(0xff64748B),
                         fontWeight: FontWeight.w700,
@@ -1394,7 +1467,7 @@ class _MasterTableState extends State<_MasterTable> {
                   padding: EdgeInsets.all(48),
                   child: Center(
                     child: SelectableText(
-                      'No products match the selected filters.',
+                      'No items match the selected filters.',
                       style: TextStyle(
                         color: Color(0xff64748B),
                         fontWeight: FontWeight.w700,
@@ -1405,55 +1478,61 @@ class _MasterTableState extends State<_MasterTable> {
               else
                 SizedBox(
                   height: 660,
-                  child: Theme(
-                    data: Theme.of(context).copyWith(
-                      colorScheme: Theme.of(context).colorScheme.copyWith(
-                        primary: AppColors.primaryColor,
-                        secondary: AppColors.primaryColor,
-                      ),
-                      checkboxTheme: CheckboxThemeData(
-                        fillColor: WidgetStateProperty.resolveWith(
-                          (states) => states.contains(WidgetState.selected)
-                              ? AppColors.primaryColor
-                              : null,
-                        ),
-                      ),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: const Color(0xffAEBFCC)),
                     ),
-                    child: SfDataGridTheme(
-                      data: SfDataGridThemeData(
-                        headerColor: AppColors.secondaryColor,
-                        gridLineColor: AppColors.border,
-                        selectionColor: AppColors.primaryColor.withValues(
-                          alpha: .12,
+                    child: Theme(
+                      data: Theme.of(context).copyWith(
+                        colorScheme: Theme.of(context).colorScheme.copyWith(
+                          primary: AppColors.primaryColor,
+                          secondary: AppColors.primaryColor,
                         ),
-                        rowHoverColor: AppColors.rowHover,
-                        sortIconColor: Colors.white,
-                        filterIconColor: Colors.white,
-                        filterIconHoverColor: AppColors.primaryColor,
-                        currentCellStyle: const DataGridCurrentCellStyle(
-                          borderColor: AppColors.primaryColor,
-                          borderWidth: 1.5,
+                        checkboxTheme: CheckboxThemeData(
+                          fillColor: WidgetStateProperty.resolveWith(
+                            (states) => states.contains(WidgetState.selected)
+                                ? AppColors.primaryColor
+                                : null,
+                          ),
                         ),
                       ),
-                      child: SfDataGrid(
-                        source: _source,
-                        allowFiltering: true,
-                        allowSorting: true,
-                        allowMultiColumnSorting: true,
-                        allowTriStateSorting: true,
-                        allowColumnsResizing: true,
-                        columnResizeMode: ColumnResizeMode.onResize,
-                        gridLinesVisibility: GridLinesVisibility.horizontal,
-                        headerGridLinesVisibility: GridLinesVisibility.vertical,
-                        columnWidthMode: ColumnWidthMode.none,
-                        frozenColumnsCount: 3,
-                        rowHeight: 60,
-                        headerRowHeight: 66,
-                        selectionMode: SelectionMode.single,
-                        navigationMode: GridNavigationMode.cell,
-                        onFilterChanged: (_) => setState(() {}),
-                        onColumnSortChanged: (_, _) => setState(() {}),
-                        columns: _availabilityColumns(),
+                      child: SfDataGridTheme(
+                        data: SfDataGridThemeData(
+                          headerColor: const Color(0xffCFE4EC),
+                          gridLineColor: const Color(0xffC4D0DA),
+                          selectionColor: AppColors.primaryColor.withValues(
+                            alpha: .1,
+                          ),
+                          rowHoverColor: AppColors.rowHover,
+                          sortIconColor: AppColors.secondaryColor,
+                          filterIconColor: AppColors.secondaryColor,
+                          filterIconHoverColor: AppColors.primaryColor,
+                          currentCellStyle: const DataGridCurrentCellStyle(
+                            borderColor: AppColors.primaryColor,
+                            borderWidth: 1.5,
+                          ),
+                        ),
+                        child: SfDataGrid(
+                          source: _source,
+                          allowFiltering: true,
+                          allowSorting: true,
+                          allowMultiColumnSorting: true,
+                          allowTriStateSorting: true,
+                          allowColumnsResizing: true,
+                          columnResizeMode: ColumnResizeMode.onResize,
+                          gridLinesVisibility: GridLinesVisibility.both,
+                          headerGridLinesVisibility:
+                              GridLinesVisibility.vertical,
+                          columnWidthMode: ColumnWidthMode.none,
+                          frozenColumnsCount: 0,
+                          rowHeight: 62,
+                          headerRowHeight: 72,
+                          selectionMode: SelectionMode.single,
+                          navigationMode: GridNavigationMode.cell,
+                          onFilterChanged: (_) => setState(() {}),
+                          onColumnSortChanged: (_, _) => setState(() {}),
+                          columns: _availabilityColumns(),
+                        ),
                       ),
                     ),
                   ),
@@ -1521,7 +1600,7 @@ class _ExportLoadingOverlay extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               Text(
-                'Formatting $rowCount filtered products…',
+                'Formatting $rowCount filtered items…',
                 style: const TextStyle(
                   color: Color(0xff64748B),
                   fontWeight: FontWeight.w600,
@@ -1550,19 +1629,19 @@ class _ExportLoadingOverlay extends StatelessWidget {
 }
 
 List<GridColumn> _availabilityColumns() => [
-  _availabilityColumn('item_code', 'ITEM CODE', 145),
-  _availabilityColumn('product', 'PRODUCT', 310, alignLeft: true),
-  _availabilityColumn('selection', 'WHY SELECTED?', 220, alignLeft: true),
-  _availabilityColumn('sales', '3-MONTH\nUNITS SOLD', 140),
-  _availabilityColumn('retail', 'RETAIL\nPRICE', 120),
-  _availabilityColumn('sales_value', 'RETAIL SALES\nVALUE', 155),
-  _availabilityColumn('share', 'VALUE SHARE OF\nBRANCH SALES %', 155),
-  _availabilityColumn('months', 'MONTHS SOLD\n(1–12)', 175),
-  _availabilityColumn('consistency', 'SELLING MONTH\n%', 145),
-  _availabilityColumn('weekly_need', 'NEEDED FOR\n7 DAYS', 135),
-  _availabilityColumn('stock', 'CURRENT BRANCH\nSTOCK', 150),
-  _availabilityColumn('shortage', 'UNITS\nMISSING', 125),
-  _availabilityColumn('coverage', '7-DAY\nCOVERAGE', 140),
+  _availabilityColumn('item_code', 'Item Code', 175),
+  _availabilityColumn('item_name', 'Item Name', 340),
+  _availabilityColumn('selection', 'Selection Reason', 235),
+  _availabilityColumn('sales', '3-Month\nUnits Sold', 185),
+  _availabilityColumn('retail', 'Retail\nPrice', 165),
+  _availabilityColumn('sales_value', 'Retail Sales\nValue', 190),
+  _availabilityColumn('share', 'Branch Sales\nShare', 195),
+  _availabilityColumn('months', 'Months Sold\n(1–12)', 190),
+  _availabilityColumn('consistency', 'Selling\nConsistency', 190),
+  _availabilityColumn('weekly_need', '7-Day\nNeed', 170),
+  _availabilityColumn('stock', 'Branch\nStock', 170),
+  _availabilityColumn('shortage', 'Units\nMissing', 165),
+  _availabilityColumn('coverage', '7-Day\nCoverage', 185),
 ];
 
 GridColumn _availabilityColumn(
@@ -1572,24 +1651,35 @@ GridColumn _availabilityColumn(
   bool alignLeft = false,
 }) => GridColumn(
   columnName: name,
-  width: width,
+  width: _columnWidthForHeader(title, width),
   minimumWidth: 105,
   label: Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    padding: EdgeInsets.fromLTRB(alignLeft ? 16 : 12, 10, 12, 10),
     alignment: alignLeft ? Alignment.centerLeft : Alignment.center,
     child: SelectableText(
       title,
       maxLines: 2,
       textAlign: alignLeft ? TextAlign.left : TextAlign.center,
       style: const TextStyle(
-        color: Colors.white,
-        fontSize: 11.5,
-        height: 1.2,
-        fontWeight: FontWeight.w900,
+        color: AppColors.secondaryColor,
+        fontSize: 12.5,
+        height: 1.15,
+        letterSpacing: .1,
+        fontWeight: FontWeight.w800,
       ),
     ),
   ),
 );
+
+double _columnWidthForHeader(String title, double requestedWidth) {
+  final longestLine = title
+      .split('\n')
+      .map((line) => line.trim().length)
+      .fold<int>(0, math.max);
+  // Text width + sorting/filter actions + comfortable horizontal padding.
+  final titleBasedWidth = (longestLine * 8.5) + 76;
+  return math.max(requestedWidth, titleBasedWidth);
+}
 
 class _AvailabilityKpiGridSource extends DataGridSource {
   List<DataGridRow> _rows = const [];
@@ -1614,7 +1704,10 @@ class _AvailabilityKpiGridSource extends DataGridSource {
                 columnName: 'item_code',
                 value: item.itemCode,
               ),
-              DataGridCell<String>(columnName: 'product', value: item.itemName),
+              DataGridCell<String>(
+                columnName: 'item_name',
+                value: item.itemName,
+              ),
               DataGridCell<String>(
                 columnName: 'selection',
                 value: _selectionLabel(item),
@@ -1675,17 +1768,15 @@ class _AvailabilityKpiGridSource extends DataGridSource {
   @override
   DataGridRowAdapter buildRow(DataGridRow row) {
     final item = _itemByRow[row]!;
+    final rowColor = (_indexByRow[row] ?? 0).isOdd
+        ? const Color(0xffFAFCFD)
+        : Colors.white;
     return DataGridRowAdapter(
-      color: (_indexByRow[row] ?? 0).isOdd
-          ? const Color(0xffF7FAFC)
-          : Colors.white,
+      color: rowColor,
       cells: row
           .getCells()
           .map((cell) {
-            final alignLeft = {
-              'product',
-              'selection',
-            }.contains(cell.columnName);
+            final alignLeft = cell.columnName == 'item_name';
             late final Widget child;
             switch (cell.columnName) {
               case 'coverage':
@@ -1751,13 +1842,13 @@ class _AvailabilityKpiGridSource extends DataGridSource {
               default:
                 child = SelectableText(
                   cell.value is num ? _fmt(cell.value as num) : '${cell.value}',
-                  maxLines: cell.columnName == 'product' ? 2 : 1,
+                  maxLines: cell.columnName == 'item_name' ? 2 : 1,
                   style: TextStyle(
                     color: const Color(0xff0F172A),
                     fontWeight:
                         {
                           'item_code',
-                          'product',
+                          'item_name',
                           'retail',
                           'sales_value',
                           'weekly_need',
@@ -1770,7 +1861,7 @@ class _AvailabilityKpiGridSource extends DataGridSource {
             }
             return Container(
               alignment: alignLeft ? Alignment.centerLeft : Alignment.center,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
               child: child,
             );
           })
@@ -1792,13 +1883,11 @@ class _SourceBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = item.inPareto
-        ? 'Top seller — 80% of branch sales value'
-        : 'Sold regularly';
+    final label = item.inPareto ? 'Top seller • Branch 80%' : 'Sold regularly';
     final color = item.inPareto
         ? AppColors.primaryColor
         : const Color(0xff0F766E);
-    return _badge(label, color);
+    return Tooltip(message: _selectionLabel(item), child: _badge(label, color));
   }
 }
 

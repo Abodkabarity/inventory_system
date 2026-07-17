@@ -39,7 +39,7 @@ class AvailabilityKpiExcelExporter {
     const headers = [
       'Branch',
       'Item Code',
-      'Product',
+      'Item Name',
       'Selection Reason',
       '3 Completed Months Sales',
       'Retail Price',
