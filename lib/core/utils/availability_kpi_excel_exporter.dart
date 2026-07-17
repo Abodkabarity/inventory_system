@@ -24,7 +24,7 @@ class AvailabilityKpiExcelExporter {
       ..bold = true
       ..fontSize = 18
       ..fontColor = '#FFFFFF'
-      ..backColor = '#172554'
+      ..backColor = '#122D40'
       ..hAlign = xlsio.HAlignType.left
       ..vAlign = xlsio.VAlignType.center;
     title.rowHeight = 34;
@@ -61,11 +61,11 @@ class AvailabilityKpiExcelExporter {
       cell.cellStyle
         ..bold = true
         ..fontColor = '#FFFFFF'
-        ..backColor = '#2563EB'
+        ..backColor = '#4EB0DE'
         ..hAlign = xlsio.HAlignType.center
         ..vAlign = xlsio.VAlignType.center;
       cell.cellStyle.borders.all.lineStyle = xlsio.LineStyle.thin;
-      cell.cellStyle.borders.all.color = '#1E3A8A';
+      cell.cellStyle.borders.all.color = '#2B8DBA';
     }
     sheet.getRangeByIndex(headerRow, 1, headerRow, headers.length).rowHeight =
         32;
@@ -83,7 +83,7 @@ class AvailabilityKpiExcelExporter {
         item.recentSalesValue,
         item.recentSalesShare,
         item.sellingMonthNumbers.isEmpty
-            ? ''
+            ? '${item.sellingMonths} / ${item.totalMonths}'
             : item.sellingMonthNumbers.join(', '),
         item.sellingMonths,
         item.totalMonths,
@@ -104,10 +104,12 @@ class AvailabilityKpiExcelExporter {
         }
         cell.cellStyle
           ..vAlign = xlsio.VAlignType.center
+          ..hAlign = xlsio.HAlignType.center
           ..backColor = index.isOdd ? '#F8FAFC' : '#FFFFFF';
         cell.cellStyle.borders.all.lineStyle = xlsio.LineStyle.thin;
         cell.cellStyle.borders.all.color = '#CBD5E1';
       }
+      sheet.getRangeByIndex(row, 3).cellStyle.hAlign = xlsio.HAlignType.left;
       if (item.stockShortage > 0) {
         sheet.getRangeByIndex(row, 15).cellStyle
           ..fontColor = '#DC2626'

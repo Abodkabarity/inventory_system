@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
+import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/availability_kpi_excel_exporter.dart';
 import '../../../data/datasources/remote/availability_kpi_remote_ds.dart';
 
@@ -25,6 +26,7 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
 
   List<AvailabilityBranchSummary> _summaries = const [];
   final Set<String> _loadedSummaryBranches = <String>{};
+  final Set<String> _loadingSummaryBranches = <String>{};
   final Map<String, AvailabilityBranchData> _branchData = {};
   List<AvailabilityKpiItem> _allItems = const [];
   List<AvailabilityKpiItem> _items = const [];
@@ -97,6 +99,7 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
             .map(AvailabilityBranchSummary.empty)
             .toList(growable: false);
         _loadedSummaryBranches.clear();
+        _loadingSummaryBranches.clear();
         _branchData.clear();
         _selectedBranch = selected;
         _stockDate = stockDate;
@@ -135,6 +138,7 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
     setState(() {
       _loadingSummary = true;
       _loadingItems = true;
+      _loadingSummaryBranches.add(branch);
       _error = '';
     });
 
@@ -151,6 +155,7 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
       setState(() {
         _cacheBranchData(branch, data);
         _loadedSummaryBranches.add(branch);
+        _loadingSummaryBranches.remove(branch);
         _allItems = data.items;
         _updateVisibleItems();
         _loadingSummary = false;
@@ -165,6 +170,7 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
       setState(() {
         _loadingSummary = false;
         _loadingItems = false;
+        _loadingSummaryBranches.remove(branch);
         _error = _friendlyError(error);
       });
     }
@@ -179,6 +185,7 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
       if (!mounted || serial != _requestSerial) return;
       final end = math.min(start + concurrentLoads, branches.length);
       final batch = branches.sublist(start, end);
+      setState(() => _loadingSummaryBranches.addAll(batch));
       final loaded = await Future.wait(
         batch.map((branch) async {
           try {
@@ -194,6 +201,7 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
       );
       if (!mounted || serial != _requestSerial) return;
       setState(() {
+        _loadingSummaryBranches.removeAll(batch);
         for (final entry
             in loaded.whereType<MapEntry<String, AvailabilityBranchData>>()) {
           _cacheBranchData(entry.key, entry.value);
@@ -309,6 +317,7 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
                         _BranchOverview(
                           summaries: _summaries,
                           loadedBranches: _loadedSummaryBranches,
+                          loadingBranches: _loadingSummaryBranches,
                           selectedBranch: _selectedBranch,
                           onSelected: _selectBranch,
                         ),
@@ -761,12 +770,14 @@ class _MethodStep extends StatelessWidget {
 class _BranchOverview extends StatelessWidget {
   final List<AvailabilityBranchSummary> summaries;
   final Set<String> loadedBranches;
+  final Set<String> loadingBranches;
   final String? selectedBranch;
   final ValueChanged<String> onSelected;
 
   const _BranchOverview({
     required this.summaries,
     required this.loadedBranches,
+    required this.loadingBranches,
     required this.selectedBranch,
     required this.onSelected,
   });
@@ -781,7 +792,10 @@ class _BranchOverview extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.storefront_rounded, color: Color(0xff2563EB)),
+              const Icon(
+                Icons.storefront_rounded,
+                color: AppColors.primaryColor,
+              ),
               const SizedBox(width: 9),
               const Text(
                 'Branch availability overview',
@@ -813,6 +827,7 @@ class _BranchOverview extends StatelessWidget {
                 return _BranchTile(
                   summary: summary,
                   loaded: loadedBranches.contains(summary.branchName),
+                  loading: loadingBranches.contains(summary.branchName),
                   selected: selectedBranch == summary.branchName,
                   onTap: () => onSelected(summary.branchName),
                 );
@@ -828,12 +843,14 @@ class _BranchOverview extends StatelessWidget {
 class _BranchTile extends StatelessWidget {
   final AvailabilityBranchSummary summary;
   final bool loaded;
+  final bool loading;
   final bool selected;
   final VoidCallback onTap;
 
   const _BranchTile({
     required this.summary,
     required this.loaded,
+    required this.loading,
     required this.selected,
     required this.onTap,
   });
@@ -842,7 +859,7 @@ class _BranchTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = loaded
         ? _rateColor(summary.availabilityRate)
-        : const Color(0xff94A3B8);
+        : AppColors.primaryColor;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -853,12 +870,12 @@ class _BranchTile extends StatelessWidget {
           width: 208,
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: selected ? const Color(0xffEFF6FF) : Colors.white,
+            color: selected
+                ? AppColors.primaryColor.withValues(alpha: .08)
+                : Colors.white,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: selected
-                  ? const Color(0xff2563EB)
-                  : const Color(0xffE2E8F0),
+              color: selected ? AppColors.primaryColor : AppColors.border,
               width: selected ? 2 : 1,
             ),
           ),
@@ -878,33 +895,49 @@ class _BranchTile extends StatelessWidget {
                       ),
                     ),
                   ),
-                  Text(
-                    loaded ? '${_fmt(summary.availabilityRate)}%' : '—',
-                    style: TextStyle(
-                      color: color,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
+                  if (loading && !loaded)
+                    const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: AppColors.primaryColor,
+                      ),
+                    )
+                  else
+                    Text(
+                      loaded ? '${_fmt(summary.availabilityRate)}%' : '—',
+                      style: TextStyle(
+                        color: loaded ? color : AppColors.subText,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
-                  ),
                 ],
               ),
               const SizedBox(height: 12),
               ClipRRect(
                 borderRadius: BorderRadius.circular(99),
                 child: LinearProgressIndicator(
-                  value: (summary.availabilityRate / 100)
-                      .clamp(0, loaded ? 1 : 0)
-                      .toDouble(),
+                  value: loading && !loaded
+                      ? null
+                      : (summary.availabilityRate / 100)
+                            .clamp(0, loaded ? 1 : 0)
+                            .toDouble(),
                   minHeight: 8,
                   color: color,
-                  backgroundColor: color.withValues(alpha: .13),
+                  backgroundColor: AppColors.primaryColor.withValues(
+                    alpha: .12,
+                  ),
                 ),
               ),
               const Spacer(),
               Text(
                 loaded
                     ? '${summary.masterItems} KPI products  •  ${summary.shortageItems} below 7-day need'
-                    : 'Loading KPI data…',
+                    : loading
+                    ? 'Calculating branch KPI…'
+                    : 'Waiting to load…',
                 style: const TextStyle(
                   color: Color(0xff64748B),
                   fontSize: 11.5,
@@ -1279,8 +1312,12 @@ class _MasterTableState extends State<_MasterTable> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Padding(
+              Container(
                 padding: const EdgeInsets.fromLTRB(18, 13, 14, 13),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  border: Border(bottom: BorderSide(color: AppColors.border)),
+                ),
                 child: Wrap(
                   spacing: 10,
                   runSpacing: 10,
@@ -1288,13 +1325,13 @@ class _MasterTableState extends State<_MasterTable> {
                   children: [
                     const Icon(
                       Icons.table_chart_rounded,
-                      color: Color(0xff2563EB),
+                      color: AppColors.primaryColor,
                     ),
                     SizedBox(
                       width: 470,
-                      child: Text(
+                      child: SelectableText(
                         '${widget.branch} • Products included in Availability KPI',
-                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                         style: const TextStyle(
                           color: Color(0xff0F172A),
                           fontSize: 18,
@@ -1302,7 +1339,7 @@ class _MasterTableState extends State<_MasterTable> {
                         ),
                       ),
                     ),
-                    Text(
+                    SelectableText(
                       '$visibleRows of ${widget.totalRows} products',
                       style: const TextStyle(
                         color: Color(0xff64748B),
@@ -1318,6 +1355,10 @@ class _MasterTableState extends State<_MasterTable> {
                             },
                       icon: const Icon(Icons.filter_alt_off_outlined, size: 18),
                       label: const Text('Clear column filters'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primaryColor,
+                        side: const BorderSide(color: AppColors.primaryColor),
+                      ),
                     ),
                     FilledButton.icon(
                       onPressed:
@@ -1352,7 +1393,7 @@ class _MasterTableState extends State<_MasterTable> {
                 const Padding(
                   padding: EdgeInsets.all(48),
                   child: Center(
-                    child: Text(
+                    child: SelectableText(
                       'No products match the selected filters.',
                       style: TextStyle(
                         color: Color(0xff64748B),
@@ -1364,34 +1405,56 @@ class _MasterTableState extends State<_MasterTable> {
               else
                 SizedBox(
                   height: 660,
-                  child: SfDataGridTheme(
-                    data: SfDataGridThemeData(
-                      headerColor: const Color(0xff0F2454),
-                      gridLineColor: const Color(0xffD7E0EA),
-                      selectionColor: const Color(0xffDBEAFE),
-                      sortIconColor: Colors.white,
-                      filterIconColor: Colors.white,
-                      filterIconHoverColor: const Color(0xff93C5FD),
+                  child: Theme(
+                    data: Theme.of(context).copyWith(
+                      colorScheme: Theme.of(context).colorScheme.copyWith(
+                        primary: AppColors.primaryColor,
+                        secondary: AppColors.primaryColor,
+                      ),
+                      checkboxTheme: CheckboxThemeData(
+                        fillColor: WidgetStateProperty.resolveWith(
+                          (states) => states.contains(WidgetState.selected)
+                              ? AppColors.primaryColor
+                              : null,
+                        ),
+                      ),
                     ),
-                    child: SfDataGrid(
-                      source: _source,
-                      allowFiltering: true,
-                      allowSorting: true,
-                      allowMultiColumnSorting: true,
-                      allowTriStateSorting: true,
-                      allowColumnsResizing: true,
-                      columnResizeMode: ColumnResizeMode.onResize,
-                      gridLinesVisibility: GridLinesVisibility.both,
-                      headerGridLinesVisibility: GridLinesVisibility.both,
-                      columnWidthMode: ColumnWidthMode.none,
-                      frozenColumnsCount: 3,
-                      rowHeight: 62,
-                      headerRowHeight: 70,
-                      selectionMode: SelectionMode.single,
-                      navigationMode: GridNavigationMode.cell,
-                      onFilterChanged: (_) => setState(() {}),
-                      onColumnSortChanged: (_, _) => setState(() {}),
-                      columns: _availabilityColumns(),
+                    child: SfDataGridTheme(
+                      data: SfDataGridThemeData(
+                        headerColor: AppColors.secondaryColor,
+                        gridLineColor: AppColors.border,
+                        selectionColor: AppColors.primaryColor.withValues(
+                          alpha: .12,
+                        ),
+                        rowHoverColor: AppColors.rowHover,
+                        sortIconColor: Colors.white,
+                        filterIconColor: Colors.white,
+                        filterIconHoverColor: AppColors.primaryColor,
+                        currentCellStyle: const DataGridCurrentCellStyle(
+                          borderColor: AppColors.primaryColor,
+                          borderWidth: 1.5,
+                        ),
+                      ),
+                      child: SfDataGrid(
+                        source: _source,
+                        allowFiltering: true,
+                        allowSorting: true,
+                        allowMultiColumnSorting: true,
+                        allowTriStateSorting: true,
+                        allowColumnsResizing: true,
+                        columnResizeMode: ColumnResizeMode.onResize,
+                        gridLinesVisibility: GridLinesVisibility.horizontal,
+                        headerGridLinesVisibility: GridLinesVisibility.vertical,
+                        columnWidthMode: ColumnWidthMode.none,
+                        frozenColumnsCount: 3,
+                        rowHeight: 60,
+                        headerRowHeight: 66,
+                        selectionMode: SelectionMode.single,
+                        navigationMode: GridNavigationMode.cell,
+                        onFilterChanged: (_) => setState(() {}),
+                        onColumnSortChanged: (_, _) => setState(() {}),
+                        columns: _availabilityColumns(),
+                      ),
                     ),
                   ),
                 ),
@@ -1487,7 +1550,6 @@ class _ExportLoadingOverlay extends StatelessWidget {
 }
 
 List<GridColumn> _availabilityColumns() => [
-  _availabilityColumn('coverage', '7-DAY\nCOVERAGE', 140),
   _availabilityColumn('item_code', 'ITEM CODE', 145),
   _availabilityColumn('product', 'PRODUCT', 310, alignLeft: true),
   _availabilityColumn('selection', 'WHY SELECTED?', 220, alignLeft: true),
@@ -1500,6 +1562,7 @@ List<GridColumn> _availabilityColumns() => [
   _availabilityColumn('weekly_need', 'NEEDED FOR\n7 DAYS', 135),
   _availabilityColumn('stock', 'CURRENT BRANCH\nSTOCK', 150),
   _availabilityColumn('shortage', 'UNITS\nMISSING', 125),
+  _availabilityColumn('coverage', '7-DAY\nCOVERAGE', 140),
 ];
 
 GridColumn _availabilityColumn(
@@ -1514,8 +1577,9 @@ GridColumn _availabilityColumn(
   label: Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
     alignment: alignLeft ? Alignment.centerLeft : Alignment.center,
-    child: Text(
+    child: SelectableText(
       title,
+      maxLines: 2,
       textAlign: alignLeft ? TextAlign.left : TextAlign.center,
       style: const TextStyle(
         color: Colors.white,
@@ -1546,10 +1610,6 @@ class _AvailabilityKpiGridSource extends DataGridSource {
           final item = entry.value;
           final row = DataGridRow(
             cells: [
-              DataGridCell<num>(
-                columnName: 'coverage',
-                value: item.availabilityRate,
-              ),
               DataGridCell<String>(
                 columnName: 'item_code',
                 value: item.itemCode,
@@ -1588,6 +1648,10 @@ class _AvailabilityKpiGridSource extends DataGridSource {
                 columnName: 'shortage',
                 value: item.stockShortage,
               ),
+              DataGridCell<num>(
+                columnName: 'coverage',
+                value: item.availabilityRate,
+              ),
             ],
           );
           _itemByRow[row] = item;
@@ -1613,7 +1677,7 @@ class _AvailabilityKpiGridSource extends DataGridSource {
     final item = _itemByRow[row]!;
     return DataGridRowAdapter(
       color: (_indexByRow[row] ?? 0).isOdd
-          ? const Color(0xffF8FAFC)
+          ? const Color(0xffF7FAFC)
           : Colors.white,
       cells: row
           .getCells()
@@ -1632,7 +1696,7 @@ class _AvailabilityKpiGridSource extends DataGridSource {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      SelectableText(
                         '${_fmt(item.availabilityRate)}%',
                         style: TextStyle(
                           color: color,
@@ -1659,13 +1723,13 @@ class _AvailabilityKpiGridSource extends DataGridSource {
                 child = _ConsistencyBadge(rate: item.monthConsistency);
                 break;
               case 'share':
-                child = Text('${_fmt(item.recentSalesShare)}%');
+                child = SelectableText('${_fmt(item.recentSalesShare)}%');
                 break;
               case 'months':
                 child = Tooltip(
                   message:
                       'Sold in ${item.sellingMonths} of ${item.totalMonths} studied months',
-                  child: Text(
+                  child: SelectableText(
                     item.sellingMonthNumbers.isEmpty
                         ? '${item.sellingMonths} / ${item.totalMonths}'
                         : item.sellingMonthNumbers.join(', '),
@@ -1674,7 +1738,7 @@ class _AvailabilityKpiGridSource extends DataGridSource {
                 );
                 break;
               case 'shortage':
-                child = Text(
+                child = SelectableText(
                   _fmt(item.stockShortage),
                   style: TextStyle(
                     color: item.stockShortage > 0
@@ -1685,10 +1749,9 @@ class _AvailabilityKpiGridSource extends DataGridSource {
                 );
                 break;
               default:
-                child = Text(
+                child = SelectableText(
                   cell.value is num ? _fmt(cell.value as num) : '${cell.value}',
                   maxLines: cell.columnName == 'product' ? 2 : 1,
-                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: const Color(0xff0F172A),
                     fontWeight:
@@ -1733,7 +1796,7 @@ class _SourceBadge extends StatelessWidget {
         ? 'Top seller — 80% of branch sales value'
         : 'Sold regularly';
     final color = item.inPareto
-        ? const Color(0xff2563EB)
+        ? AppColors.primaryColor
         : const Color(0xff0F766E);
     return _badge(label, color);
   }
@@ -1898,7 +1961,7 @@ Widget _badge(String label, Color color) {
       borderRadius: BorderRadius.circular(99),
       border: Border.all(color: color.withValues(alpha: .22)),
     ),
-    child: Text(
+    child: SelectableText(
       label,
       style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w900),
     ),
