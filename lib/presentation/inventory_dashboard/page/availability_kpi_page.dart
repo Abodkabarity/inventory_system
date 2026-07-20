@@ -7,6 +7,7 @@ import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/availability_branch_report_excel_exporter.dart';
 import '../../../core/utils/availability_kpi_excel_exporter.dart';
 import '../../../data/datasources/remote/availability_kpi_remote_ds.dart';
 
@@ -38,6 +39,7 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
   String _error = '';
   int _totalRows = 0;
   int _requestSerial = 0;
+  int _activeReportTab = 0;
   late String _stockDate;
 
   @override
@@ -75,6 +77,7 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
 
   Future<void> _loadDashboard() async {
     final serial = ++_requestSerial;
+    _remote.invalidatePurchaseStatuses();
     setState(() {
       _loadingSummary = true;
       _loadingItems = true;
@@ -181,43 +184,43 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
     required int serial,
     required List<String> branches,
   }) async {
-    const concurrentLoads = 4;
-    for (var start = 0; start < branches.length; start += concurrentLoads) {
+    if (branches.isEmpty || !mounted || serial != _requestSerial) return;
+    setState(() => _loadingSummaryBranches.addAll(branches));
+    const batchSize = 4;
+    for (var start = 0; start < branches.length; start += batchSize) {
       if (!mounted || serial != _requestSerial) return;
-      final end = math.min(start + concurrentLoads, branches.length);
+      final end = math.min(start + batchSize, branches.length);
       final batch = branches.sublist(start, end);
-      setState(() => _loadingSummaryBranches.addAll(batch));
-      final loaded = await Future.wait(
-        batch.map((branch) async {
-          try {
-            final data = await _remote.fetchBranchData(
-              runDate: _stockDate,
-              branch: branch,
-            );
-            return MapEntry(branch, data);
-          } catch (_) {
-            return null;
+      try {
+        final loaded = await _remote.fetchBranchSummaries(
+          runDate: _stockDate,
+          branches: batch,
+        );
+        if (!mounted || serial != _requestSerial) return;
+        setState(() {
+          _loadingSummaryBranches.removeAll(batch);
+          for (final entry in loaded.entries) {
+            _cacheBranchSummary(entry.key, entry.value);
           }
-        }),
-      );
-      if (!mounted || serial != _requestSerial) return;
-      setState(() {
-        _loadingSummaryBranches.removeAll(batch);
-        for (final entry
-            in loaded.whereType<MapEntry<String, AvailabilityBranchData>>()) {
-          _cacheBranchData(entry.key, entry.value);
-        }
-      });
+        });
+      } catch (_) {
+        if (!mounted || serial != _requestSerial) return;
+        setState(() => _loadingSummaryBranches.removeAll(batch));
+      }
     }
   }
 
   void _cacheBranchData(String branch, AvailabilityBranchData data) {
     _branchData[branch] = data;
+    _cacheBranchSummary(branch, data.summary);
+  }
+
+  void _cacheBranchSummary(String branch, AvailabilityBranchSummary summary) {
     _loadedSummaryBranches.add(branch);
     final index = _summaries.indexWhere((entry) => entry.branchName == branch);
     if (index < 0) return;
     final updated = List<AvailabilityBranchSummary>.from(_summaries);
-    updated[index] = data.summary;
+    updated[index] = summary;
     _summaries = updated;
   }
 
@@ -232,14 +235,14 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
           final matchesSearch =
               query.isEmpty ||
               item.itemCode.toLowerCase().contains(query) ||
-              item.itemName.toLowerCase().contains(query);
+              item.itemName.toLowerCase().contains(query) ||
+              item.statusName.toLowerCase().contains(query);
           final matchesSource = switch (_source) {
             'pareto' => item.inPareto,
             'consistent' => item.inConsistent && !item.inPareto,
             _ => true,
           };
-          final matchesShortage =
-              !_onlyShortage || item.branchStock < item.weeklyNeed;
+          final matchesShortage = !_onlyShortage || item.stockShortage > 0;
           return matchesSearch && matchesSource && matchesShortage;
         })
         .toList(growable: false);
@@ -261,7 +264,7 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
 
   void _onSearchChanged(String _) {
     _searchDebounce?.cancel();
-    _searchDebounce = Timer(const Duration(milliseconds: 450), () {
+    _searchDebounce = Timer(const Duration(milliseconds: 160), () {
       if (!mounted) return;
       _loadItems();
     });
@@ -297,7 +300,30 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
                     ],
                     const _MethodCard(),
                     const SizedBox(height: 18),
-                    if (_loadingSummary && _summaries.isEmpty)
+                    _AvailabilityReportTabs(
+                      selectedIndex: _activeReportTab,
+                      onChanged: (index) =>
+                          setState(() => _activeReportTab = index),
+                    ),
+                    const SizedBox(height: 18),
+                    if (_activeReportTab == 1)
+                      _BranchReport(
+                        stockDate: _stockDate,
+                        summaries: _summaries
+                            .where(
+                              (summary) => _loadedSummaryBranches.contains(
+                                summary.branchName,
+                              ),
+                            )
+                            .toList(growable: false),
+                        totalBranches: _summaries.length,
+                        loading: _loadingSummaryBranches.isNotEmpty,
+                        onOpenBranch: (branch) {
+                          setState(() => _activeReportTab = 0);
+                          _selectBranch(branch);
+                        },
+                      )
+                    else if (_loadingSummary && _summaries.isEmpty)
                       const _LoadingCard(label: 'Loading branch item list…')
                     else if (_summaries.isEmpty)
                       const _EmptyCard(
@@ -517,7 +543,7 @@ class _MethodCard extends StatelessWidget {
             number: '1',
             title: 'Top sellers',
             detail:
-                'Items that make up 80% of branch sales in the last 3 completed months',
+                'Items that make up 60% of branch sales in the last 3 completed months',
           ),
           const Icon(Icons.add_rounded, color: Color(0xff2563EB)),
           const _MethodStep(
@@ -592,7 +618,7 @@ Future<void> _showCalculationDialog(BuildContext context) {
                 number: '1',
                 title: 'Items Included',
                 detail:
-                    'An item is included when it is a top seller in the group that makes 80% of branch sales value during the last 3 completed months, or when it was sold in at least 80% of the months studied. Only Normal Purchase items are included.',
+                    'An item is included when it is a top seller in the group that makes 60% of branch sales value during the last 3 completed months, or when it was sold in at least 80% of the months studied. Only Normal Purchase items are included.',
               ),
               const _CalculationRow(
                 number: '2',
@@ -605,7 +631,7 @@ Future<void> _showCalculationDialog(BuildContext context) {
                 number: '3',
                 title: 'Item Coverage',
                 detail:
-                    'Current branch stock is branch_stock plus total_final_reorder_today from daily_order. This total is divided by the stock needed for 7 days. Coverage cannot be more than 100%. A difference of 0.25 units or less is ignored. Example: stock 4 and need 5 gives 80% coverage.',
+                    'Current branch stock is branch_stock plus total_final_reorder_today from daily_order. This total is divided by the stock needed for 7 days. Purchase Status IDs 1, 2, 5, 7, 8 and 34 are treated as 100% covered. Otherwise, coverage cannot be more than 100%, and a difference of 0.25 units or less is ignored.',
                 formula: 'Current stock ÷ 7-day need',
               ),
               const _CalculationRow(
@@ -1265,7 +1291,7 @@ class _Filters extends StatelessWidget {
                 ),
                 DropdownMenuItem(
                   value: 'pareto',
-                  child: Text('Top seller — 80% of branch sales value'),
+                  child: Text('Top seller — 60% of branch sales value'),
                 ),
                 DropdownMenuItem(
                   value: 'consistent',
@@ -1299,6 +1325,834 @@ class _Filters extends StatelessWidget {
       ),
     );
   }
+}
+
+class _AvailabilityReportTabs extends StatelessWidget {
+  final int selectedIndex;
+  final ValueChanged<int> onChanged;
+
+  const _AvailabilityReportTabs({
+    required this.selectedIndex,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: const Color(0xffE8EEF5),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _ReportTabButton(
+              selected: selectedIndex == 0,
+              icon: Icons.inventory_2_outlined,
+              label: 'Item Details',
+              onTap: () => onChanged(0),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: _ReportTabButton(
+              selected: selectedIndex == 1,
+              icon: Icons.analytics_outlined,
+              label: 'Branch Report',
+              onTap: () => onChanged(1),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReportTabButton extends StatelessWidget {
+  final bool selected;
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _ReportTabButton({
+    required this.selected,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? Colors.white : Colors.transparent,
+      borderRadius: BorderRadius.circular(11),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(11),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(11),
+            border: selected
+                ? Border.all(
+                    color: AppColors.primaryColor.withValues(alpha: .3),
+                  )
+                : null,
+            boxShadow: selected
+                ? const [
+                    BoxShadow(
+                      color: Color(0x140F172A),
+                      blurRadius: 10,
+                      offset: Offset(0, 3),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: selected
+                    ? AppColors.primaryColor
+                    : const Color(0xff64748B),
+              ),
+              const SizedBox(width: 9),
+              Text(
+                label,
+                style: TextStyle(
+                  color: selected
+                      ? AppColors.secondaryColor
+                      : const Color(0xff64748B),
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BranchReport extends StatefulWidget {
+  final String stockDate;
+  final List<AvailabilityBranchSummary> summaries;
+  final int totalBranches;
+  final bool loading;
+  final ValueChanged<String> onOpenBranch;
+
+  const _BranchReport({
+    required this.stockDate,
+    required this.summaries,
+    required this.totalBranches,
+    required this.loading,
+    required this.onOpenBranch,
+  });
+
+  @override
+  State<_BranchReport> createState() => _BranchReportState();
+}
+
+class _BranchReportState extends State<_BranchReport> {
+  final _searchController = TextEditingController();
+  late final _BranchReportGridSource _source;
+  String _band = 'all';
+  bool _exporting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _source = _BranchReportGridSource(
+      const [],
+      onOpenBranch: widget.onOpenBranch,
+    );
+    _applyReportFilters();
+  }
+
+  @override
+  void didUpdateWidget(covariant _BranchReport oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.summaries, widget.summaries)) {
+      _applyReportFilters();
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _applyReportFilters() {
+    final query = _searchController.text.trim().toLowerCase();
+    final filtered =
+        widget.summaries
+            .where((summary) {
+              final matchesSearch =
+                  query.isEmpty ||
+                  summary.branchName.toLowerCase().contains(query);
+              final matchesBand = switch (_band) {
+                'at_least_97' => summary.availabilityRate >= 97,
+                'below_97' => summary.availabilityRate < 97,
+                'below_95' => summary.availabilityRate < 95,
+                'below_90' => summary.availabilityRate < 90,
+                _ => true,
+              };
+              return matchesSearch && matchesBand;
+            })
+            .toList(growable: false)
+          ..sort((a, b) {
+            final rate = b.availabilityRate.compareTo(a.availabilityRate);
+            return rate != 0 ? rate : a.branchName.compareTo(b.branchName);
+          });
+    _source.update(filtered);
+  }
+
+  Future<void> _export() async {
+    final visible = _source.visibleSummaries;
+    if (visible.isEmpty || _exporting) return;
+    setState(() => _exporting = true);
+    try {
+      await WidgetsBinding.instance.endOfFrame;
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      await AvailabilityBranchReportExcelExporter.export(
+        stockDate: widget.stockDate,
+        branches: visible,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${visible.length} filtered branches exported.'),
+          backgroundColor: const Color(0xff059669),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Branch report export failed: $error'),
+          backgroundColor: const Color(0xffDC2626),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final loaded = widget.summaries.length;
+    final atLeast97 = widget.summaries
+        .where((summary) => summary.availabilityRate >= 97)
+        .length;
+    final below97 = loaded - atLeast97;
+    final below90 = widget.summaries
+        .where((summary) => summary.availabilityRate < 90)
+        .length;
+    final average = loaded == 0
+        ? 0
+        : widget.summaries.fold<num>(
+                0,
+                (sum, summary) => sum + summary.availabilityRate,
+              ) /
+              loaded;
+    final visibleRows = _source.visibleSummaries.length;
+
+    return Column(
+      children: [
+        Wrap(
+          spacing: 14,
+          runSpacing: 14,
+          children: [
+            _BranchMetricCard(
+              label: 'Average Availability',
+              value: '${_fmt(average)}%',
+              detail: '$loaded of ${widget.totalBranches} branches loaded',
+              icon: Icons.speed_rounded,
+              color: AppColors.primaryColor,
+            ),
+            _BranchMetricCard(
+              label: '97% and Above',
+              value: '$atLeast97',
+              detail: loaded == 0
+                  ? '0% of loaded branches'
+                  : '${_fmt(atLeast97 / loaded * 100)}% of loaded branches',
+              icon: Icons.verified_rounded,
+              color: const Color(0xff059669),
+            ),
+            _BranchMetricCard(
+              label: 'Below 97%',
+              value: '$below97',
+              detail: loaded == 0
+                  ? '0% of loaded branches'
+                  : '${_fmt(below97 / loaded * 100)}% of loaded branches',
+              icon: Icons.trending_down_rounded,
+              color: const Color(0xffD97706),
+            ),
+            _BranchMetricCard(
+              label: 'Below 90%',
+              value: '$below90',
+              detail: 'Branches needing immediate attention',
+              icon: Icons.warning_amber_rounded,
+              color: const Color(0xffDC2626),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Container(
+          decoration: _cardDecoration(),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            children: [
+              Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(18, 14, 14, 14),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      border: Border(
+                        bottom: BorderSide(color: AppColors.border),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.account_tree_outlined,
+                              color: AppColors.primaryColor,
+                            ),
+                            const SizedBox(width: 10),
+                            const Expanded(
+                              child: SelectableText(
+                                'Branch Availability Report',
+                                style: TextStyle(
+                                  color: Color(0xff0F172A),
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            SelectableText(
+                              '$visibleRows of $loaded loaded branches',
+                              style: const TextStyle(
+                                color: Color(0xff64748B),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            OutlinedButton.icon(
+                              onPressed: () {
+                                _source.clearAllFilters();
+                                setState(() {});
+                              },
+                              icon: const Icon(
+                                Icons.filter_alt_off_outlined,
+                                size: 18,
+                              ),
+                              label: const Text('Clear column filters'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.primaryColor,
+                                side: const BorderSide(
+                                  color: AppColors.primaryColor,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            FilledButton.icon(
+                              onPressed: visibleRows == 0 || _exporting
+                                  ? null
+                                  : _export,
+                              icon: _exporting
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.file_download_outlined,
+                                      size: 19,
+                                    ),
+                              label: Text(
+                                _exporting ? 'Exporting...' : 'Export Excel',
+                              ),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xff059669),
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            SizedBox(
+                              width: 330,
+                              child: TextField(
+                                controller: _searchController,
+                                onChanged: (_) => setState(_applyReportFilters),
+                                decoration: InputDecoration(
+                                  hintText: 'Search branch...',
+                                  prefixIcon: const Icon(Icons.search_rounded),
+                                  isDense: true,
+                                  filled: true,
+                                  fillColor: const Color(0xffF8FAFC),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: const BorderSide(
+                                      color: AppColors.border,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            _BranchBandChip(
+                              label: 'All',
+                              selected: _band == 'all',
+                              onSelected: () => _setBand('all'),
+                            ),
+                            _BranchBandChip(
+                              label: '97% and Above',
+                              selected: _band == 'at_least_97',
+                              onSelected: () => _setBand('at_least_97'),
+                            ),
+                            _BranchBandChip(
+                              label: 'Below 97%',
+                              selected: _band == 'below_97',
+                              onSelected: () => _setBand('below_97'),
+                            ),
+                            _BranchBandChip(
+                              label: 'Below 95%',
+                              selected: _band == 'below_95',
+                              onSelected: () => _setBand('below_95'),
+                            ),
+                            _BranchBandChip(
+                              label: 'Below 90%',
+                              selected: _band == 'below_90',
+                              onSelected: () => _setBand('below_90'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (widget.loading)
+                    LinearProgressIndicator(
+                      minHeight: 4,
+                      color: AppColors.primaryColor,
+                      backgroundColor: AppColors.primaryColor.withValues(
+                        alpha: .1,
+                      ),
+                    ),
+                  SizedBox(
+                    height: 650,
+                    child: Theme(
+                      data: Theme.of(context).copyWith(
+                        colorScheme: Theme.of(context).colorScheme.copyWith(
+                          primary: AppColors.primaryColor,
+                          secondary: AppColors.primaryColor,
+                        ),
+                      ),
+                      child: SfDataGridTheme(
+                        data: SfDataGridThemeData(
+                          headerColor: const Color(0xffCFE4EC),
+                          gridLineColor: const Color(0xffC4D0DA),
+                          selectionColor: AppColors.primaryColor.withValues(
+                            alpha: .1,
+                          ),
+                          rowHoverColor: AppColors.rowHover,
+                          sortIconColor: AppColors.secondaryColor,
+                          filterIconColor: AppColors.secondaryColor,
+                          filterIconHoverColor: AppColors.primaryColor,
+                        ),
+                        child: SfDataGrid(
+                          source: _source,
+                          allowFiltering: true,
+                          allowSorting: true,
+                          allowMultiColumnSorting: true,
+                          allowTriStateSorting: true,
+                          allowColumnsResizing: true,
+                          columnResizeMode: ColumnResizeMode.onResize,
+                          gridLinesVisibility: GridLinesVisibility.both,
+                          headerGridLinesVisibility:
+                              GridLinesVisibility.vertical,
+                          columnWidthMode: ColumnWidthMode.none,
+                          rowHeight: 58,
+                          headerRowHeight: 70,
+                          selectionMode: SelectionMode.single,
+                          navigationMode: GridNavigationMode.cell,
+                          onFilterChanged: (_) => setState(() {}),
+                          onColumnSortChanged: (_, _) => setState(() {}),
+                          columns: _branchReportColumns,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (_exporting)
+                Positioned.fill(
+                  child: _ExportLoadingOverlay(rowCount: visibleRows),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _setBand(String value) {
+    setState(() {
+      _band = value;
+      _applyReportFilters();
+    });
+  }
+}
+
+class _BranchMetricCard extends StatelessWidget {
+  final String label;
+  final String value;
+  final String detail;
+  final IconData icon;
+  final Color color;
+
+  const _BranchMetricCard({
+    required this.label,
+    required this.value,
+    required this.detail,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 315,
+      padding: const EdgeInsets.all(18),
+      decoration: _cardDecoration(),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: .1),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: color),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SelectableText(
+                  label,
+                  style: const TextStyle(
+                    color: Color(0xff64748B),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                SelectableText(
+                  value,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 25,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SelectableText(
+                  detail,
+                  maxLines: 2,
+                  style: const TextStyle(
+                    color: Color(0xff94A3B8),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BranchBandChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  const _BranchBandChip({
+    required this.label,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return FilterChip(
+      selected: selected,
+      onSelected: (_) => onSelected(),
+      label: Text(label),
+      labelStyle: TextStyle(
+        color: selected ? Colors.white : AppColors.secondaryColor,
+        fontWeight: FontWeight.w800,
+      ),
+      selectedColor: AppColors.primaryColor,
+      backgroundColor: Colors.white,
+      side: const BorderSide(color: AppColors.border),
+      showCheckmark: false,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+    );
+  }
+}
+
+final List<GridColumn> _branchReportColumns = [
+  _availabilityColumn('branch', 'Branch', 260, alignLeft: true),
+  _availabilityColumn('availability', 'Availability\nRate', 185),
+  _availabilityColumn('performance', 'Performance\nBand', 185),
+  _availabilityColumn('items', 'KPI\nItems', 145),
+  _availabilityColumn('covered', 'Fully Covered\nItems', 185),
+  _availabilityColumn('below_need', 'Below 7-Day\nNeed', 185),
+  _availabilityColumn('top_sellers', 'Top Seller\nItems', 175),
+  _availabilityColumn('regular', 'Regular Seller\nItems', 185),
+  _availabilityColumn('weekly_need', 'Total 7-Day\nNeed', 180),
+  _availabilityColumn('stock', 'Current Branch\nStock', 195),
+  _availabilityColumn('missing', 'Units\nMissing', 165),
+];
+
+class _BranchReportGridSource extends DataGridSource {
+  final ValueChanged<String> onOpenBranch;
+  List<DataGridRow> _rows = const [];
+  final Map<DataGridRow, AvailabilityBranchSummary> _summaryByRow = {};
+  final Map<DataGridRow, int> _indexByRow = {};
+
+  _BranchReportGridSource(
+    List<AvailabilityBranchSummary> summaries, {
+    required this.onOpenBranch,
+  }) {
+    update(summaries);
+  }
+
+  void update(List<AvailabilityBranchSummary> summaries) {
+    _summaryByRow.clear();
+    _indexByRow.clear();
+    _rows = summaries
+        .asMap()
+        .entries
+        .map((entry) {
+          final summary = entry.value;
+          final row = DataGridRow(
+            cells: [
+              DataGridCell<String>(
+                columnName: 'branch',
+                value: summary.branchName,
+              ),
+              DataGridCell<num>(
+                columnName: 'availability',
+                value: summary.availabilityRate,
+              ),
+              DataGridCell<String>(
+                columnName: 'performance',
+                value: _branchPerformanceBand(summary.availabilityRate),
+              ),
+              DataGridCell<int>(
+                columnName: 'items',
+                value: summary.masterItems,
+              ),
+              DataGridCell<int>(
+                columnName: 'covered',
+                value: summary.fullyAvailableItems,
+              ),
+              DataGridCell<int>(
+                columnName: 'below_need',
+                value: summary.shortageItems,
+              ),
+              DataGridCell<int>(
+                columnName: 'top_sellers',
+                value: summary.paretoItems,
+              ),
+              DataGridCell<int>(
+                columnName: 'regular',
+                value: summary.consistentItems,
+              ),
+              DataGridCell<num>(
+                columnName: 'weekly_need',
+                value: summary.weeklyNeed,
+              ),
+              DataGridCell<num>(
+                columnName: 'stock',
+                value: summary.branchStock,
+              ),
+              DataGridCell<num>(
+                columnName: 'missing',
+                value: summary.stockShortage,
+              ),
+            ],
+          );
+          _summaryByRow[row] = summary;
+          _indexByRow[row] = entry.key;
+          return row;
+        })
+        .toList(growable: false);
+    notifyListeners();
+  }
+
+  void clearAllFilters() => clearFilters();
+
+  List<AvailabilityBranchSummary> get visibleSummaries => effectiveRows
+      .map((row) => _summaryByRow[row])
+      .whereType<AvailabilityBranchSummary>()
+      .toList(growable: false);
+
+  @override
+  List<DataGridRow> get rows => _rows;
+
+  @override
+  DataGridRowAdapter buildRow(DataGridRow row) {
+    final summary = _summaryByRow[row]!;
+    final rowColor = (_indexByRow[row] ?? 0).isOdd
+        ? const Color(0xffFAFCFD)
+        : Colors.white;
+    return DataGridRowAdapter(
+      color: rowColor,
+      cells: row
+          .getCells()
+          .map((cell) {
+            late final Widget child;
+            switch (cell.columnName) {
+              case 'branch':
+                child = InkWell(
+                  onTap: () => onOpenBranch(summary.branchName),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.storefront_outlined,
+                        size: 18,
+                        color: AppColors.primaryColor,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: SelectableText(
+                          summary.branchName,
+                          maxLines: 2,
+                          style: const TextStyle(
+                            color: AppColors.secondaryColor,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      const Icon(
+                        Icons.open_in_new_rounded,
+                        size: 15,
+                        color: Color(0xff94A3B8),
+                      ),
+                    ],
+                  ),
+                );
+                break;
+              case 'availability':
+                final color = _rateColor(summary.availabilityRate);
+                child = Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SelectableText(
+                      '${_fmt(summary.availabilityRate)}%',
+                      style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(width: 9),
+                    SizedBox(
+                      width: 58,
+                      child: LinearProgressIndicator(
+                        minHeight: 5,
+                        value: (summary.availabilityRate / 100)
+                            .clamp(0, 1)
+                            .toDouble(),
+                        color: color,
+                        backgroundColor: color.withValues(alpha: .12),
+                      ),
+                    ),
+                  ],
+                );
+                break;
+              case 'performance':
+                final color = _rateColor(summary.availabilityRate);
+                child = Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: .09),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: color.withValues(alpha: .25)),
+                  ),
+                  child: SelectableText(
+                    _branchPerformanceBand(summary.availabilityRate),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                );
+                break;
+              case 'missing':
+                child = SelectableText(
+                  _fmt(summary.stockShortage),
+                  style: TextStyle(
+                    color: summary.stockShortage > 0
+                        ? const Color(0xffDC2626)
+                        : const Color(0xff059669),
+                    fontWeight: FontWeight.w900,
+                  ),
+                );
+                break;
+              default:
+                child = SelectableText(
+                  cell.value is num ? _fmt(cell.value as num) : '${cell.value}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xff0F172A),
+                    fontWeight: FontWeight.w700,
+                  ),
+                );
+            }
+            return Container(
+              alignment: cell.columnName == 'branch'
+                  ? Alignment.centerLeft
+                  : Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              child: child,
+            );
+          })
+          .toList(growable: false),
+    );
+  }
+}
+
+String _branchPerformanceBand(num rate) {
+  if (rate >= 97) return '97% and Above';
+  if (rate >= 95) return '95% to 96.9%';
+  if (rate >= 90) return '90% to 94.9%';
+  return 'Below 90%';
 }
 
 class _MasterTable extends StatefulWidget {
@@ -1639,6 +2493,7 @@ List<GridColumn> _availabilityColumns(int lastStudyMonth) => [
   _availabilityColumn('item_code', 'Item Code', 175),
   _availabilityColumn('item_name', 'Item Name', 340),
   _availabilityColumn('selection', 'Selection Reason', 235),
+  _availabilityColumn('status', 'Status', 220),
   _availabilityColumn('sales', '3-Month\nUnits Sold', 190),
   _availabilityColumn('retail', 'Retail\nPrice', 165),
   _availabilityColumn('sales_value', 'Retail Sales\nValue', 190),
@@ -1648,6 +2503,7 @@ List<GridColumn> _availabilityColumns(int lastStudyMonth) => [
   _availabilityColumn('weekly_need', '7-Day\nNeed', 170),
   _availabilityColumn('stock', 'Branch\nStock', 170),
   _availabilityColumn('shortage', 'Units\nMissing', 165),
+  _availabilityColumn('extra_qty', 'Extra Qty\n> 1 Month', 185),
   _availabilityColumn('coverage', '7-Day\nCoverage', 185),
 ];
 
@@ -1738,6 +2594,10 @@ class _AvailabilityKpiGridSource extends DataGridSource {
                 columnName: 'selection',
                 value: _selectionLabel(item),
               ),
+              DataGridCell<String>(
+                columnName: 'status',
+                value: item.statusName,
+              ),
               DataGridCell<num>(columnName: 'sales', value: item.recentSales),
               DataGridCell<num>(columnName: 'retail', value: item.retail),
               DataGridCell<num>(
@@ -1764,6 +2624,12 @@ class _AvailabilityKpiGridSource extends DataGridSource {
               DataGridCell<num>(
                 columnName: 'shortage',
                 value: item.stockShortage,
+              ),
+              DataGridCell<num?>(
+                columnName: 'extra_qty',
+                value: item.availabilityRate < 100
+                    ? item.extraQtyMoreThanMonth
+                    : null,
               ),
               DataGridCell<num>(
                 columnName: 'coverage',
@@ -1834,6 +2700,38 @@ class _AvailabilityKpiGridSource extends DataGridSource {
               case 'selection':
                 child = _SourceBadge(item: item);
                 break;
+              case 'status':
+                final hasStatus = item.statusName.isNotEmpty;
+                child = Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: item.isStatusCovered
+                        ? const Color(0xffECFDF5)
+                        : const Color(0xffF8FAFC),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: item.isStatusCovered
+                          ? const Color(0xffA7F3D0)
+                          : const Color(0xffCBD5E1),
+                    ),
+                  ),
+                  child: SelectableText(
+                    hasStatus ? item.statusName : '—',
+                    maxLines: 2,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: item.isStatusCovered
+                          ? const Color(0xff047857)
+                          : const Color(0xff64748B),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                );
+                break;
               case 'consistency':
                 child = _ConsistencyBadge(rate: item.monthConsistency);
                 break;
@@ -1858,6 +2756,29 @@ class _AvailabilityKpiGridSource extends DataGridSource {
                         ? const Color(0xffDC2626)
                         : const Color(0xff059669),
                     fontWeight: FontWeight.w900,
+                  ),
+                );
+                break;
+              case 'extra_qty':
+                final hasExtra = item.extraQtyMoreThanMonth > 0;
+                child = Tooltip(
+                  message: hasExtra
+                      ? 'Extra quantity found in daily order'
+                      : item.availabilityRate >= 100
+                      ? 'Item is already fully covered'
+                      : 'No extra quantity found',
+                  child: SelectableText(
+                    item.availabilityRate < 100
+                        ? hasExtra
+                              ? _fmt(item.extraQtyMoreThanMonth)
+                              : '0'
+                        : '—',
+                    style: TextStyle(
+                      color: hasExtra
+                          ? const Color(0xff0369A1)
+                          : const Color(0xff64748B),
+                      fontWeight: hasExtra ? FontWeight.w900 : FontWeight.w700,
+                    ),
                   ),
                 );
                 break;
@@ -1894,7 +2815,7 @@ class _AvailabilityKpiGridSource extends DataGridSource {
 
 String _selectionLabel(AvailabilityKpiItem item) {
   return item.inPareto
-      ? 'Top seller — 80% of branch sales value'
+      ? 'Top seller — 60% of branch sales value'
       : 'Sold regularly';
 }
 
@@ -1905,7 +2826,7 @@ class _SourceBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = item.inPareto ? 'Top seller • Branch 80%' : 'Sold regularly';
+    final label = item.inPareto ? 'Top seller • Branch 60%' : 'Sold regularly';
     final color = item.inPareto
         ? AppColors.primaryColor
         : const Color(0xff0F766E);
