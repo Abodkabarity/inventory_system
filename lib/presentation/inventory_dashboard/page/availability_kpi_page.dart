@@ -7,6 +7,7 @@ import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/availability_allocation_excel_exporter.dart';
 import '../../../core/utils/availability_branch_report_excel_exporter.dart';
 import '../../../core/utils/availability_kpi_excel_exporter.dart';
 import '../../../data/datasources/remote/availability_kpi_remote_ds.dart';
@@ -36,6 +37,10 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
   bool _onlyShortage = false;
   bool _loadingSummary = true;
   bool _loadingItems = false;
+  bool _exportingAllocation = false;
+  bool _loadingAllocationPreview = false;
+  bool _allocationPreviewActive = false;
+  Map<String, AvailabilityAllocationImpact> _allocationImpact = const {};
   String _error = '';
   int _totalRows = 0;
   int _requestSerial = 0;
@@ -69,10 +74,22 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
   AvailabilityBranchSummary? get _selectedSummary {
     final branch = _selectedBranch;
     if (branch == null || !_loadedSummaryBranches.contains(branch)) return null;
-    for (final summary in _summaries) {
+    for (final summary in _displaySummaries) {
       if (summary.branchName == branch) return summary;
     }
     return null;
+  }
+
+  List<AvailabilityBranchSummary> get _displaySummaries {
+    if (!_allocationPreviewActive) return _summaries;
+    return _summaries
+        .map((summary) {
+          final impact = _allocationImpact[summary.branchName];
+          return impact == null
+              ? summary
+              : summary.withAvailabilityRate(impact.projectedRate);
+        })
+        .toList(growable: false);
   }
 
   Future<void> _loadDashboard() async {
@@ -81,6 +98,9 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
     setState(() {
       _loadingSummary = true;
       _loadingItems = true;
+      _allocationPreviewActive = false;
+      _loadingAllocationPreview = false;
+      _allocationImpact = const {};
       _error = '';
     });
 
@@ -294,8 +314,110 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
     });
   }
 
+  Future<void> _exportAllocation() async {
+    if (_exportingAllocation) return;
+    setState(() => _exportingAllocation = true);
+    try {
+      final rows = await _remote.fetchAllocation(runDate: _stockDate);
+      if (!mounted) return;
+      final activeBranches = _summaries
+          .map((summary) => summary.branchName.trim())
+          .toSet();
+      final containsInactiveBranch = rows.any(
+        (row) =>
+            !activeBranches.contains(row.fromBranch.trim()) ||
+            !activeBranches.contains(row.toBranch.trim()),
+      );
+      if (containsInactiveBranch) {
+        throw StateError(
+          'The allocation cache contains a branch outside the active Availability list.',
+        );
+      }
+      if (rows.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No allocation is available: no matching Extra Qty was found for the current shortages.',
+            ),
+            backgroundColor: Color(0xffD97706),
+          ),
+        );
+        return;
+      }
+      await WidgetsBinding.instance.endOfFrame;
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      await AvailabilityAllocationExcelExporter.export(
+        stockDate: _stockDate,
+        rows: rows,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${rows.length} allocation transfers exported successfully.',
+          ),
+          backgroundColor: const Color(0xff059669),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Allocation export failed. Run availability_kpi_allocation.sql in Supabase, then retry. $error',
+          ),
+          backgroundColor: const Color(0xffDC2626),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _exportingAllocation = false);
+    }
+  }
+
+  Future<void> _toggleAllocationPreview() async {
+    if (_allocationPreviewActive) {
+      setState(() {
+        _allocationPreviewActive = false;
+        _allocationImpact = const {};
+      });
+      return;
+    }
+    if (_loadingAllocationPreview) return;
+    setState(() => _loadingAllocationPreview = true);
+    try {
+      final impact = await _remote.fetchAllocationImpact(runDate: _stockDate);
+      if (!mounted) return;
+      if (impact.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No allocation impact is available for this date.'),
+            backgroundColor: Color(0xffD97706),
+          ),
+        );
+        return;
+      }
+      setState(() {
+        _allocationImpact = impact;
+        _allocationPreviewActive = true;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Preview failed. Run the latest availability_kpi_allocation.sql in Supabase, then retry. $error',
+          ),
+          backgroundColor: const Color(0xffDC2626),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _loadingAllocationPreview = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final displaySummaries = _displaySummaries;
     return ColoredBox(
       color: const Color(0xffF4F7FB),
       child: Column(
@@ -304,6 +426,11 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
             runDate: _stockDate,
             branchCount: _summaries.length,
             loading: _loadingSummary || _loadingItems,
+            exportingAllocation: _exportingAllocation,
+            previewActive: _allocationPreviewActive,
+            loadingPreview: _loadingAllocationPreview,
+            onTogglePreview: _toggleAllocationPreview,
+            onExportAllocation: _exportAllocation,
             onRefresh: _loadDashboard,
           ),
           Expanded(
@@ -329,11 +456,18 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
                       onChanged: (index) =>
                           setState(() => _activeReportTab = index),
                     ),
+                    if (_allocationPreviewActive) ...[
+                      const SizedBox(height: 14),
+                      _AllocationPreviewBanner(
+                        impacts: _allocationImpact,
+                        onClose: _toggleAllocationPreview,
+                      ),
+                    ],
                     const SizedBox(height: 18),
                     if (_activeReportTab == 1)
                       _BranchReport(
                         stockDate: _stockDate,
-                        summaries: _summaries
+                        summaries: displaySummaries
                             .where(
                               (summary) => _loadedSummaryBranches.contains(
                                 summary.branchName,
@@ -359,14 +493,14 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
                     else ...[
                       if (compact)
                         _CompactBranchPicker(
-                          summaries: _summaries,
+                          summaries: displaySummaries,
                           loadedBranches: _loadedSummaryBranches,
                           selectedBranch: _selectedBranch,
                           onChanged: _selectBranch,
                         )
                       else
                         _BranchOverview(
-                          summaries: _summaries,
+                          summaries: displaySummaries,
                           loadedBranches: _loadedSummaryBranches,
                           loadingBranches: _loadingSummaryBranches,
                           selectedBranch: _selectedBranch,
@@ -413,16 +547,90 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
   }
 }
 
+class _AllocationPreviewBanner extends StatelessWidget {
+  final Map<String, AvailabilityAllocationImpact> impacts;
+  final VoidCallback onClose;
+
+  const _AllocationPreviewBanner({
+    required this.impacts,
+    required this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final improved = impacts.values.where((item) => item.rateChange > 0).length;
+    final incoming = impacts.values.fold<int>(
+      0,
+      (total, item) => total + item.incomingQty,
+    );
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+      decoration: BoxDecoration(
+        color: const Color(0xffFFF7ED),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xffFDBA74)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.science_outlined, color: Color(0xffC2410C)),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Allocation Preview',
+                  style: TextStyle(
+                    color: Color(0xff9A3412),
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Projected rates after all allocation arrives. Current stock is unchanged. '
+                  '$improved branches improve from $incoming incoming units.',
+                  style: const TextStyle(
+                    color: Color(0xff7C2D12),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton.icon(
+            onPressed: onClose,
+            icon: const Icon(Icons.close_rounded, size: 18),
+            label: const Text('Exit Preview'),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xff9A3412),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Header extends StatelessWidget {
   final String runDate;
   final int branchCount;
   final bool loading;
+  final bool exportingAllocation;
+  final bool previewActive;
+  final bool loadingPreview;
+  final VoidCallback onTogglePreview;
+  final VoidCallback onExportAllocation;
   final VoidCallback onRefresh;
 
   const _Header({
     required this.runDate,
     required this.branchCount,
     required this.loading,
+    required this.exportingAllocation,
+    required this.previewActive,
+    required this.loadingPreview,
+    required this.onTogglePreview,
+    required this.onExportAllocation,
     required this.onRefresh,
   });
 
@@ -480,6 +688,69 @@ class _Header extends StatelessWidget {
             ),
           ),
           _HeaderPill(label: 'Branches', value: '$branchCount'),
+          const SizedBox(width: 10),
+          FilledButton.icon(
+            onPressed: loading || loadingPreview ? null : onTogglePreview,
+            icon: loadingPreview
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.secondaryColor,
+                    ),
+                  )
+                : Icon(
+                    previewActive
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                  ),
+            label: Text(
+              loadingPreview
+                  ? 'Calculating Preview'
+                  : previewActive
+                  ? 'Exit Preview'
+                  : 'Preview Allocation',
+            ),
+            style: FilledButton.styleFrom(
+              backgroundColor: previewActive
+                  ? const Color(0xffFEF3C7)
+                  : Colors.white,
+              foregroundColor: previewActive
+                  ? const Color(0xff92400E)
+                  : AppColors.secondaryColor,
+              disabledBackgroundColor: Colors.white60,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 17),
+            ),
+          ),
+          const SizedBox(width: 10),
+          FilledButton.icon(
+            onPressed: loading || exportingAllocation
+                ? null
+                : onExportAllocation,
+            icon: exportingAllocation
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.secondaryColor,
+                    ),
+                  )
+                : const Icon(Icons.compare_arrows_rounded),
+            label: Text(
+              exportingAllocation
+                  ? 'Preparing Allocation'
+                  : 'Export Allocation',
+            ),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: AppColors.secondaryColor,
+              disabledBackgroundColor: Colors.white60,
+              disabledForegroundColor: AppColors.secondaryColor,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 17),
+            ),
+          ),
           const SizedBox(width: 10),
           FilledButton.icon(
             onPressed: loading ? null : onRefresh,
@@ -2037,10 +2308,15 @@ class _BranchReportGridSource extends DataGridSource {
 
   void clearAllFilters() => clearFilters();
 
-  List<AvailabilityBranchSummary> get visibleSummaries => effectiveRows
-      .map((row) => _summaryByRow[row])
-      .whereType<AvailabilityBranchSummary>()
-      .toList(growable: false);
+  List<AvailabilityBranchSummary> get visibleSummaries {
+    final visibleRows = effectiveRows.isEmpty && filterConditions.isEmpty
+        ? _rows
+        : effectiveRows;
+    return visibleRows
+        .map((row) => _summaryByRow[row])
+        .whereType<AvailabilityBranchSummary>()
+        .toList(growable: false);
+  }
 
   @override
   List<DataGridRow> get rows => _rows;
@@ -2671,10 +2947,15 @@ class _AvailabilityKpiGridSource extends DataGridSource {
 
   void clearAllFilters() => clearFilters();
 
-  List<AvailabilityKpiItem> get visibleItems => effectiveRows
-      .map((row) => _itemByRow[row])
-      .whereType<AvailabilityKpiItem>()
-      .toList(growable: false);
+  List<AvailabilityKpiItem> get visibleItems {
+    final visibleRows = effectiveRows.isEmpty && filterConditions.isEmpty
+        ? _rows
+        : effectiveRows;
+    return visibleRows
+        .map((row) => _itemByRow[row])
+        .whereType<AvailabilityKpiItem>()
+        .toList(growable: false);
+  }
 
   @override
   List<DataGridRow> get rows => _rows;

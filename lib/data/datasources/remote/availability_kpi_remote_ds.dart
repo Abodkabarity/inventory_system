@@ -62,6 +62,56 @@ branch_name,item_code,in_pareto,in_consistent,recent_sales,weekly_need
     return branches;
   }
 
+  Future<List<AvailabilityAllocationRow>> fetchAllocation({
+    required String runDate,
+  }) async {
+    final results = await Future.wait<dynamic>([
+      client.rpc(
+        'get_availability_allocation_v1',
+        params: {'p_run_date': runDate, 'p_force_refresh': false},
+      ),
+      client
+          .from('branches')
+          .select('branch_name,branch_group')
+          .eq('is_active', true),
+    ]);
+    final rows = List<Map<String, dynamic>>.from(
+      results[0] as List,
+    ).map(AvailabilityAllocationRow.fromMap).toList(growable: false);
+    final eligibleBranches = List<Map<String, dynamic>>.from(results[1] as List)
+        .where((row) => _text(row['branch_group']).toUpperCase() == 'APG')
+        .map((row) => _text(row['branch_name']))
+        .where((branch) => branch.isNotEmpty)
+        .toSet();
+    if (rows.any(
+      (row) =>
+          !eligibleBranches.contains(row.fromBranch) ||
+          !eligibleBranches.contains(row.toBranch),
+    )) {
+      throw StateError(
+        'The allocation cache contains a branch outside the active APG group.',
+      );
+    }
+    return rows;
+  }
+
+  Future<Map<String, AvailabilityAllocationImpact>> fetchAllocationImpact({
+    required String runDate,
+  }) async {
+    final response = await client.rpc(
+      'get_availability_allocation_impact_v1',
+      params: {'p_run_date': runDate},
+    );
+    final impacts = <String, AvailabilityAllocationImpact>{};
+    for (final row in List<Map<String, dynamic>>.from(response as List)) {
+      final impact = AvailabilityAllocationImpact.fromMap(row);
+      if (impact.branchName.isNotEmpty) {
+        impacts[impact.branchName] = impact;
+      }
+    }
+    return impacts;
+  }
+
   /// Loads two simple, indexed datasets and calculates the KPI locally.
   ///
   /// No database RPC, JOIN, GROUP BY, or window calculation is executed while
@@ -537,6 +587,64 @@ class AvailabilityBranchData {
   const AvailabilityBranchData({required this.summary, required this.items});
 }
 
+class AvailabilityAllocationRow {
+  final int order;
+  final String fromBranch;
+  final String itemCode;
+  final String itemName;
+  final int qty;
+  final String toBranch;
+
+  const AvailabilityAllocationRow({
+    required this.order,
+    required this.fromBranch,
+    required this.itemCode,
+    required this.itemName,
+    required this.qty,
+    required this.toBranch,
+  });
+
+  factory AvailabilityAllocationRow.fromMap(Map<String, dynamic> map) {
+    return AvailabilityAllocationRow(
+      order: _integer(map['allocation_order']),
+      fromBranch: _text(map['from_branch']),
+      itemCode: _text(map['item_code']),
+      itemName: _text(map['item_name']),
+      qty: _integer(map['qty']),
+      toBranch: _text(map['to_branch']),
+    );
+  }
+}
+
+class AvailabilityAllocationImpact {
+  final String branchName;
+  final num currentRate;
+  final num projectedRate;
+  final num rateChange;
+  final int incomingQty;
+  final int outgoingQty;
+
+  const AvailabilityAllocationImpact({
+    required this.branchName,
+    required this.currentRate,
+    required this.projectedRate,
+    required this.rateChange,
+    required this.incomingQty,
+    required this.outgoingQty,
+  });
+
+  factory AvailabilityAllocationImpact.fromMap(Map<String, dynamic> map) {
+    return AvailabilityAllocationImpact(
+      branchName: _text(map['branch_name']),
+      currentRate: _number(map['current_rate']),
+      projectedRate: _number(map['projected_rate']),
+      rateChange: _number(map['rate_change']),
+      incomingQty: _integer(map['incoming_qty']),
+      outgoingQty: _integer(map['outgoing_qty']),
+    );
+  }
+}
+
 class AvailabilityBranchSummary {
   final String branchName;
   final int masterItems;
@@ -619,6 +727,22 @@ class AvailabilityBranchSummary {
       coveredWeeklyNeed: coveredNeed,
       stockShortage: math.max(weeklyNeed - coveredNeed, 0),
       availabilityRate: availability,
+    );
+  }
+
+  AvailabilityBranchSummary withAvailabilityRate(num value) {
+    return AvailabilityBranchSummary(
+      branchName: branchName,
+      masterItems: masterItems,
+      fullyAvailableItems: fullyAvailableItems,
+      shortageItems: shortageItems,
+      paretoItems: paretoItems,
+      consistentItems: consistentItems,
+      weeklyNeed: weeklyNeed,
+      branchStock: branchStock,
+      coveredWeeklyNeed: coveredWeeklyNeed,
+      stockShortage: stockShortage,
+      availabilityRate: value,
     );
   }
 }
