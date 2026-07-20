@@ -42,7 +42,6 @@ class AvailabilityKpiExcelExporter {
       'Item Code',
       'Item Name',
       'Selection Reason',
-      'Status',
       '3-Month Units Sold',
       'Retail Price',
       'Retail Sales Value',
@@ -55,6 +54,7 @@ class AvailabilityKpiExcelExporter {
       'Units Missing',
       'Extra Qty > 1 Month',
       '7-Day Coverage %',
+      'Purchase Status',
     ];
     sheet.getRangeByIndex(1, 1, 3, headers.length).cellStyle
       ..hAlign = xlsio.HAlignType.center
@@ -83,7 +83,6 @@ class AvailabilityKpiExcelExporter {
         item.itemCode,
         item.itemName,
         _selectionReason(item),
-        item.statusName,
         item.recentSales,
         item.retail,
         item.recentSalesValue,
@@ -96,6 +95,7 @@ class AvailabilityKpiExcelExporter {
         item.stockShortage,
         item.availabilityRate < 100 ? item.extraQtyMoreThanMonth : '',
         item.availabilityRate,
+        item.availabilityRate < 100 ? item.statusName : '',
       ];
       for (var column = 1; column <= values.length; column++) {
         final cell = sheet.getRangeByIndex(row, column);
@@ -115,16 +115,16 @@ class AvailabilityKpiExcelExporter {
       }
       sheet.getRangeByIndex(row, 3).cellStyle.hAlign = xlsio.HAlignType.left;
       if (item.stockShortage > 0) {
-        sheet.getRangeByIndex(row, 15).cellStyle
+        sheet.getRangeByIndex(row, 14).cellStyle
           ..fontColor = '#DC2626'
           ..bold = true;
       }
       if (item.availabilityRate < 100 && item.extraQtyMoreThanMonth > 0) {
-        sheet.getRangeByIndex(row, 16).cellStyle
+        sheet.getRangeByIndex(row, 15).cellStyle
           ..fontColor = '#0369A1'
           ..bold = true;
       }
-      sheet.getRangeByIndex(row, 17).cellStyle
+      sheet.getRangeByIndex(row, 16).cellStyle
         ..fontColor = item.availabilityRate >= 95
             ? '#059669'
             : item.availabilityRate >= 80
@@ -137,10 +137,10 @@ class AvailabilityKpiExcelExporter {
     sheet.getRangeByIndex(1, 2).columnWidth = 18;
     sheet.getRangeByIndex(1, 3).columnWidth = 46;
     sheet.getRangeByIndex(1, 4).columnWidth = 28;
-    sheet.getRangeByIndex(1, 5).columnWidth = 28;
-    for (var column = 6; column <= headers.length; column++) {
+    for (var column = 5; column <= headers.length; column++) {
       sheet.getRangeByIndex(1, column).columnWidth = 18;
     }
+    sheet.getRangeByIndex(1, 17).columnWidth = 28;
     if (items.isNotEmpty) {
       sheet.autoFilters.filterRange = sheet.getRangeByIndex(
         headerRow,

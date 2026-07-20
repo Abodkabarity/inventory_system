@@ -126,6 +126,57 @@ branch_name,item_code,in_pareto,in_consistent,recent_sales,weekly_need
     return summaries;
   }
 
+  /// Uses the server-side aggregate and transfers only one row per branch.
+  Future<Map<String, AvailabilityBranchSummary>> fetchAllBranchSummariesFast({
+    required String runDate,
+  }) async {
+    try {
+      final cachedResponse = await client
+          .from('availability_branch_summary_cache_v2')
+          .select('''
+branch_name,master_items,fully_available_items,shortage_items,pareto_items,
+consistent_items,weekly_need,branch_stock,covered_weekly_need,stock_shortage,
+availability_rate
+''')
+          .eq('run_date', runDate)
+          .order('branch_name');
+      final cached = _parseBranchSummaries(cachedResponse);
+      if (cached.isNotEmpty) return cached;
+    } catch (_) {
+      // The cache migration may not be installed yet. Try the direct RPC.
+    }
+
+    final response = await client.rpc(
+      'get_availability_branch_summaries_v2',
+      params: {'p_run_date': runDate},
+    );
+    return _parseBranchSummaries(response);
+  }
+
+  Map<String, AvailabilityBranchSummary> _parseBranchSummaries(
+    dynamic response,
+  ) {
+    final summaries = <String, AvailabilityBranchSummary>{};
+    for (final row in List<Map<String, dynamic>>.from(response as List)) {
+      final branch = _text(row['branch_name']);
+      if (branch.isEmpty) continue;
+      summaries[branch] = AvailabilityBranchSummary(
+        branchName: branch,
+        masterItems: _integer(row['master_items']),
+        fullyAvailableItems: _integer(row['fully_available_items']),
+        shortageItems: _integer(row['shortage_items']),
+        paretoItems: _integer(row['pareto_items']),
+        consistentItems: _integer(row['consistent_items']),
+        weeklyNeed: _number(row['weekly_need']),
+        branchStock: _number(row['branch_stock']),
+        coveredWeeklyNeed: _number(row['covered_weekly_need']),
+        stockShortage: _number(row['stock_shortage']),
+        availabilityRate: _number(row['availability_rate']),
+      );
+    }
+    return summaries;
+  }
+
   AvailabilityBranchSummary _buildBranchSummary({
     required String branch,
     required List<Map<String, dynamic>> masterRows,

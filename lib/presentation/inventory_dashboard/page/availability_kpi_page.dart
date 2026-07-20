@@ -186,6 +186,30 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
   }) async {
     if (branches.isEmpty || !mounted || serial != _requestSerial) return;
     setState(() => _loadingSummaryBranches.addAll(branches));
+
+    // Preferred path: PostgreSQL returns one already-calculated row per
+    // branch. Both report tabs reuse this same in-memory result.
+    try {
+      final loaded = await _remote.fetchAllBranchSummariesFast(
+        runDate: _stockDate,
+      );
+      if (loaded.isEmpty) {
+        throw StateError('The fast branch summary returned no rows.');
+      }
+      if (!mounted || serial != _requestSerial) return;
+      setState(() {
+        _loadingSummaryBranches.removeAll(branches);
+        for (final branch in branches) {
+          final summary = loaded[branch];
+          if (summary != null) _cacheBranchSummary(branch, summary);
+        }
+      });
+      return;
+    } catch (_) {
+      // Older databases may not have the optimized RPC yet. Continue with
+      // small indexed batches so the page remains usable during rollout.
+    }
+
     const batchSize = 4;
     for (var start = 0; start < branches.length; start += batchSize) {
       if (!mounted || serial != _requestSerial) return;
@@ -2493,7 +2517,6 @@ List<GridColumn> _availabilityColumns(int lastStudyMonth) => [
   _availabilityColumn('item_code', 'Item Code', 175),
   _availabilityColumn('item_name', 'Item Name', 340),
   _availabilityColumn('selection', 'Selection Reason', 235),
-  _availabilityColumn('status', 'Status', 220),
   _availabilityColumn('sales', '3-Month\nUnits Sold', 190),
   _availabilityColumn('retail', 'Retail\nPrice', 165),
   _availabilityColumn('sales_value', 'Retail Sales\nValue', 190),
@@ -2505,6 +2528,7 @@ List<GridColumn> _availabilityColumns(int lastStudyMonth) => [
   _availabilityColumn('shortage', 'Units\nMissing', 165),
   _availabilityColumn('extra_qty', 'Extra Qty\n> 1 Month', 185),
   _availabilityColumn('coverage', '7-Day\nCoverage', 185),
+  _availabilityColumn('status', 'Purchase\nStatus', 220),
 ];
 
 int _lastStudyMonthForTable(List<AvailabilityKpiItem> items, String stockDate) {
@@ -2594,10 +2618,6 @@ class _AvailabilityKpiGridSource extends DataGridSource {
                 columnName: 'selection',
                 value: _selectionLabel(item),
               ),
-              DataGridCell<String>(
-                columnName: 'status',
-                value: item.statusName,
-              ),
               DataGridCell<num>(columnName: 'sales', value: item.recentSales),
               DataGridCell<num>(columnName: 'retail', value: item.retail),
               DataGridCell<num>(
@@ -2634,6 +2654,10 @@ class _AvailabilityKpiGridSource extends DataGridSource {
               DataGridCell<num>(
                 columnName: 'coverage',
                 value: item.availabilityRate,
+              ),
+              DataGridCell<String>(
+                columnName: 'status',
+                value: item.availabilityRate < 100 ? item.statusName : '',
               ),
             ],
           );
@@ -2701,30 +2725,31 @@ class _AvailabilityKpiGridSource extends DataGridSource {
                 child = _SourceBadge(item: item);
                 break;
               case 'status':
-                final hasStatus = item.statusName.isNotEmpty;
+                final showStatus =
+                    item.availabilityRate < 100 && item.statusName.isNotEmpty;
                 child = Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 10,
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: item.isStatusCovered
-                        ? const Color(0xffECFDF5)
+                    color: showStatus
+                        ? const Color(0xffEFF6FF)
                         : const Color(0xffF8FAFC),
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(
-                      color: item.isStatusCovered
-                          ? const Color(0xffA7F3D0)
+                      color: showStatus
+                          ? const Color(0xffBFDBFE)
                           : const Color(0xffCBD5E1),
                     ),
                   ),
                   child: SelectableText(
-                    hasStatus ? item.statusName : '—',
+                    showStatus ? item.statusName : '—',
                     maxLines: 2,
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: item.isStatusCovered
-                          ? const Color(0xff047857)
+                      color: showStatus
+                          ? AppColors.secondaryColor
                           : const Color(0xff64748B),
                       fontWeight: FontWeight.w800,
                       fontSize: 12,
