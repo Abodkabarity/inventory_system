@@ -2526,7 +2526,7 @@ List<GridColumn> _availabilityColumns(int lastStudyMonth) => [
   _availabilityColumn('weekly_need', '7-Day\nNeed', 170),
   _availabilityColumn('stock', 'Branch\nStock', 170),
   _availabilityColumn('shortage', 'Units\nMissing', 165),
-  _availabilityColumn('extra_qty', 'Extra Qty\n> 1 Month', 185),
+  _availabilityColumn('extra_qty', 'Total Extra Qty\nAll Branches', 205),
   _availabilityColumn('coverage', '7-Day\nCoverage', 185),
   _availabilityColumn('status', 'Purchase\nStatus', 220),
 ];
@@ -2788,10 +2788,10 @@ class _AvailabilityKpiGridSource extends DataGridSource {
                 final hasExtra = item.extraQtyMoreThanMonth > 0;
                 child = Tooltip(
                   message: hasExtra
-                      ? 'Extra quantity found in daily order'
+                      ? 'Total extra quantity for this item across all branches'
                       : item.availabilityRate >= 100
                       ? 'Item is already fully covered'
-                      : 'No extra quantity found',
+                      : 'No extra quantity found in any branch',
                   child: SelectableText(
                     item.availabilityRate < 100
                         ? hasExtra

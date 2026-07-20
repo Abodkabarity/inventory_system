@@ -8,10 +8,16 @@ class AvailabilityKpiRemoteDs {
 
   final SupabaseClient client;
   Future<Map<String, _PurchaseStatus>>? _purchaseStatusesFuture;
+  Future<Map<String, num>>? _globalExtraQuantitiesFuture;
+  String? _globalExtraRunDate;
 
   AvailabilityKpiRemoteDs(this.client);
 
-  void invalidatePurchaseStatuses() => _purchaseStatusesFuture = null;
+  void invalidatePurchaseStatuses() {
+    _purchaseStatusesFuture = null;
+    _globalExtraQuantitiesFuture = null;
+    _globalExtraRunDate = null;
+  }
 
   static const _masterColumns = '''
 branch_name,item_code,item_name,master_source,in_pareto,in_consistent,
@@ -73,11 +79,14 @@ branch_name,item_code,in_pareto,in_consistent,recent_sales,weekly_need
       );
     }
 
-    final purchaseStatuses = await _fetchPurchaseStatuses();
-    final inventory = await _fetchInventoryMap(
-      runDate: runDate,
-      branch: branch,
-    );
+    final results = await Future.wait<dynamic>([
+      _fetchPurchaseStatuses(),
+      _fetchInventoryMap(runDate: runDate, branch: branch),
+      _fetchGlobalExtraQuantities(runDate),
+    ]);
+    final purchaseStatuses = results[0] as Map<String, _PurchaseStatus>;
+    final inventory = results[1] as Map<String, _ItemInventory>;
+    final globalExtraQuantities = results[2] as Map<String, num>;
     if (inventory.isEmpty) {
       throw StateError(
         'No stock snapshot found for $branch on $runDate in daily_order.',
@@ -88,6 +97,7 @@ branch_name,item_code,in_pareto,in_consistent,recent_sales,weekly_need
       masterRows: masterRows,
       inventory: inventory,
       purchaseStatuses: purchaseStatuses,
+      globalExtraQuantities: globalExtraQuantities,
     );
   }
 
@@ -239,6 +249,7 @@ availability_rate
     required List<Map<String, dynamic>> masterRows,
     required Map<String, _ItemInventory> inventory,
     required Map<String, _PurchaseStatus> purchaseStatuses,
+    required Map<String, num> globalExtraQuantities,
   }) {
     final items =
         masterRows
@@ -249,7 +260,7 @@ availability_rate
               return AvailabilityKpiItem.fromMasterMap(
                 row,
                 branchStock: itemInventory.stock,
-                extraQtyMoreThanMonth: itemInventory.extraQtyMoreThanMonth,
+                extraQtyMoreThanMonth: globalExtraQuantities[itemCode] ?? 0,
                 purchaseStatusId: purchaseStatuses[itemCode]?.id,
                 purchaseStatusName: purchaseStatuses[itemCode]?.name ?? '',
               );
@@ -380,10 +391,7 @@ availability_rate
     while (true) {
       final response = await client
           .from('daily_order')
-          .select(
-            'item_code,branch_stock,total_final_reorder_today,'
-            'extra_qty_more_than_month',
-          )
+          .select('item_code,branch_stock,total_final_reorder_today')
           .eq('run_date', runDate)
           .eq('branch', branch.trim())
           .order('item_code')
@@ -400,15 +408,46 @@ availability_rate
         final previous = inventory[itemCode];
         inventory[itemCode] = _ItemInventory(
           stock: math.max(previous?.stock ?? 0, stock),
-          extraQtyMoreThanMonth:
-              (previous?.extraQtyMoreThanMonth ?? 0) +
-              math.max(_number(row['extra_qty_more_than_month']), 0),
         );
       }
       if (batch.length < _batchSize) break;
       offset += _batchSize;
     }
     return inventory;
+  }
+
+  Future<Map<String, num>> _fetchGlobalExtraQuantities(String runDate) {
+    if (_globalExtraRunDate != runDate ||
+        _globalExtraQuantitiesFuture == null) {
+      _globalExtraRunDate = runDate;
+      _globalExtraQuantitiesFuture = _loadGlobalExtraQuantities(runDate);
+    }
+    return _globalExtraQuantitiesFuture!;
+  }
+
+  Future<Map<String, num>> _loadGlobalExtraQuantities(String runDate) async {
+    final quantities = <String, num>{};
+    var offset = 0;
+    while (true) {
+      final response = await client
+          .from('daily_order')
+          .select('item_code,extra_qty_more_than_month')
+          .eq('run_date', runDate)
+          .gt('extra_qty_more_than_month', 0)
+          .order('item_code')
+          .range(offset, offset + _batchSize - 1);
+      final batch = List<Map<String, dynamic>>.from(response as List);
+      for (final row in batch) {
+        final itemCode = _text(row['item_code']);
+        if (itemCode.isEmpty) continue;
+        quantities[itemCode] =
+            (quantities[itemCode] ?? 0) +
+            math.max(_number(row['extra_qty_more_than_month']), 0);
+      }
+      if (batch.length < _batchSize) break;
+      offset += _batchSize;
+    }
+    return quantities;
   }
 
   Future<Map<String, Map<String, _ItemInventory>>> _fetchAllInventory({
@@ -487,9 +526,8 @@ class _PurchaseStatus {
 
 class _ItemInventory {
   final num stock;
-  final num extraQtyMoreThanMonth;
 
-  const _ItemInventory({this.stock = 0, this.extraQtyMoreThanMonth = 0});
+  const _ItemInventory({this.stock = 0});
 }
 
 class AvailabilityBranchData {

@@ -52,7 +52,7 @@ class AvailabilityKpiExcelExporter {
       'Needed For 7 Days',
       'Current Branch Stock',
       'Units Missing',
-      'Extra Qty > 1 Month',
+      'Total Extra Qty - All Branches',
       '7-Day Coverage %',
       'Purchase Status',
     ];
