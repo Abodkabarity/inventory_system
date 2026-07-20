@@ -1253,6 +1253,7 @@ class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.end,
             children: [
               Expanded(
                 child: _AnalysisHeaderSummary(
@@ -1714,8 +1715,8 @@ class _AnalysisBranchSearchDialogState
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: SizedBox(
-        width: 430,
-        height: 520,
+        width: 430.w,
+        height: 800.h,
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(

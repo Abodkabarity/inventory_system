@@ -1859,9 +1859,9 @@ class _BranchReportState extends State<_BranchReport> {
 
     return Column(
       children: [
-        Wrap(
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           spacing: 14,
-          runSpacing: 14,
           children: [
             _BranchMetricCard(
               label: 'Average Availability',
@@ -1986,10 +1986,9 @@ class _BranchReportState extends State<_BranchReport> {
                           ],
                         ),
                         const SizedBox(height: 14),
-                        Wrap(
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.start,
                           spacing: 10,
-                          runSpacing: 10,
-                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             SizedBox(
                               width: 330,
