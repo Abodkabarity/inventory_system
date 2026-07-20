@@ -13,6 +13,7 @@ class AvailabilityKpiExcelExporter {
     required String branch,
     required String stockDate,
     required List<AvailabilityKpiItem> items,
+    void Function(double progress)? onProgress,
   }) async {
     final workbook = xlsio.Workbook();
     final sheet = workbook.worksheets[0]..name = 'Availability KPI';
@@ -76,6 +77,10 @@ class AvailabilityKpiExcelExporter {
         32;
 
     for (var index = 0; index < items.length; index++) {
+      if (index % 500 == 0) {
+        onProgress?.call(items.isEmpty ? 1 : index / items.length);
+        await Future<void>.delayed(Duration.zero);
+      }
       final item = items[index];
       final row = headerRow + index + 1;
       final values = <Object?>[
@@ -132,6 +137,7 @@ class AvailabilityKpiExcelExporter {
             : '#DC2626'
         ..bold = true;
     }
+    onProgress?.call(1);
 
     sheet.getRangeByIndex(1, 1).columnWidth = 24;
     sheet.getRangeByIndex(1, 2).columnWidth = 18;

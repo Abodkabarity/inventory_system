@@ -31,6 +31,13 @@ weekly_need,analysis_start,recent_start,as_of_date
   static const _summaryColumns = '''
 branch_name,item_code,in_pareto,in_consistent,recent_sales,weekly_need
 ''';
+  static const _exportCacheColumns = '''
+branch_name,item_code,item_name,master_source,in_pareto,in_consistent,
+recent_sales,recent_sales_share,cumulative_sales_share,total_sales,
+branch_recent_sales,selling_months,total_months,month_consistency,
+recent_selling_months,weekly_need,analysis_start,recent_start,as_of_date,
+branch_stock,extra_qty_more_than_month,status_id,status_name,retail
+''';
 
   /// Uses the newest stock snapshot that actually exists in daily_order.
   /// The dashboard operational date can lag behind the generated stock file.
@@ -189,6 +196,147 @@ branch_name,item_code,in_pareto,in_consistent,recent_sales,weekly_need
       );
     }
     return summaries;
+  }
+
+  Future<List<AvailabilityKpiItem>> fetchAllBranchItemsForExport({
+    required String runDate,
+    required Iterable<String> branches,
+    void Function(double progress, String message)? onProgress,
+  }) async {
+    final requested = branches.map((value) => value.trim()).toSet();
+    if (requested.isEmpty) return const [];
+
+    try {
+      return await _fetchAllBranchItemsFromExportCache(
+        runDate: runDate,
+        branches: requested,
+        onProgress: onProgress,
+      );
+    } catch (_) {
+      onProgress?.call(
+        .04,
+        'Fast export cache is unavailable; loading source tables...',
+      );
+    }
+
+    onProgress?.call(.06, 'Loading all branch item lists...');
+    final results = await Future.wait<dynamic>([
+      _fetchAllMasterDetailRows(requested),
+      _fetchAllInventory(runDate: runDate, branches: requested),
+      _fetchPurchaseStatuses(),
+      _fetchGlobalExtraQuantities(runDate),
+      _fetchRetailPrices(),
+    ]);
+    final masterByBranch =
+        results[0] as Map<String, List<Map<String, dynamic>>>;
+    final inventoryByBranch =
+        results[1] as Map<String, Map<String, _ItemInventory>>;
+    final purchaseStatuses = results[2] as Map<String, _PurchaseStatus>;
+    final globalExtraQuantities = results[3] as Map<String, num>;
+    final retailPrices = results[4] as Map<String, num>;
+    onProgress?.call(.55, 'Building the combined item table...');
+
+    final sortedBranches = requested.toList()
+      ..sort(
+        (left, right) => left.toLowerCase().compareTo(right.toLowerCase()),
+      );
+    final items = <AvailabilityKpiItem>[];
+    for (var index = 0; index < sortedBranches.length; index++) {
+      final branch = sortedBranches[index];
+      final masterRows = masterByBranch[branch] ?? const [];
+      final inventory = inventoryByBranch[branch] ?? const {};
+      if (masterRows.isNotEmpty) {
+        items.addAll(
+          _buildBranchData(
+            branch: branch,
+            masterRows: masterRows,
+            inventory: inventory,
+            purchaseStatuses: purchaseStatuses,
+            globalExtraQuantities: globalExtraQuantities,
+            retailPrices: retailPrices,
+          ).items,
+        );
+      }
+      onProgress?.call(
+        .55 + ((index + 1) / sortedBranches.length) * .17,
+        'Preparing ${index + 1} of ${sortedBranches.length} branches...',
+      );
+      if (index % 4 == 0) await Future<void>.delayed(Duration.zero);
+    }
+    return items;
+  }
+
+  Future<List<AvailabilityKpiItem>> _fetchAllBranchItemsFromExportCache({
+    required String runDate,
+    required Set<String> branches,
+    void Function(double progress, String message)? onProgress,
+  }) async {
+    onProgress?.call(.04, 'Preparing the fast export cache...');
+    final response = await client.rpc(
+      'ensure_availability_kpi_export_cache_v1',
+      params: {'p_run_date': runDate},
+    );
+    final rowCount = _integer(response);
+    if (rowCount <= 0) return const [];
+
+    const pageSize = 1000;
+    const parallelPages = 6;
+    final pageCount = (rowCount / pageSize).ceil();
+    final rows = <Map<String, dynamic>>[];
+    for (var startPage = 0; startPage < pageCount; startPage += parallelPages) {
+      final endPage = math.min(startPage + parallelPages, pageCount);
+      final pages = await Future.wait<dynamic>([
+        for (var page = startPage; page < endPage; page++)
+          client
+              .from('availability_kpi_export_cache_v1')
+              .select(_exportCacheColumns)
+              .eq('run_date', runDate)
+              .order('branch_name')
+              .order('item_code')
+              .range(page * pageSize, (page + 1) * pageSize - 1),
+      ]);
+      for (final page in pages) {
+        rows.addAll(List<Map<String, dynamic>>.from(page as List));
+      }
+      onProgress?.call(
+        .12 + (endPage / pageCount) * .5,
+        'Downloaded ${rows.length} of $rowCount items...',
+      );
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    rows.sort((left, right) {
+      final branchCompare = _text(
+        left['branch_name'],
+      ).toLowerCase().compareTo(_text(right['branch_name']).toLowerCase());
+      if (branchCompare != 0) return branchCompare;
+      return _text(left['item_code']).compareTo(_text(right['item_code']));
+    });
+    final items = <AvailabilityKpiItem>[];
+    for (var index = 0; index < rows.length; index++) {
+      final row = rows[index];
+      if (!branches.contains(_text(row['branch_name']))) continue;
+      items.add(
+        AvailabilityKpiItem.fromMasterMap(
+          row,
+          branchStock: _number(row['branch_stock']),
+          extraQtyMoreThanMonth: _number(row['extra_qty_more_than_month']),
+          purchaseStatusId: row['status_id'] == null
+              ? null
+              : _integer(row['status_id']),
+          purchaseStatusName: _text(row['status_name']),
+          retailPrice: _number(row['retail']),
+        ),
+      );
+      if (index % 1000 == 0) {
+        onProgress?.call(
+          .62 + ((index + 1) / rows.length) * .1,
+          'Preparing the combined Excel table...',
+        );
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+    return items;
   }
 
   /// Uses the server-side aggregate and transfers only one row per branch.
@@ -365,6 +513,7 @@ availability_rate
           .order('month')
           .range(offset, offset + _batchSize - 1);
       final batch = List<Map<String, dynamic>>.from(response as List);
+      if (batch.isEmpty) break;
       for (final row in batch) {
         final itemCode = _text(row['item_code']);
         final item = itemsByCode[itemCode];
@@ -380,8 +529,7 @@ availability_rate
         }
         (monthsByItem[itemCode] ??= <int>{}).add(monthStart.month);
       }
-      if (batch.length < _batchSize) break;
-      offset += _batchSize;
+      offset += batch.length;
     }
 
     final enrichedItems = data.items
@@ -407,9 +555,9 @@ availability_rate
           .order('item_code')
           .range(offset, offset + _batchSize - 1);
       final batch = List<Map<String, dynamic>>.from(response as List);
+      if (batch.isEmpty) break;
       rows.addAll(batch);
-      if (batch.length < _batchSize) break;
-      offset += _batchSize;
+      offset += batch.length;
     }
     return rows;
   }
@@ -423,19 +571,43 @@ availability_rate
       final response = await client
           .from('availability_branch_master_cache')
           .select(_summaryColumns)
-          .inFilter('branch_name', branches.toList(growable: false))
           .order('branch_name')
           .order('item_code')
           .range(offset, offset + _batchSize - 1);
       final batch = List<Map<String, dynamic>>.from(response as List);
+      if (batch.isEmpty) break;
       for (final row in batch) {
         final branch = _text(row['branch_name']);
         if (branches.contains(branch)) {
           (rowsByBranch[branch] ??= <Map<String, dynamic>>[]).add(row);
         }
       }
-      if (batch.length < _batchSize) break;
-      offset += _batchSize;
+      offset += batch.length;
+    }
+    return rowsByBranch;
+  }
+
+  Future<Map<String, List<Map<String, dynamic>>>> _fetchAllMasterDetailRows(
+    Set<String> branches,
+  ) async {
+    final rowsByBranch = <String, List<Map<String, dynamic>>>{};
+    var offset = 0;
+    while (true) {
+      final response = await client
+          .from('availability_branch_master_cache')
+          .select(_masterColumns)
+          .order('branch_name')
+          .order('item_code')
+          .range(offset, offset + _batchSize - 1);
+      final batch = List<Map<String, dynamic>>.from(response as List);
+      if (batch.isEmpty) break;
+      for (final row in batch) {
+        final branch = _text(row['branch_name']);
+        if (branches.contains(branch)) {
+          (rowsByBranch[branch] ??= <Map<String, dynamic>>[]).add(row);
+        }
+      }
+      offset += batch.length;
     }
     return rowsByBranch;
   }
@@ -456,6 +628,7 @@ availability_rate
           .order('item_code')
           .range(offset, offset + _batchSize - 1);
       final batch = List<Map<String, dynamic>>.from(response as List);
+      if (batch.isEmpty) break;
       for (final row in batch) {
         final itemCode = _text(row['item_code']);
         if (itemCode.isEmpty) continue;
@@ -469,8 +642,7 @@ availability_rate
           stock: math.max(previous?.stock ?? 0, stock),
         );
       }
-      if (batch.length < _batchSize) break;
-      offset += _batchSize;
+      offset += batch.length;
     }
     return inventory;
   }
@@ -496,6 +668,7 @@ availability_rate
           .order('item_code')
           .range(offset, offset + _batchSize - 1);
       final batch = List<Map<String, dynamic>>.from(response as List);
+      if (batch.isEmpty) break;
       for (final row in batch) {
         final itemCode = _text(row['item_code']);
         if (itemCode.isEmpty) continue;
@@ -503,8 +676,7 @@ availability_rate
             (quantities[itemCode] ?? 0) +
             math.max(_number(row['extra_qty_more_than_month']), 0);
       }
-      if (batch.length < _batchSize) break;
-      offset += _batchSize;
+      offset += batch.length;
     }
     return quantities;
   }
@@ -520,11 +692,11 @@ availability_rate
           .from('daily_order')
           .select('branch,item_code,branch_stock,total_final_reorder_today')
           .eq('run_date', runDate)
-          .inFilter('branch', branches.toList(growable: false))
           .order('branch')
           .order('item_code')
           .range(offset, offset + _batchSize - 1);
       final batch = List<Map<String, dynamic>>.from(response as List);
+      if (batch.isEmpty) break;
       for (final row in batch) {
         final branch = _text(row['branch']);
         final itemCode = _text(row['item_code']);
@@ -541,8 +713,7 @@ availability_rate
           stock: math.max(previous?.stock ?? 0, stock),
         );
       }
-      if (batch.length < _batchSize) break;
-      offset += _batchSize;
+      offset += batch.length;
     }
     return inventoryByBranch;
   }
@@ -566,6 +737,7 @@ availability_rate
           .order('item_code')
           .range(offset, offset + _batchSize - 1);
       final batch = List<Map<String, dynamic>>.from(response as List);
+      if (batch.isEmpty) break;
       for (final row in batch) {
         final itemCode = _text(row['item_code']);
         if (itemCode.isEmpty) continue;
@@ -574,8 +746,7 @@ availability_rate
           math.max(_number(row['retail']), 0),
         );
       }
-      if (batch.length < _batchSize) break;
-      offset += _batchSize;
+      offset += batch.length;
     }
     return prices;
   }
@@ -590,6 +761,7 @@ availability_rate
           .order('item_code')
           .range(offset, offset + _batchSize - 1);
       final batch = List<Map<String, dynamic>>.from(response as List);
+      if (batch.isEmpty) break;
       for (final row in batch) {
         final itemCode = _text(row['item_code']);
         if (itemCode.isEmpty) continue;
@@ -598,8 +770,7 @@ availability_rate
           name: _text(row['status_name']),
         );
       }
-      if (batch.length < _batchSize) break;
-      offset += _batchSize;
+      offset += batch.length;
     }
     return statuses;
   }

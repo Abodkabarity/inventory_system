@@ -38,6 +38,9 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
   bool _loadingSummary = true;
   bool _loadingItems = false;
   bool _exportingAllocation = false;
+  bool _exportingAllBranches = false;
+  double _allBranchesExportProgress = 0;
+  String _allBranchesExportStatus = '';
   bool _loadingAllocationPreview = false;
   bool _allocationPreviewActive = false;
   Map<String, AvailabilityAllocationImpact> _allocationImpact = const {};
@@ -415,6 +418,88 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
     }
   }
 
+  Future<void> _exportAllBranches() async {
+    if (_exportingAllBranches || _summaries.isEmpty) return;
+    setState(() {
+      _exportingAllBranches = true;
+      _allBranchesExportProgress = .02;
+      _allBranchesExportStatus = 'Starting all-branch export...';
+    });
+    try {
+      final items = await _remote.fetchAllBranchItemsForExport(
+        runDate: _stockDate,
+        branches: _summaries.map((summary) => summary.branchName),
+        onProgress: (progress, message) {
+          if (!mounted) return;
+          setState(() {
+            _allBranchesExportProgress = progress;
+            _allBranchesExportStatus = message;
+          });
+        },
+      );
+      if (!mounted) return;
+      if (items.isEmpty) {
+        throw StateError('No Availability items were found to export.');
+      }
+      setState(() {
+        _allBranchesExportProgress = .73;
+        _allBranchesExportStatus =
+            'Formatting ${items.length} items in Excel...';
+      });
+      await WidgetsBinding.instance.endOfFrame;
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      await AvailabilityKpiExcelExporter.export(
+        branch: 'All Branches',
+        stockDate: _stockDate,
+        items: items,
+        onProgress: (progress) {
+          if (!mounted) return;
+          setState(() {
+            _allBranchesExportProgress = .73 + progress * .25;
+            _allBranchesExportStatus =
+                'Formatting ${items.length} items in Excel...';
+          });
+        },
+      );
+      if (!mounted) return;
+      setState(() {
+        _allBranchesExportProgress = 1;
+        _allBranchesExportStatus = 'Download started successfully.';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${items.length} items from ${_summaries.length} branches exported.',
+          ),
+          backgroundColor: const Color(0xff059669),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      final message = error.toString();
+      final friendlyMessage = message.contains('Failed to fetch')
+          ? 'Could not download the all-branch data. Run availability_kpi_export_cache.sql in Supabase, then retry.'
+          : message.contains('ensure_availability_kpi_export_cache_v1') ||
+                message.contains('availability_kpi_export_cache_v1')
+          ? 'The fast export cache is not installed. Run availability_kpi_export_cache.sql in Supabase, then retry.'
+          : 'Could not prepare the all-branch Excel file.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(friendlyMessage),
+          backgroundColor: const Color(0xffDC2626),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _exportingAllBranches = false;
+          _allBranchesExportProgress = 0;
+          _allBranchesExportStatus = '';
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final displaySummaries = _displaySummaries;
@@ -534,6 +619,10 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
                         items: _items,
                         loading: _loadingItems,
                         totalRows: _totalRows,
+                        exportingAllBranches: _exportingAllBranches,
+                        allBranchesExportProgress: _allBranchesExportProgress,
+                        allBranchesExportStatus: _allBranchesExportStatus,
+                        onExportAllBranches: _exportAllBranches,
                       ),
                     ],
                   ],
@@ -2460,6 +2549,10 @@ class _MasterTable extends StatefulWidget {
   final List<AvailabilityKpiItem> items;
   final bool loading;
   final int totalRows;
+  final bool exportingAllBranches;
+  final double allBranchesExportProgress;
+  final String allBranchesExportStatus;
+  final VoidCallback onExportAllBranches;
 
   const _MasterTable({
     required this.branch,
@@ -2467,6 +2560,10 @@ class _MasterTable extends StatefulWidget {
     required this.items,
     required this.loading,
     required this.totalRows,
+    required this.exportingAllBranches,
+    required this.allBranchesExportProgress,
+    required this.allBranchesExportStatus,
+    required this.onExportAllBranches,
   });
 
   @override
@@ -2590,7 +2687,10 @@ class _MasterTableState extends State<_MasterTable> {
                     ),
                     FilledButton.icon(
                       onPressed:
-                          widget.loading || visibleRows == 0 || _exporting
+                          widget.loading ||
+                              visibleRows == 0 ||
+                              _exporting ||
+                              widget.exportingAllBranches
                           ? null
                           : _export,
                       icon: _exporting
@@ -2606,6 +2706,33 @@ class _MasterTableState extends State<_MasterTable> {
                       label: Text(_exporting ? 'Exporting...' : 'Export Excel'),
                       style: FilledButton.styleFrom(
                         backgroundColor: const Color(0xff059669),
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                    FilledButton.icon(
+                      onPressed:
+                          widget.loading ||
+                              _exporting ||
+                              widget.exportingAllBranches
+                          ? null
+                          : widget.onExportAllBranches,
+                      icon: widget.exportingAllBranches
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.file_download_done_rounded),
+                      label: Text(
+                        widget.exportingAllBranches
+                            ? 'Preparing All Branches...'
+                            : 'Export All Branches',
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.secondaryColor,
                         foregroundColor: Colors.white,
                       ),
                     ),
@@ -2699,9 +2826,18 @@ class _MasterTableState extends State<_MasterTable> {
                 ),
             ],
           ),
-          if (_exporting)
+          if (_exporting || widget.exportingAllBranches)
             Positioned.fill(
-              child: _ExportLoadingOverlay(rowCount: visibleRows),
+              child: _ExportLoadingOverlay(
+                rowCount: visibleRows,
+                allBranches: widget.exportingAllBranches,
+                progress: widget.exportingAllBranches
+                    ? widget.allBranchesExportProgress
+                    : null,
+                status: widget.exportingAllBranches
+                    ? widget.allBranchesExportStatus
+                    : null,
+              ),
             ),
         ],
       ),
@@ -2711,8 +2847,16 @@ class _MasterTableState extends State<_MasterTable> {
 
 class _ExportLoadingOverlay extends StatelessWidget {
   final int rowCount;
+  final bool allBranches;
+  final double? progress;
+  final String? status;
 
-  const _ExportLoadingOverlay({required this.rowCount});
+  const _ExportLoadingOverlay({
+    required this.rowCount,
+    this.allBranches = false,
+    this.progress,
+    this.status,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -2750,9 +2894,9 @@ class _ExportLoadingOverlay extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              const Text(
-                'Preparing Excel file',
-                style: TextStyle(
+              Text(
+                allBranches ? 'Exporting All Branches' : 'Preparing Excel file',
+                style: const TextStyle(
                   color: Color(0xff0F172A),
                   fontSize: 18,
                   fontWeight: FontWeight.w900,
@@ -2760,7 +2904,8 @@ class _ExportLoadingOverlay extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               Text(
-                'Formatting $rowCount filtered items…',
+                status ?? 'Formatting $rowCount filtered items...',
+                textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: Color(0xff64748B),
                   fontWeight: FontWeight.w600,
@@ -2769,12 +2914,23 @@ class _ExportLoadingOverlay extends StatelessWidget {
               const SizedBox(height: 18),
               ClipRRect(
                 borderRadius: BorderRadius.circular(999),
-                child: const LinearProgressIndicator(
+                child: LinearProgressIndicator(
+                  value: progress?.clamp(0, 1),
                   minHeight: 7,
-                  color: Color(0xff10B981),
-                  backgroundColor: Color(0xffD1FAE5),
+                  color: const Color(0xff10B981),
+                  backgroundColor: const Color(0xffD1FAE5),
                 ),
               ),
+              if (progress != null) ...[
+                const SizedBox(height: 9),
+                Text(
+                  '${(progress! * 100).round()}%',
+                  style: const TextStyle(
+                    color: AppColors.secondaryColor,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
               const SizedBox(height: 10),
               const Text(
                 'The download will start automatically',
