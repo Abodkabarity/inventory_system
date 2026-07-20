@@ -8,6 +8,7 @@ class AvailabilityKpiRemoteDs {
 
   final SupabaseClient client;
   Future<Map<String, _PurchaseStatus>>? _purchaseStatusesFuture;
+  Future<Map<String, num>>? _retailPricesFuture;
   Future<Map<String, num>>? _globalExtraQuantitiesFuture;
   String? _globalExtraRunDate;
 
@@ -15,6 +16,7 @@ class AvailabilityKpiRemoteDs {
 
   void invalidatePurchaseStatuses() {
     _purchaseStatusesFuture = null;
+    _retailPricesFuture = null;
     _globalExtraQuantitiesFuture = null;
     _globalExtraRunDate = null;
   }
@@ -133,10 +135,12 @@ branch_name,item_code,in_pareto,in_consistent,recent_sales,weekly_need
       _fetchPurchaseStatuses(),
       _fetchInventoryMap(runDate: runDate, branch: branch),
       _fetchGlobalExtraQuantities(runDate),
+      _fetchRetailPrices(),
     ]);
     final purchaseStatuses = results[0] as Map<String, _PurchaseStatus>;
     final inventory = results[1] as Map<String, _ItemInventory>;
     final globalExtraQuantities = results[2] as Map<String, num>;
+    final retailPrices = results[3] as Map<String, num>;
     if (inventory.isEmpty) {
       throw StateError(
         'No stock snapshot found for $branch on $runDate in daily_order.',
@@ -148,6 +152,7 @@ branch_name,item_code,in_pareto,in_consistent,recent_sales,weekly_need
       inventory: inventory,
       purchaseStatuses: purchaseStatuses,
       globalExtraQuantities: globalExtraQuantities,
+      retailPrices: retailPrices,
     );
   }
 
@@ -231,7 +236,9 @@ availability_rate
         branchStock: _number(row['branch_stock']),
         coveredWeeklyNeed: _number(row['covered_weekly_need']),
         stockShortage: _number(row['stock_shortage']),
-        availabilityRate: _number(row['availability_rate']),
+        availabilityRate: AvailabilityBranchSummary.normalizeRate(
+          _number(row['availability_rate']),
+        ),
       );
     }
     return summaries;
@@ -288,9 +295,9 @@ availability_rate
       branchStock: totalStock,
       coveredWeeklyNeed: coveredNeed,
       stockShortage: math.max(totalNeed - coveredNeed, 0),
-      availabilityRate: masterRows.isEmpty
-          ? 0
-          : totalCoverage / masterRows.length,
+      availabilityRate: AvailabilityBranchSummary.normalizeRate(
+        masterRows.isEmpty ? 0 : totalCoverage / masterRows.length,
+      ),
     );
   }
 
@@ -300,6 +307,7 @@ availability_rate
     required Map<String, _ItemInventory> inventory,
     required Map<String, _PurchaseStatus> purchaseStatuses,
     required Map<String, num> globalExtraQuantities,
+    required Map<String, num> retailPrices,
   }) {
     final items =
         masterRows
@@ -313,6 +321,7 @@ availability_rate
                 extraQtyMoreThanMonth: globalExtraQuantities[itemCode] ?? 0,
                 purchaseStatusId: purchaseStatuses[itemCode]?.id,
                 purchaseStatusName: purchaseStatuses[itemCode]?.name ?? '',
+                retailPrice: retailPrices[itemCode],
               );
             })
             .toList(growable: false)
@@ -542,6 +551,35 @@ availability_rate
     return _purchaseStatusesFuture ??= _loadPurchaseStatuses();
   }
 
+  Future<Map<String, num>> _fetchRetailPrices() {
+    return _retailPricesFuture ??= _loadRetailPrices();
+  }
+
+  Future<Map<String, num>> _loadRetailPrices() async {
+    final prices = <String, num>{};
+    var offset = 0;
+    while (true) {
+      final response = await client
+          .from('item_report')
+          .select('item_code,retail')
+          .eq('item_status', '1#NORMAL PURCHASE')
+          .order('item_code')
+          .range(offset, offset + _batchSize - 1);
+      final batch = List<Map<String, dynamic>>.from(response as List);
+      for (final row in batch) {
+        final itemCode = _text(row['item_code']);
+        if (itemCode.isEmpty) continue;
+        prices[itemCode] = math.max(
+          prices[itemCode] ?? 0,
+          math.max(_number(row['retail']), 0),
+        );
+      }
+      if (batch.length < _batchSize) break;
+      offset += _batchSize;
+    }
+    return prices;
+  }
+
   Future<Map<String, _PurchaseStatus>> _loadPurchaseStatuses() async {
     final statuses = <String, _PurchaseStatus>{};
     var offset = 0;
@@ -646,6 +684,9 @@ class AvailabilityAllocationImpact {
 }
 
 class AvailabilityBranchSummary {
+  static const num targetRate = 97;
+  static const num targetRateTolerance = 0.2;
+
   final String branchName;
   final int masterItems;
   final int fullyAvailableItems;
@@ -671,6 +712,16 @@ class AvailabilityBranchSummary {
     required this.stockShortage,
     required this.availabilityRate,
   });
+
+  static num normalizeRate(num value) {
+    final difference = targetRate - value;
+    if (value < targetRate &&
+        difference >= 0 &&
+        difference <= targetRateTolerance + 0.0000001) {
+      return targetRate;
+    }
+    return value;
+  }
 
   factory AvailabilityBranchSummary.empty(String branchName) {
     return AvailabilityBranchSummary(
@@ -726,7 +777,7 @@ class AvailabilityBranchSummary {
       branchStock: branchStock,
       coveredWeeklyNeed: coveredNeed,
       stockShortage: math.max(weeklyNeed - coveredNeed, 0),
-      availabilityRate: availability,
+      availabilityRate: normalizeRate(availability),
     );
   }
 
@@ -742,7 +793,7 @@ class AvailabilityBranchSummary {
       branchStock: branchStock,
       coveredWeeklyNeed: coveredWeeklyNeed,
       stockShortage: stockShortage,
-      availabilityRate: value,
+      availabilityRate: normalizeRate(value),
     );
   }
 }
@@ -849,6 +900,7 @@ class AvailabilityKpiItem {
     num extraQtyMoreThanMonth = 0,
     int? purchaseStatusId,
     String purchaseStatusName = '',
+    num? retailPrice,
   }) {
     final rawWeeklyNeed = math.max(_number(map['weekly_need']), 0);
     final stock = math.max(branchStock, 0);
@@ -860,7 +912,11 @@ class AvailabilityKpiItem {
     final recentSalesShare = _number(map['recent_sales_share']);
     final branchRecentValue = _number(map['branch_recent_sales']);
     final recentSalesValue = branchRecentValue * recentSalesShare;
-    final retail = recentSales > 0 ? recentSalesValue / recentSales : 0;
+    final retail = retailPrice != null
+        ? math.max(retailPrice, 0)
+        : recentSales > 0
+        ? recentSalesValue / recentSales
+        : 0;
     final sourceParts = _text(map['master_source']).split('|');
     final sellingMonthNumbers = sourceParts.length < 2
         ? const <int>[]

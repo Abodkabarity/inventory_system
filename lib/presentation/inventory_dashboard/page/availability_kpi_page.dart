@@ -851,7 +851,7 @@ class _MethodCard extends StatelessWidget {
             number: '3',
             title: '7-day stock need',
             detail:
-                'Uses the last 3 completed months and excludes the current month',
+                'Uses 30-day demand; DECREASE Max Adj overrides the sales demand',
           ),
           TextButton.icon(
             onPressed: () => _showCalculationDialog(context),
@@ -919,14 +919,14 @@ Future<void> _showCalculationDialog(BuildContext context) {
                 number: '2',
                 title: 'Stock Needed for 7 Days',
                 detail:
-                    'We use units sold in the last 3 completed months before the latest sales month. The current month is not included.',
-                formula: '3-month units / calendar days in 3 months x 7',
+                    'Normally, 30-day demand is calculated from the last 3 completed months. If Max Adj type is DECREASE, qty becomes the 30-day demand. A DECREASE qty of zero removes the item from this branch KPI list.',
+                formula: 'Demand 30 Days / 30 x 7',
               ),
               const _CalculationRow(
                 number: '3',
                 title: 'Item Coverage',
                 detail:
-                    'Current branch stock is branch_stock plus total_final_reorder_today from daily_order. This total is divided by the stock needed for 7 days. Purchase Status IDs 1, 2, 5, 7, 8 and 34 are treated as 100% covered. Otherwise, coverage cannot be more than 100%, and a difference of 0.25 units or less is ignored.',
+                    'Current branch stock is branch_stock plus total_final_reorder_today from daily_order. This total is divided by the stock needed for 7 days. Purchase Status IDs 1, 2, 5, 7, 8 and 34 are treated as 100% covered. Otherwise, coverage cannot be more than 100%, and a difference of 0.16 units or less is ignored.',
                 formula: 'Current stock ÷ 7-day need',
               ),
               const _CalculationRow(
@@ -2792,7 +2792,7 @@ List<GridColumn> _availabilityColumns(int lastStudyMonth) => [
   _availabilityColumn('item_code', 'Item Code', 175),
   _availabilityColumn('item_name', 'Item Name', 340),
   _availabilityColumn('selection', 'Selection Reason', 235),
-  _availabilityColumn('sales', '3-Month\nUnits Sold', 190),
+  _availabilityColumn('sales', 'Demand\n30 Days', 190),
   _availabilityColumn('retail', 'Retail\nPrice', 165),
   _availabilityColumn('sales_value', 'Retail Sales\nValue', 190),
   _availabilityColumn('share', 'Branch Sales\nShare', 195),
