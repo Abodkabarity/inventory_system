@@ -434,9 +434,11 @@ availability_rate
     var fullyCovered = 0;
     var paretoItems = 0;
     var consistentItems = 0;
+    var includedItems = 0;
 
     for (final row in masterRows) {
       final itemCode = _text(row['item_code']);
+      final storeStock = inventory[itemCode]?.storeStock ?? 0;
       final stock = inventory[itemCode]?.stock ?? 0;
       final rawNeed = math.max(_number(row['weekly_need']), 0);
       final rawShortage = math.max(rawNeed - stock, 0);
@@ -452,6 +454,9 @@ availability_rate
           : need > 0
           ? math.min(stock / need, 1) * 100
           : 100;
+      if (storeStock > 4 && coverage < 100) continue;
+
+      includedItems++;
       totalCoverage += coverage;
       totalNeed += need;
       totalStock += stock;
@@ -463,9 +468,9 @@ availability_rate
 
     return AvailabilityBranchSummary(
       branchName: branch,
-      masterItems: masterRows.length,
+      masterItems: includedItems,
       fullyAvailableItems: fullyCovered,
-      shortageItems: masterRows.length - fullyCovered,
+      shortageItems: includedItems - fullyCovered,
       paretoItems: paretoItems,
       consistentItems: consistentItems,
       weeklyNeed: totalNeed,
@@ -473,7 +478,7 @@ availability_rate
       coveredWeeklyNeed: coveredNeed,
       stockShortage: math.max(totalNeed - coveredNeed, 0),
       availabilityRate: AvailabilityBranchSummary.normalizeRate(
-        masterRows.isEmpty ? 0 : totalCoverage / masterRows.length,
+        includedItems == 0 ? 0 : totalCoverage / includedItems,
       ),
     );
   }
@@ -504,6 +509,9 @@ availability_rate
                 decreaseDemand30Days: decreaseDemandByItem[itemCode],
               );
             })
+            .where(
+              (item) => item.storeStock <= 4 || item.availabilityRate >= 100,
+            )
             .toList(growable: false)
           ..sort((a, b) {
             final rate = a.availabilityRate.compareTo(b.availabilityRate);

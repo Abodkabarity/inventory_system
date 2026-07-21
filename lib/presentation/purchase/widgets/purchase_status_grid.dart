@@ -63,10 +63,12 @@ class _PurchaseStatusGridState extends State<PurchaseStatusGrid> {
 
   late final _PurchaseStatusDataSource _source;
   late final Map<String, double> _columnWidths;
+  late final ScrollController _horizontalScrollController;
 
   @override
   void initState() {
     super.initState();
+    _horizontalScrollController = ScrollController();
     _columnWidths = Map<String, double>.of(_initialWidths)
       ..addAll(widget.controller._columnWidths);
     _source = _PurchaseStatusDataSource(
@@ -82,6 +84,7 @@ class _PurchaseStatusGridState extends State<PurchaseStatusGrid> {
   @override
   void dispose() {
     widget.controller._clearGridFilters = null;
+    _horizontalScrollController.dispose();
     super.dispose();
   }
 
@@ -100,124 +103,146 @@ class _PurchaseStatusGridState extends State<PurchaseStatusGrid> {
 
   @override
   Widget build(BuildContext context) {
-    return SfDataGridTheme(
-      data: SfDataGridThemeData(
-        headerColor: const Color(0xffeaf4fb),
-        gridLineColor: const Color(0xffcfd9e3),
-        selectionColor: AppColors.primaryColor.withValues(alpha: .12),
-        sortIconColor: AppColors.primaryColor,
-        filterIconColor: AppColors.primaryColor,
-        filterIconHoverColor: AppColors.primaryColor,
+    return ScrollbarTheme(
+      data: ScrollbarThemeData(
+        thumbColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.dragged)
+              ? AppColors.primaryColor
+              : AppColors.primaryColor.withValues(alpha: .72),
+        ),
+        trackColor: WidgetStatePropertyAll(
+          AppColors.primaryColor.withValues(alpha: .10),
+        ),
+        trackBorderColor: WidgetStatePropertyAll(
+          AppColors.primaryColor.withValues(alpha: .18),
+        ),
+        thickness: const WidgetStatePropertyAll(11),
+        radius: const Radius.circular(10),
+        thumbVisibility: const WidgetStatePropertyAll(true),
+        trackVisibility: const WidgetStatePropertyAll(true),
       ),
-      child: SfDataGrid(
-        source: _source,
-        allowFiltering: true,
-        allowSorting: true,
-        allowMultiColumnSorting: true,
-        allowTriStateSorting: true,
-        allowColumnsResizing: true,
-        columnResizeMode: ColumnResizeMode.onResize,
-        onColumnResizeUpdate: (details) {
-          setState(() {
-            _columnWidths[details.column.columnName] = details.width;
-          });
-          widget.controller._setColumnWidth(
-            details.column.columnName,
-            details.width,
-          );
-          return true;
-        },
-        gridLinesVisibility: GridLinesVisibility.both,
-        headerGridLinesVisibility: GridLinesVisibility.both,
-        columnWidthMode: ColumnWidthMode.none,
-        frozenColumnsCount: 4,
-        rowHeight: 64,
-        headerRowHeight: 66,
-        selectionMode: SelectionMode.single,
-        navigationMode: GridNavigationMode.cell,
-        onFilterChanged: (_) {
-          widget.controller._update(_source.visibleRecords);
-        },
-        onColumnSortChanged: (_, _) {
-          widget.controller._update(_source.visibleRecords);
-        },
-        columns: [
-          GridColumn(
-            columnName: 'report_date',
-            width: _columnWidths['report_date']!,
-            minimumWidth: 125,
-            label: _PurchaseGridHeader('REPORT DATE'),
-          ),
-          GridColumn(
-            columnName: 'workflow',
-            width: _columnWidths['workflow']!,
-            minimumWidth: 125,
-            allowSorting: false,
-            label: _PurchaseGridHeader('REVIEW'),
-          ),
-          GridColumn(
-            columnName: 'item_code',
-            width: _columnWidths['item_code']!,
-            minimumWidth: 115,
-            label: _PurchaseGridHeader('ITEM CODE'),
-          ),
-          GridColumn(
-            columnName: 'item_name',
-            width: _columnWidths['item_name']!,
-            minimumWidth: 190,
-            label: _PurchaseGridHeader('ITEM NAME', alignLeft: true),
-          ),
-          GridColumn(
-            columnName: 'status',
-            width: _columnWidths['status']!,
-            minimumWidth: 160,
-            label: _PurchaseGridHeader('STATUS'),
-          ),
-          GridColumn(
-            columnName: 'status_date',
-            width: _columnWidths['status_date']!,
-            minimumWidth: 125,
-            label: _PurchaseGridHeader('STATUS DATE'),
-          ),
-          GridColumn(
-            columnName: 'alternative',
-            width: _columnWidths['alternative']!,
-            minimumWidth: 190,
-            label: _PurchaseGridHeader('ALTERNATIVE', alignLeft: true),
-          ),
-          GridColumn(
-            columnName: 'purchase_status',
-            width: _columnWidths['purchase_status']!,
-            minimumWidth: 160,
-            label: _PurchaseGridHeader('PURCHASE STATUS', alignLeft: true),
-          ),
-          GridColumn(
-            columnName: 'category',
-            width: _columnWidths['category']!,
-            minimumWidth: 130,
-            label: _PurchaseGridHeader('CATEGORY', alignLeft: true),
-          ),
-          GridColumn(
-            columnName: 'supplier',
-            width: _columnWidths['supplier']!,
-            minimumWidth: 160,
-            label: _PurchaseGridHeader('SUPPLIER', alignLeft: true),
-          ),
-          GridColumn(
-            columnName: 'note',
-            width: _columnWidths['note']!,
-            minimumWidth: 150,
-            label: _PurchaseGridHeader('NOTE', alignLeft: true),
-          ),
-          GridColumn(
-            columnName: 'actions',
-            width: _columnWidths['actions']!,
-            minimumWidth: 130,
-            allowFiltering: false,
-            allowSorting: false,
-            label: _PurchaseGridHeader('ACTIONS'),
-          ),
-        ],
+      child: SfDataGridTheme(
+        data: SfDataGridThemeData(
+          headerColor: const Color(0xffeaf4fb),
+          gridLineColor: const Color(0xffcfd9e3),
+          selectionColor: AppColors.primaryColor.withValues(alpha: .12),
+          sortIconColor: AppColors.primaryColor,
+          filterIconColor: AppColors.primaryColor,
+          filterIconHoverColor: AppColors.primaryColor,
+        ),
+        child: SfDataGrid(
+          source: _source,
+          horizontalScrollController: _horizontalScrollController,
+          isScrollbarAlwaysShown: true,
+          showHorizontalScrollbar: true,
+          allowFiltering: true,
+          allowSorting: true,
+          allowMultiColumnSorting: true,
+          allowTriStateSorting: true,
+          allowColumnsResizing: true,
+          columnResizeMode: ColumnResizeMode.onResize,
+          onColumnResizeUpdate: (details) {
+            setState(() {
+              _columnWidths[details.column.columnName] = details.width;
+            });
+            widget.controller._setColumnWidth(
+              details.column.columnName,
+              details.width,
+            );
+            return true;
+          },
+          gridLinesVisibility: GridLinesVisibility.both,
+          headerGridLinesVisibility: GridLinesVisibility.both,
+          columnWidthMode: ColumnWidthMode.none,
+          frozenColumnsCount: 4,
+          rowHeight: 64,
+          headerRowHeight: 66,
+          selectionMode: SelectionMode.single,
+          navigationMode: GridNavigationMode.cell,
+          onFilterChanged: (_) {
+            widget.controller._update(_source.visibleRecords);
+          },
+          onColumnSortChanged: (_, _) {
+            widget.controller._update(_source.visibleRecords);
+          },
+          columns: [
+            GridColumn(
+              columnName: 'report_date',
+              width: _columnWidths['report_date']!,
+              minimumWidth: 125,
+              label: _PurchaseGridHeader('REPORT DATE'),
+            ),
+            GridColumn(
+              columnName: 'workflow',
+              width: _columnWidths['workflow']!,
+              minimumWidth: 125,
+              allowSorting: false,
+              label: _PurchaseGridHeader('REVIEW'),
+            ),
+            GridColumn(
+              columnName: 'item_code',
+              width: _columnWidths['item_code']!,
+              minimumWidth: 115,
+              label: _PurchaseGridHeader('ITEM CODE'),
+            ),
+            GridColumn(
+              columnName: 'item_name',
+              width: _columnWidths['item_name']!,
+              minimumWidth: 190,
+              label: _PurchaseGridHeader('ITEM NAME', alignLeft: true),
+            ),
+            GridColumn(
+              columnName: 'status',
+              width: _columnWidths['status']!,
+              minimumWidth: 160,
+              label: _PurchaseGridHeader('STATUS'),
+            ),
+            GridColumn(
+              columnName: 'status_date',
+              width: _columnWidths['status_date']!,
+              minimumWidth: 125,
+              label: _PurchaseGridHeader('STATUS DATE'),
+            ),
+            GridColumn(
+              columnName: 'alternative',
+              width: _columnWidths['alternative']!,
+              minimumWidth: 190,
+              label: _PurchaseGridHeader('ALTERNATIVE', alignLeft: true),
+            ),
+            GridColumn(
+              columnName: 'purchase_status',
+              width: _columnWidths['purchase_status']!,
+              minimumWidth: 160,
+              label: _PurchaseGridHeader('PURCHASE STATUS', alignLeft: true),
+            ),
+            GridColumn(
+              columnName: 'category',
+              width: _columnWidths['category']!,
+              minimumWidth: 130,
+              label: _PurchaseGridHeader('CATEGORY', alignLeft: true),
+            ),
+            GridColumn(
+              columnName: 'supplier',
+              width: _columnWidths['supplier']!,
+              minimumWidth: 160,
+              label: _PurchaseGridHeader('SUPPLIER', alignLeft: true),
+            ),
+            GridColumn(
+              columnName: 'note',
+              width: _columnWidths['note']!,
+              minimumWidth: 150,
+              label: _PurchaseGridHeader('NOTE', alignLeft: true),
+            ),
+            GridColumn(
+              columnName: 'actions',
+              width: _columnWidths['actions']!,
+              minimumWidth: 130,
+              allowFiltering: false,
+              allowSorting: false,
+              label: _PurchaseGridHeader('ACTIONS'),
+            ),
+          ],
+        ),
       ),
     );
   }

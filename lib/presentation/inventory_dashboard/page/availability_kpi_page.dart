@@ -1003,7 +1003,7 @@ Future<void> _showCalculationDialog(BuildContext context) {
                   number: '1',
                   title: 'Items Included',
                   detail:
-                      'An item is included when it is a top seller in the group that makes 60% of branch sales value during the last 3 completed months, or when it was sold in at least 80% of the months studied. Only Normal Purchase items are included.',
+                      'An item is included when it is a top seller in the group that makes 60% of branch sales value during the last 3 completed months, or when it was sold in at least 80% of the months studied. Only Normal Purchase items are included. After Store Stock is calculated, an item is excluded only when Store Stock is more than 4 and its 7-day coverage is below 100%.',
                 ),
                 const _CalculationRow(
                   number: '2',
