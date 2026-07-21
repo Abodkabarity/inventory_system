@@ -940,7 +940,7 @@ class _MethodCard extends StatelessWidget {
             number: '3',
             title: '7-day stock need',
             detail:
-                'Uses 30-day demand; DECREASE Max Adj overrides the sales demand',
+                '70% from 3-month history + 30% from the latest 45-day trend',
           ),
           TextButton.icon(
             onPressed: () => _showCalculationDialog(context),
@@ -965,68 +965,80 @@ Future<void> _showCalculationDialog(BuildContext context) {
         constraints: const BoxConstraints(maxWidth: 760, maxHeight: 720),
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(26),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppColors.secondaryColor.withValues(alpha: .1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.calculate_rounded,
-                      color: AppColors.secondaryColor,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      'How Availability Is Calculated',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
+          child: SelectionArea(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.secondaryColor.withValues(alpha: .1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.calculate_rounded,
+                        color: AppColors.secondaryColor,
                       ),
                     ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              const _CalculationRow(
-                number: '1',
-                title: 'Items Included',
-                detail:
-                    'An item is included when it is a top seller in the group that makes 60% of branch sales value during the last 3 completed months, or when it was sold in at least 80% of the months studied. Only Normal Purchase items are included.',
-              ),
-              const _CalculationRow(
-                number: '2',
-                title: 'Stock Needed for 7 Days',
-                detail:
-                    'Normally, 30-day demand is calculated from the last 3 completed months. If Max Adj type is DECREASE, qty becomes the 30-day demand. A DECREASE qty of zero removes the item from this branch KPI list.',
-                formula: 'Demand 30 Days / 30 x 7',
-              ),
-              const _CalculationRow(
-                number: '3',
-                title: 'Item Coverage',
-                detail:
-                    'Current branch stock is branch_stock plus total_final_reorder_today from daily_order. This total is divided by the stock needed for 7 days. Purchase Status IDs 1, 2, 5, 7, 8 and 34 are treated as 100% covered. Otherwise, coverage cannot be more than 100%, and a difference of 0.16 units or less is ignored.',
-                formula: 'Current stock ÷ 7-day need',
-              ),
-              const _CalculationRow(
-                number: '4',
-                title: 'Branch Availability',
-                detail:
-                    'We add the 7-day coverage percentage of every item, then divide by the number of items. Every item has the same weight.',
-                formula: 'Total item coverage ÷ item count',
-                last: true,
-              ),
-            ],
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'How Availability Is Calculated',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                const _CalculationRow(
+                  number: '1',
+                  title: 'Items Included',
+                  detail:
+                      'An item is included when it is a top seller in the group that makes 60% of branch sales value during the last 3 completed months, or when it was sold in at least 80% of the months studied. Only Normal Purchase items are included.',
+                ),
+                const _CalculationRow(
+                  number: '2',
+                  title: 'Stock Needed for 7 Days',
+                  detail:
+                      'We calculate two weekly averages, then combine them. The last 3 completed months represent stable sales history. The latest 45 days represent the current sales trend. The 45-day period ends on the latest sales date available in the system.',
+                  formula:
+                      '1. 3-Month Weekly Average = Total units in the last 3 completed months ÷ 3 ÷ 4.33\n\n'
+                      '2. 45-Day Weekly Average = Units sold in the latest 45 days ÷ 6.43\n\n'
+                      '3. 7-Day Need = (3-Month Weekly Average × 70%) + (45-Day Weekly Average × 30%)',
+                  example:
+                      'Example\n'
+                      'April 15 + May 2 + June 0 = 17 units\n'
+                      '3-Month Weekly Average = 17 ÷ 3 ÷ 4.33 = 1.31\n'
+                      'Latest 45 days = 1 unit ÷ 6.43 = 0.16\n'
+                      '7-Day Need = (1.31 × 70%) + (0.16 × 30%) = 0.97 units, or about 1 unit.\n\n'
+                      'Max Adj exception: DECREASE qty above zero replaces this calculation and is treated as 30-day demand. DECREASE qty of zero removes the item from the KPI list.',
+                ),
+                const _CalculationRow(
+                  number: '3',
+                  title: 'Item Coverage',
+                  detail:
+                      'Current branch stock is branch_stock plus total_final_reorder_today from daily_order. This total is divided by the stock needed for 7 days. Purchase Status IDs 1, 2, 5, 7, 8 and 34 are treated as 100% covered. Otherwise, coverage cannot be more than 100%, and a difference of 0.16 units or less is ignored.',
+                  formula: 'Current stock ÷ 7-day need',
+                ),
+                const _CalculationRow(
+                  number: '4',
+                  title: 'Branch Availability',
+                  detail:
+                      'We add the 7-day coverage percentage of every item, then divide by the number of items. Every item has the same weight.',
+                  formula: 'Total item coverage ÷ item count',
+                  last: true,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1039,6 +1051,7 @@ class _CalculationRow extends StatelessWidget {
   final String title;
   final String detail;
   final String? formula;
+  final String? example;
   final bool last;
 
   const _CalculationRow({
@@ -1046,6 +1059,7 @@ class _CalculationRow extends StatelessWidget {
     required this.title,
     required this.detail,
     this.formula,
+    this.example,
     this.last = false,
   });
 
@@ -1110,11 +1124,34 @@ class _CalculationRow extends StatelessWidget {
                         color: const Color(0xffF1F5F9),
                         borderRadius: BorderRadius.circular(9),
                       ),
-                      child: Text(
+                      child: SelectableText(
                         formula!,
                         style: const TextStyle(
                           color: Color(0xff1E3A8A),
                           fontWeight: FontWeight.w900,
+                          height: 1.45,
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (example != null) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.secondaryColor.withValues(alpha: .06),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: AppColors.secondaryColor.withValues(alpha: .2),
+                        ),
+                      ),
+                      child: SelectableText(
+                        example!,
+                        style: const TextStyle(
+                          color: Color(0xff334155),
+                          height: 1.55,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
@@ -2948,7 +2985,8 @@ List<GridColumn> _availabilityColumns(int lastStudyMonth) => [
   _availabilityColumn('item_code', 'Item Code', 175),
   _availabilityColumn('item_name', 'Item Name', 340),
   _availabilityColumn('selection', 'Selection Reason', 235),
-  _availabilityColumn('sales', 'Demand\n30 Days', 190),
+  _availabilityColumn('sales', '3-Month\nUnits Sold', 190),
+  _availabilityColumn('notes', 'Notes', 310, alignLeft: true),
   _availabilityColumn('retail', 'Retail\nPrice', 165),
   _availabilityColumn('sales_value', 'Retail Sales\nValue', 190),
   _availabilityColumn('share', 'Branch Sales\nShare', 195),
@@ -2956,6 +2994,7 @@ List<GridColumn> _availabilityColumns(int lastStudyMonth) => [
   _availabilityColumn('consistency', 'Selling\nConsistency', 190),
   _availabilityColumn('weekly_need', '7-Day\nNeed', 170),
   _availabilityColumn('stock', 'Branch\nStock', 170),
+  _availabilityColumn('store_stock', 'Store\nStock', 175),
   _availabilityColumn('shortage', 'Units\nMissing', 165),
   _availabilityColumn('extra_qty', 'Total Extra Qty\nAll Branches', 205),
   _availabilityColumn('coverage', '7-Day\nCoverage', 185),
@@ -3050,6 +3089,12 @@ class _AvailabilityKpiGridSource extends DataGridSource {
                 value: _selectionLabel(item),
               ),
               DataGridCell<num>(columnName: 'sales', value: item.recentSales),
+              DataGridCell<String>(
+                columnName: 'notes',
+                value: item.decreaseDemand30Days == null
+                    ? ''
+                    : 'Branch decrease • Demand 30 days: ${_fmt(item.decreaseDemand30Days!)}',
+              ),
               DataGridCell<num>(columnName: 'retail', value: item.retail),
               DataGridCell<num>(
                 columnName: 'sales_value',
@@ -3072,6 +3117,10 @@ class _AvailabilityKpiGridSource extends DataGridSource {
                 value: item.weeklyNeed,
               ),
               DataGridCell<num>(columnName: 'stock', value: item.branchStock),
+              DataGridCell<num>(
+                columnName: 'store_stock',
+                value: item.storeStock,
+              ),
               DataGridCell<num>(
                 columnName: 'shortage',
                 value: item.stockShortage,
@@ -3126,7 +3175,8 @@ class _AvailabilityKpiGridSource extends DataGridSource {
       cells: row
           .getCells()
           .map((cell) {
-            final alignLeft = cell.columnName == 'item_name';
+            final alignLeft =
+                cell.columnName == 'item_name' || cell.columnName == 'notes';
             late final Widget child;
             switch (cell.columnName) {
               case 'coverage':
@@ -3159,6 +3209,34 @@ class _AvailabilityKpiGridSource extends DataGridSource {
                 break;
               case 'selection':
                 child = _SourceBadge(item: item);
+                break;
+              case 'notes':
+                final hasDecrease = item.decreaseDemand30Days != null;
+                child = hasDecrease
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 11,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xffFFF7ED),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xffFDBA74)),
+                        ),
+                        child: SelectableText(
+                          'Branch decrease • Demand 30 days: ${_fmt(item.decreaseDemand30Days!)}',
+                          maxLines: 2,
+                          style: const TextStyle(
+                            color: Color(0xff9A3412),
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                          ),
+                        ),
+                      )
+                    : const SelectableText(
+                        '—',
+                        style: TextStyle(color: Color(0xff94A3B8)),
+                      );
                 break;
               case 'status':
                 final showStatus =
@@ -3257,6 +3335,7 @@ class _AvailabilityKpiGridSource extends DataGridSource {
                           'sales_value',
                           'weekly_need',
                           'stock',
+                          'store_stock',
                         }.contains(cell.columnName)
                         ? FontWeight.w800
                         : FontWeight.w600,

@@ -19,7 +19,7 @@ class AvailabilityKpiExcelExporter {
     final sheet = workbook.worksheets[0]..name = 'Availability KPI';
     final lastStudyMonth = _lastStudyMonth(items, stockDate);
 
-    final title = sheet.getRangeByName('A1:Q1');
+    final title = sheet.getRangeByName('A1:S1');
     title.merge();
     title.setText('Availability KPI — $branch');
     title.cellStyle
@@ -43,7 +43,8 @@ class AvailabilityKpiExcelExporter {
       'Item Code',
       'Item Name',
       'Selection Reason',
-      'Demand 30 Days',
+      '3-Month Units Sold',
+      'Notes',
       'Retail Price',
       'Retail Sales Value',
       'Branch Sales Share %',
@@ -52,6 +53,7 @@ class AvailabilityKpiExcelExporter {
       'Selling Month %',
       'Needed For 7 Days',
       'Current Branch Stock',
+      'Store Stock',
       'Units Missing',
       'Total Extra Qty - All Branches',
       '7-Day Coverage %',
@@ -89,6 +91,9 @@ class AvailabilityKpiExcelExporter {
         item.itemName,
         _selectionReason(item),
         item.recentSales,
+        item.decreaseDemand30Days == null
+            ? ''
+            : 'Branch decrease - Demand 30 days: ${_numberText(item.decreaseDemand30Days!)}',
         item.retail,
         item.recentSalesValue,
         item.recentSalesShare,
@@ -97,6 +102,7 @@ class AvailabilityKpiExcelExporter {
         item.monthConsistency,
         item.weeklyNeed,
         item.branchStock,
+        item.storeStock,
         item.stockShortage,
         item.availabilityRate < 100 ? item.extraQtyMoreThanMonth : '',
         item.availabilityRate,
@@ -120,16 +126,16 @@ class AvailabilityKpiExcelExporter {
       }
       sheet.getRangeByIndex(row, 3).cellStyle.hAlign = xlsio.HAlignType.left;
       if (item.stockShortage > 0) {
-        sheet.getRangeByIndex(row, 14).cellStyle
+        sheet.getRangeByIndex(row, 16).cellStyle
           ..fontColor = '#DC2626'
           ..bold = true;
       }
       if (item.availabilityRate < 100 && item.extraQtyMoreThanMonth > 0) {
-        sheet.getRangeByIndex(row, 15).cellStyle
+        sheet.getRangeByIndex(row, 17).cellStyle
           ..fontColor = '#0369A1'
           ..bold = true;
       }
-      sheet.getRangeByIndex(row, 16).cellStyle
+      sheet.getRangeByIndex(row, 18).cellStyle
         ..fontColor = item.availabilityRate >= 95
             ? '#059669'
             : item.availabilityRate >= 80
@@ -146,7 +152,8 @@ class AvailabilityKpiExcelExporter {
     for (var column = 5; column <= headers.length; column++) {
       sheet.getRangeByIndex(1, column).columnWidth = 18;
     }
-    sheet.getRangeByIndex(1, 17).columnWidth = 28;
+    sheet.getRangeByIndex(1, 6).columnWidth = 36;
+    sheet.getRangeByIndex(1, 19).columnWidth = 28;
     if (items.isNotEmpty) {
       sheet.autoFilters.filterRange = sheet.getRangeByIndex(
         headerRow,
@@ -178,6 +185,10 @@ class AvailabilityKpiExcelExporter {
     return item.inPareto
         ? 'Top seller — 60% of branch sales value'
         : 'Sold regularly';
+  }
+
+  static String _numberText(num value) {
+    return value % 1 == 0 ? value.toInt().toString() : value.toStringAsFixed(1);
   }
 
   static int _lastStudyMonth(

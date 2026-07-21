@@ -36,7 +36,8 @@ branch_name,item_code,item_name,master_source,in_pareto,in_consistent,
 recent_sales,recent_sales_share,cumulative_sales_share,total_sales,
 branch_recent_sales,selling_months,total_months,month_consistency,
 recent_selling_months,weekly_need,analysis_start,recent_start,as_of_date,
-branch_stock,extra_qty_more_than_month,status_id,status_name,retail
+branch_stock,extra_qty_more_than_month,status_id,status_name,retail,
+store_stock,decrease_demand_30_days
 ''';
 
   /// Uses the newest stock snapshot that actually exists in daily_order.
@@ -143,11 +144,13 @@ branch_stock,extra_qty_more_than_month,status_id,status_name,retail
       _fetchInventoryMap(runDate: runDate, branch: branch),
       _fetchGlobalExtraQuantities(runDate),
       _fetchRetailPrices(),
+      _fetchMaxAdjDecrease(branch),
     ]);
     final purchaseStatuses = results[0] as Map<String, _PurchaseStatus>;
     final inventory = results[1] as Map<String, _ItemInventory>;
     final globalExtraQuantities = results[2] as Map<String, num>;
     final retailPrices = results[3] as Map<String, num>;
+    final decreaseDemandByItem = results[4] as Map<String, num>;
     if (inventory.isEmpty) {
       throw StateError(
         'No stock snapshot found for $branch on $runDate in daily_order.',
@@ -160,6 +163,7 @@ branch_stock,extra_qty_more_than_month,status_id,status_name,retail
       purchaseStatuses: purchaseStatuses,
       globalExtraQuantities: globalExtraQuantities,
       retailPrices: retailPrices,
+      decreaseDemandByItem: decreaseDemandByItem,
     );
   }
 
@@ -226,6 +230,7 @@ branch_stock,extra_qty_more_than_month,status_id,status_name,retail
       _fetchPurchaseStatuses(),
       _fetchGlobalExtraQuantities(runDate),
       _fetchRetailPrices(),
+      _fetchAllMaxAdjDecrease(requested),
     ]);
     final masterByBranch =
         results[0] as Map<String, List<Map<String, dynamic>>>;
@@ -234,6 +239,7 @@ branch_stock,extra_qty_more_than_month,status_id,status_name,retail
     final purchaseStatuses = results[2] as Map<String, _PurchaseStatus>;
     final globalExtraQuantities = results[3] as Map<String, num>;
     final retailPrices = results[4] as Map<String, num>;
+    final decreaseDemandByBranch = results[5] as Map<String, Map<String, num>>;
     onProgress?.call(.55, 'Building the combined item table...');
 
     final sortedBranches = requested.toList()
@@ -254,6 +260,7 @@ branch_stock,extra_qty_more_than_month,status_id,status_name,retail
             purchaseStatuses: purchaseStatuses,
             globalExtraQuantities: globalExtraQuantities,
             retailPrices: retailPrices,
+            decreaseDemandByItem: decreaseDemandByBranch[branch] ?? const {},
           ).items,
         );
       }
@@ -326,6 +333,10 @@ branch_stock,extra_qty_more_than_month,status_id,status_name,retail
               : _integer(row['status_id']),
           purchaseStatusName: _text(row['status_name']),
           retailPrice: _number(row['retail']),
+          storeStock: _number(row['store_stock']),
+          decreaseDemand30Days: row['decrease_demand_30_days'] == null
+              ? null
+              : _number(row['decrease_demand_30_days']),
         ),
       );
       if (index % 1000 == 0) {
@@ -344,7 +355,7 @@ branch_stock,extra_qty_more_than_month,status_id,status_name,retail
     required String runDate,
   }) async {
     try {
-      final cachedResponse = await client
+      var cachedResponse = await client
           .from('availability_branch_summary_cache_v2')
           .select('''
 branch_name,master_items,fully_available_items,shortage_items,pareto_items,
@@ -353,7 +364,25 @@ availability_rate
 ''')
           .eq('run_date', runDate)
           .order('branch_name');
-      final cached = _parseBranchSummaries(cachedResponse);
+      var cached = _parseBranchSummaries(cachedResponse);
+      if (cached.isNotEmpty) return cached;
+
+      // A new operational date may not have a summary snapshot yet. Build it
+      // once on the server, then keep subsequent page loads cache-only.
+      await client.rpc(
+        'ensure_availability_branch_summary_cache_v2',
+        params: {'p_run_date': runDate},
+      );
+      cachedResponse = await client
+          .from('availability_branch_summary_cache_v2')
+          .select('''
+branch_name,master_items,fully_available_items,shortage_items,pareto_items,
+consistent_items,weekly_need,branch_stock,covered_weekly_need,stock_shortage,
+availability_rate
+''')
+          .eq('run_date', runDate)
+          .order('branch_name');
+      cached = _parseBranchSummaries(cachedResponse);
       if (cached.isNotEmpty) return cached;
     } catch (_) {
       // The cache migration may not be installed yet. Try the direct RPC.
@@ -456,6 +485,7 @@ availability_rate
     required Map<String, _PurchaseStatus> purchaseStatuses,
     required Map<String, num> globalExtraQuantities,
     required Map<String, num> retailPrices,
+    required Map<String, num> decreaseDemandByItem,
   }) {
     final items =
         masterRows
@@ -470,6 +500,8 @@ availability_rate
                 purchaseStatusId: purchaseStatuses[itemCode]?.id,
                 purchaseStatusName: purchaseStatuses[itemCode]?.name ?? '',
                 retailPrice: retailPrices[itemCode],
+                storeStock: itemInventory.storeStock,
+                decreaseDemand30Days: decreaseDemandByItem[itemCode],
               );
             })
             .toList(growable: false)
@@ -622,7 +654,9 @@ availability_rate
     while (true) {
       final response = await client
           .from('daily_order')
-          .select('item_code,branch_stock,total_final_reorder_today')
+          .select('''
+item_code,branch_stock,total_final_reorder_today,store_stock,total_reorder_today
+''')
           .eq('run_date', runDate)
           .eq('branch', branch.trim())
           .order('item_code')
@@ -638,8 +672,13 @@ availability_rate
           0,
         );
         final previous = inventory[itemCode];
+        final storeStock =
+            _number(row['store_stock']) - _number(row['total_reorder_today']);
         inventory[itemCode] = _ItemInventory(
           stock: math.max(previous?.stock ?? 0, stock),
+          storeStock: previous == null
+              ? storeStock
+              : math.max(previous.storeStock, storeStock),
         );
       }
       offset += batch.length;
@@ -690,7 +729,9 @@ availability_rate
     while (true) {
       final response = await client
           .from('daily_order')
-          .select('branch,item_code,branch_stock,total_final_reorder_today')
+          .select('''
+branch,item_code,branch_stock,total_final_reorder_today,store_stock,total_reorder_today
+''')
           .eq('run_date', runDate)
           .order('branch')
           .order('item_code')
@@ -709,8 +750,13 @@ availability_rate
               _number(row['total_final_reorder_today']),
           0,
         );
+        final storeStock =
+            _number(row['store_stock']) - _number(row['total_reorder_today']);
         branchInventory[itemCode] = _ItemInventory(
           stock: math.max(previous?.stock ?? 0, stock),
+          storeStock: previous == null
+              ? storeStock
+              : math.max(previous.storeStock, storeStock),
         );
       }
       offset += batch.length;
@@ -720,6 +766,47 @@ availability_rate
 
   Future<Map<String, _PurchaseStatus>> _fetchPurchaseStatuses() {
     return _purchaseStatusesFuture ??= _loadPurchaseStatuses();
+  }
+
+  Future<Map<String, num>> _fetchMaxAdjDecrease(String branch) async {
+    final response = await client
+        .from('max_adj')
+        .select('item_code,qty')
+        .eq('branch_name', branch.trim())
+        .eq('adjustment_type', 'DECREASE')
+        .gt('qty', 0);
+    return {
+      for (final row in List<Map<String, dynamic>>.from(response as List))
+        if (_text(row['item_code']).isNotEmpty)
+          _text(row['item_code']): _number(row['qty']),
+    };
+  }
+
+  Future<Map<String, Map<String, num>>> _fetchAllMaxAdjDecrease(
+    Set<String> branches,
+  ) async {
+    final result = <String, Map<String, num>>{};
+    var offset = 0;
+    while (true) {
+      final response = await client
+          .from('max_adj')
+          .select('branch_name,item_code,qty')
+          .eq('adjustment_type', 'DECREASE')
+          .gt('qty', 0)
+          .order('branch_name')
+          .order('item_code')
+          .range(offset, offset + _batchSize - 1);
+      final batch = List<Map<String, dynamic>>.from(response as List);
+      if (batch.isEmpty) break;
+      for (final row in batch) {
+        final branch = _text(row['branch_name']);
+        final itemCode = _text(row['item_code']);
+        if (!branches.contains(branch) || itemCode.isEmpty) continue;
+        (result[branch] ??= <String, num>{})[itemCode] = _number(row['qty']);
+      }
+      offset += batch.length;
+    }
+    return result;
   }
 
   Future<Map<String, num>> _fetchRetailPrices() {
@@ -785,8 +872,9 @@ class _PurchaseStatus {
 
 class _ItemInventory {
   final num stock;
+  final num storeStock;
 
-  const _ItemInventory({this.stock = 0});
+  const _ItemInventory({this.stock = 0, this.storeStock = 0});
 }
 
 class AvailabilityBranchData {
@@ -994,6 +1082,8 @@ class AvailabilityKpiItem {
   final int recentSellingMonths;
   final num weeklyNeed;
   final num branchStock;
+  final num storeStock;
+  final num? decreaseDemand30Days;
   final num stockShortage;
   final num extraQtyMoreThanMonth;
   final num availabilityRate;
@@ -1024,6 +1114,8 @@ class AvailabilityKpiItem {
     required this.recentSellingMonths,
     required this.weeklyNeed,
     required this.branchStock,
+    required this.storeStock,
+    required this.decreaseDemand30Days,
     required this.stockShortage,
     required this.extraQtyMoreThanMonth,
     required this.availabilityRate,
@@ -1056,6 +1148,8 @@ class AvailabilityKpiItem {
       recentSellingMonths: recentSellingMonths,
       weeklyNeed: weeklyNeed,
       branchStock: branchStock,
+      storeStock: storeStock,
+      decreaseDemand30Days: decreaseDemand30Days,
       stockShortage: stockShortage,
       extraQtyMoreThanMonth: extraQtyMoreThanMonth,
       availabilityRate: availabilityRate,
@@ -1072,6 +1166,8 @@ class AvailabilityKpiItem {
     int? purchaseStatusId,
     String purchaseStatusName = '',
     num? retailPrice,
+    num storeStock = 0,
+    num? decreaseDemand30Days,
   }) {
     final rawWeeklyNeed = math.max(_number(map['weekly_need']), 0);
     final stock = math.max(branchStock, 0);
@@ -1128,6 +1224,8 @@ class AvailabilityKpiItem {
       recentSellingMonths: _integer(map['recent_selling_months']),
       weeklyNeed: weeklyNeed,
       branchStock: stock,
+      storeStock: storeStock,
+      decreaseDemand30Days: decreaseDemand30Days,
       stockShortage: isStatusCovered ? 0 : math.max(weeklyNeed - stock, 0),
       extraQtyMoreThanMonth: availability < 100
           ? math.max(extraQtyMoreThanMonth, 0)
