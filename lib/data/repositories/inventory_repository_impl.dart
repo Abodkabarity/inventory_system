@@ -453,6 +453,7 @@ class InventoryRepositoryImpl implements InventoryRepository {
           item_name,
           assortment_qty,
           assortment_by,
+          reason,
           assortment_start,
           assortment_end,
           created_at

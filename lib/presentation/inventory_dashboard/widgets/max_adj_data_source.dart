@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
+import '../../../core/theme/app_colors.dart';
+
 class MaxAdjDataSource extends DataGridSource {
   List<DataGridRow> _rows = [];
 
@@ -27,8 +29,9 @@ class MaxAdjDataSource extends DataGridSource {
           DataGridCell(columnName: 'max', value: e['max_adjustment_30d']),
           DataGridCell(columnName: 'type', value: e['adjustment_type']),
           DataGridCell(columnName: 'qty', value: e['qty']),
-          DataGridCell(columnName: 'added_by', value: e['added_by']),
+          DataGridCell(columnName: 'reason', value: e['reason']),
           DataGridCell(columnName: 'date', value: e['update_date']),
+          DataGridCell(columnName: 'added_by', value: e['added_by']),
           DataGridCell(columnName: 'action', value: e),
         ],
       );
@@ -43,7 +46,7 @@ class MaxAdjDataSource extends DataGridSource {
     final type = row.getCells()[6].value;
 
     return DataGridRowAdapter(
-      color: Colors.white,
+      color: AppColors.card,
       cells: row.getCells().map<Widget>((cell) {
         final isCenterColumn = [
           'index',
@@ -69,11 +72,36 @@ class MaxAdjDataSource extends DataGridSource {
         /// 🔹 Type coloring
         if (cell.columnName == 'type') {
           return Center(
-            child: Text(
+            child: SelectableText(
               type,
               style: TextStyle(
-                color: type == 'INCREASE' ? Colors.green : Colors.red,
+                color: type == 'INCREASE'
+                    ? const Color(0xFF16A34A)
+                    : const Color(0xFFDC2626),
                 fontWeight: FontWeight.bold,
+              ),
+            ),
+          );
+        }
+
+        if (cell.columnName == 'reason') {
+          final reason = cell.value?.toString().trim() ?? '';
+          return Container(
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Tooltip(
+              message: reason.isEmpty ? 'No reason recorded' : reason,
+              child: Text(
+                reason.isEmpty ? 'No reason recorded' : reason,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: reason.isEmpty ? AppColors.subText : AppColors.text,
+                  fontStyle: reason.isEmpty
+                      ? FontStyle.italic
+                      : FontStyle.normal,
+                  fontSize: 13,
+                ),
               ),
             ),
           );
@@ -82,9 +110,9 @@ class MaxAdjDataSource extends DataGridSource {
         return Container(
           alignment: isCenterColumn ? Alignment.center : Alignment.centerLeft,
           padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Text(
+          child: SelectableText(
             cell.value?.toString() ?? '',
-            style: const TextStyle(fontSize: 13),
+            style: const TextStyle(fontSize: 13, color: AppColors.text),
           ),
         );
       }).toList(),

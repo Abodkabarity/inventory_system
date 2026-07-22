@@ -39,6 +39,7 @@ class AssortmentExcelExporter {
             'item_name',
             'assortment_qty',
             'assortment_by',
+            'reason',
             'assortment_start',
             'assortment_end',
           ];
@@ -56,7 +57,8 @@ class AssortmentExcelExporter {
       'item_name': 'Item Name',
 
       'assortment_qty': 'Qty',
-      'assortment_by': 'Added By',
+      'assortment_by': 'Assortment By',
+      'reason': 'Reason',
       'assortment_start': 'Start',
       'assortment_end': 'End',
 

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
+import '../../../core/theme/app_colors.dart';
+
 class AssortmentDataSource extends DataGridSource {
   List<DataGridRow> _rows = [];
 
@@ -22,6 +24,7 @@ class AssortmentDataSource extends DataGridSource {
           DataGridCell(columnName: 'name', value: e['item_name']),
           DataGridCell(columnName: 'qty', value: e['assortment_qty']),
           DataGridCell(columnName: 'by', value: e['assortment_by']),
+          DataGridCell(columnName: 'reason', value: e['reason']),
           DataGridCell(columnName: 'start', value: e['assortment_start']),
           DataGridCell(columnName: 'end', value: e['assortment_end']),
           DataGridCell(columnName: 'action', value: e),
@@ -36,6 +39,7 @@ class AssortmentDataSource extends DataGridSource {
   @override
   DataGridRowAdapter buildRow(DataGridRow row) {
     return DataGridRowAdapter(
+      color: AppColors.card,
       cells: row.getCells().map((cell) {
         if (cell.columnName == 'action') {
           return IconButton(
@@ -44,12 +48,44 @@ class AssortmentDataSource extends DataGridSource {
           );
         }
 
+        final isCenter = [
+          'index',
+          'qty',
+          'by',
+          'start',
+          'end',
+        ].contains(cell.columnName);
+        final value = cell.value?.toString().trim() ?? '';
+
+        if (cell.columnName == 'reason') {
+          final display = value.isEmpty ? 'No reason recorded' : value;
+          return Container(
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Tooltip(
+              message: display,
+              child: SelectableText(
+                display,
+                maxLines: 1,
+                style: TextStyle(
+                  color: value.isEmpty ? AppColors.subText : AppColors.text,
+                  fontStyle: value.isEmpty
+                      ? FontStyle.italic
+                      : FontStyle.normal,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          );
+        }
+
         return Container(
-          alignment: Alignment.center,
-          padding: const EdgeInsets.all(8),
-          child: Text(
-            cell.value?.toString() ?? '',
-            textAlign: TextAlign.center,
+          alignment: isCenter ? Alignment.center : Alignment.centerLeft,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: SelectableText(
+            value,
+            textAlign: isCenter ? TextAlign.center : TextAlign.left,
+            style: const TextStyle(fontSize: 13, color: AppColors.text),
           ),
         );
       }).toList(),

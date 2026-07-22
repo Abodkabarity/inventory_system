@@ -318,7 +318,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     });
 
     on<LoadMaxAdjustment>((event, emit) async {
-      const pageSize = 10000;
+      // Avoid building thousands of web grid cells at once.
+      const pageSize = 500;
       final requestToken = ++_maxAdjLoadToken;
 
       if (!event.silent) {
@@ -1159,7 +1160,10 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
     return list.where((e) {
       return (e['item_name'] ?? '').toString().toLowerCase().contains(q) ||
-          (e['item_code'] ?? '').toString().toLowerCase().contains(q);
+          (e['item_code'] ?? '').toString().toLowerCase().contains(q) ||
+          (e['branch_name'] ?? '').toString().toLowerCase().contains(q) ||
+          (e['assortment_by'] ?? '').toString().toLowerCase().contains(q) ||
+          (e['reason'] ?? '').toString().toLowerCase().contains(q);
     }).toList();
   }
 
@@ -2078,10 +2082,27 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     ExportMaxAdjCurrent event,
     Emitter<InventoryState> emit,
   ) async {
+    if (state.isExporting) return;
     try {
+      emit(
+        state.copyWith(
+          isExporting: true,
+          exportMessage: 'Fetching current adjustment records...',
+        ),
+      );
       final data = await repo.fetchMaxAdjExport();
+      emit(
+        state.copyWith(
+          isExporting: true,
+          exportMessage: 'Building Excel file for ${data.length} records...',
+        ),
+      );
       await MaxAdjExcelExporter.export(rows: data, includeHistory: false);
+      emit(
+        state.copyWith(isExporting: false, exportMessage: 'Export completed'),
+      );
     } catch (e) {
+      emit(state.copyWith(isExporting: false, exportMessage: 'Export failed'));
       print("Export Current Error: $e");
     }
   }
@@ -2090,14 +2111,31 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     ExportMaxAdjWithHistory event,
     Emitter<InventoryState> emit,
   ) async {
+    if (state.isExporting) return;
     try {
+      emit(
+        state.copyWith(
+          isExporting: true,
+          exportMessage: 'Fetching current adjustments and history...',
+        ),
+      );
       final current = await repo.fetchMaxAdjExport();
       final log = await repo.fetchMaxAdjLogExport();
 
       final merged = [...current, ...log];
 
+      emit(
+        state.copyWith(
+          isExporting: true,
+          exportMessage: 'Building Excel file for ${merged.length} records...',
+        ),
+      );
       await MaxAdjExcelExporter.export(rows: merged, includeHistory: true);
+      emit(
+        state.copyWith(isExporting: false, exportMessage: 'Export completed'),
+      );
     } catch (e) {
+      emit(state.copyWith(isExporting: false, exportMessage: 'Export failed'));
       print("Export History Error: $e");
     }
   }
@@ -2127,6 +2165,9 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       }
 
       final file = result.files.single;
+
+      // Give the web renderer one frame to show the progress UI first.
+      await Future<void>.delayed(Duration.zero);
 
       String csvText;
       try {
@@ -2179,7 +2220,12 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       // ===============================
       // FAST FETCH — branches + existing data at the same time
       // ===============================
-      emit(state.copyWith(importMessage: "Validating..."));
+      emit(
+        state.copyWith(
+          importProgress: 0.05,
+          importMessage: 'Validating branches and existing adjustments...',
+        ),
+      );
 
       final fetchResults = await Future.wait([
         Supabase.instance.client
@@ -2197,6 +2243,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
       final branchesResult = fetchResults[0] as List;
       final existingRaw = fetchResults[1] as List;
+
+      await Future<void>.delayed(Duration.zero);
 
       // ===============================
       // BRANCH VALIDATION (memory only — instant)
@@ -2350,6 +2398,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
         if (i % 100 == 0) {
           emit(state.copyWith(importProgress: i / total));
+          await Future<void>.delayed(Duration.zero);
         }
       }
 
@@ -2383,7 +2432,12 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       // ===============================
       // FAST UPLOAD — delete + import at the same time
       // ===============================
-      emit(state.copyWith(importMessage: "Uploading..."));
+      emit(
+        state.copyWith(
+          importProgress: .96,
+          importMessage: 'Uploading changes...',
+        ),
+      );
 
       await Future.wait([
         if (rowsToDelete.isNotEmpty) repo.deleteMaxAdjBulk(rowsToDelete),

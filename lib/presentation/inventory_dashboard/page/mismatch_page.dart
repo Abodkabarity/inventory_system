@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -18,145 +20,227 @@ class MismatchPage extends StatefulWidget {
 }
 
 class _MismatchPageState extends State<MismatchPage> {
+  bool _isInitialLoading = true;
+  Timer? _initialLoadFallback;
+
   @override
   void initState() {
     super.initState();
     final bloc = context.read<InventoryBloc>();
     bloc.add(StartMismatchRealtime());
     bloc.add(LoadMismatch());
+    _initialLoadFallback = Timer(const Duration(seconds: 12), () {
+      if (mounted && _isInitialLoading) {
+        setState(() => _isInitialLoading = false);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _initialLoadFallback?.cancel();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<InventoryBloc, InventoryState>(
-      buildWhen: (previous, current) {
-        return previous.filteredMismatch != current.filteredMismatch ||
-            previous.mismatchColumnWidths != current.mismatchColumnWidths ||
-            previous.mismatchTodayCount != current.mismatchTodayCount ||
-            previous.mismatchMonthCount != current.mismatchMonthCount ||
-            previous.mismatchTotalCount != current.mismatchTotalCount ||
-            previous.mismatchDiffSum != current.mismatchDiffSum ||
-            previous.mismatchBranch != current.mismatchBranch ||
-            previous.branches != current.branches ||
-            previous.isExporting != current.isExporting ||
-            previous.exportMessage != current.exportMessage ||
-            previous.isLoading != current.isLoading;
+    return BlocListener<InventoryBloc, InventoryState>(
+      listenWhen: (previous, current) =>
+          previous.filteredMismatch != current.filteredMismatch ||
+          previous.mismatchTodayCount != current.mismatchTodayCount ||
+          previous.mismatchMonthCount != current.mismatchMonthCount ||
+          previous.mismatchTotalCount != current.mismatchTotalCount,
+      listener: (_, _) {
+        if (_isInitialLoading && mounted) {
+          _initialLoadFallback?.cancel();
+          setState(() => _isInitialLoading = false);
+        }
       },
-      builder: (context, state) {
-        final rows = state.filteredMismatch;
-        final widths = state.mismatchColumnWidths;
+      child: BlocBuilder<InventoryBloc, InventoryState>(
+        buildWhen: (previous, current) {
+          return previous.filteredMismatch != current.filteredMismatch ||
+              previous.mismatchColumnWidths != current.mismatchColumnWidths ||
+              previous.mismatchTodayCount != current.mismatchTodayCount ||
+              previous.mismatchMonthCount != current.mismatchMonthCount ||
+              previous.mismatchTotalCount != current.mismatchTotalCount ||
+              previous.mismatchDiffSum != current.mismatchDiffSum ||
+              previous.mismatchBranch != current.mismatchBranch ||
+              previous.branches != current.branches ||
+              previous.isExporting != current.isExporting ||
+              previous.exportMessage != current.exportMessage ||
+              previous.isLoading != current.isLoading;
+        },
+        builder: (context, state) {
+          final rows = state.filteredMismatch;
+          final widths = state.mismatchColumnWidths;
 
-        return Stack(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  _cards(state),
-                  const SizedBox(height: 16),
-                  _filters(context, state),
-                  const SizedBox(height: 16),
+          return Stack(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+                child: Column(
+                  children: [
+                    _header(state),
+                    const SizedBox(height: 14),
+                    _cards(state),
+                    const SizedBox(height: 14),
+                    _filters(context, state),
+                    const SizedBox(height: 14),
 
-                  /// 🔥 TABLE
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: SfDataGridTheme(
-                        data: SfDataGridThemeData(
-                          headerColor: AppColors.backgroundWidget,
-                          gridLineColor: Colors.grey.shade300,
-                          selectionColor: Colors.blue.withValues(alpha: .08),
-                        ),
-                        child: SfDataGrid(
-                          source: _MismatchDataSource(rows, context),
-
-                          allowFiltering: true,
-                          allowColumnsResizing: true,
-                          allowSorting: true,
-
-                          columnWidthMode: ColumnWidthMode.none,
-
-                          gridLinesVisibility: GridLinesVisibility.both,
-                          headerGridLinesVisibility: GridLinesVisibility.both,
-
-                          rowHeight: 55,
-                          headerRowHeight: 60,
-
-                          onColumnResizeUpdate: (details) {
-                            context.read<InventoryBloc>().add(
-                              UpdateMismatchColumnWidth(
-                                details.column.columnName,
-                                details.width,
+                    /// 🔥 TABLE
+                    Expanded(
+                      child: _isInitialLoading
+                          ? const Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  CircularProgressIndicator(
+                                    color: AppColors.primaryColor,
+                                  ),
+                                  SizedBox(height: 10),
+                                  Text('Loading mismatch report...'),
+                                ],
                               ),
-                            );
-                            return true;
-                          },
+                            )
+                          : Container(
+                              decoration: BoxDecoration(
+                                color: AppColors.card,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: const Color(0xFFF0C9D1),
+                                ),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: SfDataGridTheme(
+                                  data: SfDataGridThemeData(
+                                    headerColor: const Color(0xFFFFE8EC),
+                                    gridLineColor: AppColors.border,
+                                    rowHoverColor: const Color(0xFFFFF5F7),
+                                    selectionColor: const Color(0x14BE123C),
+                                    filterPopupBackgroundColor: const Color(
+                                      0xFFFFF7F8,
+                                    ),
+                                    filterPopupIconColor: const Color(
+                                      0xFFBE123C,
+                                    ),
+                                    filterPopupCheckColor: Colors.white,
+                                    filterPopupCheckboxFillColor:
+                                        const WidgetStatePropertyAll(
+                                          Color(0xFFBE123C),
+                                        ),
+                                    filterPopupInputBorderColor: const Color(
+                                      0xFFBE123C,
+                                    ),
+                                    okFilteringLabelColor: Colors.white,
+                                    okFilteringLabelButtonColor: const Color(
+                                      0xFFBE123C,
+                                    ),
+                                    cancelFilteringLabelColor: const Color(
+                                      0xFF881337,
+                                    ),
+                                    cancelFilteringLabelButtonColor:
+                                        Colors.transparent,
+                                    searchAreaFocusedBorderColor: const Color(
+                                      0xFFBE123C,
+                                    ),
+                                  ),
+                                  child: SfDataGrid(
+                                    source: _MismatchDataSource(rows, context),
 
-                          columns: [
-                            _col("index", "#", widths),
-                            _col("branch", "Branch", widths),
-                            _col("code", "Item Code", widths),
-                            _col("name", "Item Name", widths),
-                            _col("system", "System", widths),
-                            _col("actual", "Actual", widths),
-                            _col("diff", "Diff", widths),
-                            _col("history", "History", widths),
+                                    allowFiltering: true,
+                                    allowColumnsResizing: true,
+                                    allowSorting: true,
+
+                                    columnWidthMode: ColumnWidthMode.none,
+
+                                    gridLinesVisibility:
+                                        GridLinesVisibility.both,
+                                    headerGridLinesVisibility:
+                                        GridLinesVisibility.both,
+
+                                    rowHeight: 55,
+                                    headerRowHeight: 60,
+
+                                    onColumnResizeUpdate: (details) {
+                                      context.read<InventoryBloc>().add(
+                                        UpdateMismatchColumnWidth(
+                                          details.column.columnName,
+                                          details.width,
+                                        ),
+                                      );
+                                      return true;
+                                    },
+
+                                    columns: [
+                                      _col("index", "#", widths),
+                                      _col("branch", "Branch", widths),
+                                      _col("code", "Item Code", widths),
+                                      _col("name", "Item Name", widths),
+                                      _col("system", "System", widths),
+                                      _col("actual", "Actual", widths),
+                                      _col("diff", "Diff", widths),
+                                      _col("history", "History", widths),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+
+              /// ================= LOADING =================
+              if (state.isExporting)
+                Positioned.fill(
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.35),
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 30,
+                          vertical: 25,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 250.w,
+                              child: Column(
+                                children: [
+                                  LinearProgressIndicator(
+                                    value: _extractProgress(
+                                      state.exportMessage,
+                                    ),
+                                    color: AppColors.primaryColor,
+                                    backgroundColor: AppColors.backgroundWidget,
+                                    minHeight: 6,
+                                  ),
+                                  const SizedBox(height: 12),
+
+                                  Text(
+                                    state.exportMessage ?? "Exporting...",
+                                    style: const TextStyle(fontSize: 14),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
+                              ),
+                            ),
                           ],
                         ),
                       ),
                     ),
                   ),
-                ],
-              ),
-            ),
-
-            /// ================= LOADING =================
-            if (state.isExporting)
-              Positioned.fill(
-                child: Container(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 30,
-                        vertical: 25,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            width: 250.w,
-                            child: Column(
-                              children: [
-                                LinearProgressIndicator(
-                                  value: _extractProgress(state.exportMessage),
-                                  color: AppColors.primaryColor,
-                                  backgroundColor: AppColors.backgroundWidget,
-                                  minHeight: 6,
-                                ),
-                                const SizedBox(height: 12),
-
-                                Text(
-                                  state.exportMessage ?? "Exporting...",
-                                  style: const TextStyle(fontSize: 14),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
                 ),
-              ),
-          ],
-        );
-      },
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -172,40 +256,143 @@ class _MismatchPageState extends State<MismatchPage> {
     return value / 100;
   }
 
+  Widget _header(InventoryState state) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFB91C1C), Color(0xFFE11D48), Color(0xFFFB7185)],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x55FFFFFF)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: .92),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.warning_amber_outlined,
+              color: Color(0xFFBE123C),
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Mismatch Report',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'Review system and branch count differences, then follow their update history.',
+                  style: TextStyle(color: Colors.white, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+          _MismatchMetric(
+            label: 'Visible',
+            value: '${state.filteredMismatch.length}',
+          ),
+          const SizedBox(width: 8),
+          _MismatchMetric(label: 'Total', value: '${state.mismatchTotalCount}'),
+        ],
+      ),
+    );
+  }
+
   /// ================= CARDS =================
   Widget _cards(InventoryState state) {
     return Row(
       children: [
-        _card("Today", state.mismatchTodayCount),
-        _card("Month", state.mismatchMonthCount),
-        _card("Total", state.mismatchTotalCount),
-        _card("Diff Sum", state.mismatchDiffSum),
+        _card(
+          'Today',
+          state.mismatchTodayCount,
+          Icons.today_outlined,
+          const Color(0xFFBE123C),
+        ),
+        const SizedBox(width: 12),
+        _card(
+          'This month',
+          state.mismatchMonthCount,
+          Icons.calendar_month_outlined,
+          const Color(0xFFE11D48),
+        ),
+        const SizedBox(width: 12),
+        _card(
+          'Active records',
+          state.mismatchTotalCount,
+          Icons.inventory_2_outlined,
+          const Color(0xFF9F1239),
+        ),
+        const SizedBox(width: 12),
+        _card(
+          'Difference sum',
+          state.mismatchDiffSum,
+          Icons.difference_outlined,
+          const Color(0xFF881337),
+        ),
       ],
     );
   }
 
-  Widget _card(String title, num value) {
+  Widget _card(String title, num value, IconData icon, Color color) {
     return Expanded(
-      child: Card(
-        color: Colors.white,
-        elevation: 5,
-        shadowColor: AppColors.primaryColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 18),
-          child: Column(
-            children: [
-              Text(title, style: const TextStyle(color: Colors.grey)),
-              const SizedBox(height: 6),
-              Text(
-                value.toString(),
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: .07),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: .28)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(11),
               ),
-            ],
-          ),
+              child: Icon(icon, color: color),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: AppColors.subText,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _displayNumber(value),
+                    style: TextStyle(
+                      fontSize: 21,
+                      fontWeight: FontWeight.w800,
+                      color: color,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -221,24 +408,27 @@ class _MismatchPageState extends State<MismatchPage> {
               context.read<InventoryBloc>().add(SearchMismatch(v));
             },
             decoration: InputDecoration(
-              hintText: "Search item...",
+              hintText: 'Search branch, item code, or item name',
 
               prefixIcon: const Icon(Icons.search),
               filled: true,
 
-              fillColor: AppColors.backgroundWidget,
+              fillColor: const Color(0xFFFFF7F8),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: AppColors.primaryColor),
+                borderSide: const BorderSide(color: Color(0xFFFB7185)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: AppColors.primaryColor),
+                borderSide: const BorderSide(color: Color(0xFFFB7185)),
               ),
 
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: AppColors.primaryColor),
+                borderSide: const BorderSide(
+                  color: Color(0xFFBE123C),
+                  width: 1.5,
+                ),
               ),
             ),
           ),
@@ -246,7 +436,7 @@ class _MismatchPageState extends State<MismatchPage> {
         const SizedBox(width: 10),
         ElevatedButton.icon(
           style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.primaryColor,
+            backgroundColor: const Color(0xFFBE123C),
           ),
           onPressed: () {
             showDialog(
@@ -334,7 +524,7 @@ class _MismatchPageState extends State<MismatchPage> {
         SizedBox(
           width: 220,
           child: DropdownButtonFormField<String>(
-            value: state.mismatchBranch,
+            initialValue: state.mismatchBranch,
             isExpanded: true,
             icon: const Icon(Icons.keyboard_arrow_down),
 
@@ -342,7 +532,7 @@ class _MismatchPageState extends State<MismatchPage> {
               hintText: "Select Branch",
 
               filled: true,
-              fillColor: AppColors.backgroundWidget,
+              fillColor: const Color(0xFFFFF7F8),
 
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 12,
@@ -351,18 +541,18 @@ class _MismatchPageState extends State<MismatchPage> {
 
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: AppColors.primaryColor),
+                borderSide: const BorderSide(color: Color(0xFFFB7185)),
               ),
 
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: AppColors.primaryColor),
+                borderSide: const BorderSide(color: Color(0xFFFB7185)),
               ),
 
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide(
-                  color: AppColors.primaryColor,
+                  color: const Color(0xFFBE123C),
                   width: 1.5,
                 ),
               ),
@@ -388,7 +578,7 @@ class _MismatchPageState extends State<MismatchPage> {
     return GridColumn(
       columnName: name,
       allowFiltering: name != "history",
-      width: widths[name] ?? 140,
+      width: name == 'index' ? 80 : (widths[name] ?? 140),
       minimumWidth: 100,
       label: Container(
         alignment: Alignment.center,
@@ -397,12 +587,54 @@ class _MismatchPageState extends State<MismatchPage> {
           title,
           style: const TextStyle(
             fontWeight: FontWeight.bold,
-            color: Colors.black87,
+            color: Color(0xFF881337),
           ),
         ),
       ),
     );
   }
+}
+
+class _MismatchMetric extends StatelessWidget {
+  const _MismatchMetric({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 82),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: .18),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white.withValues(alpha: .26)),
+      ),
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _displayNumber(num value) {
+  final rounded = value.roundToDouble();
+  if (value == rounded) return rounded.toInt().toString();
+  return value.toStringAsFixed(2);
 }
 
 class _MismatchDataSource extends DataGridSource {
@@ -437,7 +669,7 @@ class _MismatchDataSource extends DataGridSource {
     final rowNo = int.tryParse(row.getCells().first.value.toString()) ?? 1;
 
     return DataGridRowAdapter(
-      color: rowNo.isOdd ? Colors.white : Colors.grey.shade50,
+      color: rowNo.isOdd ? Colors.white : const Color(0xFFFFFBFC),
       cells: row.getCells().map((c) {
         /// 🔥 DIFF STYLE
         if (c.columnName == 'diff') {
@@ -452,10 +684,12 @@ class _MismatchDataSource extends DataGridSource {
                   : Colors.green.withValues(alpha: .08),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Text(
+            child: SelectableText(
               c.value.toString(),
               style: TextStyle(
-                color: val < 0 ? Colors.red : Colors.green,
+                color: val < 0
+                    ? const Color(0xFFDC2626)
+                    : const Color(0xFF16A34A),
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -513,9 +747,17 @@ class _MismatchDataSource extends DataGridSource {
         }
 
         return Container(
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Text(c.value.toString(), textAlign: TextAlign.center),
+          alignment: c.columnName == 'name'
+              ? Alignment.centerLeft
+              : Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: SelectableText(
+            c.value.toString(),
+            textAlign: c.columnName == 'name'
+                ? TextAlign.left
+                : TextAlign.center,
+            style: const TextStyle(fontSize: 13, color: AppColors.text),
+          ),
         );
       }).toList(),
     );
@@ -613,7 +855,7 @@ class _MismatchHistoryDialog extends StatelessWidget {
                       shrinkWrap: true,
                       padding: const EdgeInsets.all(20),
                       itemCount: logs.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                      separatorBuilder: (_, _) => const SizedBox(height: 12),
                       itemBuilder: (context, index) {
                         final log = logs[index];
                         final action = (log['action'] ?? '')

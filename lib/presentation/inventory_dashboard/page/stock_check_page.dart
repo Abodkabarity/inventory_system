@@ -1527,6 +1527,9 @@ class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
         widget.selectedBatchIds.length == 1 && widget.rows.isNotEmpty
         ? widget.rows.first.title
         : '${widget.selectedBatchIds.length} stock check projects';
+    final timeRemaining = _stockCheckTimeRemaining(
+      branches.expand((branch) => branch.rows).map((row) => row.expiresAt),
+    );
     final subject = switch (type) {
       _BulkReminderType.notStarted =>
         'Stock Check Reminder - Not Started - $projectLabel',
@@ -1536,13 +1539,15 @@ class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
     final body = switch (type) {
       _BulkReminderType.notStarted =>
         'Dear Team,\n\n'
-            'Our records show that your branch has not started the assigned Stock Check yet.\n'
-            'Please open the Stock Check page, enter the required quantities, and submit the completed items as soon as possible.\n\n'
+            'Your branch has not started the assigned Stock Check.\n'
+            '$timeRemaining\n\n'
+            'Please open Stock Check, enter System Qty and Actual Qty, then submit your completed items.\n\n'
             'Thank you.',
       _BulkReminderType.notFinished =>
         'Dear Team,\n\n'
-            'Our records show that your branch started the assigned Stock Check but has not completed it yet.\n'
-            'Please continue the remaining items and submit the completed stock check as soon as possible.\n\n'
+            'Your branch has started the assigned Stock Check but still has pending items.\n'
+            '$timeRemaining\n\n'
+            'Please complete the remaining items and submit them from the Stock Check page.\n\n'
             'Thank you.',
     };
     final subjectEncoded = Uri.encodeComponent(subject);
@@ -2396,7 +2401,13 @@ class _BranchAccuracyCard extends StatelessWidget {
                 ),
                 if ((contact?.email ?? '').trim().isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  _EmailReminderButton(branch: row.branch, contact: contact!),
+                  _EmailReminderButton(
+                    branch: row.branch,
+                    contact: contact!,
+                    timeRemaining: _stockCheckTimeRemaining(
+                      row.rows.map((task) => task.expiresAt),
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -2410,8 +2421,13 @@ class _BranchAccuracyCard extends StatelessWidget {
 class _EmailReminderButton extends StatelessWidget {
   final String branch;
   final _BranchEmailContact contact;
+  final String timeRemaining;
 
-  const _EmailReminderButton({required this.branch, required this.contact});
+  const _EmailReminderButton({
+    required this.branch,
+    required this.contact,
+    required this.timeRemaining,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -2462,8 +2478,9 @@ class _EmailReminderButton extends StatelessWidget {
     ];
     final body =
         'Dear $branch Team,\n\n'
-        'Please complete the pending Stock Check as soon as possible.\n'
-        'Kindly enter the required System Qty and Actual Qty, then submit the stock check from the branch dashboard.\n\n'
+        'This is a reminder to complete your pending Stock Check.\n'
+        '$timeRemaining\n\n'
+        'Please enter System Qty and Actual Qty, then submit the completed items.\n\n'
         'Thank you.';
     final subject = Uri.encodeComponent('Stock Check Reminder - $branch');
 
@@ -2493,6 +2510,25 @@ class _EmailReminderButton extends StatelessWidget {
 }
 
 enum _BulkReminderType { notStarted, notFinished }
+
+String _stockCheckTimeRemaining(Iterable<DateTime?> deadlines) {
+  final now = DateTime.now();
+  final values = deadlines.whereType<DateTime>().map(
+    (value) => value.toLocal(),
+  );
+  final upcoming = values.where((value) => value.isAfter(now)).toList()..sort();
+  if (upcoming.isEmpty) {
+    return 'The deadline has passed.';
+  }
+
+  final remaining = upcoming.first.difference(now);
+  final hours = (remaining.inMinutes / 60).ceil().clamp(1, 999999);
+  if (hours >= 24) {
+    final days = (hours / 24).ceil();
+    return 'Time remaining: $days ${days == 1 ? 'day' : 'days'}.';
+  }
+  return 'Time remaining: $hours ${hours == 1 ? 'hour' : 'hours'}.';
+}
 
 class _BulkReminderButton extends StatelessWidget {
   final String label;

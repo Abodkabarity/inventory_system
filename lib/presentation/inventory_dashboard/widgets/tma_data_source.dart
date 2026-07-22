@@ -44,9 +44,17 @@ class TmaDataSource extends DataGridSource {
         }
 
         return Container(
-          alignment: Alignment.center,
-          padding: const EdgeInsets.all(8),
-          child: Text(cell.value?.toString() ?? ''),
+          alignment: cell.columnName == 'name'
+              ? Alignment.centerLeft
+              : Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: SelectableText(
+            cell.value?.toString() ?? '',
+            textAlign: cell.columnName == 'name'
+                ? TextAlign.left
+                : TextAlign.center,
+            style: const TextStyle(fontSize: 13, color: Color(0xFF0F172A)),
+          ),
         );
       }).toList(),
     );
