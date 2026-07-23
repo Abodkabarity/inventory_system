@@ -250,7 +250,13 @@ class _ImportProgressDialogState extends State<ImportProgressDialog> {
                     ImportDuplicateAction.applyWithoutDuplicates,
                   ),
                 ),
-                child: const Text('Apply without duplicates'),
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: AppColors.secondaryColor,
+                ),
+                child: const Text(
+                  'Apply without duplicates',
+                  style: TextStyle(color: Colors.white),
+                ),
               ),
               ElevatedButton(
                 onPressed: () => bloc.add(
@@ -268,8 +274,14 @@ class _ImportProgressDialogState extends State<ImportProgressDialog> {
                 onPressed: () => bloc.add(
                   ResolveImportDuplicates(ImportDuplicateAction.download),
                 ),
-                icon: const Icon(Icons.download_rounded),
-                label: const Text('Download duplicates'),
+                icon: const Icon(
+                  Icons.download_rounded,
+                  color: AppColors.secondaryColor,
+                ),
+                label: const Text(
+                  'Download duplicates',
+                  style: TextStyle(color: AppColors.secondaryColor),
+                ),
               ),
             ],
           ),
