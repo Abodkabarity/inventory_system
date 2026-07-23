@@ -44,6 +44,9 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   int _mismatchLoadToken = 0;
   int _assortmentLoadToken = 0;
   int _tmaLoadToken = 0;
+  Uint8List? _pendingImportBytes;
+  String? _pendingImportSource;
+  List<Map<String, dynamic>> _pendingImportDuplicates = const [];
   String runDate = '';
   RealtimeChannel? mismatchChannel;
   final Set<String> _notifiedAdditionalRequestGroups = <String>{};
@@ -85,6 +88,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     on<LoadRequestEffectiveness>(_onLoadRequestEffectiveness);
     on<LoadOrderEditSalesPerformance>(_onLoadOrderEditSalesPerformance);
     on<ImportFormularyExcel>(_onImportFormulary);
+    on<ResolveImportDuplicates>(_onResolveImportDuplicates);
     on<LoadOrdersPage>(_onLoadOrdersPage);
     on<ImportTmaExcel>(_onImportTma);
     on<AdditionalRequestInsertedRealtime>(_onAdditionalInsertedRealtime);
@@ -249,12 +253,16 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       );
     });
     on<ResetImportState>((event, emit) {
+      _pendingImportBytes = null;
+      _pendingImportSource = null;
+      _pendingImportDuplicates = const [];
       emit(
         state.copyWith(
           isImporting: false,
           importProgress: 0,
           importMessage: null,
           importSuccess: false,
+          importDuplicateCount: 0,
         ),
       );
     });
@@ -2140,6 +2148,98 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     }
   }
 
+  Future<void> _onResolveImportDuplicates(
+    ResolveImportDuplicates event,
+    Emitter<InventoryState> emit,
+  ) async {
+    final source = _pendingImportSource;
+    if (source == null || _pendingImportBytes == null) {
+      emit(
+        state.copyWith(
+          importMessage:
+              'The selected import file is no longer available. Please upload it again.',
+          importSuccess: false,
+          importDuplicateCount: 0,
+        ),
+      );
+      return;
+    }
+
+    if (event.action == ImportDuplicateAction.download) {
+      switch (source) {
+        case 'max_adjustment':
+          await MaxAdjExcelExporter.export(
+            rows: _pendingImportDuplicates,
+            includeHistory: false,
+          );
+        case 'assortment':
+          await AssortmentExcelExporter.export(
+            rows: _pendingImportDuplicates,
+            includeHistory: false,
+          );
+        case 'tma':
+          await TmaExcelExporter.export(
+            rows: _pendingImportDuplicates,
+            includeHistory: false,
+          );
+        case 'formulary':
+          await FormularyExcelExporter.export(
+            rows: _pendingImportDuplicates,
+            includeHistory: false,
+          );
+      }
+      emit(state.copyWith(importMessage: 'Duplicate report downloaded.'));
+      return;
+    }
+
+    final overwrite = event.action == ImportDuplicateAction.applyWithDuplicates;
+    switch (source) {
+      case 'max_adjustment':
+        add(
+          ImportMaxAdjExcel(
+            forceApply: overwrite,
+            reusePickedFile: true,
+            skipDuplicates: !overwrite,
+          ),
+        );
+      case 'assortment':
+        add(
+          ImportAssortmentExcel(
+            forceApply: overwrite,
+            reusePickedFile: true,
+            skipDuplicates: !overwrite,
+          ),
+        );
+      case 'tma':
+        add(
+          ImportTmaExcel(
+            forceApply: overwrite,
+            reusePickedFile: true,
+            skipDuplicates: !overwrite,
+          ),
+        );
+      case 'formulary':
+        add(
+          ImportFormularyExcel(
+            forceApply: overwrite,
+            reusePickedFile: true,
+            skipDuplicates: !overwrite,
+          ),
+        );
+    }
+  }
+
+  void _cachePendingImport(String source, Uint8List bytes) {
+    _pendingImportSource = source;
+    _pendingImportBytes = bytes;
+    _pendingImportDuplicates = const [];
+  }
+
+  void _cacheImportDuplicates(String source, List<Map<String, dynamic>> rows) {
+    _pendingImportSource = source;
+    _pendingImportDuplicates = List<Map<String, dynamic>>.from(rows);
+  }
+
   Future<void> _onImportExcel(
     ImportMaxAdjExcel event,
     Emitter<InventoryState> emit,
@@ -2151,29 +2251,46 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           importProgress: 0,
           importMessage: "Picking file...",
           importSuccess: false,
+          importDuplicateCount: 0,
         ),
       );
 
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['csv'],
-      );
-
-      if (result == null) {
-        emit(state.copyWith(isImporting: false));
+      Uint8List? bytes;
+      if (event.reusePickedFile) {
+        bytes = _pendingImportBytes;
+      } else {
+        final result = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: ['csv'],
+          withData: true,
+        );
+        if (result == null) {
+          emit(state.copyWith(isImporting: false));
+          return;
+        }
+        bytes = result.files.single.bytes;
+        if (bytes != null) _cachePendingImport('max_adjustment', bytes);
+      }
+      if (bytes == null) {
+        emit(
+          state.copyWith(
+            isImporting: false,
+            importSuccess: false,
+            importMessage:
+                'Import file is unavailable. Please upload it again.',
+          ),
+        );
         return;
       }
-
-      final file = result.files.single;
 
       // Give the web renderer one frame to show the progress UI first.
       await Future<void>.delayed(Duration.zero);
 
       String csvText;
       try {
-        csvText = utf8.decode(file.bytes!);
+        csvText = utf8.decode(bytes);
       } catch (_) {
-        csvText = latin1.decode(file.bytes!);
+        csvText = latin1.decode(bytes);
       }
 
       final rows = const CsvToListConverter().convert(csvText);
@@ -2405,7 +2522,22 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       // ===============================
       // EXPORT DUPLICATES
       // ===============================
-      if (conflicts.isNotEmpty && !event.forceApply) {
+      if (conflicts.isNotEmpty && !event.forceApply && !event.skipDuplicates) {
+        _cacheImportDuplicates('max_adjustment', conflicts);
+        emit(
+          state.copyWith(
+            isImporting: false,
+            importSuccess: false,
+            importMessage:
+                'Found ${conflicts.length} duplicate item(s). Choose how to continue.',
+            importDuplicateCount: conflicts.length,
+            importDuplicateSource: 'max_adjustment',
+          ),
+        );
+        return;
+      }
+
+      if (conflicts.isNotEmpty && !event.forceApply && !event.skipDuplicates) {
         await MaxAdjExcelExporter.export(
           rows: conflicts,
           includeHistory: false,
@@ -2630,27 +2762,44 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           importProgress: 0,
           importMessage: "Picking file...",
           importSuccess: false,
+          importDuplicateCount: 0,
         ),
       );
 
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['csv'],
-      );
-
-      if (result == null) {
-        emit(state.copyWith(isImporting: false));
+      Uint8List? bytes;
+      if (event.reusePickedFile) {
+        bytes = _pendingImportBytes;
+      } else {
+        final result = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: ['csv'],
+          withData: true,
+        );
+        if (result == null) {
+          emit(state.copyWith(isImporting: false));
+          return;
+        }
+        bytes = result.files.single.bytes;
+        if (bytes != null) _cachePendingImport('assortment', bytes);
+      }
+      if (bytes == null) {
+        emit(
+          state.copyWith(
+            isImporting: false,
+            importSuccess: false,
+            importMessage:
+                'Import file is unavailable. Please upload it again.',
+          ),
+        );
         return;
       }
-
-      final file = result.files.single;
 
       String csvText;
 
       try {
-        csvText = utf8.decode(file.bytes!);
+        csvText = utf8.decode(bytes);
       } catch (_) {
-        csvText = latin1.decode(file.bytes!);
+        csvText = latin1.decode(bytes);
       }
 
       final rows = const CsvToListConverter().convert(csvText);
@@ -2881,7 +3030,22 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       /// EXPORT DUPLICATES
       /// ==================================
 
-      if (conflicts.isNotEmpty && !event.forceApply) {
+      if (conflicts.isNotEmpty && !event.forceApply && !event.skipDuplicates) {
+        _cacheImportDuplicates('assortment', conflicts);
+        emit(
+          state.copyWith(
+            isImporting: false,
+            importSuccess: false,
+            importMessage:
+                'Found ${conflicts.length} duplicate item(s). Choose how to continue.',
+            importDuplicateCount: conflicts.length,
+            importDuplicateSource: 'assortment',
+          ),
+        );
+        return;
+      }
+
+      if (conflicts.isNotEmpty && !event.forceApply && !event.skipDuplicates) {
         await AssortmentExcelExporter.export(
           rows: conflicts,
           includeHistory: false,
@@ -3052,26 +3216,43 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           importProgress: 0,
           importMessage: "Picking file...",
           importSuccess: false,
+          importDuplicateCount: 0,
         ),
       );
 
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['csv'],
-      );
-
-      if (result == null) {
-        emit(state.copyWith(isImporting: false));
+      Uint8List? bytes;
+      if (event.reusePickedFile) {
+        bytes = _pendingImportBytes;
+      } else {
+        final result = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: ['csv'],
+          withData: true,
+        );
+        if (result == null) {
+          emit(state.copyWith(isImporting: false));
+          return;
+        }
+        bytes = result.files.single.bytes;
+        if (bytes != null) _cachePendingImport('tma', bytes);
+      }
+      if (bytes == null) {
+        emit(
+          state.copyWith(
+            isImporting: false,
+            importSuccess: false,
+            importMessage:
+                'Import file is unavailable. Please upload it again.',
+          ),
+        );
         return;
       }
 
-      final file = result.files.single;
-
       String csvText;
       try {
-        csvText = utf8.decode(file.bytes!);
+        csvText = utf8.decode(bytes);
       } catch (_) {
-        csvText = latin1.decode(file.bytes!);
+        csvText = latin1.decode(bytes);
       }
 
       final rows = const CsvToListConverter().convert(csvText);
@@ -3272,7 +3453,22 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       // ===============================
       // EXPORT DUPLICATES
       // ===============================
-      if (conflicts.isNotEmpty && !event.forceApply) {
+      if (conflicts.isNotEmpty && !event.forceApply && !event.skipDuplicates) {
+        _cacheImportDuplicates('tma', conflicts);
+        emit(
+          state.copyWith(
+            isImporting: false,
+            importSuccess: false,
+            importMessage:
+                'Found ${conflicts.length} duplicate item(s). Choose how to continue.',
+            importDuplicateCount: conflicts.length,
+            importDuplicateSource: 'tma',
+          ),
+        );
+        return;
+      }
+
+      if (conflicts.isNotEmpty && !event.forceApply && !event.skipDuplicates) {
         await TmaExcelExporter.export(rows: conflicts, includeHistory: false);
 
         emit(
@@ -3440,20 +3636,39 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           importProgress: 0,
           importMessage: "Picking file...",
           importSuccess: false,
+          importDuplicateCount: 0,
         ),
       );
 
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['csv'],
-      );
-
-      if (result == null) {
-        emit(state.copyWith(isImporting: false));
+      Uint8List? bytes;
+      if (event.reusePickedFile) {
+        bytes = _pendingImportBytes;
+      } else {
+        final result = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: ['csv'],
+          withData: true,
+        );
+        if (result == null) {
+          emit(state.copyWith(isImporting: false));
+          return;
+        }
+        bytes = result.files.single.bytes;
+        if (bytes != null) _cachePendingImport('formulary', bytes);
+      }
+      if (bytes == null) {
+        emit(
+          state.copyWith(
+            isImporting: false,
+            importSuccess: false,
+            importMessage:
+                'Import file is unavailable. Please upload it again.',
+          ),
+        );
         return;
       }
 
-      final content = String.fromCharCodes(result.files.single.bytes!);
+      final content = String.fromCharCodes(bytes);
       final rows = const CsvToListConverter().convert(content);
 
       /// ✅ HEADER VALIDATION
@@ -3483,6 +3698,56 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           ),
         );
         return;
+      }
+
+      if (!event.forceApply && !event.skipDuplicates) {
+        final existingRows = await Supabase.instance.client
+            .from('branch_formulary')
+            .select(
+              'branch_name, item_code, item_name, revised_branch_formulary, revised_date, reason',
+            );
+        final existingByKey = {
+          for (final row in existingRows)
+            '${row['branch_name']}|${row['item_code']}': row,
+        };
+        final conflicts = <Map<String, dynamic>>[];
+        for (var i = 1; i < rows.length; i++) {
+          final row = rows[i];
+          if (row.length < 7 ||
+              (row[0]?.toString().trim().toUpperCase() == 'DELETE')) {
+            continue;
+          }
+          final branch = (row[1] ?? '').toString().trim();
+          final itemCode = (row[2] ?? '').toString().trim();
+          final existing = existingByKey['$branch|$itemCode'];
+          if (existing != null) {
+            conflicts.add({
+              'branch_name': branch,
+              'item_code': itemCode,
+              'item_name': row[3]?.toString() ?? '',
+              'old_formulary': existing['revised_branch_formulary'],
+              'old_date': existing['revised_date'],
+              'old_reason': existing['reason'],
+              'new_formulary': row[4],
+              'new_date': _parseDate(row[5]),
+              'new_reason': row[6],
+            });
+          }
+        }
+        if (conflicts.isNotEmpty) {
+          _cacheImportDuplicates('formulary', conflicts);
+          emit(
+            state.copyWith(
+              isImporting: false,
+              importSuccess: false,
+              importMessage:
+                  'Found ${conflicts.length} duplicate item(s). Choose how to continue.',
+              importDuplicateCount: conflicts.length,
+              importDuplicateSource: 'formulary',
+            ),
+          );
+          return;
+        }
       }
 
       final total = rows.length - 1;
@@ -3573,7 +3838,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       }
 
       /// 🔥 conflicts export
-      if (conflicts.isNotEmpty && !event.forceApply) {
+      if (conflicts.isNotEmpty && !event.forceApply && !event.skipDuplicates) {
         await FormularyExcelExporter.export(
           rows: conflicts,
           includeHistory: false,

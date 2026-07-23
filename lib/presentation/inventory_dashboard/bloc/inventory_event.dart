@@ -192,8 +192,14 @@ class ExportMaxAdjWithHistory extends InventoryEvent {}
 
 class ImportMaxAdjExcel extends InventoryEvent {
   final bool forceApply;
+  final bool reusePickedFile;
+  final bool skipDuplicates;
 
-  ImportMaxAdjExcel({required this.forceApply});
+  ImportMaxAdjExcel({
+    required this.forceApply,
+    this.reusePickedFile = false,
+    this.skipDuplicates = false,
+  });
 }
 
 class ExportMaxAdjTemplate extends InventoryEvent {}
@@ -225,8 +231,14 @@ class ExportAssortmentWithHistory extends InventoryEvent {}
 
 class ImportAssortmentExcel extends InventoryEvent {
   final bool forceApply;
+  final bool reusePickedFile;
+  final bool skipDuplicates;
 
-  ImportAssortmentExcel({required this.forceApply});
+  ImportAssortmentExcel({
+    required this.forceApply,
+    this.reusePickedFile = false,
+    this.skipDuplicates = false,
+  });
 }
 
 class ExportAssortmentTemplate extends InventoryEvent {}
@@ -260,7 +272,14 @@ class ExportTmaTemplate extends InventoryEvent {}
 
 class ImportTmaExcel extends InventoryEvent {
   final bool forceApply;
-  ImportTmaExcel({required this.forceApply});
+  final bool reusePickedFile;
+  final bool skipDuplicates;
+
+  ImportTmaExcel({
+    required this.forceApply,
+    this.reusePickedFile = false,
+    this.skipDuplicates = false,
+  });
 }
 
 class LoadFormularyHistory extends InventoryEvent {
@@ -280,7 +299,26 @@ class StartFormularyRealtime extends InventoryEvent {}
 
 class ImportFormularyExcel extends InventoryEvent {
   final bool forceApply;
-  ImportFormularyExcel({required this.forceApply});
+  final bool reusePickedFile;
+  final bool skipDuplicates;
+
+  ImportFormularyExcel({
+    required this.forceApply,
+    this.reusePickedFile = false,
+    this.skipDuplicates = false,
+  });
+}
+
+enum ImportDuplicateAction {
+  applyWithoutDuplicates,
+  applyWithDuplicates,
+  download,
+}
+
+class ResolveImportDuplicates extends InventoryEvent {
+  final ImportDuplicateAction action;
+
+  ResolveImportDuplicates(this.action);
 }
 
 class LoadMismatchStats extends InventoryEvent {

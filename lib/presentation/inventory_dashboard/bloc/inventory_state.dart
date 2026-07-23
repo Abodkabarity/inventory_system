@@ -78,6 +78,8 @@ class InventoryState extends Equatable {
   final String? importMessage;
 
   final bool importSuccess;
+  final int importDuplicateCount;
+  final String? importDuplicateSource;
 
   final List<Map<String, dynamic>> assortment;
 
@@ -231,6 +233,8 @@ class InventoryState extends Equatable {
     this.exportMessage,
     this.importMessage,
     required this.importSuccess,
+    required this.importDuplicateCount,
+    this.importDuplicateSource,
     required this.assortment,
     required this.filteredAssortment,
     required this.assortmentSearch,
@@ -366,6 +370,8 @@ class InventoryState extends Equatable {
       exportMessage: null,
       importMessage: "",
       importSuccess: false,
+      importDuplicateCount: 0,
+      importDuplicateSource: null,
       assortment: [],
       filteredAssortment: [],
       assortmentSearch: '',
@@ -483,6 +489,8 @@ class InventoryState extends Equatable {
     int? formularyTotalRows,
     String? importMessage,
     bool? importSuccess,
+    int? importDuplicateCount,
+    String? importDuplicateSource,
     List<Map<String, dynamic>>? assortment,
     List<Map<String, dynamic>>? filteredAssortment,
     String? assortmentSearch,
@@ -603,6 +611,9 @@ class InventoryState extends Equatable {
       exportMessage: exportMessage ?? this.exportMessage,
       importMessage: importMessage ?? this.importMessage,
       importSuccess: importSuccess ?? this.importSuccess,
+      importDuplicateCount: importDuplicateCount ?? this.importDuplicateCount,
+      importDuplicateSource:
+          importDuplicateSource ?? this.importDuplicateSource,
       assortment: assortment ?? this.assortment,
       filteredAssortment: filteredAssortment ?? this.filteredAssortment,
       assortmentSearch: assortmentSearch ?? this.assortmentSearch,
@@ -731,6 +742,8 @@ class InventoryState extends Equatable {
     exportMessage,
     importMessage,
     importSuccess,
+    importDuplicateCount,
+    importDuplicateSource,
     assortment,
     filteredAssortment,
     formularyTotalRows,

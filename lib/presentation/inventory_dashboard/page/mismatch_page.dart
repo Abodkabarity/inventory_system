@@ -22,6 +22,7 @@ class MismatchPage extends StatefulWidget {
 class _MismatchPageState extends State<MismatchPage> {
   bool _isInitialLoading = true;
   Timer? _initialLoadFallback;
+  final _searchController = TextEditingController();
 
   @override
   void initState() {
@@ -39,6 +40,7 @@ class _MismatchPageState extends State<MismatchPage> {
   @override
   void dispose() {
     _initialLoadFallback?.cancel();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -404,6 +406,7 @@ class _MismatchPageState extends State<MismatchPage> {
       children: [
         Expanded(
           child: TextField(
+            controller: _searchController,
             onChanged: (v) {
               context.read<InventoryBloc>().add(SearchMismatch(v));
             },
@@ -438,37 +441,29 @@ class _MismatchPageState extends State<MismatchPage> {
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFFBE123C),
           ),
-          onPressed: () {
-            showDialog(
-              context: context,
-              builder: (_) => AlertDialog(
-                title: const Text("Export"),
-                content: const Text("Choose export type"),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      context.read<InventoryBloc>().add(
-                        ExportMismatchCurrent(),
-                      );
-                    },
-                    child: const Text("Current"),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      context.read<InventoryBloc>().add(
-                        ExportMismatchWithHistory(),
-                      );
-                    },
-                    child: const Text("With History"),
-                  ),
-                ],
-              ),
-            );
-          },
+          onPressed: state.isExporting ? null : _showExportDialog,
           icon: const Icon(Icons.download, color: Colors.white),
           label: const Text("Export", style: TextStyle(color: Colors.white)),
+        ),
+        const SizedBox(width: 10),
+        OutlinedButton.icon(
+          onPressed:
+              state.mismatchBranch == 'ALL' &&
+                  state.mismatchSearch.trim().isEmpty
+              ? null
+              : () {
+                  _searchController.clear();
+                  final bloc = context.read<InventoryBloc>();
+                  bloc.add(SearchMismatch(''));
+                  bloc.add(FilterMismatchBranch('ALL'));
+                  bloc.add(LoadMismatchStats('ALL'));
+                },
+          icon: const Icon(Icons.filter_alt_off_rounded, size: 18),
+          label: const Text('Clear filters'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.primaryColor,
+            side: const BorderSide(color: AppColors.primaryColor),
+          ),
         ),
 
         /* const SizedBox(width: 10),
@@ -523,55 +518,172 @@ class _MismatchPageState extends State<MismatchPage> {
         /// 🔥 BRANCH FILTER
         SizedBox(
           width: 220,
-          child: DropdownButtonFormField<String>(
-            initialValue: state.mismatchBranch,
-            isExpanded: true,
-            icon: const Icon(Icons.keyboard_arrow_down),
-
-            decoration: InputDecoration(
-              hintText: "Select Branch",
-
-              filled: true,
-              fillColor: const Color(0xFFFFF7F8),
-
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 14,
-              ),
-
-              border: OutlineInputBorder(
+          child: OutlinedButton(
+            onPressed: () => _showBranchPicker(state),
+            style: OutlinedButton.styleFrom(
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+              foregroundColor: AppColors.text,
+              side: const BorderSide(color: AppColors.primaryColor),
+              shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFFFB7185)),
-              ),
-
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFFFB7185)),
-              ),
-
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: const Color(0xFFBE123C),
-                  width: 1.5,
-                ),
               ),
             ),
-
-            items: ["ALL", ...state.branches].map((e) {
-              return DropdownMenuItem(
-                value: e,
-                child: Text(e, overflow: TextOverflow.ellipsis),
-              );
-            }).toList(),
-            onChanged: (v) {
-              context.read<InventoryBloc>().add(FilterMismatchBranch(v!));
-              context.read<InventoryBloc>().add(LoadMismatchStats(v));
-            },
+            child: Row(
+              children: [
+                const Icon(Icons.storefront_outlined, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    state.mismatchBranch == 'ALL'
+                        ? 'All branches'
+                        : state.mismatchBranch,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const Icon(Icons.keyboard_arrow_down_rounded),
+              ],
+            ),
           ),
         ),
       ],
     );
+  }
+
+  void _showExportDialog() {
+    final bloc = context.read<InventoryBloc>();
+    showDialog(
+      context: context,
+      builder: (_) =>
+          BlocProvider.value(value: bloc, child: const _MismatchExportDialog()),
+    );
+  }
+
+  Future<void> _showBranchPicker(InventoryState state) async {
+    final searchController = TextEditingController();
+    var query = '';
+    final branches = state.branches.toSet().toList()..sort();
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final visible = [
+            'ALL',
+            ...branches.where(
+              (branch) => branch.toLowerCase().contains(query.toLowerCase()),
+            ),
+          ];
+          return Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460, maxHeight: 560),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(9),
+                          decoration: BoxDecoration(
+                            color: AppColors.blueSoft,
+                            borderRadius: BorderRadius.circular(11),
+                          ),
+                          child: const Icon(
+                            Icons.storefront_outlined,
+                            color: AppColors.primaryColor,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text(
+                            'Select branch',
+                            style: TextStyle(
+                              fontSize: 19,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: searchController,
+                      autofocus: true,
+                      onChanged: (value) => setDialogState(() => query = value),
+                      decoration: InputDecoration(
+                        hintText: 'Search branch',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        filled: true,
+                        fillColor: AppColors.bg,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: AppColors.primaryColor,
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: AppColors.primaryColor,
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: ListView.separated(
+                        itemCount: visible.length,
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (_, index) {
+                          final branch = visible[index];
+                          final isSelected = branch == state.mismatchBranch;
+                          return ListTile(
+                            dense: true,
+                            leading: Icon(
+                              branch == 'ALL'
+                                  ? Icons.apps_rounded
+                                  : Icons.storefront_outlined,
+                              color: isSelected
+                                  ? AppColors.primaryColor
+                                  : AppColors.subText,
+                            ),
+                            title: Text(
+                              branch == 'ALL' ? 'All branches' : branch,
+                            ),
+                            trailing: isSelected
+                                ? const Icon(
+                                    Icons.check_circle_rounded,
+                                    color: AppColors.primaryColor,
+                                  )
+                                : null,
+                            onTap: () => Navigator.pop(dialogContext, branch),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    searchController.dispose();
+    if (selected == null || !mounted || selected == state.mismatchBranch) {
+      return;
+    }
+    final bloc = context.read<InventoryBloc>();
+    bloc.add(FilterMismatchBranch(selected));
+    bloc.add(LoadMismatchStats(selected));
   }
 
   GridColumn _col(String name, String title, Map<String, double> widths) {
@@ -588,6 +700,173 @@ class _MismatchPageState extends State<MismatchPage> {
           style: const TextStyle(
             fontWeight: FontWeight.bold,
             color: Color(0xFF881337),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MismatchExportDialog extends StatelessWidget {
+  const _MismatchExportDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<InventoryBloc, InventoryState>(
+      buildWhen: (previous, current) =>
+          previous.isExporting != current.isExporting ||
+          previous.exportMessage != current.exportMessage,
+      builder: (context, state) {
+        final exporting = state.isExporting;
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 510),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppColors.blueSoft,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.file_download_outlined,
+                          color: AppColors.primaryColor,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Export Mismatch Report',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            SizedBox(height: 3),
+                            Text(
+                              'Choose the Excel report you need.',
+                              style: TextStyle(color: AppColors.subText),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: exporting
+                            ? null
+                            : () => Navigator.pop(context),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  _MismatchExportOption(
+                    icon: Icons.table_chart_outlined,
+                    title: 'Current mismatch records',
+                    subtitle:
+                        'Exports the mismatch records currently shown in the report.',
+                    enabled: !exporting,
+                    onTap: () => context.read<InventoryBloc>().add(
+                      ExportMismatchCurrent(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _MismatchExportOption(
+                    icon: Icons.history_rounded,
+                    title: 'Current records and history',
+                    subtitle:
+                        'Includes each mismatch record together with its update history.',
+                    enabled: !exporting,
+                    onTap: () => context.read<InventoryBloc>().add(
+                      ExportMismatchWithHistory(),
+                    ),
+                  ),
+                  if (exporting) ...[
+                    const SizedBox(height: 20),
+                    const LinearProgressIndicator(
+                      color: AppColors.primaryColor,
+                    ),
+                    const SizedBox(height: 9),
+                    Text(
+                      state.exportMessage ?? 'Preparing your Excel file...',
+                      style: const TextStyle(
+                        color: AppColors.subText,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _MismatchExportOption extends StatelessWidget {
+  const _MismatchExportOption({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.bg,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(15),
+          child: Row(
+            children: [
+              Icon(icon, color: AppColors.primaryColor),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: AppColors.subText,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: AppColors.subText),
+            ],
           ),
         ),
       ),
