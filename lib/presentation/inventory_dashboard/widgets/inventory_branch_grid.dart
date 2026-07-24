@@ -566,7 +566,10 @@ class _SubmitBranchDialogState extends State<_SubmitBranchDialog> {
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                      child: const Text('Cancel'),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(color: AppColors.secondaryColor),
+                      ),
                     ),
                   ),
                   if (alreadySubmitted) ...[

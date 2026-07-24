@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:html' as html;
 import 'dart:typed_data';
+
 import 'package:archive/archive.dart';
 import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
@@ -9,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
 import 'package:uuid/uuid.dart';
 import 'package:xml/xml.dart';
+
 import '../../../core/theme/app_colors.dart';
 
 class InventoryAdditionalOrdersPage extends StatefulWidget {
@@ -127,7 +129,7 @@ class _InventoryAdditionalOrdersPageState
       builder: (_) => _BranchPickerDialog(
         branches: _branches,
         selected: line.destinations,
-        title: 'Choose destinations',
+        title: 'Choose Branches',
         subtitle: line.itemName,
       ),
     );
@@ -204,8 +206,8 @@ class _InventoryAdditionalOrdersPageState
         }
         final unassigned = rows.where((row) => row.destinations.isEmpty).length;
         _message = unassigned == 0
-            ? '${rows.length} item(s) imported with their destinations.'
-            : '${rows.length} item(s) imported. Assign destinations to $unassigned item(s) before sending.';
+            ? '${rows.length} item(s) imported with their branches.'
+            : '${rows.length} item(s) imported. Assign branches to $unassigned item(s) before sending.';
       });
     } catch (e) {
       if (mounted) setState(() => _error = 'Import failed: $e');
@@ -460,7 +462,7 @@ class _InventoryAdditionalOrdersPageState
       var rowIndex = 2;
       for (final line in _lines) {
         final branches = line.destinations.isEmpty
-            ? {'Destination required'}
+            ? {'Branch required'}
             : line.destinations;
         for (final branch in branches) {
           final values = [
@@ -774,8 +776,8 @@ class _InventoryAdditionalOrdersPageState
                   const SizedBox(height: 3),
                   Text(
                     _editingGroupId == null
-                        ? 'Add products, assign destinations, then send one clear order.'
-                        : 'Review destinations and quantities before saving changes.',
+                        ? 'Add products, assign branches, then send one clear order.'
+                        : 'Review branches and quantities before saving changes.',
                     style: const TextStyle(
                       color: AppColors.subText,
                       fontSize: 12,
@@ -1360,7 +1362,7 @@ class _InventoryAdditionalOrdersPageState
                   child: Text(
                     destinationCount == 0
                         ? 'Branches required'
-                        : '$destinationCount destination${destinationCount == 1 ? '' : 's'}',
+                        : '$destinationCount Branches${destinationCount == 1 ? '' : 's'}',
                     style: TextStyle(
                       color: destinationCount == 0
                           ? const Color(0xFFDC2626)
@@ -1679,7 +1681,7 @@ class _InventoryAdditionalOrdersPageState
                       ),
                       const SizedBox(width: 9),
                       const Text(
-                        'Products and destinations',
+                        'Products and Branches',
                         style: TextStyle(
                           color: AppColors.secondaryColor,
                           fontWeight: FontWeight.w900,
@@ -1924,7 +1926,7 @@ class _BranchPickerDialog extends StatefulWidget {
   const _BranchPickerDialog({
     required this.branches,
     required this.selected,
-    this.title = 'Select Destinations',
+    this.title = 'Select Branches',
     this.subtitle,
   });
   @override
