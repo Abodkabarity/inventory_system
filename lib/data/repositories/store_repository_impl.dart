@@ -124,15 +124,27 @@ class StoreRepositoryImpl implements StoreRepository {
 
     for (final row in uniqueRows) {
       final groupId = (row['request_group_id'] ?? '').toString();
+      final sourceTable = (row['_source_table'] ?? 'additional_requests')
+          .toString();
 
-      grouped.putIfAbsent(groupId, () => []);
-      grouped[groupId]!.add(row);
+      final branch = (row['branch_name'] ?? '').toString();
+      // An Inventory Additional Order is one request that may target many
+      // branches. Keep it together in Store; branch requests keep their
+      // existing per-branch grouping.
+      final key = sourceTable == 'additional_order_inventory'
+          ? '$sourceTable|$groupId'
+          : '$sourceTable|$groupId|$branch';
+      grouped.putIfAbsent(key, () => []);
+      grouped[key]!.add(row);
     }
 
     final List<AdditionalRequestGroup> result = [];
 
-    grouped.forEach((groupId, items) {
+    grouped.forEach((_, items) {
       final first = items.first;
+      final groupId = (first['request_group_id'] ?? '').toString();
+      final sourceTable = (first['_source_table'] ?? 'additional_requests')
+          .toString();
 
       DateTime created;
       final createdRaw = first['created_at'];
@@ -208,7 +220,9 @@ class StoreRepositoryImpl implements StoreRepository {
       result.add(
         AdditionalRequestGroup(
           groupId: groupId,
-          branchName: (first['branch_name'] ?? '').toString(),
+          branchName: sourceTable == 'additional_order_inventory'
+              ? ''
+              : (first['branch_name'] ?? '').toString(),
           createdAt: created,
           itemsCount: validItems.length,
           status: status,
@@ -218,6 +232,8 @@ class StoreRepositoryImpl implements StoreRepository {
           pendingClassifications: pendingClassifications,
           storeStatus: isProcessing ? 'processing' : null,
           contactLogistic: isUrgent ? 'urgent' : '',
+          sourceTable: (first['_source_table'] ?? 'additional_requests')
+              .toString(),
         ),
       );
     });
@@ -225,6 +241,7 @@ class StoreRepositoryImpl implements StoreRepository {
     final deduped = <String, AdditionalRequestGroup>{};
     for (final group in result) {
       final key = [
+        group.sourceTable,
         group.branchName,
         group.createdAt.toIso8601String(),
         group.status,
@@ -247,8 +264,12 @@ class StoreRepositoryImpl implements StoreRepository {
   /// APPROVE REQUEST
   /// ================================
   @override
-  Future<void> approveRequest({required String id, required num qty}) {
-    return remote.approveRequest(id: id, qty: qty);
+  Future<void> approveRequest({
+    required String id,
+    required num qty,
+    String sourceTable = 'additional_requests',
+  }) {
+    return remote.approveRequest(id: id, qty: qty, sourceTable: sourceTable);
   }
 
   /// ================================
@@ -264,7 +285,11 @@ class StoreRepositoryImpl implements StoreRepository {
     final Map<String, List<Map<String, dynamic>>> grouped = {};
 
     for (final row in rows) {
-      final groupId = row['request_group_id'].toString();
+      final sourceTable = (row['_source_table'] ?? 'additional_requests')
+          .toString();
+      final groupId = sourceTable == 'additional_order_inventory'
+          ? '$sourceTable|${row['request_group_id']}'
+          : '$sourceTable|${row['request_group_id']}|${row['branch_name']}';
 
       grouped.putIfAbsent(groupId, () => []);
       grouped[groupId]!.add(row);
@@ -274,6 +299,8 @@ class StoreRepositoryImpl implements StoreRepository {
 
     grouped.forEach((groupId, items) {
       final first = items.first;
+      final sourceTable = (first['_source_table'] ?? 'additional_requests')
+          .toString();
 
       final itemNames = items
           .map((e) => (e['item_name'] ?? '').toString())
@@ -311,8 +338,10 @@ class StoreRepositoryImpl implements StoreRepository {
       );
       result.add(
         AdditionalRequestGroup(
-          groupId: groupId,
-          branchName: first['branch_name'],
+          groupId: first['request_group_id'].toString(),
+          branchName: sourceTable == 'additional_order_inventory'
+              ? ''
+              : first['branch_name'],
           createdAt: DateTime.parse(first['created_at']).toLocal(),
           itemsCount: validItems.length,
           status: status,
@@ -320,6 +349,8 @@ class StoreRepositoryImpl implements StoreRepository {
           itemCodes: itemCodes,
           storeStatus: isProcessing ? 'processing' : null,
           contactLogistic: (first['contact_logistic'] ?? '').toString(),
+          sourceTable: (first['_source_table'] ?? 'additional_requests')
+              .toString(),
         ),
       );
     });
@@ -340,8 +371,8 @@ class StoreRepositoryImpl implements StoreRepository {
   }
 
   @override
-  Future<void> markAsProcessing(List<String> ids) {
-    return remote.markAsProcessing(ids);
+  Future<void> markAsProcessing(List<Map<String, dynamic>> rows) {
+    return remote.markAsProcessing(rows);
   }
 
   @override

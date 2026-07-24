@@ -197,27 +197,40 @@ order_days
     final startOfDay = DateTime(now.year, now.month, now.day);
     final endOfDay = startOfDay.add(const Duration(days: 1));
 
-    final res = await client
-        .from('additional_requests')
-        .select(
-          'id,request_group_id,branch_name,created_at,status,done_at,inventory_qty,request_qty,item_code,item_name,store_status,contact_logistic,store_item_classifications',
-        )
-        .or(
-          'status.eq.sent_to_store,'
-          'and(status.eq.done,done_at.gte.${startOfDay.toIso8601String()},done_at.lt.${endOfDay.toIso8601String()}),'
-          'and(status.eq.rejected,done_at.gte.${startOfDay.toIso8601String()},done_at.lt.${endOfDay.toIso8601String()})',
-        )
-        .order('created_at', ascending: false);
+    Future<List<Map<String, dynamic>>> fetch(String table) async {
+      final res = await client
+          .from(table)
+          .select(
+            'id,request_group_id,branch_name,created_at,status,done_at,inventory_qty,request_qty,item_code,item_name,store_status,contact_logistic,store_item_classifications',
+          )
+          .or(
+            'status.eq.sent_to_store,'
+            'and(status.eq.done,done_at.gte.${startOfDay.toIso8601String()},done_at.lt.${endOfDay.toIso8601String()}),'
+            'and(status.eq.rejected,done_at.gte.${startOfDay.toIso8601String()},done_at.lt.${endOfDay.toIso8601String()})',
+          )
+          .order('created_at', ascending: false);
+      return List<Map<String, dynamic>>.from(
+        res,
+      ).map((row) => {...row, '_source_table': table}).toList();
+    }
 
-    return List<Map<String, dynamic>>.from(res);
+    final results = await Future.wait([
+      fetch('additional_requests'),
+      fetch('additional_order_inventory'),
+    ]);
+    return [...results[0], ...results[1]];
   }
 
   /// APPROVE REQUEST
-  Future<void> approveRequest({required String id, required num qty}) async {
+  Future<void> approveRequest({
+    required String id,
+    required num qty,
+    String sourceTable = 'additional_requests',
+  }) async {
     final status = qty == 0 ? 'rejected' : 'done';
 
     await client
-        .from('additional_requests')
+        .from(sourceTable)
         .update({
           'fulfilled_qty': qty,
           'status': status,
@@ -244,42 +257,80 @@ order_days
     required DateTime from,
     required DateTime to,
   }) async {
-    final res = await client
-        .from('additional_requests')
-        .select()
-        .gte('created_at', from.toIso8601String())
-        .lte('created_at', to.toIso8601String())
-        .inFilter('status', ['done', 'rejected'])
-        .order('created_at', ascending: false);
+    Future<List<Map<String, dynamic>>> fetch(String table) async {
+      final res = await client
+          .from(table)
+          .select()
+          .gte('created_at', from.toIso8601String())
+          .lte('created_at', to.toIso8601String())
+          .inFilter('status', ['done', 'rejected'])
+          .order('created_at', ascending: false);
+      return List<Map<String, dynamic>>.from(
+        res,
+      ).map((row) => {...row, '_source_table': table}).toList();
+    }
 
-    return List<Map<String, dynamic>>.from(res);
+    final results = await Future.wait([
+      fetch('additional_requests'),
+      fetch('additional_order_inventory'),
+    ]);
+    return [...results[0], ...results[1]];
   }
 
   Future<List<Map<String, dynamic>>> fetchAllSentToStore() async {
-    final res = await client
-        .from('additional_requests')
-        .select()
-        .eq('status', 'sent_to_store')
-        .or('store_status.is.null,store_status.eq.');
-    return List<Map<String, dynamic>>.from(res);
+    Future<List<Map<String, dynamic>>> fetch(String table) async {
+      final res = await client
+          .from(table)
+          .select()
+          .eq('status', 'sent_to_store')
+          .or('store_status.is.null,store_status.eq.');
+      return List<Map<String, dynamic>>.from(
+        res,
+      ).map((row) => {...row, '_source_table': table}).toList();
+    }
+
+    final results = await Future.wait([
+      fetch('additional_requests'),
+      fetch('additional_order_inventory'),
+    ]);
+    return [...results[0], ...results[1]];
   }
 
-  Future<void> markAsProcessing(List<String> ids) async {
-    if (ids.isEmpty) return;
+  Future<void> markAsProcessing(List<Map<String, dynamic>> rows) async {
+    final idsByTable = <String, List<String>>{};
+    for (final row in rows) {
+      final id = row['id']?.toString();
+      if (id == null || id.isEmpty) continue;
+      final table = (row['_source_table'] ?? 'additional_requests').toString();
+      idsByTable.putIfAbsent(table, () => []).add(id);
+    }
 
-    await client
-        .from('additional_requests')
-        .update({'store_status': 'processing'})
-        .inFilter('id', ids);
+    await Future.wait(
+      idsByTable.entries.map(
+        (entry) => client
+            .from(entry.key)
+            .update({'store_status': 'processing'})
+            .inFilter('id', entry.value),
+      ),
+    );
   }
 
   Future<List<Map<String, dynamic>>> fetchProcessingRequests() async {
-    final res = await client
-        .from('additional_requests')
-        .select()
-        .eq('store_status', 'processing');
+    Future<List<Map<String, dynamic>>> fetch(String table) async {
+      final res = await client
+          .from(table)
+          .select()
+          .eq('store_status', 'processing');
+      return List<Map<String, dynamic>>.from(
+        res,
+      ).map((row) => {...row, '_source_table': table}).toList();
+    }
 
-    return List<Map<String, dynamic>>.from(res);
+    final results = await Future.wait([
+      fetch('additional_requests'),
+      fetch('additional_order_inventory'),
+    ]);
+    return [...results[0], ...results[1]];
   }
 
   Future<List<Map<String, dynamic>>> fetchProductSuggestions({

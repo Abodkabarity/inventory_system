@@ -9,6 +9,61 @@ import '../../domain/entities/stock_check_task.dart';
 
 const double _stockCheckAccuracyTolerance = 0.01;
 
+class StockCheckProjectComparisonExportRow {
+  final String branch;
+  final String itemCode;
+  final String itemName;
+  final String firstProject;
+  final bool firstIncluded;
+  final num? firstSystemQty;
+  final num? firstActualQty;
+  final String secondProject;
+  final bool secondIncluded;
+  final num? secondSystemQty;
+  final num? secondActualQty;
+
+  const StockCheckProjectComparisonExportRow({
+    required this.branch,
+    required this.itemCode,
+    required this.itemName,
+    required this.firstProject,
+    required this.firstIncluded,
+    required this.firstSystemQty,
+    required this.firstActualQty,
+    required this.secondProject,
+    required this.secondIncluded,
+    required this.secondSystemQty,
+    required this.secondActualQty,
+  });
+
+  bool get isInBothProjects => firstIncluded && secondIncluded;
+
+  bool get isMatch =>
+      firstSystemQty != null &&
+      firstActualQty != null &&
+      secondSystemQty != null &&
+      secondActualQty != null &&
+      (firstSystemQty!.toDouble() - secondSystemQty!.toDouble()).abs() <=
+          _stockCheckAccuracyTolerance + 1e-9 &&
+      (firstActualQty!.toDouble() - secondActualQty!.toDouble()).abs() <=
+          _stockCheckAccuracyTolerance + 1e-9;
+
+  num? get firstDifference => firstSystemQty == null || firstActualQty == null
+      ? null
+      : firstActualQty!.toDouble() - firstSystemQty!.toDouble();
+
+  num? get secondDifference =>
+      secondSystemQty == null || secondActualQty == null
+      ? null
+      : secondActualQty!.toDouble() - secondSystemQty!.toDouble();
+
+  String get result {
+    if (!isInBothProjects) return 'Only in one project';
+    if (isMatch) return 'Match';
+    return 'Changed';
+  }
+}
+
 class StockCheckExcelExporter {
   static Future<void> export({
     required List<StockCheckTask> rows,
@@ -405,6 +460,194 @@ class StockCheckExcelExporter {
       ..setAttribute('download', '${safeTitle}_$today.xlsx')
       ..click();
     html.Url.revokeObjectUrl(url);
+  }
+
+  static Future<void> exportProjectComparison({
+    required List<StockCheckProjectComparisonExportRow> rows,
+    required String title,
+  }) async {
+    final workbook = xlsio.Workbook(2);
+    final summary = workbook.worksheets[0]..name = 'Branch Comparison';
+    final details = workbook.worksheets[1]..name = 'Item Differences';
+    final grouped = <String, List<StockCheckProjectComparisonExportRow>>{};
+    for (final row in rows) {
+      grouped.putIfAbsent(row.branch, () => []).add(row);
+    }
+    final branches = grouped.keys.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+    const summaryHeaders = [
+      '#',
+      'Branch',
+      'First Project',
+      'Second Project',
+      'Compared Items',
+      'Matching Items',
+      'Different Items',
+      'Match %',
+      'Result',
+    ];
+    _writeHeader(summary, summaryHeaders, '#2563EB');
+    for (var index = 0; index < branches.length; index++) {
+      final branchRows = grouped[branches[index]]!;
+      final matching = branchRows.where((row) => row.isMatch).length;
+      final total = branchRows.length;
+      final different = total - matching;
+      final rate = total == 0 ? 100.0 : matching * 100 / total;
+      final values = [
+        index + 1,
+        branches[index],
+        branchRows.first.firstProject,
+        branchRows.first.secondProject,
+        total,
+        matching,
+        different,
+        double.parse(rate.toStringAsFixed(1)),
+        different == 0 ? '100% Match' : '${rate.toStringAsFixed(1)}% Match',
+      ];
+      _writeRow(summary, index + 2, values, leftColumns: const {2, 3, 4, 9});
+      if (different == 0) {
+        summary.getRangeByIndex(index + 2, 9).cellStyle
+          ..fontColor = '#15803D'
+          ..bold = true;
+      }
+    }
+    const detailHeaders = [
+      'Branch',
+      'Item Code',
+      'Item Name',
+      'First Project',
+      'First System',
+      'First Actual',
+      'First Difference',
+      'Second Project',
+      'Second System',
+      'Second Actual',
+      'Second Difference',
+      'Result',
+    ];
+    _writeHeader(details, detailHeaders, '#0F766E');
+    final differences = rows.where((row) => !row.isMatch).toList()
+      ..sort((a, b) {
+        final branch = a.branch.toLowerCase().compareTo(b.branch.toLowerCase());
+        return branch != 0
+            ? branch
+            : a.itemName.toLowerCase().compareTo(b.itemName.toLowerCase());
+      });
+    for (var index = 0; index < differences.length; index++) {
+      final row = differences[index];
+      _writeRow(
+        details,
+        index + 2,
+        [
+          row.branch,
+          row.itemCode,
+          row.itemName,
+          row.firstProject,
+          row.firstSystemQty ?? '',
+          row.firstActualQty ?? '',
+          row.firstDifference ?? '',
+          row.secondProject,
+          row.secondSystemQty ?? '',
+          row.secondActualQty ?? '',
+          row.secondDifference ?? '',
+          row.result,
+        ],
+        leftColumns: const {1, 2, 3, 4, 8, 12},
+      );
+    }
+    if (differences.isEmpty) {
+      details
+          .getRangeByIndex(2, 1)
+          .setText('All branches and items match 100%.');
+      details.getRangeByIndex(2, 1).cellStyle
+        ..fontColor = '#15803D'
+        ..bold = true;
+    }
+
+    <int, double>{
+      1: 7,
+      2: 28,
+      3: 34,
+      4: 34,
+      5: 16,
+      6: 16,
+      7: 16,
+      8: 13,
+      9: 18,
+    }.forEach(
+      (column, width) => summary.getRangeByIndex(1, column).columnWidth = width,
+    );
+    <int, double>{
+      1: 28,
+      2: 18,
+      3: 46,
+      4: 34,
+      5: 14,
+      6: 14,
+      7: 16,
+      8: 34,
+      9: 14,
+      10: 14,
+      11: 16,
+      12: 22,
+    }.forEach(
+      (column, width) => details.getRangeByIndex(1, column).columnWidth = width,
+    );
+
+    final bytes = workbook.saveAsStream();
+    workbook.dispose();
+    final safeTitle = _safe(title.isEmpty ? 'Stock Check Comparison' : title);
+    final today = DateTime.now().toIso8601String().split('T').first;
+    final blob = html.Blob([Uint8List.fromList(bytes)]);
+    final url = html.Url.createObjectUrlFromBlob(blob);
+    html.AnchorElement(href: url)
+      ..setAttribute('download', '${safeTitle}_$today.xlsx')
+      ..click();
+    html.Url.revokeObjectUrl(url);
+  }
+
+  static void _writeHeader(
+    xlsio.Worksheet sheet,
+    List<String> headers,
+    String color,
+  ) {
+    for (var index = 0; index < headers.length; index++) {
+      final cell = sheet.getRangeByIndex(1, index + 1);
+      cell.setText(headers[index]);
+      cell.cellStyle
+        ..bold = true
+        ..fontColor = '#FFFFFF'
+        ..backColor = color
+        ..hAlign = xlsio.HAlignType.center
+        ..vAlign = xlsio.VAlignType.center;
+      cell.cellStyle.borders.all.lineStyle = xlsio.LineStyle.thin;
+    }
+  }
+
+  static void _writeRow(
+    xlsio.Worksheet sheet,
+    int rowIndex,
+    List<Object> values, {
+    Set<int> leftColumns = const {},
+  }) {
+    for (var index = 0; index < values.length; index++) {
+      final cell = sheet.getRangeByIndex(rowIndex, index + 1);
+      final value = values[index];
+      if (value is num) {
+        cell.setNumber(value.toDouble());
+      } else {
+        cell.setText(value.toString());
+      }
+      cell.cellStyle
+        ..hAlign = leftColumns.contains(index + 1)
+            ? xlsio.HAlignType.left
+            : xlsio.HAlignType.center
+        ..vAlign = xlsio.VAlignType.center;
+      cell.cellStyle.borders.all.lineStyle = xlsio.LineStyle.thin;
+      cell.cellStyle.borders.all.color = '#CBD5E1';
+      if (rowIndex.isEven) cell.cellStyle.backColor = '#F8FAFC';
+    }
   }
 
   static List<_BranchAnalysisExportRow> _buildBranchAnalysis(

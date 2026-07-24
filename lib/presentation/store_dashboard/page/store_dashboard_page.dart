@@ -97,6 +97,14 @@ class _StoreDashboardViewState extends State<StoreDashboardView> {
             bloc.add(LoadStoreDashboard(widget.runDate, silent: true));
           },
         )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'additional_order_inventory',
+          callback: (_) {
+            bloc.add(LoadStoreDashboard(widget.runDate, silent: true));
+          },
+        )
         .subscribe();
   }
 

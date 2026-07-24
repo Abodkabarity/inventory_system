@@ -47,7 +47,9 @@ class AdditionalRequestTile extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
       child: ListTile(
         title: Text(
-          "${request.branchName} Additional Order",
+          request.sourceTable == 'additional_order_inventory'
+              ? 'Additional Order - From Inventory'
+              : "${request.branchName} Additional Order",
           style: TextStyle(
             color: AppColors.secondaryColor,
             fontWeight: FontWeight.bold,
@@ -104,8 +106,12 @@ class AdditionalRequestTile extends StatelessWidget {
         ),
 
         leading: Icon(
-          Icons.add_circle_outline_rounded,
-          color: AppColors.secondaryColor,
+          request.sourceTable == 'additional_order_inventory'
+              ? Icons.inventory_2_rounded
+              : Icons.add_circle_outline_rounded,
+          color: request.sourceTable == 'additional_order_inventory'
+              ? AppColors.primaryColor
+              : AppColors.secondaryColor,
         ),
 
         onTap: () {
@@ -114,6 +120,7 @@ class AdditionalRequestTile extends StatelessWidget {
             builder: (_) => AdditionalRequestDialog(
               groupId: request.groupId,
               branch: request.branchName,
+              sourceTable: request.sourceTable,
             ),
           );
         },

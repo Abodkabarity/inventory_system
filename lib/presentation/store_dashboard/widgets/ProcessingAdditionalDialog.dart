@@ -32,15 +32,17 @@ class _ProcessingAdditionalDialogState
 
   String? successMessage;
   String selectedBranch = 'ALL';
+
   List<String> getBranches(List<Map<String, dynamic>> items) {
-    final set = <String>{};
+    final branches =
+        items
+            .map((item) => (item['branch_name'] ?? '').toString().trim())
+            .where((branch) => branch.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
 
-    for (var item in items) {
-      final b = item['branch_name'];
-      if (b != null) set.add(b);
-    }
-
-    return ['ALL', ...set];
+    return ['ALL', ...branches];
   }
 
   List<Map<String, dynamic>> allItems = [];
@@ -114,7 +116,7 @@ class _ProcessingAdditionalDialogState
       final status = qty == 0 ? 'rejected' : 'done';
 
       await client
-          .from('additional_requests')
+          .from((item['_source_table'] ?? 'additional_requests').toString())
           .update({
             'fulfilled_qty': qty,
             'store_note': note,
@@ -385,12 +387,20 @@ class _ProcessingAdditionalDialogState
   @override
   Widget build(BuildContext context) {
     final list = context.select((StoreBloc bloc) => bloc.state.filteredList);
+    final state = context.watch<StoreBloc>().state;
+    final branches = getBranches(state.processingList);
+    final activeBranch = branches.contains(selectedBranch)
+        ? selectedBranch
+        : 'ALL';
 
     List<Map<String, dynamic>> filteredByBranch = list;
 
-    if (selectedBranch != 'ALL') {
+    if (activeBranch != 'ALL') {
       filteredByBranch = list
-          .where((e) => e['branch_name'] == selectedBranch)
+          .where(
+            (item) =>
+                (item['branch_name'] ?? '').toString().trim() == activeBranch,
+          )
           .toList();
     }
 
@@ -411,7 +421,6 @@ class _ProcessingAdditionalDialogState
     });
 
     final grouped = groupByBranch(sortedGlobal);
-    final state = context.watch<StoreBloc>().state;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -502,7 +511,7 @@ class _ProcessingAdditionalDialogState
                 SizedBox(width: 10),
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    initialValue: selectedBranch,
+                    value: activeBranch,
                     dropdownColor: Colors.white,
                     decoration: InputDecoration(
                       labelText: "Select Branch",
@@ -522,7 +531,7 @@ class _ProcessingAdditionalDialogState
                         borderSide: BorderSide(color: AppColors.primaryColor),
                       ),
                     ),
-                    items: getBranches(state.processingList)
+                    items: branches
                         .map(
                           (b) => DropdownMenuItem(
                             value: b,

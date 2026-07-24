@@ -20,14 +20,18 @@ abstract class StoreRepository {
     required String branch,
   });
   Future<List<AdditionalRequestGroup>> fetchAdditionalRequests();
-  Future<void> approveRequest({required String id, required num qty});
+  Future<void> approveRequest({
+    required String id,
+    required num qty,
+    String sourceTable = 'additional_requests',
+  });
   Future<List<AdditionalRequestGroup>> fetchAdditionalHistory({
     required DateTime from,
     required DateTime to,
   });
   Future<List<Map<String, dynamic>>> fetchAllSentToStore();
 
-  Future<void> markAsProcessing(List<String> ids);
+  Future<void> markAsProcessing(List<Map<String, dynamic>> rows);
   Future<List<Map<String, dynamic>>> fetchProcessingRequests();
   Future<List<Map<String, dynamic>>> fetchProductSuggestions({
     required String branch,

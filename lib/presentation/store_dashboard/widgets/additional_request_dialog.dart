@@ -7,11 +7,13 @@ import '../../../core/utils/print_additional_service.dart';
 class AdditionalRequestDialog extends StatefulWidget {
   final String groupId;
   final String branch;
+  final String sourceTable;
 
   const AdditionalRequestDialog({
     super.key,
     required this.groupId,
     required this.branch,
+    this.sourceTable = 'additional_requests',
   });
 
   @override
@@ -40,19 +42,28 @@ class _AdditionalRequestDialogState extends State<AdditionalRequestDialog> {
   }
 
   Future<void> _loadItems() async {
-    final res = await client
-        .from('additional_requests')
-        .select()
-        .eq('request_group_id', widget.groupId)
-        .order('item_name');
+    final inventoryOrder = widget.sourceTable == 'additional_order_inventory';
+    final res = inventoryOrder
+        ? await client
+              .from(widget.sourceTable)
+              .select()
+              .eq('request_group_id', widget.groupId)
+              .order('branch_name')
+              .order('item_name')
+        : await client
+              .from(widget.sourceTable)
+              .select()
+              .eq('request_group_id', widget.groupId)
+              .eq('branch_name', widget.branch)
+              .order('item_name');
 
     items = List<Map<String, dynamic>>.from(res);
-print('GROUP ${widget.groupId}');
-for (final e in items) {
-  print(
-    '${e['item_name']} | inventory_qty=${e['inventory_qty']} | status=${e['status']}',
-  );
-}
+    print('GROUP ${widget.groupId}');
+    for (final e in items) {
+      print(
+        '${e['item_name']} | inventory_qty=${e['inventory_qty']} | status=${e['status']}',
+      );
+    }
     items = items.where((e) {
       final inv = e['inventory_qty'];
 
@@ -92,9 +103,11 @@ for (final e in items) {
 
   Future<void> _printAndProcess() async {
     try {
-      final Map<String, List<Map<String, dynamic>>> batch = {
-        widget.branch: items,
-      };
+      final batch = <String, List<Map<String, dynamic>>>{};
+      for (final item in items) {
+        final branch = (item['branch_name'] ?? widget.branch).toString();
+        batch.putIfAbsent(branch, () => []).add(item);
+      }
 
       await PrintAdditionalService.printBatch(batch);
 
@@ -102,7 +115,7 @@ for (final e in items) {
         final id = item['id'];
 
         await client
-            .from('additional_requests')
+            .from(widget.sourceTable)
             .update({'store_status': 'processing'})
             .eq('id', id);
 
@@ -132,7 +145,9 @@ for (final e in items) {
             Row(
               children: [
                 Text(
-                  "${widget.branch} Additional Order",
+                  widget.sourceTable == 'additional_order_inventory'
+                      ? 'Additional Order - From Inventory'
+                      : "${widget.branch} Additional Order",
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -239,6 +254,7 @@ for (final e in items) {
   Widget _buildItem(Map<String, dynamic> item) {
     final id = item['id'].toString();
     final isUrgent = item['contact_logistic'] == 'urgent';
+    final inventoryOrder = widget.sourceTable == 'additional_order_inventory';
     for (var e in items) {
       print("ITEM => ${e['item_name']} | ${e['contact_logistic']}");
     }
@@ -301,6 +317,17 @@ for (final e in items) {
             ),
 
             const SizedBox(height: 15),
+
+            if (inventoryOrder) ...[
+              Text(
+                'Branch: ${(item['branch_name'] ?? '').toString()}',
+                style: const TextStyle(
+                  color: AppColors.primaryColor,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
 
             Row(
               children: [

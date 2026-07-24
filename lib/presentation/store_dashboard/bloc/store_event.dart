@@ -28,15 +28,17 @@ class ApproveAdditionalRequest extends StoreEvent {
   final String requestId;
   final num qty;
   final String note;
+  final String sourceTable;
 
   ApproveAdditionalRequest({
     required this.requestId,
     required this.qty,
     required this.note,
+    this.sourceTable = 'additional_requests',
   });
 
   @override
-  List<Object?> get props => [requestId, qty, note];
+  List<Object?> get props => [requestId, qty, note, sourceTable];
 }
 
 class LoadAdditionalHistory extends StoreEvent {

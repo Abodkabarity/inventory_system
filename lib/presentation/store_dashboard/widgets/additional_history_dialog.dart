@@ -321,7 +321,9 @@ class _AdditionalHistoryDialogState extends State<AdditionalHistoryDialog> {
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
 
         title: Text(
-          "${r.branchName} Order",
+          r.sourceTable == 'additional_order_inventory'
+              ? 'Additional Order - From Inventory'
+              : "${r.branchName} Order",
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
 
@@ -354,6 +356,7 @@ class _AdditionalHistoryDialogState extends State<AdditionalHistoryDialog> {
             builder: (_) => AdditionalRequestDialog(
               groupId: r.groupId,
               branch: r.branchName,
+              sourceTable: r.sourceTable,
             ),
           );
         },

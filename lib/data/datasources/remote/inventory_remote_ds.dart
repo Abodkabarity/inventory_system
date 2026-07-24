@@ -347,6 +347,17 @@ class InventoryRemoteDs {
       res,
     ).map(_normalizeOrderEditRow).toList();
 
+    // The edit rows only tell us which products changed. Keep the submission
+    // history alongside them so exports can show edited orders out of all
+    // submitted orders for each branch in the selected period.
+    final submissionRes = await client
+        .from('order_submissions')
+        .select('branch_name, run_date')
+        .eq('status', 'submitted')
+        .gte('run_date', fromDate)
+        .lte('run_date', toDate);
+    final submittedOrders = List<Map<String, dynamic>>.from(submissionRes);
+
     final totalEdits = rows.length;
     final totalQty = rows.fold<num>(0, (sum, row) => sum + _num(row['diff']));
     final uniqueProducts = rows
@@ -380,6 +391,10 @@ class InventoryRemoteDs {
     }
 
     final topBranches = _buildOrderEditBranches(rows);
+    final branchExportRows = _buildOrderEditBranchExportRows(
+      rows,
+      submittedOrders,
+    );
     final topProducts = _buildOrderEditProducts(rows);
     final reasons = _buildOrderEditReasonRows(rows);
     final dailyTrend = _buildOrderEditDailyTrend(rows);
@@ -397,6 +412,7 @@ class InventoryRemoteDs {
       'avg_qty': totalEdits == 0 ? 0 : totalQty / totalEdits,
       'max_addition': maxAddition,
       'top_branches': topBranches,
+      'branch_export_rows': branchExportRows,
       'top_products': topProducts,
       'branch_performance': topBranches,
       'reasons': reasons,
@@ -459,6 +475,73 @@ class InventoryRemoteDs {
     }).toList();
 
     result.sort((a, b) => (_num(b['qty'])).compareTo(_num(a['qty'])));
+    return result;
+  }
+
+  List<Map<String, dynamic>> _buildOrderEditBranchExportRows(
+    List<Map<String, dynamic>> editRows,
+    List<Map<String, dynamic>> submittedOrders,
+  ) {
+    final grouped = <String, Map<String, dynamic>>{};
+
+    for (final order in submittedOrders) {
+      final branch = _text(order['branch_name']);
+      final runDate = _text(order['run_date']);
+      if (branch.isEmpty || runDate.isEmpty) continue;
+
+      final target = grouped.putIfAbsent(
+        branch,
+        () => {
+          'branch_name': branch,
+          'order_dates': <String>{},
+          'edited_order_dates': <String>{},
+          'qty': 0,
+          'products': <String>{},
+        },
+      );
+      (target['order_dates'] as Set<String>).add(runDate);
+    }
+
+    for (final edit in editRows) {
+      final branch = _text(edit['branch_name']);
+      final runDate = _text(edit['run_date']);
+      if (branch.isEmpty) continue;
+
+      final target = grouped.putIfAbsent(
+        branch,
+        () => {
+          'branch_name': branch,
+          'order_dates': <String>{},
+          'edited_order_dates': <String>{},
+          'qty': 0,
+          'products': <String>{},
+        },
+      );
+      if (runDate.isNotEmpty) {
+        (target['edited_order_dates'] as Set<String>).add(runDate);
+      }
+      target['qty'] = (target['qty'] as num) + _num(edit['diff']);
+      (target['products'] as Set<String>).add(_text(edit['item_code']));
+    }
+
+    final result = grouped.values.map((row) {
+      final orderDates = row['order_dates'] as Set<String>;
+      final editedOrderDates = row['edited_order_dates'] as Set<String>;
+      return {
+        'branch_name': row['branch_name'],
+        'orders': orderDates.length,
+        'edited_orders': editedOrderDates.length,
+        'qty': row['qty'],
+        'products': (row['products'] as Set<String>).length,
+      };
+    }).toList();
+
+    result.sort((a, b) {
+      final orderComparison = _num(b['orders']).compareTo(_num(a['orders']));
+      return orderComparison != 0
+          ? orderComparison
+          : _text(a['branch_name']).compareTo(_text(b['branch_name']));
+    });
     return result;
   }
 

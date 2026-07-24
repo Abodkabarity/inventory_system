@@ -14,6 +14,7 @@ import '../bloc/inventory_state.dart';
 import '../widgets/inventory_dashboard_body.dart';
 import '../widgets/inventory_drawer.dart';
 import 'additional_order_analysis_page.dart';
+import 'inventory_additional_orders_page.dart';
 import 'allocation_page.dart';
 import 'availability_kpi_page.dart';
 import 'assortment_page.dart';
@@ -255,6 +256,9 @@ Widget _buildPage(InventoryState state, bool isSubmitted, String runDate) {
       return const AssortmentPage();
     case InventoryPageType.tma:
       return const TmaPage();
+
+    case InventoryPageType.additionalOrders:
+      return const InventoryAdditionalOrdersPage();
 
     case InventoryPageType.dailyOrder:
       return InventoryDailyOrderPage(runDate: runDate);

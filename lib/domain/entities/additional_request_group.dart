@@ -24,6 +24,7 @@ class AdditionalRequestGroup {
   final String? inventoryNote;
   final num? fulfilledQty;
   final String? storeNote;
+  final String sourceTable;
 
   AdditionalRequestGroup({
     required this.groupId,
@@ -50,5 +51,6 @@ class AdditionalRequestGroup {
     this.storeNote,
     this.inventoryQty,
     this.inventoryNote,
+    this.sourceTable = 'additional_requests',
   });
 }

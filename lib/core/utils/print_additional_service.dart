@@ -9,41 +9,36 @@ class PrintAdditionalService {
     final pdf = pw.Document();
     var hasPrintableContent = false;
 
-    final entries = batch.entries.toList()
-      ..sort((a, b) => _text(a.key).compareTo(_text(b.key)));
-
-    for (final entry in entries) {
-      final branch = entry.key;
-      final items = entry.value.where(_hasQty).toList();
-      if (items.isEmpty) continue;
-
-      final medicine = items.where((e) => !_isGeneral(e)).toList()
-        ..sort((a, b) => _compareItems(a, b, isGeneral: false));
-
-      final general = items.where(_isGeneral).toList()
-        ..sort((a, b) => _compareItems(a, b, isGeneral: true));
-
-      if (medicine.isNotEmpty) {
-        hasPrintableContent = true;
-        _addSection(
-          pdf: pdf,
-          branch: branch,
-          title: 'Additional MEDICINE',
-          items: medicine,
-          isGeneral: false,
-        );
+    final items = <Map<String, dynamic>>[];
+    for (final entry in batch.entries) {
+      for (final item in entry.value.where(_hasQty)) {
+        items.add({...item, 'branch_name': item['branch_name'] ?? entry.key});
       }
+    }
 
-      if (general.isNotEmpty) {
-        hasPrintableContent = true;
-        _addSection(
-          pdf: pdf,
-          branch: branch,
-          title: 'Additional General',
-          items: general,
-          isGeneral: true,
-        );
-      }
+    final medicine = items.where((item) => !_isGeneral(item)).toList()
+      ..sort(_comparePrintedItems);
+    final general = items.where(_isGeneral).toList()
+      ..sort(_comparePrintedItems);
+
+    if (medicine.isNotEmpty) {
+      hasPrintableContent = true;
+      _addSection(
+        pdf: pdf,
+        title: 'Additional MEDICINE',
+        items: medicine,
+        isGeneral: false,
+      );
+    }
+
+    if (general.isNotEmpty) {
+      hasPrintableContent = true;
+      _addSection(
+        pdf: pdf,
+        title: 'Additional General',
+        items: general,
+        isGeneral: true,
+      );
     }
 
     if (!hasPrintableContent) {
@@ -64,7 +59,6 @@ class PrintAdditionalService {
 
   static void _addSection({
     required pw.Document pdf,
-    required String branch,
     required String title,
     required List<Map<String, dynamic>> items,
     required bool isGeneral,
@@ -73,14 +67,14 @@ class PrintAdditionalService {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.fromLTRB(15, 10, 10, 60),
-        header: (_) => _header(branch: branch, title: title),
+        header: (_) => _header(title: title),
         footer: (context) => _footer(context),
         build: (_) => [_table(items, isGeneral)],
       ),
     );
   }
 
-  static pw.Widget _header({required String branch, required String title}) {
+  static pw.Widget _header({required String title}) {
     final now = DateTime.now().toLocal();
     final date =
         '${now.day.toString().padLeft(2, '0')}/'
@@ -96,7 +90,7 @@ class PrintAdditionalService {
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
               pw.Text(
-                branch,
+                'Store Additional Orders',
                 style: pw.TextStyle(
                   fontSize: 14,
                   fontWeight: pw.FontWeight.bold,
@@ -153,15 +147,16 @@ class PrintAdditionalService {
 
   static pw.Widget _table(List<Map<String, dynamic>> items, bool isGeneral) {
     final headers = isGeneral
-        ? ['Qty', 'Item Name', 'Barcode']
-        : ['Qty', 'Item Name', 'Supplier'];
+        ? ['Branch', 'Qty', 'Item Name', 'Barcode']
+        : ['Branch', 'Qty', 'Item Name', 'Supplier'];
 
     return pw.Table(
       border: pw.TableBorder.all(width: 0.5),
       columnWidths: {
-        0: const pw.FixedColumnWidth(50),
-        1: const pw.FlexColumnWidth(),
-        2: const pw.FixedColumnWidth(105),
+        0: const pw.FixedColumnWidth(125),
+        1: const pw.FixedColumnWidth(42),
+        2: const pw.FlexColumnWidth(),
+        3: const pw.FixedColumnWidth(105),
       },
       children: [
         pw.TableRow(
@@ -179,6 +174,7 @@ class PrintAdditionalService {
                 ? const pw.BoxDecoration(color: PdfColors.red50)
                 : null,
             children: [
+              _cell(_string(e['branch_name']), align: pw.TextAlign.left),
               _cell(_qty(e), bold: true),
               _cell(
                 urgent ? 'URGENT - $itemName' : itemName,
@@ -221,6 +217,16 @@ class PrintAdditionalService {
     if (bySupplier != 0) return bySupplier;
 
     return _text(a['item_name']).compareTo(_text(b['item_name']));
+  }
+
+  static int _comparePrintedItems(
+    Map<String, dynamic> a,
+    Map<String, dynamic> b,
+  ) {
+    final byBranch = _text(a['branch_name']).compareTo(_text(b['branch_name']));
+    if (byBranch != 0) return byBranch;
+
+    return _compareItems(a, b, isGeneral: _isGeneral(a));
   }
 
   static int _compareUrgent(Map<String, dynamic> a, Map<String, dynamic> b) {

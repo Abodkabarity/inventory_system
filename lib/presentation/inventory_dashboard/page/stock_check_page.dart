@@ -1183,6 +1183,7 @@ class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
   String _sortBy = 'accuracy';
   bool _sortDescending = false;
   bool _exporting = false;
+  bool _exportingComparison = false;
 
   @override
   void dispose() {
@@ -1444,7 +1445,17 @@ class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
           ),
           const SizedBox(height: 12),
           if (report.comparisonRows.isNotEmpty) ...[
-            _ComparisonSummary(rows: report.comparisonRows.take(4).toList()),
+            _ComparisonSummary(
+              rows: report.comparisonRows
+                  .where(
+                    (row) =>
+                        selectedBranch == 'ALL' || row.branch == selectedBranch,
+                  )
+                  .take(5)
+                  .toList(),
+              exporting: _exportingComparison,
+              onExport: () => _exportComparison(report.comparisonRows),
+            ),
             const SizedBox(height: 12),
           ],
           Expanded(
@@ -1492,6 +1503,42 @@ class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
       );
     } finally {
       if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  Future<void> _exportComparison(
+    List<_StockCheckComparisonRow> comparisons,
+  ) async {
+    if (comparisons.isEmpty || _exportingComparison) return;
+    setState(() => _exportingComparison = true);
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    try {
+      final rows = <StockCheckProjectComparisonExportRow>[];
+      for (final comparison in comparisons) {
+        for (final item in comparison.items) {
+          rows.add(
+            StockCheckProjectComparisonExportRow(
+              branch: comparison.branch,
+              itemCode: item.itemCode,
+              itemName: item.itemName,
+              firstProject: comparison.firstTitle,
+              firstIncluded: item.first != null,
+              firstSystemQty: item.first?.systemQty,
+              firstActualQty: item.first?.actualQty,
+              secondProject: comparison.lastTitle,
+              secondIncluded: item.last != null,
+              secondSystemQty: item.last?.systemQty,
+              secondActualQty: item.last?.actualQty,
+            ),
+          );
+        }
+      }
+      await StockCheckExcelExporter.exportProjectComparison(
+        rows: rows,
+        title: 'Stock Check Project Comparison',
+      );
+    } finally {
+      if (mounted) setState(() => _exportingComparison = false);
     }
   }
 
@@ -2206,13 +2253,19 @@ class _AnalysisMetricCard extends StatelessWidget {
 
 class _ComparisonSummary extends StatelessWidget {
   final List<_StockCheckComparisonRow> rows;
+  final bool exporting;
+  final VoidCallback onExport;
 
-  const _ComparisonSummary({required this.rows});
+  const _ComparisonSummary({
+    required this.rows,
+    required this.exporting,
+    required this.onExport,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(16),
@@ -2221,11 +2274,82 @@ class _ComparisonSummary extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Project comparison by branch',
-            style: TextStyle(fontWeight: FontWeight.w900),
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryColor.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(
+                  Icons.compare_arrows_rounded,
+                  color: AppColors.primaryColor,
+                  size: 21,
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Project comparison by branch',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Open a branch for item changes or export every branch.',
+                      style: TextStyle(
+                        color: AppColors.subText,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: exporting ? null : onExport,
+                icon: exporting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2.2),
+                      )
+                    : const Icon(Icons.download_rounded, size: 18),
+                label: Text(exporting ? 'Preparing...' : 'Export comparison'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.secondaryColor,
+                  side: const BorderSide(color: AppColors.secondaryColor),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 92,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: rows.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (_, index) => _ComparisonBranchChip(
+                row: rows[index],
+                onTap: () => showDialog<void>(
+                  context: context,
+                  builder: (_) =>
+                      _ProjectComparisonDialog(comparison: rows[index]),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+/*
           ...rows.map(
             (row) => Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
@@ -2258,7 +2382,18 @@ class _ComparisonSummary extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 14),
+                  IconButton(
+                    tooltip: 'Open detailed comparison',
+                    onPressed: () => showDialog<void>(
+                      context: context,
+                      builder: (_) => _ProjectComparisonDialog(comparison: row),
+                    ),
+                    icon: const Icon(
+                      Icons.open_in_new_rounded,
+                      color: AppColors.primaryColor,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
                   Text(
                     'Common ${row.commonItems} • Improved ${row.improved} • Worse ${row.worsened}',
                     style: const TextStyle(
@@ -2275,6 +2410,714 @@ class _ComparisonSummary extends StatelessWidget {
       ),
     );
   }
+}
+
+*/
+
+class _ComparisonBranchChip extends StatelessWidget {
+  final _StockCheckComparisonRow row;
+  final VoidCallback onTap;
+
+  const _ComparisonBranchChip({required this.row, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final attention = row.worsened + row.directionChanged;
+    final color = attention > 0
+        ? const Color(0xFFF97316)
+        : row.improved > 0
+        ? const Color(0xFF16A34A)
+        : AppColors.primaryColor;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 292,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: .35)),
+          boxShadow: [
+            BoxShadow(
+              color: color.withValues(alpha: .06),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: .11),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.storefront_rounded, color: color, size: 21),
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    row.branch,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    '${row.commonItems} common  |  ${attention > 0 ? '$attention review' : '${row.improved} improved'}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  const Text(
+                    'Open detailed comparison',
+                    style: TextStyle(
+                      color: AppColors.subText,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_rounded, color: color, size: 18),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProjectComparisonDialog extends StatefulWidget {
+  final _StockCheckComparisonRow comparison;
+
+  const _ProjectComparisonDialog({required this.comparison});
+
+  @override
+  State<_ProjectComparisonDialog> createState() =>
+      _ProjectComparisonDialogState();
+}
+
+class _ProjectComparisonDialogState extends State<_ProjectComparisonDialog> {
+  final _searchController = TextEditingController();
+  String _filter = 'all';
+  String _search = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final comparison = widget.comparison;
+    final needle = _search.trim().toLowerCase();
+    final items = comparison.items.where((item) {
+      final filterMatches = switch (_filter) {
+        'changed' => item.isChanged,
+        'improved' => item.kind == _ComparisonItemKind.improved,
+        'review' => item.requiresReview,
+        _ => true,
+      };
+      final searchMatches =
+          needle.isEmpty ||
+          item.itemCode.toLowerCase().contains(needle) ||
+          item.itemName.toLowerCase().contains(needle);
+      return filterMatches && searchMatches;
+    }).toList();
+
+    return Dialog(
+      insetPadding: const EdgeInsets.all(20),
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1420, maxHeight: 860),
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(24, 18, 16, 18),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF4F9FD),
+                border: Border(
+                  bottom: BorderSide(
+                    color: AppColors.primaryColor.withValues(alpha: .24),
+                  ),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryColor,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(
+                      Icons.compare_arrows_rounded,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(width: 13),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${comparison.branch} detailed comparison',
+                          style: const TextStyle(
+                            fontSize: 21,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _ProjectNamePill(
+                                caption: 'BASELINE',
+                                title: comparison.firstTitle,
+                                color: AppColors.secondaryColor,
+                              ),
+                            ),
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 8),
+                              child: Icon(
+                                Icons.arrow_forward_rounded,
+                                size: 17,
+                                color: AppColors.subText,
+                              ),
+                            ),
+                            Expanded(
+                              child: _ProjectNamePill(
+                                caption: 'LATEST',
+                                title: comparison.lastTitle,
+                                color: AppColors.primaryColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _ComparisonMetric(
+                      'Common items',
+                      comparison.commonItems,
+                      Icons.sync_alt_rounded,
+                      AppColors.primaryColor,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _ComparisonMetric(
+                      'Improved',
+                      comparison.improved,
+                      Icons.check_circle_rounded,
+                      const Color(0xFF16A34A),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _ComparisonMetric(
+                      'Difference increased',
+                      comparison.worsened,
+                      Icons.warning_amber_rounded,
+                      const Color(0xFFDC2626),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _ComparisonMetric(
+                      'Direction reversed',
+                      comparison.directionChanged,
+                      Icons.swap_horiz_rounded,
+                      const Color(0xFFF97316),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _searchController,
+                      onChanged: (value) => setState(() => _search = value),
+                      decoration: InputDecoration(
+                        hintText: 'Search item code or item name',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        filled: true,
+                        fillColor: Colors.white,
+                        isDense: true,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: AppColors.border),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  _ComparisonFilterChip('All items', _filter == 'all', () {
+                    setState(() => _filter = 'all');
+                  }),
+                  _ComparisonFilterChip('Changed', _filter == 'changed', () {
+                    setState(() => _filter = 'changed');
+                  }),
+                  _ComparisonFilterChip('Resolved', _filter == 'improved', () {
+                    setState(() => _filter = 'improved');
+                  }),
+                  _ComparisonFilterChip(
+                    'Needs review',
+                    _filter == 'review',
+                    () {
+                      setState(() => _filter = 'review');
+                    },
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    '${items.length} item(s)',
+                    style: const TextStyle(
+                      color: AppColors.subText,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    children: [
+                      _ComparisonTableHeader(
+                        firstProjectTitle: comparison.firstTitle,
+                        lastProjectTitle: comparison.lastTitle,
+                      ),
+                      Expanded(
+                        child: items.isEmpty
+                            ? const Center(
+                                child: Text(
+                                  'No items match the current filter.',
+                                  style: TextStyle(
+                                    color: AppColors.subText,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              )
+                            : ListView.separated(
+                                itemCount: items.length,
+                                separatorBuilder: (_, _) =>
+                                    const Divider(height: 1),
+                                itemBuilder: (_, index) =>
+                                    _ProjectComparisonItemRow(
+                                      item: items[index],
+                                      firstProjectTitle: comparison.firstTitle,
+                                      lastProjectTitle: comparison.lastTitle,
+                                    ),
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ComparisonMetric extends StatelessWidget {
+  final String label;
+  final int value;
+  final IconData icon;
+  final Color color;
+
+  const _ComparisonMetric(this.label, this.value, this.icon, this.color);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minHeight: 72),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: .22)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value.toString(),
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                Text(
+                  label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.subText,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProjectNamePill extends StatelessWidget {
+  final String caption;
+  final String title;
+  final Color color;
+
+  const _ProjectNamePill({
+    required this.caption,
+    required this.title,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: .12),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            caption,
+            style: TextStyle(
+              color: color,
+              fontSize: 9,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        const SizedBox(width: 7),
+        Expanded(
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppColors.subText,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ComparisonTableHeader extends StatelessWidget {
+  final String firstProjectTitle;
+  final String lastProjectTitle;
+
+  const _ComparisonTableHeader({
+    required this.firstProjectTitle,
+    required this.lastProjectTitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const style = TextStyle(
+      color: Color(0xFF334155),
+      fontSize: 11,
+      fontWeight: FontWeight.w900,
+    );
+    return Container(
+      color: const Color(0xFFEFF6FF),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+      child: Row(
+        children: [
+          const SizedBox(width: 44),
+          const Expanded(flex: 4, child: Text('PRODUCT', style: style)),
+          SizedBox(
+            width: 162,
+            child: Text(
+              firstProjectTitle.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: style,
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 162,
+            child: Text(
+              lastProjectTitle.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: style,
+            ),
+          ),
+          const SizedBox(width: 12),
+          const SizedBox(width: 250, child: Text('ASSESSMENT', style: style)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ComparisonFilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ComparisonFilterChip(this.label, this.selected, this.onTap);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => onTap(),
+        selectedColor: AppColors.primaryColor.withValues(alpha: .14),
+        labelStyle: TextStyle(
+          color: selected ? AppColors.primaryColor : AppColors.subText,
+          fontWeight: FontWeight.w800,
+        ),
+        side: BorderSide(
+          color: selected ? AppColors.primaryColor : AppColors.border,
+        ),
+      ),
+    );
+  }
+}
+
+class _ProjectComparisonItemRow extends StatelessWidget {
+  final _StockCheckItemComparison item;
+  final String firstProjectTitle;
+  final String lastProjectTitle;
+
+  const _ProjectComparisonItemRow({
+    required this.item,
+    required this.firstProjectTitle,
+    required this.lastProjectTitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final style = item.style;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      color: style.color.withValues(alpha: .025),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: style.color.withValues(alpha: .1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(style.icon, color: style.color, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            flex: 4,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.itemName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  item.itemCode,
+                  style: const TextStyle(
+                    color: AppColors.subText,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _ProjectQtyColumn(label: firstProjectTitle, row: item.first),
+          const SizedBox(width: 8),
+          _ProjectQtyColumn(label: lastProjectTitle, row: item.last),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 250,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  style.label,
+                  style: TextStyle(
+                    color: style.color,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  style.description,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.subText,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProjectQtyColumn extends StatelessWidget {
+  final String label;
+  final StockCheckTask? row;
+
+  const _ProjectQtyColumn({required this.label, required this.row});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasValues = row?.systemQty != null && row?.actualQty != null;
+    final difference = row?.variance;
+    return SizedBox(
+      width: 162,
+      child: Container(
+        padding: const EdgeInsets.all(9),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.subText,
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              row == null
+                  ? 'Not included'
+                  : !hasValues
+                  ? 'Not checked'
+                  : 'System ${_comparisonNumber(row!.systemQty)} | Actual ${_comparisonNumber(row!.actualQty)}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+            ),
+            if (hasValues) ...[
+              const SizedBox(height: 3),
+              Text(
+                'Difference ${_comparisonNumber(difference)}',
+                style: TextStyle(
+                  color: (difference ?? 0).abs() <= _stockCheckAccuracyTolerance
+                      ? const Color(0xFF16A34A)
+                      : const Color(0xFFDC2626),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _comparisonNumber(num? value) {
+  if (value == null) return '-';
+  final number = value.toDouble();
+  return number == number.roundToDouble()
+      ? number.toInt().toString()
+      : number.toStringAsFixed(2);
 }
 
 class _BranchAccuracyCard extends StatelessWidget {
@@ -4136,8 +4979,6 @@ class _StockCheckAnalysisReport {
     for (final branch in branches) {
       final firstBranchRows = firstByBranch[branch] ?? const <StockCheckTask>[];
       final lastBranchRows = lastByBranch[branch] ?? const <StockCheckTask>[];
-      final first = _StockCheckBranchAnalysis(branch, firstBranchRows);
-      final last = _StockCheckBranchAnalysis(branch, lastBranchRows);
       final firstByItem = {
         for (final row in firstBranchRows)
           row.itemCode.trim().toLowerCase(): row,
@@ -4145,6 +4986,7 @@ class _StockCheckAnalysisReport {
       var common = 0;
       var improved = 0;
       var worsened = 0;
+      var directionChanged = 0;
       for (final row in lastBranchRows) {
         final previous = firstByItem[row.itemCode.trim().toLowerCase()];
         if (previous == null || !_isCounted(previous) || !_isCounted(row)) {
@@ -4155,19 +4997,28 @@ class _StockCheckAnalysisReport {
         final after = _effectiveAbsVariance(row);
         if (after < before) improved++;
         if (after > before) worsened++;
+        if (_hasDirectionChanged(previous, row)) directionChanged++;
       }
       result.add(
         _StockCheckComparisonRow(
           branch: branch,
-          firstAccuracy: first.accuracyRate,
-          lastAccuracy: last.accuracyRate,
+          firstTitle: batches.first.value.first.title,
+          lastTitle: batches.last.value.first.title,
+          firstRows: firstBranchRows,
+          lastRows: lastBranchRows,
           commonItems: common,
           improved: improved,
           worsened: worsened,
+          directionChanged: directionChanged,
         ),
       );
     }
-    result.sort((a, b) => a.delta.compareTo(b.delta));
+    result.sort((a, b) {
+      final aReview = a.worsened + a.directionChanged;
+      final bReview = b.worsened + b.directionChanged;
+      final risk = bReview.compareTo(aReview);
+      return risk != 0 ? risk : a.branch.compareTo(b.branch);
+    });
     return result;
   }
 
@@ -4190,6 +5041,14 @@ class _StockCheckAnalysisReport {
 
   static double _effectiveAbsVariance(StockCheckTask row) {
     return (row.variance ?? 0).toDouble().abs();
+  }
+
+  static bool _hasDirectionChanged(StockCheckTask first, StockCheckTask last) {
+    final firstDiff = (first.variance ?? 0).toDouble();
+    final lastDiff = (last.variance ?? 0).toDouble();
+    return firstDiff.abs() > _stockCheckAccuracyTolerance &&
+        lastDiff.abs() > _stockCheckAccuracyTolerance &&
+        ((firstDiff < 0 && lastDiff > 0) || (firstDiff > 0 && lastDiff < 0));
   }
 }
 
@@ -4225,22 +5084,170 @@ class _StockCheckBranchAnalysis {
 
 class _StockCheckComparisonRow {
   final String branch;
-  final double firstAccuracy;
-  final double lastAccuracy;
+  final String firstTitle;
+  final String lastTitle;
+  final List<StockCheckTask> firstRows;
+  final List<StockCheckTask> lastRows;
   final int commonItems;
   final int improved;
   final int worsened;
+  final int directionChanged;
 
-  const _StockCheckComparisonRow({
+  _StockCheckComparisonRow({
     required this.branch,
-    required this.firstAccuracy,
-    required this.lastAccuracy,
+    required this.firstTitle,
+    required this.lastTitle,
+    required this.firstRows,
+    required this.lastRows,
     required this.commonItems,
     required this.improved,
     required this.worsened,
+    required this.directionChanged,
   });
 
-  double get delta => lastAccuracy - firstAccuracy;
+  late final List<_StockCheckItemComparison> items = _buildItems();
+
+  List<_StockCheckItemComparison> _buildItems() {
+    final firstByItem = {
+      for (final row in firstRows) row.itemCode.trim().toLowerCase(): row,
+    };
+    final lastByItem = {
+      for (final row in lastRows) row.itemCode.trim().toLowerCase(): row,
+    };
+    final keys = {...firstByItem.keys, ...lastByItem.keys}.toList();
+    final result = keys
+        .map(
+          (key) => _StockCheckItemComparison(
+            first: firstByItem[key],
+            last: lastByItem[key],
+          ),
+        )
+        .toList();
+    result.sort((a, b) {
+      final severity = b.severity.compareTo(a.severity);
+      return severity != 0
+          ? severity
+          : a.itemName.toLowerCase().compareTo(b.itemName.toLowerCase());
+    });
+    return result;
+  }
+}
+
+enum _ComparisonItemKind {
+  stable,
+  improved,
+  worsened,
+  directionChanged,
+  missing,
+  pending,
+}
+
+class _StockCheckItemComparison {
+  final StockCheckTask? first;
+  final StockCheckTask? last;
+
+  const _StockCheckItemComparison({required this.first, required this.last});
+
+  String get itemCode => (last ?? first)?.itemCode ?? '-';
+  String get itemName => (last ?? first)?.itemName ?? 'Unnamed item';
+  bool get firstCounted => first?.systemQty != null && first?.actualQty != null;
+  bool get lastCounted => last?.systemQty != null && last?.actualQty != null;
+  double get firstDiff => (first?.variance ?? 0).toDouble();
+  double get lastDiff => (last?.variance ?? 0).toDouble();
+  double get firstAbs => firstDiff.abs();
+  double get lastAbs => lastDiff.abs();
+
+  bool get directionChanged =>
+      firstCounted &&
+      lastCounted &&
+      firstAbs > _stockCheckAccuracyTolerance &&
+      lastAbs > _stockCheckAccuracyTolerance &&
+      ((firstDiff < 0 && lastDiff > 0) || (firstDiff > 0 && lastDiff < 0));
+
+  _ComparisonItemKind get kind {
+    if (first == null || last == null) return _ComparisonItemKind.missing;
+    if (!firstCounted || !lastCounted) return _ComparisonItemKind.pending;
+    if (directionChanged) return _ComparisonItemKind.directionChanged;
+    if (lastAbs < firstAbs - _stockCheckAccuracyTolerance) {
+      return _ComparisonItemKind.improved;
+    }
+    if (lastAbs > firstAbs + _stockCheckAccuracyTolerance) {
+      return _ComparisonItemKind.worsened;
+    }
+    return _ComparisonItemKind.stable;
+  }
+
+  bool get isChanged => kind != _ComparisonItemKind.stable;
+  bool get requiresReview =>
+      kind == _ComparisonItemKind.worsened ||
+      kind == _ComparisonItemKind.directionChanged ||
+      kind == _ComparisonItemKind.missing;
+
+  int get severity => switch (kind) {
+    _ComparisonItemKind.directionChanged => 5,
+    _ComparisonItemKind.worsened => 4,
+    _ComparisonItemKind.missing => 3,
+    _ComparisonItemKind.pending => 2,
+    _ComparisonItemKind.improved => 1,
+    _ComparisonItemKind.stable => 0,
+  };
+
+  _ComparisonItemStyle get style => switch (kind) {
+    _ComparisonItemKind.improved => const _ComparisonItemStyle(
+      label: 'Resolved or improved',
+      description: 'The difference is smaller in the second project.',
+      color: Color(0xFF16A34A),
+      icon: Icons.check_circle_rounded,
+    ),
+    _ComparisonItemKind.worsened => const _ComparisonItemStyle(
+      label: 'Difference increased',
+      description:
+          'Review counting, receiving, or stock movement for this item.',
+      color: Color(0xFFDC2626),
+      icon: Icons.trending_down_rounded,
+    ),
+    _ComparisonItemKind.directionChanged => const _ComparisonItemStyle(
+      label: 'Direction reversed',
+      description:
+          'Shortage changed to surplus, or the reverse. Check transfers or receiving.',
+      color: Color(0xFFF97316),
+      icon: Icons.swap_horiz_rounded,
+    ),
+    _ComparisonItemKind.missing => const _ComparisonItemStyle(
+      label: 'Only in one project',
+      description:
+          'This item was not included in both projects, so compare with care.',
+      color: Color(0xFF7C3AED),
+      icon: Icons.compare_arrows_rounded,
+    ),
+    _ComparisonItemKind.pending => const _ComparisonItemStyle(
+      label: 'Not fully checked',
+      description: 'One project does not yet have both quantities entered.',
+      color: Color(0xFF64748B),
+      icon: Icons.pending_actions_rounded,
+    ),
+    _ComparisonItemKind.stable => const _ComparisonItemStyle(
+      label: 'No material change',
+      description:
+          'The difference stayed the same within the allowed tolerance.',
+      color: AppColors.primaryColor,
+      icon: Icons.remove_rounded,
+    ),
+  };
+}
+
+class _ComparisonItemStyle {
+  final String label;
+  final String description;
+  final Color color;
+  final IconData icon;
+
+  const _ComparisonItemStyle({
+    required this.label,
+    required this.description,
+    required this.color,
+    required this.icon,
+  });
 }
 
 class _StockCheckTopTabs extends StatelessWidget {

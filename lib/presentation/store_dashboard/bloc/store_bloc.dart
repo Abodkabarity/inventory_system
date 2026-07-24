@@ -81,6 +81,12 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
               add(LoadStoreDashboard(runDate, silent: true));
             },
           )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'additional_order_inventory',
+            callback: (_) => add(LoadStoreDashboard(runDate, silent: true)),
+          )
           .subscribe();
     });
     on<SearchProcessingItems>((event, emit) async {
@@ -268,7 +274,11 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
     Emitter<StoreState> emit,
   ) async {
     try {
-      await repo.approveRequest(id: event.requestId, qty: event.qty);
+      await repo.approveRequest(
+        id: event.requestId,
+        qty: event.qty,
+        sourceTable: event.sourceTable,
+      );
 
       add(LoadStoreDashboard(runDate, silent: true));
     } catch (e) {
@@ -333,9 +343,7 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
       grouped[branch]!.add(item);
     }
 
-    final ids = res.map((e) => e['id'].toString()).toList();
-
-    await repo.markAsProcessing(ids);
+    await repo.markAsProcessing(res);
 
     return grouped;
   }
@@ -442,7 +450,12 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
     try {
       final qty = item['qty'];
 
-      await repo.approveRequest(id: item['id'], qty: qty);
+      await repo.approveRequest(
+        id: item['id'].toString(),
+        qty: qty,
+        sourceTable: (item['_source_table'] ?? 'additional_requests')
+            .toString(),
+      );
 
       final updatedList = state.processingList
           .where((e) => e['id'].toString() != id)

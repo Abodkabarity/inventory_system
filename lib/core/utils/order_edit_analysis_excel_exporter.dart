@@ -37,13 +37,13 @@ class OrderEditAnalysisExcelExporter {
       title: 'Branch Added Quantity',
       from: from,
       to: to,
-      rows: _list(data['top_branches']),
+      rows: _list(data['branch_export_rows'] ?? data['top_branches']),
       columns: const [
         _Column('branch_name', 'Branch'),
-        _Column('requests', 'Edits'),
+        _Column('orders', 'Order Days'),
+        _Column('edited_orders', 'Edited Order Days'),
         _Column('qty', 'Added Qty'),
         _Column('products', 'Products'),
-        _Column('avg_qty', 'Avg Added Qty'),
       ],
     );
 
