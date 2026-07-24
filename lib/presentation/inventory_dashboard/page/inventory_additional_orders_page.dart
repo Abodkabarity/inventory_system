@@ -515,18 +515,18 @@ class _InventoryAdditionalOrdersPageState
     return ColoredBox(
       color: AppColors.bg,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(28, 24, 28, 28),
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
         child: Column(
           children: [
             _hero(),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             _composer(),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Expanded(
               child: Row(
                 children: [
-                  SizedBox(width: 320, child: _sentOrdersPanel()),
-                  const SizedBox(width: 16),
+                  SizedBox(width: 354, child: _sentOrdersPanel()),
+                  const SizedBox(width: 12),
                   Expanded(child: _draftTable()),
                 ],
               ),
@@ -539,15 +539,20 @@ class _InventoryAdditionalOrdersPageState
 
   Widget _hero() => Container(
     width: double.infinity,
-    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
     decoration: BoxDecoration(
-      color: AppColors.primaryColor,
-      borderRadius: BorderRadius.circular(12),
-      boxShadow: const [
+      gradient: const LinearGradient(
+        colors: [AppColors.secondaryColor, Color(0xFF176A91)],
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+      ),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: AppColors.primaryColor.withValues(alpha: .35)),
+      boxShadow: [
         BoxShadow(
-          color: Color(0x334EB0DE),
-          blurRadius: 20,
-          offset: Offset(0, 8),
+          color: AppColors.secondaryColor.withValues(alpha: .05),
+          blurRadius: 18,
+          offset: const Offset(0, 6),
         ),
       ],
     ),
@@ -557,8 +562,8 @@ class _InventoryAdditionalOrdersPageState
           width: 52,
           height: 52,
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.2),
-            borderRadius: BorderRadius.circular(12),
+            color: Colors.white.withValues(alpha: .12),
+            borderRadius: BorderRadius.circular(14),
           ),
           child: const Icon(
             Icons.outbox_rounded,
@@ -575,89 +580,206 @@ class _InventoryAdditionalOrdersPageState
                 'Additional Orders',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
               const SizedBox(height: 4),
               Text(
-                'Build one delivery, with the right destination for every product.',
+                'Create an inventory request and assign the right branches to every product.',
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.9),
+                  color: Colors.white.withValues(alpha: .75),
                   fontWeight: FontWeight.w500,
                 ),
               ),
             ],
           ),
         ),
+        _workflowStage(
+          number: '1',
+          label: 'Add products',
+          active: _lines.isEmpty,
+          complete: _lines.isNotEmpty,
+        ),
+        const SizedBox(width: 8),
+        _workflowStage(
+          number: '2',
+          label: 'Set branches',
+          active:
+              _lines.isNotEmpty &&
+              _lines.any((line) => line.destinations.isEmpty),
+          complete:
+              _lines.isNotEmpty &&
+              _lines.every((line) => line.destinations.isNotEmpty),
+        ),
+        const SizedBox(width: 8),
+        _workflowStage(
+          number: '3',
+          label: 'Send to Store',
+          active:
+              _lines.isNotEmpty &&
+              _lines.every((line) => line.destinations.isNotEmpty),
+          complete: false,
+        ),
+        const SizedBox(width: 18),
         _heroMetric(
           '${_lines.expand((line) => line.destinations).toSet().length}',
-          'Destinations',
+          'Branches',
+          Icons.storefront_rounded,
         ),
         const SizedBox(width: 10),
-        _heroMetric('${_lines.length}', 'Items'),
+        _heroMetric(
+          '${_draftProductGroups.length}',
+          'Products',
+          Icons.inventory_2_rounded,
+        ),
       ],
     ),
   );
 
-  Widget _heroMetric(String value, String label) => Container(
-    constraints: const BoxConstraints(minWidth: 88),
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+  Widget _workflowStage({
+    required String number,
+    required String label,
+    required bool active,
+    required bool complete,
+  }) {
+    final color = complete
+        ? const Color(0xFF22C55E)
+        : active
+        ? AppColors.primaryColor
+        : Colors.white.withValues(alpha: .6);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: complete
+            ? const Color(0xFF16A34A).withValues(alpha: .3)
+            : Colors.white.withValues(alpha: active ? .14 : .07),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: .22)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 22,
+            height: 22,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            child: complete
+                ? const Icon(Icons.check_rounded, color: Colors.white, size: 14)
+                : Text(
+                    number,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+          ),
+          const SizedBox(width: 7),
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _heroMetric(String value, String label, IconData icon) => Container(
+    constraints: const BoxConstraints(minWidth: 104),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
     decoration: BoxDecoration(
-      color: Colors.white.withValues(alpha: 0.17),
+      color: Colors.white.withValues(alpha: .1),
       borderRadius: BorderRadius.circular(10),
-      border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+      border: Border.all(color: AppColors.primaryColor.withValues(alpha: .2)),
     ),
-    child: Column(
+    child: Row(
       children: [
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        Text(
-          label,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.88),
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-          ),
+        Icon(icon, color: const Color(0xFF8AD7FA), size: 19),
+        const SizedBox(width: 8),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              value,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
         ),
       ],
     ),
   );
 
   Widget _composer() => Container(
-    padding: const EdgeInsets.all(20),
+    padding: const EdgeInsets.all(18),
     decoration: BoxDecoration(
       color: AppColors.card,
       border: Border.all(color: AppColors.border),
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: [
+        BoxShadow(
+          color: AppColors.secondaryColor.withValues(alpha: .035),
+          blurRadius: 18,
+          offset: const Offset(0, 6),
+        ),
+      ],
     ),
     child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: AppColors.blueSoft,
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: const Icon(
+                Icons.edit_note_rounded,
+                color: AppColors.primaryColor,
+              ),
+            ),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     _editingGroupId == null
-                        ? 'Prepare delivery'
-                        : 'Update delivery',
+                        ? 'Create a new order'
+                        : 'Edit sent order',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w900,
                       color: AppColors.secondaryColor,
                     ),
                   ),
                   const SizedBox(height: 3),
-                  const Text(
-                    'Add products first, then assign the exact branches for each product.',
-                    style: TextStyle(color: AppColors.subText),
+                  Text(
+                    _editingGroupId == null
+                        ? 'Add products, assign destinations, then send one clear order.'
+                        : 'Review destinations and quantities before saving changes.',
+                    style: const TextStyle(
+                      color: AppColors.subText,
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),
@@ -720,16 +842,22 @@ class _InventoryAdditionalOrdersPageState
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 14),
+          child: Divider(height: 1, color: AppColors.border),
+        ),
         Row(
           children: [
             Expanded(
-              flex: 2,
               child: TextField(
                 controller: _title,
                 decoration: InputDecoration(
                   labelText: 'Order note',
-                  hintText: 'Optional note for Store',
+                  hintText: 'Add a short note for the Store team',
+                  prefixIcon: const Icon(
+                    Icons.notes_rounded,
+                    color: AppColors.primaryColor,
+                  ),
                   filled: true,
                   fillColor: AppColors.bg,
                   border: OutlineInputBorder(
@@ -751,7 +879,11 @@ class _InventoryAdditionalOrdersPageState
               child: FilledButton.icon(
                 onPressed: _pickProducts,
                 icon: const Icon(Icons.add_box_rounded),
-                label: const Text('1. Add products'),
+                label: Text(
+                  _lines.isEmpty
+                      ? 'Add products'
+                      : 'Add more products (${_draftProductGroups.length})',
+                ),
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.primaryColor,
                   foregroundColor: Colors.white,
@@ -765,23 +897,23 @@ class _InventoryAdditionalOrdersPageState
           const SizedBox(height: 12),
           _notice(_error.isNotEmpty ? _error : _message, _error.isNotEmpty),
         ],
-        const SizedBox(height: 8),
-        const Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            '2. Set destinations beside each product. Imports can assign a branch per row using the optional branch column.',
-            style: TextStyle(color: AppColors.subText, fontSize: 12),
-          ),
+        const SizedBox(height: 10),
+        const Row(
+          children: [
+            Icon(
+              Icons.info_outline_rounded,
+              size: 16,
+              color: AppColors.primaryColor,
+            ),
+            SizedBox(width: 7),
+            Expanded(
+              child: Text(
+                'Each product can have its own branch list. Import columns: item_code, item_name, qty; branch is optional.',
+                style: TextStyle(color: AppColors.subText, fontSize: 12),
+              ),
+            ),
+          ],
         ),
-        /*
-        const Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            '2. Use “Set destinations” beside each product. Import supports item_code, item_name, qty, and optional branch.',
-            style: TextStyle(color: AppColors.subText, fontSize: 12),
-          ),
-        ),
-        */
       ],
     ),
   );
@@ -793,45 +925,91 @@ class _InventoryAdditionalOrdersPageState
       color: error ? Colors.red.shade50 : Colors.green.shade50,
       borderRadius: BorderRadius.circular(8),
     ),
-    child: Text(
-      message,
-      style: TextStyle(
-        color: error ? Colors.red.shade800 : Colors.green.shade800,
-        fontWeight: FontWeight.w700,
-      ),
+    child: Row(
+      children: [
+        Icon(
+          error ? Icons.error_outline_rounded : Icons.check_circle_outline,
+          color: error ? Colors.red.shade700 : Colors.green.shade700,
+          size: 19,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            message,
+            style: TextStyle(
+              color: error ? Colors.red.shade800 : Colors.green.shade800,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
     ),
   );
 
   Widget _sentOrdersPanel() => Container(
-    padding: const EdgeInsets.all(12),
+    padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
       color: AppColors.card,
       border: Border.all(color: AppColors.border),
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(16),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Row(
+        Row(
           children: [
-            Icon(Icons.outbox_rounded, color: AppColors.primaryColor),
-            SizedBox(width: 8),
-            Text(
-              'Sent additional orders',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: AppColors.secondaryColor,
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: AppColors.blueSoft,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.outbox_rounded,
+                color: AppColors.primaryColor,
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Sent orders',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.secondaryColor,
+                    ),
+                  ),
+                  Text(
+                    'Open an order to review its progress',
+                    style: TextStyle(color: AppColors.subText, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+              decoration: BoxDecoration(
+                color: AppColors.blueSoft,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text(
+                '${_groups.length}',
+                style: const TextStyle(
+                  color: AppColors.primaryColor,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 4),
-        Text(
-          '${_groups.length} order${_groups.length == 1 ? '' : 's'} saved',
-          style: const TextStyle(color: AppColors.subText, fontSize: 12),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 12),
+          child: Divider(height: 1, color: AppColors.border),
         ),
-        const SizedBox(height: 12),
         Expanded(
           child: _groupsLoading
               ? const Center(
@@ -841,10 +1019,32 @@ class _InventoryAdditionalOrdersPageState
                 )
               : _groups.isEmpty
               ? const Center(
-                  child: Text(
-                    'No additional orders sent yet.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.subText),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.inbox_outlined,
+                        size: 34,
+                        color: AppColors.primaryColor,
+                      ),
+                      SizedBox(height: 10),
+                      Text(
+                        'No sent orders yet',
+                        style: TextStyle(
+                          color: AppColors.secondaryColor,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'Completed orders will stay here for tracking.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppColors.subText,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
                   ),
                 )
               : ListView.separated(
@@ -860,16 +1060,21 @@ class _InventoryAdditionalOrdersPageState
   Widget _groupCard(_InventoryAdditionalGroup group) {
     final selected = group.id == _selectedGroupId;
     final color = group.statusColor;
+    final resolved = group.doneCount + group.rejectedCount;
+    final progress = group.totalItems == 0 ? 0.0 : resolved / group.totalItems;
+    final created = group.createdAt.toLocal();
+    final createdLabel =
+        '${created.day.toString().padLeft(2, '0')}/${created.month.toString().padLeft(2, '0')}/${created.year}  ${created.hour.toString().padLeft(2, '0')}:${created.minute.toString().padLeft(2, '0')}';
     return Material(
-      color: selected ? AppColors.blueSoft : AppColors.bg,
-      borderRadius: BorderRadius.circular(10),
+      color: selected ? const Color(0xFFEAF7FD) : Colors.white,
+      borderRadius: BorderRadius.circular(16),
       child: InkWell(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         onTap: () => setState(() => _selectedGroupId = group.id),
         child: Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: selected ? AppColors.primaryColor : AppColors.border,
             ),
@@ -879,30 +1084,73 @@ class _InventoryAdditionalOrdersPageState
             children: [
               Row(
                 children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: .1),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: Icon(
+                      group.rejectedCount > 0
+                          ? Icons.report_outlined
+                          : group.sentCount > 0
+                          ? Icons.schedule_send_outlined
+                          : Icons.task_alt_rounded,
+                      size: 18,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(width: 9),
                   Expanded(
-                    child: Text(
-                      group.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.text,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          group.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: AppColors.text,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          createdLabel,
+                          style: const TextStyle(
+                            color: AppColors.subText,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   Container(
-                    width: 9,
-                    height: 9,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
-                      color: color,
-                      shape: BoxShape.circle,
+                      color: color.withValues(alpha: .1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      group.sentCount > 0 ? 'IN PROGRESS' : 'COMPLETED',
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 7),
               Text(
-                '${group.branchCount} branches  |  ${group.totalItems} items',
+                '${group.branchCount} branches  |  ${group.productCount} products',
                 style: const TextStyle(
                   color: AppColors.subText,
                   fontSize: 12,
@@ -925,6 +1173,31 @@ class _InventoryAdditionalOrdersPageState
                   _statusChip(
                     'Rejected ${group.rejectedCount}',
                     const Color(0xFFDC2626),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        minHeight: 6,
+                        value: progress,
+                        backgroundColor: AppColors.border,
+                        valueColor: AlwaysStoppedAnimation<Color>(color),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${(progress * 100).round()}%',
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ],
               ),
@@ -992,316 +1265,312 @@ class _InventoryAdditionalOrdersPageState
     return branches.join(', ');
   }
 
-  Widget _draftTable() => Container(
-    decoration: BoxDecoration(
-      color: AppColors.card,
-      border: Border.all(color: AppColors.border),
-      borderRadius: BorderRadius.circular(12),
-    ),
-    clipBehavior: Clip.antiAlias,
-    child: _lines.isEmpty
-        ? (_selectedGroup == null
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(18),
-                        decoration: BoxDecoration(
-                          color: AppColors.blueSoft,
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: const Icon(
-                          Icons.playlist_add_rounded,
-                          size: 34,
-                          color: AppColors.primaryColor,
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      const Text(
-                        'Start with the products',
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.secondaryColor,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'Add products or import a file, then set the destination for each product.',
-                        style: TextStyle(color: AppColors.subText),
-                      ),
-                    ],
-                  ),
-                )
-              : _groupDetails(_selectedGroup!))
-        : Column(
-            children: [
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
-                ),
-                color: AppColors.headerBg,
-                child: const Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        'Item code',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.headerText,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 5,
-                      child: Text(
-                        'Item name',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.headerText,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 3,
-                      child: Text(
-                        'Destinations',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.headerText,
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 150,
-                      child: Text(
-                        'Quantity',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.headerText,
-                        ),
-                      ),
-                    ),
-                    SizedBox(width: 48),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: ListView.separated(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: _lines.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 8),
-                  itemBuilder: (_, index) {
-                    final item = _lines[index];
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.bg,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.inventory_2_outlined,
-                            color: AppColors.primaryColor,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            flex: 2,
-                            child: SelectableText(
-                              item.itemCode,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            flex: 5,
-                            child: SelectableText(
-                              item.itemName,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            flex: 3,
-                            child: Tooltip(
-                              message: _destinationTooltip(item),
-                              child: OutlinedButton.icon(
-                                onPressed: () => _pickDestinations(item),
-                                icon: Icon(
-                                  item.destinations.isEmpty
-                                      ? Icons.add_location_alt_outlined
-                                      : Icons.storefront_rounded,
-                                  size: 17,
-                                ),
-                                label: Text(
-                                  _destinationsForLine(item),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: item.destinations.isEmpty
-                                      ? const Color(0xFFDC2626)
-                                      : AppColors.primaryColor,
-                                  side: BorderSide(
-                                    color: item.destinations.isEmpty
-                                        ? const Color(0xFFFCA5A5)
-                                        : AppColors.primaryColor,
-                                  ),
-                                  alignment: Alignment.centerLeft,
-                                ),
-                              ),
-                            ),
-                          ),
-                          SizedBox(
-                            width: 150,
-                            child: TextField(
-                              controller: item.qtyController,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              decoration: InputDecoration(
-                                labelText: 'Quantity',
-                                isDense: true,
-                                filled: true,
-                                fillColor: Colors.white,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                  borderSide: const BorderSide(
-                                    color: AppColors.primaryColor,
-                                    width: 2,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: 'Remove item',
-                            onPressed: () => setState(() {
-                              item.dispose();
-                              _lines.removeAt(index);
-                            }),
-                            icon: const Icon(
-                              Icons.delete_outline_rounded,
-                              color: Colors.red,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-  );
+  List<List<_InventoryAdditionalLine>> get _draftProductGroups {
+    final groups = <String, List<_InventoryAdditionalLine>>{};
+    for (final line in _lines) {
+      final key = '${line.itemCode}\u0000${line.itemName}';
+      groups.putIfAbsent(key, () => []).add(line);
+    }
+    return groups.values.toList(growable: false);
+  }
 
-  Widget _groupDetails(_InventoryAdditionalGroup group) => Column(
-    children: [
-      Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-        color: AppColors.headerBg,
-        child: Row(
-          children: [
-            const Icon(
-              Icons.receipt_long_rounded,
-              color: AppColors.primaryColor,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                group.title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.headerText,
-                ),
-              ),
-            ),
-            Text(
-              '${group.totalItems} items',
-              style: const TextStyle(
-                color: AppColors.subText,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
+  List<List<_InventoryAdditionalGroupRow>> _sentProductGroups(
+    _InventoryAdditionalGroup group,
+  ) {
+    final groups = <String, List<_InventoryAdditionalGroupRow>>{};
+    for (final row in group.rows) {
+      final key = '${row.itemCode}\u0000${row.itemName}';
+      groups.putIfAbsent(key, () => []).add(row);
+    }
+    return groups.values.toList(growable: false);
+  }
+
+  Widget _draftProductCard(List<_InventoryAdditionalLine> lines) {
+    final product = lines.first;
+    final destinationCount = lines.fold<int>(
+      0,
+      (total, line) => total + line.destinations.length,
+    );
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.secondaryColor.withValues(alpha: .04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
-      Expanded(
-        child: ListView.separated(
-          padding: const EdgeInsets.all(12),
-          itemCount: group.rows.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 8),
-          itemBuilder: (_, index) {
-            final row = group.rows[index];
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            color: AppColors.secondaryColor.withValues(alpha: .045),
+            child: Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: AppColors.blueSoft,
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: const Icon(
+                    Icons.inventory_2_outlined,
+                    color: AppColors.primaryColor,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 11),
+                SizedBox(
+                  width: 130,
+                  child: SelectableText(
+                    product.itemCode,
+                    style: const TextStyle(
+                      color: AppColors.secondaryColor,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: SelectableText(
+                    product.itemName,
+                    style: const TextStyle(
+                      color: AppColors.secondaryColor,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: destinationCount == 0
+                        ? const Color(0xFFFFF7ED)
+                        : AppColors.blueSoft,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    destinationCount == 0
+                        ? 'Branches required'
+                        : '$destinationCount destination${destinationCount == 1 ? '' : 's'}',
+                    style: TextStyle(
+                      color: destinationCount == 0
+                          ? const Color(0xFFDC2626)
+                          : AppColors.primaryColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ...List.generate(lines.length, (lineIndex) {
+            final line = lines[lineIndex];
             return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              padding: const EdgeInsets.fromLTRB(62, 9, 12, 9),
               decoration: BoxDecoration(
-                color: AppColors.bg,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.border),
+                color: lineIndex.isEven
+                    ? Colors.white
+                    : AppColors.bg.withValues(alpha: .65),
+                border: lineIndex == 0
+                    ? null
+                    : const Border(top: BorderSide(color: AppColors.border)),
               ),
               child: Row(
                 children: [
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: AppColors.blueSoft,
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                    child: const Icon(
-                      Icons.inventory_2_outlined,
-                      color: AppColors.primaryColor,
-                      size: 19,
+                  const Icon(
+                    Icons.subdirectory_arrow_right_rounded,
+                    color: AppColors.subText,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Tooltip(
+                      message: _destinationTooltip(line),
+                      child: OutlinedButton.icon(
+                        onPressed: () => _pickDestinations(line),
+                        icon: Icon(
+                          line.destinations.isEmpty
+                              ? Icons.add_location_alt_outlined
+                              : Icons.storefront_rounded,
+                          size: 17,
+                        ),
+                        label: Text(
+                          _destinationsForLine(line),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: line.destinations.isEmpty
+                              ? const Color(0xFFDC2626)
+                              : AppColors.primaryColor,
+                          side: BorderSide(
+                            color: line.destinations.isEmpty
+                                ? const Color(0xFFFCA5A5)
+                                : AppColors.primaryColor.withValues(alpha: .55),
+                          ),
+                          alignment: Alignment.centerLeft,
+                          backgroundColor: Colors.white,
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 10),
+                  SizedBox(
+                    width: 142,
+                    child: TextField(
+                      controller: line.qtyController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: 'Quantity',
+                        isDense: true,
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(
+                            color: AppColors.primaryColor,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Remove destination row',
+                    onPressed: () => setState(() {
+                      line.dispose();
+                      _lines.remove(line);
+                    }),
+                    icon: const Icon(
+                      Icons.delete_outline_rounded,
+                      color: Color(0xFFDC2626),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _sentProductCard(List<_InventoryAdditionalGroupRow> rows) {
+    final product = rows.first;
+    final resolved = rows.where((row) => row.status != 'sent_to_store').length;
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            color: AppColors.secondaryColor.withValues(alpha: .045),
+            child: Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: AppColors.blueSoft,
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: const Icon(
+                    Icons.inventory_2_outlined,
+                    color: AppColors.primaryColor,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 11),
+                SizedBox(
+                  width: 130,
+                  child: SelectableText(
+                    product.itemCode,
+                    style: const TextStyle(
+                      color: AppColors.secondaryColor,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: SelectableText(
+                    product.itemName,
+                    style: const TextStyle(
+                      color: AppColors.secondaryColor,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+                Text(
+                  '$resolved/${rows.length} resolved',
+                  style: const TextStyle(
+                    color: AppColors.subText,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ...List.generate(rows.length, (index) {
+            final row = rows[index];
+            return Container(
+              padding: const EdgeInsets.fromLTRB(62, 10, 14, 10),
+              decoration: BoxDecoration(
+                color: index.isEven
+                    ? Colors.white
+                    : AppColors.bg.withValues(alpha: .65),
+                border: index == 0
+                    ? null
+                    : const Border(top: BorderSide(color: AppColors.border)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.storefront_rounded,
+                    color: AppColors.primaryColor,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 9),
                   Expanded(
-                    flex: 2,
                     child: SelectableText(
                       row.branch,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 2,
-                    child: SelectableText(
-                      row.itemCode,
-                      style: const TextStyle(color: AppColors.subText),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 5,
-                    child: SelectableText(
-                      row.itemName,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
+                      style: const TextStyle(
+                        color: AppColors.secondaryColor,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                   SizedBox(
-                    width: 90,
+                    width: 105,
                     child: Text(
-                      '${row.requestQty}',
+                      'Qty  ${row.requestQty}',
                       textAlign: TextAlign.center,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                   ),
                   SizedBox(
-                    width: 120,
+                    width: 125,
                     child: Align(
                       alignment: Alignment.centerRight,
                       child: _statusChip(row.statusLabel, row.statusColor),
@@ -1310,11 +1579,229 @@ class _InventoryAdditionalOrdersPageState
                 ],
               ),
             );
-          },
-        ),
+          }),
+        ],
       ),
-    ],
-  );
+    );
+  }
+
+  Widget _draftTable() {
+    final draftGroups = _draftProductGroups;
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: _lines.isEmpty
+          ? (_selectedGroup == null
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: AppColors.blueSoft,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Icon(
+                            Icons.playlist_add_rounded,
+                            size: 34,
+                            color: AppColors.primaryColor,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        const Text(
+                          'Build the product list',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.secondaryColor,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Add products or import a file, then assign branches to every product.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: AppColors.subText),
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            FilledButton.icon(
+                              onPressed: _pickProducts,
+                              icon: const Icon(Icons.add_box_rounded),
+                              label: const Text('Add products'),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: AppColors.primaryColor,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton.icon(
+                              onPressed: _importing ? null : _import,
+                              icon: const Icon(Icons.upload_file_rounded),
+                              label: const Text('Import file'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.secondaryColor,
+                                side: const BorderSide(
+                                  color: AppColors.secondaryColor,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  )
+                : _groupDetails(_selectedGroup!))
+          : Column(
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 12,
+                  ),
+                  decoration: const BoxDecoration(
+                    color: AppColors.card,
+                    border: Border(bottom: BorderSide(color: AppColors.border)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.inventory_2_outlined,
+                        color: AppColors.primaryColor,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 9),
+                      const Text(
+                        'Products and destinations',
+                        style: TextStyle(
+                          color: AppColors.secondaryColor,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (_lines.any((line) => line.destinations.isEmpty))
+                        Container(
+                          margin: const EdgeInsets.only(right: 10),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 9,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF7ED),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Text(
+                            '${_lines.where((line) => line.destinations.isEmpty).length} need branches',
+                            style: const TextStyle(
+                              color: Color(0xFFEA580C),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      Text(
+                        '${draftGroups.length} product${draftGroups.length == 1 ? '' : 's'}',
+                        style: const TextStyle(
+                          color: AppColors.subText,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: ListView.separated(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: draftGroups.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 12),
+                    itemBuilder: (_, index) =>
+                        _draftProductCard(draftGroups[index]),
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  Widget _groupDetails(_InventoryAdditionalGroup group) {
+    final sentGroups = _sentProductGroups(group);
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          decoration: const BoxDecoration(
+            color: AppColors.secondaryColor,
+            border: Border(bottom: BorderSide(color: AppColors.border)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: .1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.receipt_long_rounded,
+                  color: Color(0xFF8AD7FA),
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      group.title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${group.branchCount} branches  |  ${group.productCount} products',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _statusChip('Sent ${group.sentCount}', const Color(0xFF8AD7FA)),
+              const SizedBox(width: 6),
+              _statusChip('Done ${group.doneCount}', const Color(0xFF4ADE80)),
+              const SizedBox(width: 6),
+              _statusChip(
+                'Rejected ${group.rejectedCount}',
+                const Color(0xFFFCA5A5),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.all(12),
+            itemCount: sentGroups.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 12),
+            itemBuilder: (_, index) => _sentProductCard(sentGroups[index]),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _InventoryAdditionalLine {
@@ -1362,6 +1849,8 @@ class _InventoryAdditionalGroup {
   String get title => note.isEmpty ? 'Inventory additional order' : note;
   Set<String> get branches => rows.map((e) => e.branch).toSet();
   int get branchCount => branches.length;
+  int get productCount =>
+      rows.map((row) => '${row.itemCode}\u0000${row.itemName}').toSet().length;
   int get totalItems => rows.length;
   int get sentCount => rows.where((e) => e.status == 'sent_to_store').length;
   int get doneCount => rows.where((e) => e.status == 'done').length;
