@@ -5,6 +5,7 @@ class AppUserModel extends AppUser {
     required super.userId,
     required super.role,
     super.branchName,
+    super.zone,
     required super.isActive,
   });
 
@@ -13,6 +14,7 @@ class AppUserModel extends AppUser {
       userId: map['user_id'] as String,
       role: (map['role'] as String?) ?? '',
       branchName: map['branch_name'] as String?, // <-- important change
+      zone: map['zone'] as String?,
       isActive: (map['is_active'] as bool?) ?? true,
     );
   }

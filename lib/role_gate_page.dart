@@ -9,6 +9,7 @@ import 'presentation/app/bloc/app_bloc.dart';
 import 'presentation/app/bloc/app_state.dart';
 import 'presentation/orders/pages/branch_orders_page.dart';
 import 'presentation/purchase/page/purchase_status_page.dart';
+import 'presentation/zone_manager/page/zone_manager_page.dart';
 
 class RoleGatePage extends StatelessWidget {
   const RoleGatePage({super.key});
@@ -74,6 +75,13 @@ class RoleGatePage extends StatelessWidget {
 
         if (role == 'purchase') {
           return const PurchaseStatusPage();
+        }
+
+        if (role == 'zone_manager') {
+          return ZoneManagerPage(
+            runDate: runDate,
+            zoneName: (s.me!.zone ?? '').trim(),
+          );
         }
 
         if (branchName.isEmpty) {

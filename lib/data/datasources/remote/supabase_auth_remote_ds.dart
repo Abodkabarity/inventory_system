@@ -22,7 +22,7 @@ class SupabaseAuthRemoteDs {
 
     final data = await client
         .from('app_users')
-        .select('user_id, role, branch_name, is_active')
+        .select('user_id, role, branch_name, zone, is_active')
         .eq('user_id', uid)
         .maybeSingle();
 
@@ -31,17 +31,32 @@ class SupabaseAuthRemoteDs {
     final role = (data['role'] ?? '').toString().trim().toLowerCase();
     final isActive = (data['is_active'] as bool?) ?? true;
     final branchName = (data['branch_name'] ?? '').toString().trim();
+    final zone = (data['zone'] ?? '').toString().trim();
 
     if (!isActive) {
       throw Exception('This user is inactive in app_users.');
     }
 
-    // Back-office roles do not require a branch assignment.
+    if (role == 'zone_manager') {
+      if (zone.isEmpty) {
+        throw Exception('No zone assigned for this Zone Manager in app_users.');
+      }
+      return AppUserModel.fromMap({
+        'user_id': data['user_id'],
+        'role': data['role'],
+        'branch_name': null,
+        'zone': zone,
+        'is_active': isActive,
+      });
+    }
+
+    // Other back-office roles do not require a branch assignment.
     if (role == 'inventory' || role == 'purchase') {
       return AppUserModel.fromMap({
         'user_id': data['user_id'],
         'role': data['role'],
         'branch_name': null,
+        'zone': null,
         'is_active': isActive,
       });
     }

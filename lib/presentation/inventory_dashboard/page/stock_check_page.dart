@@ -1451,10 +1451,9 @@ class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
                     (row) =>
                         selectedBranch == 'ALL' || row.branch == selectedBranch,
                   )
-                  .take(5)
                   .toList(),
               exporting: _exportingComparison,
-              onExport: () => _exportComparison(report.comparisonRows),
+              onExport: () => _exportComparison(report.allComparisonRows),
             ),
             const SizedBox(height: 12),
           ],
@@ -1515,7 +1514,7 @@ class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
     try {
       final rows = <StockCheckProjectComparisonExportRow>[];
       for (final comparison in comparisons) {
-        for (final item in comparison.items) {
+        for (final item in comparison.comparableItems) {
           rows.add(
             StockCheckProjectComparisonExportRow(
               branch: comparison.branch,
@@ -2300,7 +2299,7 @@ class _ComparisonSummary extends StatelessWidget {
                     ),
                     SizedBox(height: 2),
                     Text(
-                      'Open a branch for item changes or export every branch.',
+                      'Only products checked in both projects are compared, using Difference only.',
                       style: TextStyle(
                         color: AppColors.subText,
                         fontSize: 11,
@@ -2328,22 +2327,51 @@ class _ComparisonSummary extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          SizedBox(
-            height: 92,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: rows.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (_, index) => _ComparisonBranchChip(
-                row: rows[index],
-                onTap: () => showDialog<void>(
-                  context: context,
-                  builder: (_) =>
-                      _ProjectComparisonDialog(comparison: rows[index]),
+          if (rows.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 14),
+              child: Text(
+                'No difference changes were found between these projects.',
+                style: TextStyle(
+                  color: AppColors.subText,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
+            )
+          else
+            LayoutBuilder(
+              builder: (context, constraints) {
+                const spacing = 8.0;
+                final columns = constraints.maxWidth >= 1180
+                    ? 4
+                    : constraints.maxWidth >= 860
+                    ? 3
+                    : constraints.maxWidth >= 560
+                    ? 2
+                    : 1;
+                final width =
+                    (constraints.maxWidth - (spacing * (columns - 1))) /
+                    columns;
+                return Wrap(
+                  spacing: spacing,
+                  runSpacing: spacing,
+                  children: [
+                    for (final row in rows)
+                      SizedBox(
+                        width: width,
+                        child: _ComparisonBranchChip(
+                          row: row,
+                          onTap: () => showDialog<void>(
+                            context: context,
+                            builder: (_) =>
+                                _ProjectComparisonDialog(comparison: row),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
-          ),
         ],
       ),
     );
@@ -2432,7 +2460,6 @@ class _ComparisonBranchChip extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        width: 292,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -2471,7 +2498,7 @@ class _ComparisonBranchChip extends StatelessWidget {
                   ),
                   const SizedBox(height: 5),
                   Text(
-                    '${row.commonItems} common  |  ${attention > 0 ? '$attention review' : '${row.improved} improved'}',
+                    '${row.changedCount} changed  |  ${attention > 0 ? '$attention review' : '${row.improved} improved'}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -2525,7 +2552,7 @@ class _ProjectComparisonDialogState extends State<_ProjectComparisonDialog> {
   Widget build(BuildContext context) {
     final comparison = widget.comparison;
     final needle = _search.trim().toLowerCase();
-    final items = comparison.items.where((item) {
+    final items = comparison.changedItems.where((item) {
       final filterMatches = switch (_filter) {
         'changed' => item.isChanged,
         'improved' => item.kind == _ComparisonItemKind.improved,
@@ -2630,8 +2657,8 @@ class _ProjectComparisonDialogState extends State<_ProjectComparisonDialog> {
                 children: [
                   Expanded(
                     child: _ComparisonMetric(
-                      'Common items',
-                      comparison.commonItems,
+                      'Changed items',
+                      comparison.changedCount,
                       Icons.sync_alt_rounded,
                       AppColors.primaryColor,
                     ),
@@ -4914,8 +4941,11 @@ class _StockCheckAnalysisReport {
   final List<StockCheckTask> rows;
   late final _StockCheckRowStats _stats = _StockCheckRowStats.fromRows(rows);
   late final List<_StockCheckBranchAnalysis> branches = _buildBranches();
-  late final List<_StockCheckComparisonRow> comparisonRows =
+  late final List<_StockCheckComparisonRow> allComparisonRows =
       _buildComparisonRows();
+  late final List<_StockCheckComparisonRow> comparisonRows = allComparisonRows
+      .where((row) => row.changedCount > 0)
+      .toList(growable: false);
 
   _StockCheckAnalysisReport(this.rows);
 
@@ -4979,39 +5009,14 @@ class _StockCheckAnalysisReport {
     for (final branch in branches) {
       final firstBranchRows = firstByBranch[branch] ?? const <StockCheckTask>[];
       final lastBranchRows = lastByBranch[branch] ?? const <StockCheckTask>[];
-      final firstByItem = {
-        for (final row in firstBranchRows)
-          row.itemCode.trim().toLowerCase(): row,
-      };
-      var common = 0;
-      var improved = 0;
-      var worsened = 0;
-      var directionChanged = 0;
-      for (final row in lastBranchRows) {
-        final previous = firstByItem[row.itemCode.trim().toLowerCase()];
-        if (previous == null || !_isCounted(previous) || !_isCounted(row)) {
-          continue;
-        }
-        common++;
-        final before = _effectiveAbsVariance(previous);
-        final after = _effectiveAbsVariance(row);
-        if (after < before) improved++;
-        if (after > before) worsened++;
-        if (_hasDirectionChanged(previous, row)) directionChanged++;
-      }
-      result.add(
-        _StockCheckComparisonRow(
-          branch: branch,
-          firstTitle: batches.first.value.first.title,
-          lastTitle: batches.last.value.first.title,
-          firstRows: firstBranchRows,
-          lastRows: lastBranchRows,
-          commonItems: common,
-          improved: improved,
-          worsened: worsened,
-          directionChanged: directionChanged,
-        ),
+      final comparison = _StockCheckComparisonRow(
+        branch: branch,
+        firstTitle: batches.first.value.first.title,
+        lastTitle: batches.last.value.first.title,
+        firstRows: firstBranchRows,
+        lastRows: lastBranchRows,
       );
+      result.add(comparison);
     }
     result.sort((a, b) {
       final aReview = a.worsened + a.directionChanged;
@@ -5032,23 +5037,6 @@ class _StockCheckAnalysisReport {
       grouped.putIfAbsent(branch, () => []).add(row);
     }
     return grouped;
-  }
-
-  static bool _isCounted(StockCheckTask row) {
-    if (row.systemQty == null || row.actualQty == null) return false;
-    return true;
-  }
-
-  static double _effectiveAbsVariance(StockCheckTask row) {
-    return (row.variance ?? 0).toDouble().abs();
-  }
-
-  static bool _hasDirectionChanged(StockCheckTask first, StockCheckTask last) {
-    final firstDiff = (first.variance ?? 0).toDouble();
-    final lastDiff = (last.variance ?? 0).toDouble();
-    return firstDiff.abs() > _stockCheckAccuracyTolerance &&
-        lastDiff.abs() > _stockCheckAccuracyTolerance &&
-        ((firstDiff < 0 && lastDiff > 0) || (firstDiff > 0 && lastDiff < 0));
   }
 }
 
@@ -5088,24 +5076,40 @@ class _StockCheckComparisonRow {
   final String lastTitle;
   final List<StockCheckTask> firstRows;
   final List<StockCheckTask> lastRows;
-  final int commonItems;
-  final int improved;
-  final int worsened;
-  final int directionChanged;
-
   _StockCheckComparisonRow({
     required this.branch,
     required this.firstTitle,
     required this.lastTitle,
     required this.firstRows,
     required this.lastRows,
-    required this.commonItems,
-    required this.improved,
-    required this.worsened,
-    required this.directionChanged,
   });
 
   late final List<_StockCheckItemComparison> items = _buildItems();
+  late final List<_StockCheckItemComparison> comparableItems = items
+      .where(
+        (item) =>
+            item.first != null &&
+            item.last != null &&
+            item.firstCounted &&
+            item.lastCounted,
+      )
+      .toList(growable: false);
+  late final List<_StockCheckItemComparison> changedItems = items
+      .where((item) => item.isChanged)
+      .toList(growable: false);
+  int get changedCount => changedItems.length;
+  int get commonItems => changedItems
+      .where((item) => item.first != null && item.last != null)
+      .length;
+  int get improved => changedItems
+      .where((item) => item.kind == _ComparisonItemKind.improved)
+      .length;
+  int get worsened => changedItems
+      .where((item) => item.kind == _ComparisonItemKind.worsened)
+      .length;
+  int get directionChanged => changedItems
+      .where((item) => item.kind == _ComparisonItemKind.directionChanged)
+      .length;
 
   List<_StockCheckItemComparison> _buildItems() {
     final firstByItem = {
@@ -5152,8 +5156,8 @@ class _StockCheckItemComparison {
   String get itemName => (last ?? first)?.itemName ?? 'Unnamed item';
   bool get firstCounted => first?.systemQty != null && first?.actualQty != null;
   bool get lastCounted => last?.systemQty != null && last?.actualQty != null;
-  double get firstDiff => (first?.variance ?? 0).toDouble();
-  double get lastDiff => (last?.variance ?? 0).toDouble();
+  double get firstDiff => _normalizedDiff(first);
+  double get lastDiff => _normalizedDiff(last);
   double get firstAbs => firstDiff.abs();
   double get lastAbs => lastDiff.abs();
 
@@ -5165,16 +5169,25 @@ class _StockCheckItemComparison {
       ((firstDiff < 0 && lastDiff > 0) || (firstDiff > 0 && lastDiff < 0));
 
   _ComparisonItemKind get kind {
-    if (first == null || last == null) return _ComparisonItemKind.missing;
-    if (!firstCounted || !lastCounted) return _ComparisonItemKind.pending;
+    if (first == null || last == null) return _ComparisonItemKind.stable;
+    if (!firstCounted || !lastCounted) return _ComparisonItemKind.stable;
+    if ((lastDiff - firstDiff).abs() <= 1e-9) {
+      return _ComparisonItemKind.stable;
+    }
     if (directionChanged) return _ComparisonItemKind.directionChanged;
-    if (lastAbs < firstAbs - _stockCheckAccuracyTolerance) {
+    if (lastAbs < firstAbs) {
       return _ComparisonItemKind.improved;
     }
-    if (lastAbs > firstAbs + _stockCheckAccuracyTolerance) {
+    if (lastAbs > firstAbs) {
       return _ComparisonItemKind.worsened;
     }
-    return _ComparisonItemKind.stable;
+    return _ComparisonItemKind.directionChanged;
+  }
+
+  static double _normalizedDiff(StockCheckTask? row) {
+    if (row == null || row.systemQty == null || row.actualQty == null) return 0;
+    final value = (row.variance ?? 0).toDouble();
+    return value.abs() <= _stockCheckAccuracyTolerance + 1e-9 ? 0 : value;
   }
 
   bool get isChanged => kind != _ComparisonItemKind.stable;

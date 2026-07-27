@@ -38,15 +38,11 @@ class StockCheckProjectComparisonExportRow {
 
   bool get isInBothProjects => firstIncluded && secondIncluded;
 
-  bool get isMatch =>
-      firstSystemQty != null &&
-      firstActualQty != null &&
-      secondSystemQty != null &&
-      secondActualQty != null &&
-      (firstSystemQty!.toDouble() - secondSystemQty!.toDouble()).abs() <=
-          _stockCheckAccuracyTolerance + 1e-9 &&
-      (firstActualQty!.toDouble() - secondActualQty!.toDouble()).abs() <=
-          _stockCheckAccuracyTolerance + 1e-9;
+  bool get isMatch {
+    final first = _normalizedDifference(firstDifference);
+    final second = _normalizedDifference(secondDifference);
+    return first != null && second != null && (first - second).abs() <= 1e-9;
+  }
 
   num? get firstDifference => firstSystemQty == null || firstActualQty == null
       ? null
@@ -56,6 +52,12 @@ class StockCheckProjectComparisonExportRow {
       secondSystemQty == null || secondActualQty == null
       ? null
       : secondActualQty!.toDouble() - secondSystemQty!.toDouble();
+
+  static double? _normalizedDifference(num? value) {
+    if (value == null) return null;
+    final number = value.toDouble();
+    return number.abs() <= _stockCheckAccuracyTolerance + 1e-9 ? 0 : number;
+  }
 
   String get result {
     if (!isInBothProjects) return 'Only in one project';

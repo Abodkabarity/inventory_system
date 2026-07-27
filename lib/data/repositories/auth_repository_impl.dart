@@ -22,6 +22,7 @@ class AuthRepositoryImpl implements AuthRepository {
       userId: u.id,
       role: 'unknown',
       branchName: null,
+      zone: null,
       isActive: true,
     );
   }
