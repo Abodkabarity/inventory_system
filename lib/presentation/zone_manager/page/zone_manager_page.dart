@@ -1007,370 +1007,6 @@ class _ZoneHeader extends StatelessWidget {
   }
 }
 
-class _StatsRow extends StatelessWidget {
-  final List<_Stat> cards;
-  const _StatsRow({required this.cards});
-  @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      for (var i = 0; i < cards.length; i++) ...[
-        Expanded(child: _StatCard(stat: cards[i])),
-        if (i < cards.length - 1) const SizedBox(width: 10),
-      ],
-    ],
-  );
-}
-
-class _StatCard extends StatelessWidget {
-  final _Stat stat;
-  const _StatCard({required this.stat});
-  @override
-  Widget build(BuildContext context) => Container(
-    height: 100,
-    padding: const EdgeInsets.symmetric(horizontal: 14),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      boxShadow: [
-        BoxShadow(
-          blurRadius: 18,
-          color: Colors.black.withValues(alpha: .05),
-          offset: const Offset(0, 8),
-        ),
-      ],
-    ),
-    child: Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: stat.color.withValues(alpha: .12),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(stat.icon, color: stat.color, size: 25),
-        ),
-        const SizedBox(width: 13),
-        Expanded(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                stat.title,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 5),
-              Text(
-                stat.value,
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              if (stat.subtitle != null)
-                Text(
-                  stat.subtitle!,
-                  style: const TextStyle(fontSize: 9, color: AppColors.subText),
-                ),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-class _BranchGrid extends StatelessWidget {
-  final List<Map<String, dynamic>> branches, edits, additional;
-  final Map<String, Map<String, dynamic>> submissions;
-  final String selectedBranch;
-  final ValueChanged<String> onOpen;
-
-  const _BranchGrid({
-    required this.branches,
-    required this.submissions,
-    required this.edits,
-    required this.additional,
-    required this.selectedBranch,
-    required this.onOpen,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final visible = branches
-        .where(
-          (row) =>
-              selectedBranch == 'ALL' ||
-              _text(row['branch_name']) == selectedBranch,
-        )
-        .toList();
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.backgroundWidget,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Text(
-              'Branches Ordering Today',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppColors.secondaryColor,
-              ),
-            ),
-          ),
-          Expanded(
-            child: GridView.builder(
-              padding: const EdgeInsets.all(16),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                mainAxisSpacing: 14,
-                crossAxisSpacing: 14,
-                childAspectRatio: 1.55,
-              ),
-              itemCount: visible.length,
-              itemBuilder: (_, index) {
-                final branch = _text(visible[index]['branch_name']);
-                final submitted = submissions.containsKey(_key(branch));
-                final editCount = edits
-                    .where((row) => _key(row['branch_name']) == _key(branch))
-                    .length;
-                final additionalCount = additional
-                    .where((row) => _key(row['branch_name']) == _key(branch))
-                    .length;
-                return InkWell(
-                  onTap: () => onOpen(branch),
-                  borderRadius: BorderRadius.circular(14),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: submitted
-                          ? Colors.greenAccent.shade100
-                          : Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      boxShadow: [
-                        BoxShadow(
-                          blurRadius: 14,
-                          color: Colors.black.withValues(alpha: .06),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              submitted ? Icons.check_circle : Icons.store,
-                              color: submitted
-                                  ? Colors.green
-                                  : AppColors.primaryColor,
-                            ),
-                            const Spacer(),
-                            if (additionalCount > 0)
-                              _MiniBadge('$additionalCount req', Colors.red),
-                            if (editCount > 0) ...[
-                              const SizedBox(width: 5),
-                              _MiniBadge('$editCount edits', Colors.orange),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          branch,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                            color: AppColors.secondaryColor,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          submitted ? 'Order Submitted' : 'Waiting Submission',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: submitted
-                                ? Colors.green.shade700
-                                : Colors.grey,
-                          ),
-                        ),
-                        const Spacer(),
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.touch_app_rounded,
-                              size: 14,
-                              color: Colors.blueGrey.shade500,
-                            ),
-                            const SizedBox(width: 5),
-                            Text(
-                              'Open branch overview',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.blueGrey.shade600,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AdditionalPanel extends StatelessWidget {
-  final List<Map<String, dynamic>> rows;
-  final VoidCallback onViewAll;
-  const _AdditionalPanel({required this.rows, required this.onViewAll});
-  @override
-  Widget build(BuildContext context) => Container(
-    decoration: BoxDecoration(
-      color: AppColors.backgroundWidget,
-      borderRadius: BorderRadius.circular(14),
-    ),
-    child: Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 10, 8),
-          child: Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Zone Additional Requests',
-                  style: TextStyle(
-                    fontSize: 19,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.secondaryColor,
-                  ),
-                ),
-              ),
-              FilledButton(
-                onPressed: onViewAll,
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.primaryColor,
-                ),
-                child: const Text('View All'),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: rows.isEmpty
-              ? const Center(
-                  child: Text(
-                    'No additional requests for this zone.',
-                    style: TextStyle(color: AppColors.subText),
-                  ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 6,
-                  ),
-                  itemCount: rows.length,
-                  itemBuilder: (_, index) =>
-                      _AdditionalRequestCard(row: rows[index]),
-                ),
-        ),
-      ],
-    ),
-  );
-}
-
-class _AdditionalRequestCard extends StatelessWidget {
-  final Map<String, dynamic> row;
-  const _AdditionalRequestCard({required this.row});
-  @override
-  Widget build(BuildContext context) {
-    final status = _text(row['status']);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(13),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${_text(row['item_code'])} - ${_text(row['item_name'])}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-              _StatusChip(status),
-            ],
-          ),
-          const SizedBox(height: 9),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  _text(row['branch_name']),
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-              const Text('Req: ', style: TextStyle(color: AppColors.subText)),
-              Text(
-                _numberText(row['request_qty']),
-                style: const TextStyle(
-                  color: Colors.red,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 6),
-            decoration: BoxDecoration(
-              color: const Color(0xffEAF6FC),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              children: [
-                _InfoCell('Branch Stock', row['branch_stock']),
-                _InfoCell('Store Stock', row['store_stock']),
-                _InfoCell('Sales', row['sales_45d']),
-                _InfoCell('Final Reorder', row['final_reorder_qty']),
-                _InfoCell('Inventory', row['inventory_qty']),
-                _InfoCell('Fulfilled', row['fulfilled_qty']),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _ReportPage extends StatelessWidget {
   final String title, subtitle;
   final Color accent;
@@ -1527,137 +1163,6 @@ class _ReportKpiCard extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      ],
-    ),
-  );
-}
-
-class _HeroMetric {
-  final String label, value;
-  const _HeroMetric(this.label, this.value);
-}
-
-class _ModernPageHero extends StatelessWidget {
-  final IconData icon;
-  final String eyebrow, title, subtitle;
-  final Color accent;
-  final List<_HeroMetric> metrics;
-  final List<Widget> actions;
-
-  const _ModernPageHero({
-    required this.icon,
-    required this.eyebrow,
-    required this.title,
-    required this.subtitle,
-    required this.accent,
-    required this.metrics,
-    required this.actions,
-  });
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.fromLTRB(22, 18, 18, 18),
-    decoration: BoxDecoration(
-      gradient: LinearGradient(
-        colors: [Colors.white, accent.withValues(alpha: .075)],
-      ),
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: accent.withValues(alpha: .18)),
-      boxShadow: [
-        BoxShadow(
-          color: const Color(0xff0F2942).withValues(alpha: .06),
-          blurRadius: 22,
-          offset: const Offset(0, 8),
-        ),
-      ],
-    ),
-    child: Row(
-      children: [
-        Container(
-          width: 54,
-          height: 54,
-          decoration: BoxDecoration(
-            color: accent,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: accent.withValues(alpha: .28),
-                blurRadius: 16,
-                offset: const Offset(0, 7),
-              ),
-            ],
-          ),
-          child: Icon(icon, color: Colors.white, size: 28),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                eyebrow,
-                style: TextStyle(
-                  color: accent,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 10,
-                  letterSpacing: 1.5,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  color: AppColors.secondaryColor,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: AppColors.subText, fontSize: 12),
-              ),
-            ],
-          ),
-        ),
-        for (final metric in metrics) ...[
-          Container(
-            constraints: const BoxConstraints(minWidth: 92),
-            margin: const EdgeInsets.only(left: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: .85),
-              borderRadius: BorderRadius.circular(13),
-              border: Border.all(color: accent.withValues(alpha: .12)),
-            ),
-            child: Column(
-              children: [
-                Text(
-                  metric.value,
-                  style: const TextStyle(
-                    color: AppColors.secondaryColor,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                Text(
-                  metric.label,
-                  style: const TextStyle(
-                    color: AppColors.subText,
-                    fontSize: 10,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-        const SizedBox(width: 12),
-        ...actions.map(
-          (action) =>
-              Padding(padding: const EdgeInsets.only(left: 8), child: action),
         ),
       ],
     ),
@@ -2349,6 +1854,21 @@ class _DownloadCenterState extends State<_DownloadCenter> {
   String _branch = 'ALL';
   String? _date;
 
+  static const Color _pageText = Color(0xFF172033);
+  static const Color _secondaryText = Color(0xFF64748B);
+  static const Color _mutedText = Color(0xFF94A3B8);
+  static const Color _surface = Color(0xFFFFFFFF);
+  static const Color _softSurface = Color(0xFFF8FAFC);
+  static const Color _border = Color(0xFFE2E8F0);
+  static const Color _borderStrong = Color(0xFFCBD5E1);
+  static const Color _success = Color(0xFF16A34A);
+  static const Color _successSoft = Color(0xFFECFDF3);
+  static const Color _successBorder = Color(0xFFBBF7D0);
+  static const Color _purple = Color(0xFF7C3AED);
+  static const Color _purpleDark = Color(0xFF5B21B6);
+  static const Color _purpleSoft = Color(0xFFF5F3FF);
+  static const Color _purpleBorder = Color(0xFFDDD6FE);
+
   List<String> get _dates {
     final values =
         widget.rows
@@ -2357,205 +1877,749 @@ class _DownloadCenterState extends State<_DownloadCenter> {
             .toSet()
             .toList()
           ..sort((a, b) => b.compareTo(a));
+
     return values;
   }
 
   String? get _selectedDate {
     final dates = _dates;
-    if (dates.isEmpty) return null;
-    return _date != null && dates.contains(_date) ? _date : dates.first;
+
+    if (dates.isEmpty) {
+      return null;
+    }
+
+    if (_date != null && dates.contains(_date)) {
+      return _date;
+    }
+
+    return dates.first;
   }
 
   List<Map<String, dynamic>> get _selection {
     final date = _selectedDate;
-    if (date == null) return const [];
-    return widget.rows.where((row) {
+
+    if (date == null) {
+      return const [];
+    }
+
+    final rows = widget.rows.where((row) {
       final dateMatches = _text(row['run_date']) == date;
       final branchMatches =
           _branch == 'ALL' || _text(row['branch_name']) == _branch;
-      return dateMatches &&
-          branchMatches &&
-          _text(row['storage_path']).isNotEmpty;
-    }).toList()..sort(
-      (a, b) => _text(a['branch_name']).compareTo(_text(b['branch_name'])),
+      final hasFile = _text(row['storage_path']).isNotEmpty;
+
+      return dateMatches && branchMatches && hasFile;
+    }).toList();
+
+    rows.sort(
+      (left, right) =>
+          _text(left['branch_name']).compareTo(_text(right['branch_name'])),
     );
+
+    return rows;
   }
 
   @override
   Widget build(BuildContext context) {
     final selection = _selection;
     final dates = _dates;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _ReportHeading(title: widget.title, subtitle: widget.subtitle),
-        const SizedBox(height: 14),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: .05),
-                blurRadius: 18,
-                offset: const Offset(0, 7),
-              ),
-            ],
+        const SizedBox(height: 16),
+        _buildFilterPanel(selection: selection, dates: dates),
+        const SizedBox(height: 18),
+        Expanded(
+          child: selection.isEmpty
+              ? _EmptyState(color: widget.accent)
+              : _buildDownloadList(selection),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFilterPanel({
+    required List<Map<String, dynamic>> selection,
+    required List<String> dates,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: _border),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.06),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
           ),
-          child: Row(
+        ],
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 980;
+
+          final filters = Wrap(
+            spacing: 14,
+            runSpacing: 14,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Container(
-                padding: const EdgeInsets.all(11),
-                decoration: BoxDecoration(
-                  color: widget.accent.withValues(alpha: .12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  Icons.folder_zip_rounded,
-                  color: widget.accent,
-                  size: 26,
-                ),
-              ),
-              const SizedBox(width: 14),
-              SizedBox(
-                width: 220,
+              _DcFilterBlock(
+                icon: Icons.calendar_month_rounded,
+                iconColor: widget.accent,
+                iconBackground: widget.accent.withValues(alpha: 0.10),
+                label: 'Date',
+                width: compact ? 250 : 260,
                 child: DropdownButtonFormField<String>(
                   key: ValueKey(_selectedDate),
                   initialValue: _selectedDate,
-                  decoration: _inputDecoration(
-                    'Order date',
-                    Icons.calendar_today_rounded,
+                  isExpanded: true,
+                  icon: const Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    color: _secondaryText,
                   ),
+                  decoration: _dcInputDecoration(),
                   items: dates
                       .map(
-                        (date) => DropdownMenuItem(
+                        (date) => DropdownMenuItem<String>(
                           value: date,
-                          child: Text(_displayDate(date)),
+                          child: Text(
+                            _displayDate(date),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       )
                       .toList(),
-                  onChanged: (value) => setState(() => _date = value),
+                  onChanged: dates.isEmpty
+                      ? null
+                      : (value) {
+                          setState(() => _date = value);
+                        },
                 ),
               ),
-              const SizedBox(width: 10),
-              SizedBox(
-                width: 250,
+              _DcFilterBlock(
+                icon: Icons.storefront_rounded,
+                iconColor: _purple,
+                iconBackground: _purpleSoft,
+                label: 'Branch',
+                width: compact ? 290 : 320,
                 child: DropdownButtonFormField<String>(
                   key: ValueKey(_branch),
                   initialValue: _branch,
                   isExpanded: true,
-                  decoration: _inputDecoration('Branch', Icons.store_rounded),
+                  icon: const Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    color: _secondaryText,
+                  ),
+                  decoration: _dcInputDecoration(),
                   items: ['ALL', ...widget.zoneBranches]
                       .map(
-                        (branch) => DropdownMenuItem(
+                        (branch) => DropdownMenuItem<String>(
                           value: branch,
                           child: Text(
                             branch == 'ALL' ? 'All Zone Branches' : branch,
+                            maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       )
                       .toList(),
                   onChanged: (value) {
-                    if (value != null) setState(() => _branch = value);
+                    if (value != null) {
+                      setState(() => _branch = value);
+                    }
                   },
                 ),
               ),
-              const Spacer(),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    '${selection.length} file(s) ready',
-                    style: const TextStyle(
-                      color: AppColors.subText,
-                      fontSize: 12,
-                    ),
+            ],
+          );
+
+          final actions = _DcToolbarActions(
+            accent: widget.accent,
+            fileCount: selection.length,
+            onDownload: selection.isEmpty
+                ? null
+                : () => widget.onDownloadSelection(selection),
+          );
+
+          if (compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                filters,
+                const SizedBox(height: 16),
+                const Divider(height: 1, color: _border),
+                const SizedBox(height: 16),
+                Align(alignment: Alignment.centerRight, child: actions),
+              ],
+            );
+          }
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(child: filters),
+              const SizedBox(width: 18),
+              actions,
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildDownloadList(List<Map<String, dynamic>> selection) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: _border),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.05),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Scrollbar(
+        child: ListView.separated(
+          padding: const EdgeInsets.all(22),
+          itemCount: selection.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 14),
+          itemBuilder: (context, index) {
+            final row = selection[index];
+
+            return _DcDownloadRow(
+              accent: widget.accent,
+              branchName: _text(row['branch_name']),
+              orderDate: _displayDate(_text(row['run_date'])),
+              onDownload: () => widget.onDownloadOne(row),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _dcInputDecoration() {
+    return InputDecoration(
+      filled: true,
+      fillColor: _softSurface,
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: _border),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: _border),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: widget.accent, width: 1.5),
+      ),
+      disabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: _border),
+      ),
+    );
+  }
+}
+
+class _DcFilterBlock extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final Color iconBackground;
+  final String label;
+  final double width;
+  final Widget child;
+
+  const _DcFilterBlock({
+    required this.icon,
+    required this.iconColor,
+    required this.iconBackground,
+    required this.label,
+    required this.width,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: iconBackground,
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(color: iconColor.withValues(alpha: 0.14)),
+            ),
+            child: Icon(icon, color: iconColor, size: 24),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: _DownloadCenterState._secondaryText,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
                   ),
-                  const SizedBox(height: 7),
-                  FilledButton.icon(
-                    onPressed: selection.isEmpty
-                        ? null
-                        : () => widget.onDownloadSelection(selection),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: widget.accent,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 14,
-                      ),
-                    ),
-                    icon: Icon(
-                      selection.length > 1
-                          ? Icons.folder_zip_rounded
-                          : Icons.download_rounded,
-                    ),
-                    label: Text(
-                      selection.length > 1
-                          ? 'Download Zone ZIP'
-                          : 'Download Excel',
-                    ),
-                  ),
-                ],
+                ),
+                const SizedBox(height: 7),
+                child,
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DcToolbarActions extends StatelessWidget {
+  final Color accent;
+  final int fileCount;
+  final VoidCallback? onDownload;
+
+  const _DcToolbarActions({
+    required this.accent,
+    required this.fileCount,
+    required this.onDownload,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final multipleFiles = fileCount > 1;
+
+    return Wrap(
+      spacing: 14,
+      runSpacing: 12,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      alignment: WrapAlignment.end,
+      children: [
+        Container(
+          height: 52,
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          decoration: BoxDecoration(
+            color: _DownloadCenterState._surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _DownloadCenterState._border),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 25,
+                height: 25,
+                decoration: const BoxDecoration(
+                  color: _DownloadCenterState._successSoft,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.check_rounded,
+                  color: _DownloadCenterState._success,
+                  size: 16,
+                ),
+              ),
+              const SizedBox(width: 9),
+              Text(
+                '$fileCount file(s) ready',
+                style: const TextStyle(
+                  color: _DownloadCenterState._pageText,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 14),
-        Expanded(
-          child: selection.isEmpty
-              ? _EmptyState(color: widget.accent)
-              : Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: ListView.separated(
-                    padding: const EdgeInsets.all(10),
-                    itemCount: selection.length,
-                    separatorBuilder: (_, _) => const Divider(height: 1),
-                    itemBuilder: (_, index) {
-                      final row = selection[index];
-                      return ListTile(
-                        leading: Container(
-                          padding: const EdgeInsets.all(9),
-                          decoration: BoxDecoration(
-                            color: widget.accent.withValues(alpha: .1),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(
-                            Icons.table_view_rounded,
-                            color: widget.accent,
-                          ),
-                        ),
-                        title: Text(
-                          _text(row['branch_name']),
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        subtitle: Text(
-                          'Order date: ${_displayDate(_text(row['run_date']))}',
-                        ),
-                        trailing: OutlinedButton.icon(
-                          onPressed: () => widget.onDownloadOne(row),
-                          icon: const Icon(Icons.download_rounded, size: 17),
-                          label: const Text('Download'),
-                        ),
-                      );
-                    },
-                  ),
-                ),
         ),
       ],
     );
   }
 }
 
+class _DcPrimaryDownloadButton extends StatefulWidget {
+  final Color accent;
+  final bool enabled;
+  final String label;
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  const _DcPrimaryDownloadButton({
+    required this.accent,
+    required this.enabled,
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  @override
+  State<_DcPrimaryDownloadButton> createState() =>
+      _DcPrimaryDownloadButtonState();
+}
+
+class _DcPrimaryDownloadButtonState extends State<_DcPrimaryDownloadButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.enabled;
+
+    return MouseRegion(
+      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      onEnter: enabled ? (_) => setState(() => _hovered = true) : null,
+      onExit: enabled ? (_) => setState(() => _hovered = false) : null,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 170),
+        transform: Matrix4.translationValues(0, _hovered ? -2 : 0, 0),
+        height: 52,
+        decoration: BoxDecoration(
+          gradient: enabled
+              ? LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [
+                    widget.accent,
+                    Color.lerp(widget.accent, const Color(0xFFDC2626), 0.32) ??
+                        widget.accent,
+                  ],
+                )
+              : null,
+          color: enabled ? null : _DownloadCenterState._borderStrong,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: enabled
+              ? [
+                  BoxShadow(
+                    color: widget.accent.withValues(
+                      alpha: _hovered ? 0.28 : 0.18,
+                    ),
+                    blurRadius: _hovered ? 20 : 13,
+                    offset: Offset(0, _hovered ? 8 : 5),
+                  ),
+                ]
+              : null,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: widget.onPressed,
+            borderRadius: BorderRadius.circular(14),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 22),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(widget.icon, color: Colors.white, size: 19),
+                  const SizedBox(width: 10),
+                  Text(
+                    widget.label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DcDownloadRow extends StatefulWidget {
+  final Color accent;
+  final String branchName;
+  final String orderDate;
+  final VoidCallback onDownload;
+
+  const _DcDownloadRow({
+    required this.accent,
+    required this.branchName,
+    required this.orderDate,
+    required this.onDownload,
+  });
+
+  @override
+  State<_DcDownloadRow> createState() => _DcDownloadRowState();
+}
+
+class _DcDownloadRowState extends State<_DcDownloadRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 170),
+        curve: Curves.easeOut,
+        transform: Matrix4.translationValues(0, _hovered ? -2 : 0, 0),
+        constraints: const BoxConstraints(minHeight: 112),
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
+        decoration: BoxDecoration(
+          color: _hovered
+              ? const Color(0xFFFCFCFF)
+              : _DownloadCenterState._surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: _hovered
+                ? widget.accent.withValues(alpha: 0.28)
+                : _DownloadCenterState._border,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(
+                0xFF0F172A,
+              ).withValues(alpha: _hovered ? 0.08 : 0.035),
+              blurRadius: _hovered ? 18 : 10,
+              offset: Offset(0, _hovered ? 8 : 4),
+            ),
+          ],
+        ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 720;
+
+            final details = Row(
+              children: [
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    color: widget.accent.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: widget.accent.withValues(alpha: 0.12),
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.table_view_rounded,
+                    color: widget.accent,
+                    size: 27,
+                  ),
+                ),
+                const SizedBox(width: 18),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.branchName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _DownloadCenterState._pageText,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 9),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.calendar_today_rounded,
+                            size: 15,
+                            color: _DownloadCenterState._secondaryText,
+                          ),
+                          const SizedBox(width: 7),
+                          Flexible(
+                            child: Text(
+                              'Order date: ${widget.orderDate}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: _DownloadCenterState._secondaryText,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+
+            final status = const _DcReadyChip();
+
+            final download = _DcOutlineDownloadButton(
+              accent: widget.accent,
+              onPressed: widget.onDownload,
+            );
+
+            if (compact) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  details,
+                  const SizedBox(height: 14),
+                  Row(children: [status, const Spacer(), download]),
+                ],
+              );
+            }
+
+            return Row(
+              children: [
+                Expanded(flex: 7, child: details),
+                const SizedBox(width: 18),
+                Expanded(
+                  flex: 2,
+                  child: Align(alignment: Alignment.center, child: status),
+                ),
+                const SizedBox(width: 18),
+                Align(alignment: Alignment.centerRight, child: download),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _DcReadyChip extends StatelessWidget {
+  const _DcReadyChip();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+      decoration: BoxDecoration(
+        color: _DownloadCenterState._successSoft,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: _DownloadCenterState._successBorder),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.check_circle_outline_rounded,
+            color: _DownloadCenterState._success,
+            size: 17,
+          ),
+          SizedBox(width: 7),
+          Text(
+            'Ready',
+            style: TextStyle(
+              color: _DownloadCenterState._success,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DcOutlineDownloadButton extends StatefulWidget {
+  final Color accent;
+  final VoidCallback onPressed;
+
+  const _DcOutlineDownloadButton({
+    required this.accent,
+    required this.onPressed,
+  });
+
+  @override
+  State<_DcOutlineDownloadButton> createState() =>
+      _DcOutlineDownloadButtonState();
+}
+
+class _DcOutlineDownloadButtonState extends State<_DcOutlineDownloadButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        transform: Matrix4.translationValues(0, _hovered ? -1 : 0, 0),
+        height: 44,
+        decoration: BoxDecoration(
+          color: _hovered
+              ? widget.accent.withValues(alpha: 0.08)
+              : Colors.white,
+          borderRadius: BorderRadius.circular(13),
+          border: Border.all(
+            color: _hovered
+                ? widget.accent
+                : widget.accent.withValues(alpha: 0.62),
+            width: 1.1,
+          ),
+          boxShadow: _hovered
+              ? [
+                  BoxShadow(
+                    color: widget.accent.withValues(alpha: 0.12),
+                    blurRadius: 14,
+                    offset: const Offset(0, 5),
+                  ),
+                ]
+              : null,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: widget.onPressed,
+            borderRadius: BorderRadius.circular(13),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 17),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.download_rounded, color: widget.accent, size: 18),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Download',
+                    style: TextStyle(
+                      color: widget.accent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _BranchQuickView extends StatelessWidget {
-  final String branch, runDate;
+  final String branch;
+  final String runDate;
   final bool submitted;
-  final int additionalCount, editCount;
-  final VoidCallback onOpenDaily, onOpenAdditional, onOpenHistory;
+  final int additionalCount;
+  final int editCount;
+  final VoidCallback onOpenDaily;
+  final VoidCallback onOpenAdditional;
+  final VoidCallback onOpenHistory;
 
   const _BranchQuickView({
     required this.branch,
@@ -2568,131 +2632,877 @@ class _BranchQuickView extends StatelessWidget {
     required this.onOpenHistory,
   });
 
+  static const Color _dialogBackground = Color(0xFFFCFCFF);
+  static const Color _primary = Color(0xFF4F46E5);
+  static const Color _primaryDark = Color(0xFF3730A3);
+  static const Color _primarySoft = Color(0xFFEEF2FF);
+  static const Color _primaryBorder = Color(0xFFC7D2FE);
+
+  static const Color _orange = Color(0xFFF97316);
+  static const Color _orangeDark = Color(0xFFEA580C);
+  static const Color _orangeSoft = Color(0xFFFFF7ED);
+  static const Color _orangeBorder = Color(0xFFFED7AA);
+
+  static const Color _green = Color(0xFF10B981);
+  static const Color _greenDark = Color(0xFF047857);
+  static const Color _greenSoft = Color(0xFFECFDF5);
+  static const Color _greenBorder = Color(0xFFA7F3D0);
+
+  static const Color _blue = Color(0xFF3B82F6);
+  static const Color _blueDark = Color(0xFF1D4ED8);
+  static const Color _blueSoft = Color(0xFFEFF6FF);
+  static const Color _blueBorder = Color(0xFFBFDBFE);
+
+  static const Color _text = Color(0xFF111827);
+  static const Color _textSecondary = Color(0xFF64748B);
+  static const Color _textMuted = Color(0xFF94A3B8);
+  static const Color _border = Color(0xFFE2E8F0);
+
   @override
-  Widget build(BuildContext context) => Dialog(
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-    child: SizedBox(
-      width: 650,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.fromLTRB(22, 18, 12, 18),
-            decoration: const BoxDecoration(
-              color: Color(0xffEAF6FC),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+  Widget build(BuildContext context) {
+    final statusColor = submitted ? _green : _orange;
+    final statusDarkColor = submitted ? _greenDark : _orangeDark;
+    final statusSoftColor = submitted ? _greenSoft : _orangeSoft;
+    final statusBorderColor = submitted ? _greenBorder : _orangeBorder;
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 790),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(28),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: _dialogBackground,
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.92),
+                width: 1.5,
+              ),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x330F172A),
+                  blurRadius: 55,
+                  spreadRadius: 3,
+                  offset: Offset(0, 24),
+                ),
+                BoxShadow(
+                  color: Color(0x140F172A),
+                  blurRadius: 18,
+                  offset: Offset(0, 8),
+                ),
+              ],
             ),
-            child: Row(
+            child: Stack(
               children: [
-                const Icon(
-                  Icons.store_rounded,
-                  color: AppColors.primaryColor,
-                  size: 30,
+                const Positioned(
+                  top: -130,
+                  right: -110,
+                  child: _BqvGlowCircle(size: 300, color: Color(0x164F46E5)),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        branch,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.secondaryColor,
-                        ),
-                      ),
-                      Text(
-                        'Branch overview • ${_displayDate(runDate)}',
-                        style: const TextStyle(color: AppColors.subText),
-                      ),
-                    ],
+                const Positioned(
+                  bottom: -130,
+                  left: -100,
+                  child: _BqvGlowCircle(size: 270, color: Color(0x10F97316)),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final compact = constraints.maxWidth < 720;
+
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildHeader(context),
+                          const SizedBox(height: 20),
+                          _BqvStatusBanner(
+                            submitted: submitted,
+                            statusColor: statusColor,
+                            statusDarkColor: statusDarkColor,
+                            statusSoftColor: statusSoftColor,
+                            statusBorderColor: statusBorderColor,
+                          ),
+                          const SizedBox(height: 18),
+                          _buildMetrics(compact),
+                          const SizedBox(height: 20),
+                          const Divider(
+                            height: 1,
+                            thickness: 1,
+                            color: _border,
+                          ),
+                          const SizedBox(height: 18),
+                          _buildActions(compact),
+                        ],
+                      );
+                    },
                   ),
-                ),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close_rounded),
                 ),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          width: 58,
+          height: 58,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF7C3AED), _primary, _primaryDark],
+            ),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.70),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: _primary.withValues(alpha: 0.30),
+                blurRadius: 24,
+                spreadRadius: 1,
+                offset: const Offset(0, 12),
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.storefront_rounded,
+            color: Colors.white,
+            size: 26,
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                branch,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: _text,
+                  fontSize: 24,
+                  height: 1.05,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.8,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  const Text(
+                    'Branch overview',
+                    style: TextStyle(
+                      color: _textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Container(
+                    width: 5,
+                    height: 5,
+                    decoration: const BoxDecoration(
+                      color: _primary,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  Text(
+                    _displayDate(runDate),
+                    style: const TextStyle(
+                      color: _textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 16),
+        _BqvCloseButton(onPressed: () => Navigator.pop(context)),
+      ],
+    );
+  }
+
+  Widget _buildMetrics(bool compact) {
+    final additionalCard = _BqvMetricCard(
+      icon: Icons.description_outlined,
+      value: additionalCount,
+      title: 'Additional Requests',
+      accent: _orange,
+      accentDark: _orangeDark,
+      background: _orangeSoft,
+      border: _orangeBorder,
+      painterColor: _orange,
+    );
+
+    final editsCard = _BqvMetricCard(
+      icon: Icons.edit_note_rounded,
+      value: editCount,
+      title: 'Order Edits',
+      accent: _blue,
+      accentDark: _blueDark,
+      background: _blueSoft,
+      border: _blueBorder,
+      painterColor: _blue,
+    );
+
+    if (compact) {
+      return Column(
+        children: [additionalCard, const SizedBox(height: 10), editsCard],
+      );
+    }
+
+    return Row(
+      children: [
+        Expanded(child: additionalCard),
+        const SizedBox(width: 12),
+        Expanded(child: editsCard),
+      ],
+    );
+  }
+
+  Widget _buildActions(bool compact) {
+    final dailyButton = _BqvActionButton(
+      label: 'Open Daily Order',
+      icon: Icons.shopping_cart_checkout_rounded,
+      onPressed: onOpenDaily,
+      type: _BqvActionType.primary,
+    );
+
+    final additionalButton = _BqvActionButton(
+      label: 'Open Additional',
+      icon: Icons.add_box_outlined,
+      onPressed: onOpenAdditional,
+      type: _BqvActionType.secondary,
+    );
+
+    final historyButton = _BqvActionButton(
+      label: 'Order History',
+      icon: Icons.history_rounded,
+      onPressed: onOpenHistory,
+      type: _BqvActionType.outlined,
+    );
+
+    if (compact) {
+      return Column(
+        children: [
+          SizedBox(width: double.infinity, child: dailyButton),
+          const SizedBox(height: 12),
+          SizedBox(width: double.infinity, child: additionalButton),
+          const SizedBox(height: 12),
+          SizedBox(width: double.infinity, child: historyButton),
+        ],
+      );
+    }
+
+    return Row(
+      children: [
+        Expanded(flex: 12, child: dailyButton),
+        const SizedBox(width: 10),
+        Expanded(flex: 10, child: additionalButton),
+        const SizedBox(width: 10),
+        Expanded(flex: 9, child: historyButton),
+      ],
+    );
+  }
+}
+
+class _BqvStatusBanner extends StatelessWidget {
+  final bool submitted;
+  final Color statusColor;
+  final Color statusDarkColor;
+  final Color statusSoftColor;
+  final Color statusBorderColor;
+
+  const _BqvStatusBanner({
+    required this.submitted,
+    required this.statusColor,
+    required this.statusDarkColor,
+    required this.statusSoftColor,
+    required this.statusBorderColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      constraints: const BoxConstraints(minHeight: 100),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [statusSoftColor, Colors.white.withValues(alpha: 0.88)],
+        ),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: statusBorderColor, width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: statusColor.withValues(alpha: 0.08),
+            blurRadius: 22,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            right: -28,
+            top: -20,
+            child: _BqvStatusDecoration(color: statusColor),
+          ),
           Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+            child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(14),
+                  width: 52,
+                  height: 52,
                   decoration: BoxDecoration(
-                    color: submitted
-                        ? Colors.green.withValues(alpha: .1)
-                        : Colors.orange.withValues(alpha: .1),
-                    borderRadius: BorderRadius.circular(14),
+                    color: statusColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(15),
+                    border: Border.all(
+                      color: statusColor.withValues(alpha: 0.18),
+                    ),
                   ),
-                  child: Row(
+                  child: Icon(
+                    submitted
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.schedule_rounded,
+                    color: statusColor,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        submitted
-                            ? Icons.check_circle_rounded
-                            : Icons.schedule_rounded,
-                        color: submitted ? Colors.green : Colors.orange,
-                      ),
-                      const SizedBox(width: 10),
                       Text(
                         submitted ? 'Order Submitted' : 'Waiting Submission',
                         style: TextStyle(
-                          color: submitted ? Colors.green : Colors.orange,
-                          fontWeight: FontWeight.bold,
+                          color: statusDarkColor,
+                          fontSize: 18,
+                          height: 1.1,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.35,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        submitted
+                            ? 'The branch order has been submitted successfully.'
+                            : 'The branch data is ready and waiting to be submitted.',
+                        style: const TextStyle(
+                          color: _BranchQuickView._textSecondary,
+                          fontSize: 12,
+                          height: 1.4,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    _DetailMetric(
-                      'Additional Requests',
-                      additionalCount,
-                      Colors.orange,
-                    ),
-                    _DetailMetric('Order Edits', editCount, Colors.blue),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: onOpenDaily,
-                        icon: const Icon(Icons.shopping_cart_rounded),
-                        label: const Text('Open Daily Order'),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: FilledButton.tonalIcon(
-                        onPressed: onOpenAdditional,
-                        icon: const Icon(Icons.add_box_rounded),
-                        label: const Text('Open Additional'),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: onOpenHistory,
-                        icon: const Icon(Icons.history_rounded),
-                        label: const Text('Order History'),
-                      ),
-                    ),
-                  ],
                 ),
               ],
             ),
           ),
         ],
       ),
-    ),
-  );
+    );
+  }
+}
+
+class _BqvMetricCard extends StatefulWidget {
+  final IconData icon;
+  final int value;
+  final String title;
+  final Color accent;
+  final Color accentDark;
+  final Color background;
+  final Color border;
+  final Color painterColor;
+
+  const _BqvMetricCard({
+    required this.icon,
+    required this.value,
+    required this.title,
+    required this.accent,
+    required this.accentDark,
+    required this.background,
+    required this.border,
+    required this.painterColor,
+  });
+
+  @override
+  State<_BqvMetricCard> createState() => _BqvMetricCardState();
+}
+
+class _BqvMetricCardState extends State<_BqvMetricCard> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.basic,
+      onEnter: (_) {
+        if (!_hovered) {
+          setState(() => _hovered = true);
+        }
+      },
+      onExit: (_) {
+        if (_hovered) {
+          setState(() => _hovered = false);
+        }
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        transform: Matrix4.translationValues(0, _hovered ? -3 : 0, 0),
+        height: 158,
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [widget.background, Colors.white],
+          ),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: _hovered
+                ? widget.accent.withValues(alpha: 0.40)
+                : widget.border,
+            width: _hovered ? 1.4 : 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: widget.accent.withValues(alpha: _hovered ? 0.13 : 0.065),
+              blurRadius: _hovered ? 24 : 15,
+              offset: Offset(0, _hovered ? 10 : 6),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: widget.accent.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(13),
+                    border: Border.all(
+                      color: widget.accent.withValues(alpha: 0.16),
+                    ),
+                  ),
+                  child: Icon(widget.icon, color: widget.accent, size: 21),
+                ),
+                const Spacer(),
+                Icon(
+                  Icons.north_east_rounded,
+                  color: widget.accent.withValues(alpha: 0.55),
+                  size: 17,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '${widget.value}',
+              style: TextStyle(
+                color: widget.accentDark,
+                fontSize: 30,
+                height: 1,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -1,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              widget.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: _BranchQuickView._text,
+                fontSize: 13,
+                height: 1.2,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: CustomPaint(
+                  size: Size.infinite,
+                  painter: _BqvMiniTrendPainter(color: widget.painterColor),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+enum _BqvActionType { primary, secondary, outlined }
+
+class _BqvActionButton extends StatefulWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback onPressed;
+  final _BqvActionType type;
+
+  const _BqvActionButton({
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+    required this.type,
+  });
+
+  @override
+  State<_BqvActionButton> createState() => _BqvActionButtonState();
+}
+
+class _BqvActionButtonState extends State<_BqvActionButton> {
+  bool _hovered = false;
+
+  bool get _isPrimary => widget.type == _BqvActionType.primary;
+
+  bool get _isSecondary => widget.type == _BqvActionType.secondary;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = _isPrimary
+        ? Colors.white
+        : _BranchQuickView._primaryDark;
+
+    final borderColor = _isPrimary
+        ? Colors.transparent
+        : _isSecondary
+        ? _BranchQuickView._primaryBorder
+        : const Color(0xFFB8B4C7);
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) {
+        if (!_hovered) {
+          setState(() => _hovered = true);
+        }
+      },
+      onExit: (_) {
+        if (_hovered) {
+          setState(() => _hovered = false);
+        }
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 170),
+        curve: Curves.easeOut,
+        transform: Matrix4.translationValues(0, _hovered ? -2 : 0, 0),
+        height: 54,
+        decoration: BoxDecoration(
+          gradient: _isPrimary
+              ? LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: _hovered
+                      ? const [Color(0xFF6D5DFB), Color(0xFF4338CA)]
+                      : const [Color(0xFF7C3AED), Color(0xFF4F46E5)],
+                )
+              : null,
+          color: _isPrimary
+              ? null
+              : _isSecondary
+              ? _BranchQuickView._primarySoft
+              : Colors.white.withValues(alpha: 0.72),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: borderColor, width: 1.2),
+          boxShadow: _isPrimary
+              ? [
+                  BoxShadow(
+                    color: _BranchQuickView._primary.withValues(
+                      alpha: _hovered ? 0.34 : 0.24,
+                    ),
+                    blurRadius: _hovered ? 24 : 17,
+                    offset: Offset(0, _hovered ? 10 : 7),
+                  ),
+                ]
+              : [
+                  BoxShadow(
+                    color: const Color(
+                      0xFF0F172A,
+                    ).withValues(alpha: _hovered ? 0.08 : 0.035),
+                    blurRadius: _hovered ? 15 : 9,
+                    offset: Offset(0, _hovered ? 7 : 4),
+                  ),
+                ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: widget.onPressed,
+            borderRadius: BorderRadius.circular(14),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(widget.icon, size: 18, color: foreground),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      widget.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: foreground,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    color: foreground.withValues(alpha: 0.88),
+                    size: 12,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BqvCloseButton extends StatefulWidget {
+  final VoidCallback onPressed;
+
+  const _BqvCloseButton({required this.onPressed});
+
+  @override
+  State<_BqvCloseButton> createState() => _BqvCloseButtonState();
+}
+
+class _BqvCloseButtonState extends State<_BqvCloseButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) {
+        if (!_hovered) {
+          setState(() => _hovered = true);
+        }
+      },
+      onExit: (_) {
+        if (_hovered) {
+          setState(() => _hovered = false);
+        }
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          color: _hovered
+              ? const Color(0xFFF1F5F9)
+              : Colors.white.withValues(alpha: 0.72),
+          borderRadius: BorderRadius.circular(13),
+          border: Border.all(
+            color: _hovered
+                ? const Color(0xFFCBD5E1)
+                : _BranchQuickView._border,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(
+                0xFF0F172A,
+              ).withValues(alpha: _hovered ? 0.10 : 0.045),
+              blurRadius: _hovered ? 15 : 9,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: widget.onPressed,
+            borderRadius: BorderRadius.circular(13),
+            child: const Icon(
+              Icons.close_rounded,
+              color: Color(0xFF475569),
+              size: 21,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BqvGlowCircle extends StatelessWidget {
+  final double size;
+  final Color color;
+
+  const _BqvGlowCircle({required this.size, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+      ),
+    );
+  }
+}
+
+class _BqvStatusDecoration extends StatelessWidget {
+  final Color color;
+
+  const _BqvStatusDecoration({required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: SizedBox(
+        width: 190,
+        height: 170,
+        child: CustomPaint(painter: _BqvStatusDecorationPainter(color: color)),
+      ),
+    );
+  }
+}
+
+class _BqvStatusDecorationPainter extends CustomPainter {
+  final Color color;
+
+  const _BqvStatusDecorationPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width * 0.62, size.height * 0.52);
+
+    final circlePaint = Paint()
+      ..color = color.withValues(alpha: 0.12)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+
+    for (final radius in <double>[34, 54, 74]) {
+      canvas.drawCircle(center, radius, circlePaint);
+    }
+
+    final dotPaint = Paint()
+      ..color = color.withValues(alpha: 0.22)
+      ..style = PaintingStyle.fill;
+
+    canvas.drawCircle(Offset(center.dx - 54, center.dy - 18), 4, dotPaint);
+
+    canvas.drawCircle(Offset(center.dx + 28, center.dy - 50), 3.5, dotPaint);
+
+    canvas.drawCircle(Offset(center.dx + 55, center.dy + 12), 3, dotPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _BqvStatusDecorationPainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}
+
+class _BqvMiniTrendPainter extends CustomPainter {
+  final Color color;
+
+  const _BqvMiniTrendPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final linePath = Path()
+      ..moveTo(0, size.height * 0.74)
+      ..cubicTo(
+        size.width * 0.18,
+        size.height * 0.20,
+        size.width * 0.34,
+        size.height * 0.85,
+        size.width * 0.52,
+        size.height * 0.54,
+      )
+      ..cubicTo(
+        size.width * 0.68,
+        size.height * 0.25,
+        size.width * 0.82,
+        size.height * 0.65,
+        size.width,
+        size.height * 0.28,
+      );
+
+    final areaPath = Path.from(linePath)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+
+    final areaPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [color.withValues(alpha: 0.14), color.withValues(alpha: 0.0)],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height))
+      ..style = PaintingStyle.fill;
+
+    final linePaint = Paint()
+      ..color = color.withValues(alpha: 0.82)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawPath(areaPath, areaPaint);
+    canvas.drawPath(linePath, linePaint);
+
+    final point = Offset(size.width, size.height * 0.28);
+
+    canvas.drawCircle(
+      point,
+      4.5,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.fill,
+    );
+
+    canvas.drawCircle(
+      point,
+      3.2,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.fill,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _BqvMiniTrendPainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
 }
 
 class _ReportLoading extends StatelessWidget {
@@ -2737,46 +3547,6 @@ class _DrawerToggle extends StatelessWidget {
   );
 }
 
-class _CountBadge extends StatelessWidget {
-  final int count;
-  final bool selected;
-  const _CountBadge({required this.count, required this.selected});
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-    decoration: BoxDecoration(
-      color: selected ? Colors.white.withValues(alpha: .25) : Colors.red,
-      borderRadius: BorderRadius.circular(99),
-    ),
-    child: Text(
-      count > 999 ? '999+' : '$count',
-      style: const TextStyle(
-        color: Colors.white,
-        fontSize: 10,
-        fontWeight: FontWeight.bold,
-      ),
-    ),
-  );
-}
-
-class _MiniBadge extends StatelessWidget {
-  final String text;
-  final Color color;
-  const _MiniBadge(this.text, this.color);
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-    decoration: BoxDecoration(
-      color: color,
-      borderRadius: BorderRadius.circular(6),
-    ),
-    child: Text(
-      text,
-      style: const TextStyle(color: Colors.white, fontSize: 10),
-    ),
-  );
-}
-
 class _TinyMetric extends StatelessWidget {
   final String text;
   final Color color;
@@ -2791,30 +3561,6 @@ class _TinyMetric extends StatelessWidget {
     child: Text(
       text,
       style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold),
-    ),
-  );
-}
-
-class _InfoCell extends StatelessWidget {
-  final String label;
-  final dynamic value;
-  const _InfoCell(this.label, this.value);
-  @override
-  Widget build(BuildContext context) => Expanded(
-    child: Column(
-      children: [
-        Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 9, color: AppColors.subText),
-        ),
-        const SizedBox(height: 3),
-        Text(
-          _numberText(value),
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-        ),
-      ],
     ),
   );
 }
@@ -2931,30 +3677,6 @@ class _DifferenceCell extends StatelessWidget {
   }
 }
 
-class _StatusChip extends StatelessWidget {
-  final String status;
-  const _StatusChip(this.status);
-  @override
-  Widget build(BuildContext context) {
-    final color = _statusColor(status);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: .12),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        _prettyStatus(status),
-        style: TextStyle(
-          color: color,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-}
-
 class _ErrorView extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
@@ -3003,14 +3725,6 @@ class _PageDef {
 class _ColumnDef {
   final String key, label;
   const _ColumnDef(this.key, this.label);
-}
-
-class _Stat {
-  final IconData icon;
-  final String title, value;
-  final Color color;
-  final String? subtitle;
-  const _Stat(this.icon, this.title, this.value, this.color, {this.subtitle});
 }
 
 InputDecoration _inputDecoration(String hint, IconData icon) => InputDecoration(
@@ -3130,3 +3844,1064 @@ double _columnWidth(String key) {
 
 String _safe(String value) =>
     value.replaceAll(RegExp(r'[\\/:*?"<>|]+'), '_').replaceAll(' ', '_');
+
+const _kSurface = Color(0xFFFFFFFF);
+const _kSurface2 = Color(0xFFF8FAFC);
+const _kPageBg = Color(0xFFF1F5F9);
+const _kBorder = Color(0xFFE2E8F0);
+const _kBorderMd = Color(0xFFCBD5E1);
+
+const _kText = Color(0xFF0F172A);
+const _kTextSub = Color(0xFF475569);
+const _kTextMute = Color(0xFF94A3B8);
+
+const _kBlue = Color(0xFF3B82F6);
+const _kBlueLight = Color(0xFFEFF6FF);
+const _kBlueBorder = Color(0xFFBFDBFE);
+
+const _kGreen = Color(0xFF10B981);
+const _kGreenLight = Color(0xFFECFDF5);
+const _kGreenBorder = Color(0xFFA7F3D0);
+const _kGreenDark = Color(0xFF065F46);
+
+const _kOrange = Color(0xFFF97316);
+const _kOrangeLight = Color(0xFFFFF7ED);
+const _kOrangeBrd = Color(0xFFFED7AA);
+
+const _kRed = Color(0xFFEF4444);
+const _kRedLight = Color(0xFFFEF2F2);
+const _kRedBorder = Color(0xFFFECACA);
+
+const _kAmber = Color(0xFFF59E0B);
+const _kAmberLight = Color(0xFFFFFBEB);
+const _kAmberBorder = Color(0xFFFDE68A);
+
+const _kCyan = Color(0xFF0891B2);
+const _kCyanLight = Color(0xFFECFEFF);
+const _kCyanBorder = Color(0xFFA5F3FC);
+
+const _kPurple = Color(0xFF8B5CF6);
+const _kPurpleLight = Color(0xFFF5F3FF);
+const _kPurpleBrd = Color(0xFFDDD6FE);
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  _HeroMetric  (data class — unchanged)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _HeroMetric {
+  final String label, value;
+  const _HeroMetric(this.label, this.value);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  _ModernPageHero
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ModernPageHero extends StatelessWidget {
+  final IconData icon;
+  final String eyebrow, title, subtitle;
+  final Color accent;
+  final List<_HeroMetric> metrics;
+  final List<Widget> actions;
+
+  const _ModernPageHero({
+    required this.icon,
+    required this.eyebrow,
+    required this.title,
+    required this.subtitle,
+    required this.accent,
+    required this.metrics,
+    required this.actions,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      decoration: BoxDecoration(
+        color: _kSurface,
+        border: const Border(bottom: BorderSide(color: _kBorder)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Icon
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [accent, accent.withValues(alpha: .7)],
+              ),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: accent.withValues(alpha: .3),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Icon(icon, color: Colors.white, size: 22),
+          ),
+          const SizedBox(width: 14),
+
+          // Left text block
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Eyebrow
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: .08),
+                    border: Border.all(color: accent.withValues(alpha: .2)),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    eyebrow,
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.5,
+                      color: accent,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: _kText,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11, color: _kTextMute),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(width: 16),
+
+          // Metric pills
+          for (final m in metrics) ...[
+            _HeroPill(metric: m, accent: accent),
+            const SizedBox(width: 8),
+          ],
+
+          Container(height: 30, width: 1, color: _kBorder),
+          const SizedBox(width: 12),
+
+          // Action buttons
+          for (final action in actions)
+            Padding(padding: const EdgeInsets.only(left: 8), child: action),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroPill extends StatelessWidget {
+  final _HeroMetric metric;
+  final Color accent;
+  const _HeroPill({required this.metric, required this.accent});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+    decoration: BoxDecoration(
+      color: accent.withValues(alpha: .06),
+      border: Border.all(color: accent.withValues(alpha: .18)),
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          metric.value,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w900,
+            color: accent,
+            height: 1,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          metric.label.toUpperCase(),
+          style: const TextStyle(
+            fontSize: 8,
+            fontWeight: FontWeight.w700,
+            color: _kTextMute,
+            letterSpacing: 0.8,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  _Stat  (data class — unchanged)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _Stat {
+  final IconData icon;
+  final String title, value;
+  final Color color;
+  final String? subtitle;
+  const _Stat(this.icon, this.title, this.value, this.color, {this.subtitle});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  _StatsRow
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _StatsRow extends StatelessWidget {
+  final List<_Stat> cards;
+  const _StatsRow({required this.cards});
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 90,
+    child: Row(
+      children: [
+        for (var i = 0; i < cards.length; i++) ...[
+          Expanded(child: _StatCard(stat: cards[i])),
+          if (i < cards.length - 1) const SizedBox(width: 10),
+        ],
+      ],
+    ),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  _StatCard
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _StatCard extends StatelessWidget {
+  final _Stat stat;
+  const _StatCard({required this.stat});
+
+  @override
+  Widget build(BuildContext context) {
+    // Parse "4 / 10" format
+    double? progress;
+    String mainNum = stat.value;
+    String? denominator;
+
+    if (stat.value.contains('/')) {
+      final parts = stat.value.split('/');
+      mainNum = parts[0].trim();
+      denominator = '/ ${parts[1].trim()}';
+      final a = double.tryParse(parts[0].trim()) ?? 0;
+      final b = double.tryParse(parts[1].trim()) ?? 1;
+      progress = b > 0 ? (a / b).clamp(0.0, 1.0) : 0;
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: _kSurface,
+        border: Border.all(color: _kBorder),
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x07000000),
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          // Left accent bar
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            child: Container(
+              width: 3,
+              decoration: BoxDecoration(
+                color: stat.color,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(10),
+                  bottomLeft: Radius.circular(10),
+                ),
+              ),
+            ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 11, 11, 11),
+            child: Row(
+              children: [
+                // Icon
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: stat.color.withValues(alpha: .09),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(stat.icon, color: stat.color, size: 16),
+                ),
+                const SizedBox(width: 10),
+
+                // Numbers
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        stat.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: _kTextMute,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Text(
+                            mainNum,
+                            style: const TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.w800,
+                              color: _kText,
+                              height: 1,
+                            ),
+                          ),
+                          if (denominator != null) ...[
+                            const SizedBox(width: 3),
+                            Text(
+                              denominator,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: _kTextMute,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      if (progress != null) ...[
+                        const SizedBox(height: 5),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(3),
+                          child: LinearProgressIndicator(
+                            value: progress,
+                            backgroundColor: const Color(0xFFE2E8F0),
+                            valueColor: AlwaysStoppedAnimation(stat.color),
+                            minHeight: 4,
+                          ),
+                        ),
+                      ],
+                      if (stat.subtitle != null && progress == null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          stat.subtitle!.toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 8,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.5,
+                            color: _kTextMute,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  _BranchGrid
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _BranchGrid extends StatelessWidget {
+  final List<Map<String, dynamic>> branches, edits, additional;
+  final Map<String, Map<String, dynamic>> submissions;
+  final String selectedBranch;
+  final ValueChanged<String> onOpen;
+
+  const _BranchGrid({
+    required this.branches,
+    required this.submissions,
+    required this.edits,
+    required this.additional,
+    required this.selectedBranch,
+    required this.onOpen,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = branches
+        .where(
+          (row) =>
+              selectedBranch == 'ALL' ||
+              _text(row['branch_name']) == selectedBranch,
+        )
+        .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Header row
+        Row(
+          children: [
+            const Text(
+              'Branches Ordering Today',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: _kText,
+              ),
+            ),
+            const SizedBox(width: 8),
+            _CountBadge(count: visible.length),
+          ],
+        ),
+        const SizedBox(height: 10),
+
+        // Grid
+        Expanded(
+          child: GridView.builder(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 2.1, // ← more compact cards
+            ),
+            itemCount: visible.length,
+            itemBuilder: (_, index) {
+              final branchName = _text(visible[index]['branch_name']);
+              final submitted = submissions.containsKey(_key(branchName));
+              final editCount = edits
+                  .where((r) => _key(r['branch_name']) == _key(branchName))
+                  .length;
+              final addCount = additional
+                  .where((r) => _key(r['branch_name']) == _key(branchName))
+                  .length;
+
+              return _BranchCard(
+                branch: branchName,
+                submitted: submitted,
+                editCount: editCount,
+                additionalCount: addCount,
+                onTap: () => onOpen(branchName),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _BranchCard extends StatelessWidget {
+  final String branch;
+  final bool submitted;
+  final int editCount, additionalCount;
+  final VoidCallback onTap;
+
+  const _BranchCard({
+    required this.branch,
+    required this.submitted,
+    required this.editCount,
+    required this.additionalCount,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color bgA = submitted ? const Color(0xFFECFDF5) : _kSurface;
+    final Color bgB = submitted ? const Color(0xFFD1FAE5) : _kSurface;
+    final Color borderC = submitted ? _kGreenBorder : _kBorder;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+        decoration: BoxDecoration(
+          gradient: submitted
+              ? LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [bgA, bgB],
+                )
+              : null,
+          color: submitted ? null : _kSurface,
+          border: Border.all(color: borderC),
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: [
+            BoxShadow(
+              color: submitted
+                  ? _kGreen.withValues(alpha: .12)
+                  : const Color(0x06000000),
+              blurRadius: submitted ? 12 : 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Row 1: icon + badges
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Icon
+                Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: submitted ? _kGreenLight : const Color(0xFFF1F5F9),
+                    border: Border.all(
+                      color: submitted ? _kGreenBorder : _kBorder,
+                    ),
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                  child: Icon(
+                    submitted
+                        ? Icons.check_circle_rounded
+                        : Icons.store_rounded,
+                    size: 13,
+                    color: submitted ? _kGreen : _kTextMute,
+                  ),
+                ),
+
+                const Spacer(),
+
+                // Badges (edits + additional)
+                if (additionalCount > 0)
+                  _MiniBadge('${additionalCount} ADD', _kRed),
+                if (additionalCount > 0 && editCount > 0)
+                  const SizedBox(width: 4),
+                if (editCount > 0) _MiniBadge('${editCount} EDITS', _kOrange),
+              ],
+            ),
+
+            const SizedBox(height: 7),
+
+            // Branch name
+            Text(
+              branch,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: submitted ? _kGreenDark : _kText,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              submitted ? 'ORDER SUBMITTED' : 'WAITING SUBMISSION',
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.5,
+                color: submitted ? _kGreen : _kTextMute,
+              ),
+            ),
+
+            const Spacer(),
+
+            // Footer link
+            Row(
+              children: [
+                Icon(
+                  Icons.open_in_new_rounded,
+                  size: 10,
+                  color: submitted ? _kGreen.withValues(alpha: .7) : _kTextMute,
+                ),
+                const SizedBox(width: 3),
+                Text(
+                  'Open branch overview',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w600,
+                    color: submitted
+                        ? _kGreen.withValues(alpha: .8)
+                        : _kTextMute,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  _AdditionalPanel
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _AdditionalPanel extends StatelessWidget {
+  final List<Map<String, dynamic>> rows;
+  final VoidCallback onViewAll;
+  const _AdditionalPanel({required this.rows, required this.onViewAll});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: _kSurface,
+        border: Border.all(color: _kBorder),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x06000000),
+            blurRadius: 12,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+            child: Row(
+              children: [
+                const Text(
+                  'Zone Additional Requests',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: _kText,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // LIVE badge
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _kBlueLight,
+                    border: Border.all(color: _kBlueBorder),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    'LIVE',
+                    style: TextStyle(
+                      fontSize: 8,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.2,
+                      color: _kBlue,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                // View All button
+                FilledButton(
+                  onPressed: onViewAll,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _kBlue,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('View All'),
+                ),
+              ],
+            ),
+          ),
+
+          const Divider(height: 1, color: _kBorder),
+
+          // Cards
+          Expanded(
+            child: rows.isEmpty
+                ? const Center(
+                    child: Text(
+                      'No additional requests.',
+                      style: TextStyle(color: _kTextMute, fontSize: 13),
+                    ),
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.all(10),
+                    itemCount: rows.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (_, i) => _AdditionalRequestCard(row: rows[i]),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  _AdditionalRequestCard
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _AdditionalRequestCard extends StatelessWidget {
+  final Map<String, dynamic> row;
+  const _AdditionalRequestCard({required this.row});
+
+  static ({Color bar, Color bg, Color border, Color text}) _theme(String s) {
+    final st = s.toLowerCase();
+    if (st == 'sent_to_store' || st.contains('sent')) {
+      return (bar: _kCyan, bg: _kCyanLight, border: _kCyanBorder, text: _kCyan);
+    }
+    if (st.contains('reject')) {
+      return (bar: _kRed, bg: _kRedLight, border: _kRedBorder, text: _kRed);
+    }
+    return (
+      bar: _kAmber,
+      bg: _kAmberLight,
+      border: _kAmberBorder,
+      text: _kAmber,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final status = _text(row['status']);
+    final t = _theme(status);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: _kSurface,
+        border: Border.all(color: _kBorder),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Left accent bar
+            Container(
+              width: 3,
+              decoration: BoxDecoration(
+                color: t.bar,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(9),
+                  bottomLeft: Radius.circular(9),
+                ),
+                boxShadow: [
+                  BoxShadow(color: t.bar.withValues(alpha: .35), blurRadius: 6),
+                ],
+              ),
+            ),
+
+            // Content
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(11, 9, 10, 9),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Title row
+                    Row(
+                      children: [
+                        // Item code
+                        Text(
+                          _text(row['item_code']),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: _kBlue,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+
+                        // Item name
+                        Expanded(
+                          child: Text(
+                            _text(row['item_name']),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: _kText,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+
+                        // Status badge
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: t.bg,
+                            border: Border.all(color: t.border),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            _prettyStatus(status).toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 8,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.7,
+                              color: t.text,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+
+                    // Branch row
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.store_rounded,
+                          size: 10,
+                          color: _kTextMute,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            _text(row['branch_name']),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: _kTextSub,
+                            ),
+                          ),
+                        ),
+                        // Req badge
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _kRedLight,
+                            border: Border.all(color: _kRedBorder),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            'REQ: ${_numberText(row['request_qty'])}',
+                            style: const TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              color: _kRed,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 7),
+
+                    // Metrics row
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 6,
+                        horizontal: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _kSurface2,
+                        border: Border.all(color: _kBorder),
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                      child: Row(
+                        children: [
+                          _InfoCell('BR STOCK', row['branch_stock']),
+                          _InfoCell('STR STOCK', row['store_stock']),
+                          _InfoCell('SALES', row['sales_45d']),
+                          _InfoCell('REORDER', row['final_reorder_qty']),
+                          _InfoCell('INVENT', row['inventory_qty']),
+                          _InfoCell(
+                            'FULFILL',
+                            row['fulfilled_qty'],
+                            isLast: true,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  _InfoCell
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _InfoCell extends StatelessWidget {
+  final String label;
+  final dynamic value;
+  final bool isLast;
+  const _InfoCell(this.label, this.value, {this.isLast = false});
+
+  @override
+  Widget build(BuildContext context) => Expanded(
+    child: Container(
+      decoration: isLast
+          ? null
+          : const BoxDecoration(
+              border: Border(right: BorderSide(color: _kBorder)),
+            ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 8,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
+              color: _kTextMute,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            _numberText(value),
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: _kTextSub,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  _MiniBadge
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _MiniBadge extends StatelessWidget {
+  final String text;
+  final Color color;
+  const _MiniBadge(this.text, this.color);
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: .10),
+      border: Border.all(color: color.withValues(alpha: .28)),
+      borderRadius: BorderRadius.circular(5),
+    ),
+    child: Text(
+      text,
+      style: TextStyle(
+        fontSize: 8,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 0.4,
+        color: color,
+      ),
+    ),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  _StatusChip
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _StatusChip extends StatelessWidget {
+  final String status;
+  const _StatusChip(this.status);
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _statusColor(status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .09),
+        border: Border.all(color: color.withValues(alpha: .28)),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        _prettyStatus(status).toUpperCase(),
+        style: TextStyle(
+          fontSize: 8,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.7,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  _CountBadge  (helper — internal)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _CountBadge extends StatelessWidget {
+  final int count;
+  const _CountBadge({required this.count});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+    decoration: BoxDecoration(
+      color: _kSurface2,
+      border: Border.all(color: _kBorder),
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Text(
+      '$count',
+      style: const TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        color: _kTextMute,
+      ),
+    ),
+  );
+}
