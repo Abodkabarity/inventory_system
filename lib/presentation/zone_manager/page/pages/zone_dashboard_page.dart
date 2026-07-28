@@ -94,36 +94,38 @@ extension _ZoneDashboardPageView on _ZoneManagerPageState {
                 _ZdStatsSection(
                   stats: [
                     _ZdStat(
-                      icon: Icons.account_tree_outlined,
+                      icon: Icons.storefront_rounded,
                       title: 'Zone Branches',
                       value: '$submittedCount',
-                      color: _zdPurple,
+                      color: const Color(0xFF8B5CF6),
                       subtitle: 'Branches ordered today',
                     ),
                     _ZdStat(
-                      icon: Icons.check_circle_outline_rounded,
+                      icon: Icons.task_alt_rounded,
                       title: 'Submitted Orders',
                       value: '$submittedCount / $submittedCount',
-                      color: _zdGreen,
+                      color: const Color(0xFF10B981),
                       showProgress: true,
                     ),
                     _ZdStat(
-                      icon: Icons.add_box_outlined,
+                      icon: Icons.add_box_rounded,
                       title: 'Additional Today',
                       value: '${branchAdditionalRows.length}',
-                      color: _zdOrange,
+                      color: const Color(0xFFFF6B35),
                     ),
                     _ZdStat(
                       icon: Icons.cancel_outlined,
                       title: 'Rejected Additional',
                       value: '$rejectedCount',
-                      color: _zdRed,
+                      color: const Color(0xFFF43F5E),
+                      subtitle: 'Rejected requests',
                     ),
-                    _ZdStat(
-                      icon: Icons.more_horiz_rounded,
+                    _ZdStat.workflow(
+                      icon: Icons.hourglass_bottom_rounded,
                       title: 'Pending / Sent To Store',
-                      value: '$pendingCount / $sentToStoreCount',
-                      color: _zdAmber,
+                      pendingValue: '$pendingCount',
+                      sentValue: '$sentToStoreCount',
+                      color: const Color(0xFFF59E0B),
                       subtitle: 'Additional workflow',
                     ),
                   ],
@@ -1673,6 +1675,8 @@ class _ZdStat {
   final Color color;
   final String? subtitle;
   final bool showProgress;
+  final String? pendingValue;
+  final String? sentValue;
 
   const _ZdStat({
     required this.icon,
@@ -1681,7 +1685,20 @@ class _ZdStat {
     required this.color,
     this.subtitle,
     this.showProgress = false,
-  });
+  }) : pendingValue = null,
+       sentValue = null;
+
+  const _ZdStat.workflow({
+    required this.icon,
+    required this.title,
+    required this.pendingValue,
+    required this.sentValue,
+    required this.color,
+    this.subtitle,
+  }) : value = '',
+       showProgress = false;
+
+  bool get isWorkflow => pendingValue != null && sentValue != null;
 }
 
 class _ZdStatsSection extends StatelessWidget {
@@ -1693,248 +1710,481 @@ class _ZdStatsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        const gap = 14.0;
-
-        if (constraints.maxWidth >= 1100) {
-          return SizedBox(
-            height: 150,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (var index = 0; index < stats.length; index++) ...[
-                  Expanded(child: _ZdStatCard(stat: stats[index])),
-                  if (index < stats.length - 1) const SizedBox(width: gap),
-                ],
-              ],
-            ),
-          );
-        }
-
-        final columns = constraints.maxWidth >= 720
-            ? 3
-            : constraints.maxWidth >= 480
-            ? 2
-            : 1;
-
+        const spacing = 12.0;
+        const runSpacing = 14.0;
+        final columns = _getColumnCount(constraints.maxWidth);
         final cardWidth =
-            (constraints.maxWidth - ((columns - 1) * gap)) / columns;
+            (constraints.maxWidth - (spacing * (columns - 1))) / columns;
 
         return Wrap(
-          spacing: gap,
-          runSpacing: gap,
+          spacing: spacing,
+          runSpacing: runSpacing,
           children: [
             for (final stat in stats)
               SizedBox(
                 width: cardWidth,
-                height: 150,
-                child: _ZdStatCard(stat: stat),
+                height: 132,
+                child: stat.isWorkflow
+                    ? _ZdWorkflowStatCard(stat: stat)
+                    : _ZdStatCard(stat: stat),
               ),
           ],
         );
       },
     );
   }
+
+  int _getColumnCount(double width) {
+    if (width >= 1300) return 5;
+    if (width >= 900) return 3;
+    if (width >= 580) return 2;
+    return 1;
+  }
 }
 
-class _ZdStatCard extends StatefulWidget {
+class _ZdStatCard extends StatelessWidget {
   final _ZdStat stat;
 
   const _ZdStatCard({required this.stat});
 
   @override
-  State<_ZdStatCard> createState() => _ZdStatCardState();
-}
-
-class _ZdStatCardState extends State<_ZdStatCard> {
-  bool _hovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    final stat = widget.stat;
     final parsedValue = _ZdParsedValue.parse(stat.value);
-
     final progress = stat.showProgress && parsedValue.denominatorValue > 0
         ? (parsedValue.mainValue / parsedValue.denominatorValue)
               .clamp(0.0, 1.0)
               .toDouble()
         : null;
 
-    return MouseRegion(
-      cursor: SystemMouseCursors.basic,
-      onEnter: (_) {
-        if (!_hovered) {
-          setState(() => _hovered = true);
-        }
-      },
-      onExit: (_) {
-        if (_hovered) {
-          setState(() => _hovered = false);
-        }
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        transform: Matrix4.translationValues(0, _hovered ? -3 : 0, 0),
-        decoration: BoxDecoration(
-          color: _zdSurface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: _hovered ? stat.color.withValues(alpha: 0.50) : _zdBorder,
-            width: _hovered ? 1.4 : 1,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(
-                0xFF0F172A,
-              ).withValues(alpha: _hovered ? 0.13 : 0.065),
-              blurRadius: _hovered ? 22 : 13,
-              offset: Offset(0, _hovered ? 8 : 5),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Stack(
+    return _ZdHoverStatCard(
+      color: stat.color,
+      childBuilder: (context, isHovered) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(15, 14, 15, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Positioned(
-                left: 0,
-                top: 0,
-                bottom: 0,
-                child: Container(width: 5, color: stat.color),
-              ),
-              Positioned(
-                right: -24,
-                bottom: -38,
-                child: Container(
-                  width: 105,
-                  height: 105,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: stat.color.withValues(alpha: 0.05),
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(18, 15, 16, 14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            stat.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: _zdText,
-                              fontSize: 13,
-                              height: 1.15,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -0.1,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: stat.color.withValues(
-                              alpha: _hovered ? 0.16 : 0.10,
-                            ),
-                            border: Border.all(
-                              color: stat.color.withValues(
-                                alpha: _hovered ? 0.40 : 0.24,
-                              ),
-                            ),
-                            borderRadius: BorderRadius.circular(11),
-                          ),
-                          child: Icon(stat.icon, color: stat.color, size: 18),
-                        ),
-                      ],
-                    ),
-                    const Spacer(),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            parsedValue.mainText,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: _zdText,
-                              fontSize: 34,
-                              height: 0.95,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -0.8,
-                            ),
-                          ),
-                        ),
-                        if (parsedValue.denominatorText != null) ...[
-                          const SizedBox(width: 5),
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 3),
-                            child: Text(
-                              parsedValue.denominatorText!,
-                              style: const TextStyle(
-                                color: _zdTextSubtle,
-                                fontSize: 13,
-                                height: 1,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    if (progress != null) ...[
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(99),
-                        child: LinearProgressIndicator(
-                          minHeight: 7,
-                          value: progress,
-                          backgroundColor: const Color(0xFFDDE4ED),
-                          valueColor: AlwaysStoppedAnimation<Color>(stat.color),
-                        ),
-                      ),
-                    ] else ...[
-                      Container(
-                        width: 34,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: stat.color,
-                          borderRadius: BorderRadius.circular(99),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    Text(
-                      progress != null
-                          ? '${(progress * 100).round()}% COMPLETED'
-                          : (stat.subtitle ?? 'LIVE ZONE OVERVIEW')
-                                .toUpperCase(),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      stat.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color: _zdTextSubtle,
-                        fontSize: 9,
+                        fontSize: 13,
+                        height: 1.2,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1E293B),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  _ZdAnimatedStatIcon(
+                    icon: stat.icon,
+                    color: stat.color,
+                    isHovered: isHovered,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 5),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Flexible(
+                    child: Text(
+                      parsedValue.mainText,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 28,
                         height: 1,
                         fontWeight: FontWeight.w900,
-                        letterSpacing: 0.45,
+                        letterSpacing: -1,
+                        color: Color(0xFF0F172A),
+                      ),
+                    ),
+                  ),
+                  if (parsedValue.denominatorText != null) ...[
+                    const SizedBox(width: 5),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Text(
+                        parsedValue.denominatorText!,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF64748B),
+                        ),
                       ),
                     ),
                   ],
+                ],
+              ),
+              const Spacer(),
+              if (progress != null) ...[
+                _ZdAnimatedProgressBar(progress: progress, color: stat.color),
+                const SizedBox(height: 7),
+              ] else ...[
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  width: isHovered ? 48 : 28,
+                  height: 3,
+                  decoration: BoxDecoration(
+                    color: stat.color,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                const SizedBox(height: 7),
+              ],
+              Text(
+                progress != null
+                    ? '${(progress * 100).round()}% COMPLETED'
+                    : (stat.subtitle ?? 'Live zone overview').toUpperCase(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 8.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.45,
+                  color: Color(0xFF64748B),
                 ),
               ),
             ],
           ),
+        );
+      },
+    );
+  }
+}
+
+class _ZdWorkflowStatCard extends StatelessWidget {
+  final _ZdStat stat;
+
+  const _ZdWorkflowStatCard({required this.stat});
+
+  @override
+  Widget build(BuildContext context) {
+    return _ZdHoverStatCard(
+      color: stat.color,
+      childBuilder: (context, isHovered) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(15, 14, 15, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      stat.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        height: 1.2,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1E293B),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  _ZdAnimatedStatIcon(
+                    icon: stat.icon,
+                    color: stat.color,
+                    isHovered: isHovered,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: _ZdWorkflowValue(
+                      value: stat.pendingValue ?? '0',
+                      label: 'Pending',
+                      valueColor: const Color(0xFFEF4444),
+                    ),
+                  ),
+                  Container(
+                    width: 1,
+                    height: 33,
+                    margin: const EdgeInsets.symmetric(horizontal: 8),
+                    color: const Color(0xFFE2E8F0),
+                  ),
+                  Expanded(
+                    child: _ZdWorkflowValue(
+                      value: stat.sentValue ?? '0',
+                      label: 'Sent',
+                      valueColor: const Color(0xFF475569),
+                    ),
+                  ),
+                ],
+              ),
+              const Spacer(),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                width: isHovered ? 48 : 28,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: stat.color,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              const SizedBox(height: 7),
+              Text(
+                (stat.subtitle ?? 'Additional workflow').toUpperCase(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 8.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.45,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ZdWorkflowValue extends StatelessWidget {
+  final String value;
+  final String label;
+  final Color valueColor;
+
+  const _ZdWorkflowValue({
+    required this.value,
+    required this.label,
+    required this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 23,
+            height: 1,
+            fontWeight: FontWeight.w900,
+            color: valueColor,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF64748B),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ZdHoverStatCard extends StatefulWidget {
+  final Color color;
+  final Widget Function(BuildContext context, bool isHovered) childBuilder;
+
+  const _ZdHoverStatCard({required this.color, required this.childBuilder});
+
+  @override
+  State<_ZdHoverStatCard> createState() => _ZdHoverStatCardState();
+}
+
+class _ZdHoverStatCardState extends State<_ZdHoverStatCard> {
+  bool _isHovered = false;
+
+  void _setHover(bool value) {
+    if (_isHovered == value) return;
+    setState(() => _isHovered = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.basic,
+      onEnter: (_) => _setHover(true),
+      onExit: (_) => _setHover(false),
+      child: AnimatedSlide(
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+        offset: _isHovered ? const Offset(0, -0.045) : Offset.zero,
+        child: AnimatedScale(
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+          scale: _isHovered ? 1.018 : 1,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeOutCubic,
+            height: 132,
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: _isHovered
+                    ? [Colors.white, widget.color.withValues(alpha: 0.065)]
+                    : [Colors.white, const Color(0xFFFBFCFE)],
+              ),
+              borderRadius: BorderRadius.circular(17),
+              border: Border.all(
+                color: _isHovered
+                    ? widget.color.withValues(alpha: 0.42)
+                    : const Color(0xFFE2E8F0),
+                width: _isHovered ? 1.3 : 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: _isHovered
+                      ? widget.color.withValues(alpha: 0.20)
+                      : Colors.black.withValues(alpha: 0.055),
+                  blurRadius: _isHovered ? 28 : 16,
+                  spreadRadius: _isHovered ? 1 : 0,
+                  offset: Offset(0, _isHovered ? 12 : 7),
+                ),
+              ],
+            ),
+            child: Stack(
+              children: [
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 320),
+                  curve: Curves.easeOutCubic,
+                  right: _isHovered ? -20 : -30,
+                  bottom: _isHovered ? -34 : -42,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 320),
+                    width: _isHovered ? 112 : 100,
+                    height: _isHovered ? 112 : 100,
+                    decoration: BoxDecoration(
+                      color: widget.color.withValues(
+                        alpha: _isHovered ? 0.10 : 0.065,
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 350),
+                  curve: Curves.easeOutCubic,
+                  right: _isHovered ? 64 : 55,
+                  bottom: _isHovered ? 14 : 7,
+                  child: Container(
+                    width: 9,
+                    height: 9,
+                    decoration: BoxDecoration(
+                      color: widget.color.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    width: _isHovered ? 5 : 4,
+                    decoration: BoxDecoration(
+                      color: widget.color,
+                      borderRadius: const BorderRadius.only(
+                        topRight: Radius.circular(8),
+                        bottomRight: Radius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned.fill(
+                  child: widget.childBuilder(context, _isHovered),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
+    );
+  }
+}
+
+class _ZdAnimatedStatIcon extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final bool isHovered;
+
+  const _ZdAnimatedStatIcon({
+    required this.icon,
+    required this.color,
+    required this.isHovered,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedRotation(
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutBack,
+      turns: isHovered ? 0.035 : 0,
+      child: AnimatedScale(
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutBack,
+        scale: isHovered ? 1.10 : 1,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          width: 33,
+          height: 33,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: isHovered ? 0.17 : 0.10),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: color.withValues(alpha: isHovered ? 0.36 : 0.18),
+            ),
+          ),
+          child: Icon(icon, color: color, size: 18),
+        ),
+      ),
+    );
+  }
+}
+
+class _ZdAnimatedProgressBar extends StatelessWidget {
+  final double progress;
+  final Color color;
+
+  const _ZdAnimatedProgressBar({required this.progress, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final safeProgress = progress.clamp(0.0, 1.0).toDouble();
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: safeProgress),
+      duration: const Duration(milliseconds: 850),
+      curve: Curves.easeOutCubic,
+      builder: (context, animatedValue, child) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: LinearProgressIndicator(
+            value: animatedValue,
+            minHeight: 5,
+            backgroundColor: const Color(0xFFE2E8F0),
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
+        );
+      },
     );
   }
 }
@@ -1993,112 +2243,223 @@ class _ZdBranchGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final visibleBranches =
-        branches.where((row) {
+    final normalizedQuery = query.trim().toLowerCase();
+
+    final visibleBranches = branches
+        .where((row) {
           final branchName = _zdString(row['branch_name']);
-          final selected =
+          final branchKey = _zdKey(branchName);
+          final matchesSelected =
               selectedBranch == 'ALL' || branchName == selectedBranch;
           final matchesSearch =
-              query.trim().isEmpty ||
-              branchName.toLowerCase().contains(query.trim().toLowerCase());
-          final orderedToday = submissions.containsKey(_zdKey(branchName));
-          return selected && matchesSearch && orderedToday;
-        }).toList()..sort(
-          (left, right) => _zdString(left['branch_name'])
-              .toLowerCase()
-              .compareTo(_zdString(right['branch_name']).toLowerCase()),
-        );
+              normalizedQuery.isEmpty ||
+              branchName.toLowerCase().contains(normalizedQuery);
+          final orderedToday = submissions.containsKey(branchKey);
+
+          return matchesSelected && matchesSearch && orderedToday;
+        })
+        .toList(growable: false);
+
+    visibleBranches.sort((left, right) {
+      final leftName = _zdString(left['branch_name']);
+      final rightName = _zdString(right['branch_name']);
+      final leftTime = _submissionTime(leftName);
+      final rightTime = _submissionTime(rightName);
+
+      if (leftTime != null && rightTime != null) {
+        final byTime = leftTime.compareTo(rightTime);
+        if (byTime != 0) return byTime;
+      } else if (leftTime != null) {
+        return -1;
+      } else if (rightTime != null) {
+        return 1;
+      }
+
+      return leftName.toLowerCase().compareTo(rightName.toLowerCase());
+    });
+
+    final submittedCount = visibleBranches.where((row) {
+      return submissions.containsKey(_zdKey(row['branch_name']));
+    }).length;
+    final waitingCount = visibleBranches.length - submittedCount;
 
     return Container(
-      padding: EdgeInsets.all(15),
+      margin: const EdgeInsets.only(left: 10),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: _zdSurface,
-        border: Border.all(color: _zdBorder),
-        borderRadius: BorderRadius.circular(13),
-
+        color: const Color(0xFFF4F9FC),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFDCEAF2)),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF0F172A).withValues(alpha: 0.045),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
+            color: Colors.black.withValues(alpha: 0.035),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            height: 25,
-            child: Row(
-              children: [
-                const Text(
-                  'Branches Ordering Today',
-                  style: TextStyle(
-                    color: _zdText,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.2,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                _ZdCountBadge(count: visibleBranches.length),
-              ],
-            ),
+          _ZdBranchGridHeader(
+            totalCount: visibleBranches.length,
+            submittedCount: submittedCount,
+            waitingCount: waitingCount,
           ),
-          const SizedBox(height: 10),
           Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final columns = constraints.maxWidth >= 470 ? 2 : 1;
+            child: visibleBranches.isEmpty
+                ? const _ZdEmptyBranches()
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      final crossAxisCount = constraints.maxWidth < 400 ? 1 : 2;
 
-                if (visibleBranches.isEmpty) {
-                  return const _ZdEmptyBranches();
-                }
-
-                return Scrollbar(
-                  child: GridView.builder(
-                    padding: const EdgeInsets.only(right: 5, bottom: 4),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: columns,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                      mainAxisExtent: 145,
-                    ),
-                    itemCount: visibleBranches.length,
-                    itemBuilder: (context, index) {
-                      final branchName = _zdString(
-                        visibleBranches[index]['branch_name'],
-                      );
-                      final branchKey = _zdKey(branchName);
-                      final submitted = submissions.containsKey(branchKey);
-
-                      final editCount = edits.where((row) {
-                        return _zdKey(row['branch_name']) == branchKey;
-                      }).length;
-
-                      final additionalCount = additional.where((row) {
-                        return _zdKey(row['branch_name']) == branchKey;
-                      }).length;
-
-                      return _ZdBranchCard(
-                        branch: branchName,
-                        submitted: submitted,
-                        editCount: editCount,
-                        additionalCount: additionalCount,
-                        deadlineHour:
-                            int.tryParse(
-                              _zdString(
-                                visibleBranches[index]['submit_end_hour'],
+                      return Scrollbar(
+                        child: GridView.builder(
+                          clipBehavior: Clip.none,
+                          physics: const BouncingScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: crossAxisCount,
+                                mainAxisSpacing: 12,
+                                crossAxisSpacing: 12,
+                                mainAxisExtent: 142,
                               ),
-                            ) ??
-                            24,
-                        onTap: () => onOpen(branchName),
+                          itemCount: visibleBranches.length,
+                          itemBuilder: (context, index) {
+                            final branchRow = visibleBranches[index];
+                            final branchName = _zdString(
+                              branchRow['branch_name'],
+                            );
+                            final branchKey = _zdKey(branchName);
+                            final isSubmitted = submissions.containsKey(
+                              branchKey,
+                            );
+                            final isSelected =
+                                selectedBranch != 'ALL' &&
+                                _zdKey(selectedBranch) == branchKey;
+
+                            final editCount = edits.where((row) {
+                              return _zdKey(row['branch_name']) == branchKey;
+                            }).length;
+
+                            final additionalCount = additional.where((row) {
+                              return _zdKey(row['branch_name']) == branchKey;
+                            }).length;
+
+                            final deadlineHour =
+                                int.tryParse(
+                                  _zdString(branchRow['submit_end_hour']),
+                                ) ??
+                                24;
+
+                            final submittedAt = _submissionTime(branchName);
+
+                            return _ZdBranchCard(
+                              key: ValueKey(branchKey),
+                              branch: branchName,
+                              isSubmitted: isSubmitted,
+                              isSelected: isSelected,
+                              editCount: editCount,
+                              additionalCount: additionalCount,
+                              deadlineHour: deadlineHour,
+                              submittedTime: submittedAt == null
+                                  ? null
+                                  : _formatSubmissionTime(submittedAt),
+                              onTap: () => onOpen(branchName),
+                            );
+                          },
+                        ),
                       );
                     },
                   ),
-                );
-              },
-            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  DateTime? _submissionTime(String branchName) {
+    final submission = submissions[_zdKey(branchName)];
+    if (submission == null) return null;
+
+    final rawValue = _zdString(submission['submitted_at']);
+    if (rawValue.isEmpty) return null;
+
+    return DateTime.tryParse(rawValue)?.toLocal();
+  }
+
+  String _formatSubmissionTime(DateTime value) {
+    final hour = value.hour;
+    final minute = value.minute.toString().padLeft(2, '0');
+    final period = hour >= 12 ? 'PM' : 'AM';
+    final displayHour = hour % 12 == 0 ? 12 : hour % 12;
+
+    return '$displayHour:$minute $period';
+  }
+}
+
+class _ZdBranchGridHeader extends StatelessWidget {
+  final int totalCount;
+  final int submittedCount;
+  final int waitingCount;
+
+  const _ZdBranchGridHeader({
+    required this.totalCount,
+    required this.submittedCount,
+    required this.waitingCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 13),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFFE9F6FC), Color(0xFFF8FCFE)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Column(
+        children: [
+          const Row(
+            children: [
+              _ZdBranchHeaderIcon(),
+              SizedBox(width: 11),
+              Expanded(
+                child: Text(
+                  'Branches Ordering Today',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.secondaryColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _ZdBranchHeaderCounter(
+                label: 'Total',
+                value: totalCount,
+                color: AppColors.primaryColor,
+              ),
+              const SizedBox(width: 8),
+              _ZdBranchHeaderCounter(
+                label: 'Submitted',
+                value: submittedCount,
+                color: const Color(0xFF10B981),
+              ),
+              const SizedBox(width: 8),
+              _ZdBranchHeaderCounter(
+                label: 'Waiting',
+                value: waitingCount,
+                color: const Color(0xFFF59E0B),
+              ),
+            ],
           ),
         ],
       ),
@@ -2106,20 +2467,96 @@ class _ZdBranchGrid extends StatelessWidget {
   }
 }
 
+class _ZdBranchHeaderIcon extends StatelessWidget {
+  const _ZdBranchHeaderIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 39,
+      height: 39,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: AppColors.primaryColor.withValues(alpha: 0.11),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: const Icon(
+        Icons.storefront_rounded,
+        size: 21,
+        color: AppColors.primaryColor,
+      ),
+    );
+  }
+}
+
+class _ZdBranchHeaderCounter extends StatelessWidget {
+  final String label;
+  final int value;
+  final Color color;
+
+  const _ZdBranchHeaderCounter({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.82),
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: color.withValues(alpha: 0.13)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                '$label $value',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF475569),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ZdBranchCard extends StatefulWidget {
   final String branch;
-  final bool submitted;
+  final bool isSubmitted;
+  final bool isSelected;
   final int editCount;
   final int additionalCount;
   final int deadlineHour;
+  final String? submittedTime;
   final VoidCallback onTap;
 
   const _ZdBranchCard({
+    super.key,
     required this.branch,
-    required this.submitted,
+    required this.isSubmitted,
+    required this.isSelected,
     required this.editCount,
     required this.additionalCount,
     required this.deadlineHour,
+    required this.submittedTime,
     required this.onTap,
   });
 
@@ -2128,128 +2565,145 @@ class _ZdBranchCard extends StatefulWidget {
 }
 
 class _ZdBranchCardState extends State<_ZdBranchCard> {
-  bool _hovered = false;
+  bool _isHovered = false;
+
+  Color get _accentColor {
+    if (widget.isSelected) return Colors.white;
+    if (widget.isSubmitted) return const Color(0xFF10B981);
+    return const Color(0xFFF59E0B);
+  }
+
+  void _changeHover(bool value) {
+    if (_isHovered == value) return;
+    setState(() => _isHovered = value);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final submitted = widget.submitted;
-
     return MouseRegion(
       cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 170),
-        transform: Matrix4.translationValues(0, _hovered ? -2 : 0, 0),
-        decoration: BoxDecoration(
-          gradient: submitted
-              ? const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [_zdGreenSoft, _zdGreenCard],
-                )
-              : null,
-          color: submitted ? null : _zdSurface,
-          borderRadius: BorderRadius.circular(11),
-          border: Border.all(
-            color: submitted
-                ? _zdGreenBorder
-                : (_hovered ? _zdBorderStrong : _zdBorder),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: submitted
-                  ? _zdGreen.withValues(alpha: _hovered ? 0.16 : 0.09)
-                  : const Color(
-                      0xFF0F172A,
-                    ).withValues(alpha: _hovered ? 0.09 : 0.045),
-              blurRadius: _hovered ? 16 : 9,
-              offset: Offset(0, _hovered ? 6 : 3),
-            ),
-          ],
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: widget.onTap,
-            borderRadius: BorderRadius.circular(11),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(13, 12, 12, 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 32,
-                        height: 32,
+      onEnter: (_) => _changeHover(true),
+      onExit: (_) => _changeHover(false),
+      child: AnimatedSlide(
+        duration: const Duration(milliseconds: 230),
+        curve: Curves.easeOutCubic,
+        offset: _isHovered ? const Offset(0, -0.035) : Offset.zero,
+        child: AnimatedScale(
+          duration: const Duration(milliseconds: 230),
+          curve: Curves.easeOutCubic,
+          scale: _isHovered ? 1.018 : 1,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: widget.onTap,
+              borderRadius: BorderRadius.circular(17),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 230),
+                curve: Curves.easeOutCubic,
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  gradient: _cardGradient(),
+                  borderRadius: BorderRadius.circular(17),
+                  border: Border.all(
+                    color: _borderColor(),
+                    width: _isHovered ? 1.4 : 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _shadowColor(),
+                      blurRadius: _isHovered ? 24 : 12,
+                      spreadRadius: _isHovered ? 1 : 0,
+                      offset: Offset(0, _isHovered ? 10 : 5),
+                    ),
+                  ],
+                ),
+                child: Stack(
+                  children: [
+                    _ZdBranchBackgroundDecoration(
+                      color: _accentColor,
+                      isHovered: _isHovered,
+                    ),
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 230),
+                        width: _isHovered ? 5 : 4,
                         decoration: BoxDecoration(
-                          color: submitted
-                              ? const Color(0xFFCCFBF1)
-                              : const Color(0xFFF1F5F9),
-                          border: Border.all(
-                            color: submitted ? _zdGreenBorder : _zdBorder,
+                          color: _accentColor,
+                          borderRadius: const BorderRadius.only(
+                            topRight: Radius.circular(8),
+                            bottomRight: Radius.circular(8),
                           ),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(
-                          submitted
-                              ? Icons.check_circle_outline_rounded
-                              : Icons.storefront_outlined,
-                          size: 17,
-                          color: submitted ? _zdGreen : _zdTextSubtle,
                         ),
                       ),
-                      const Spacer(),
-                      if (widget.additionalCount > 0)
-                        _ZdMiniBadge(
-                          text: '${widget.additionalCount} ADD',
-                          color: _zdRed,
-                          background: _zdRedSoft,
-                          border: _zdRedBorder,
-                        ),
-                      if (widget.additionalCount > 0 && widget.editCount > 0)
-                        const SizedBox(width: 5),
-                      if (widget.editCount > 0)
-                        _ZdMiniBadge(
-                          text: '${widget.editCount} EDITS',
-                          color: _zdOrange,
-                          background: _zdOrangeSoft,
-                          border: _zdOrangeBorder,
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 13),
-                  Text(
-                    widget.branch,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: submitted ? _zdGreenDark : _zdText,
-                      fontSize: 14,
-                      height: 1,
-                      fontWeight: FontWeight.w900,
                     ),
-                  ),
-                  const SizedBox(height: 7),
-                  Text(
-                    submitted ? 'ORDER SUBMITTED' : 'WAITING SUBMISSION',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: submitted ? _zdGreen : _zdTextMuted,
-                      fontSize: 10.5,
-                      height: 1,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 0.45,
+                    Positioned.fill(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 13, 13, 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _ZdBranchStatusIcon(
+                                  isSubmitted: widget.isSubmitted,
+                                  isSelected: widget.isSelected,
+                                  isHovered: _isHovered,
+                                ),
+                                const Spacer(),
+                                if (widget.additionalCount > 0)
+                                  _ZdBranchBadge(
+                                    icon: Icons.add_rounded,
+                                    text: '${widget.additionalCount} req',
+                                    color: const Color(0xFFF43F5E),
+                                    isSelected: widget.isSelected,
+                                  ),
+                                if (widget.additionalCount > 0 &&
+                                    widget.editCount > 0)
+                                  const SizedBox(width: 5),
+                                if (widget.editCount > 0)
+                                  _ZdBranchBadge(
+                                    icon: Icons.edit_rounded,
+                                    text: '${widget.editCount} edits',
+                                    color: const Color(0xFFFF8A24),
+                                    isSelected: widget.isSelected,
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              widget.branch,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w900,
+                                color: widget.isSelected
+                                    ? Colors.white
+                                    : AppColors.secondaryColor,
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            _ZdBranchStatusLabel(
+                              isSubmitted: widget.isSubmitted,
+                              isSelected: widget.isSelected,
+                              submittedTime: widget.submittedTime,
+                            ),
+                            const Spacer(),
+                            _ZdBranchDeadlinePill(
+                              hour: widget.deadlineHour,
+                              isSelected: widget.isSelected,
+                              isSubmitted: widget.isSubmitted,
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
-                  const Spacer(),
-                  _ZdDeadlinePill(
-                    hour: widget.deadlineHour,
-                    submitted: submitted,
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -2257,38 +2711,292 @@ class _ZdBranchCardState extends State<_ZdBranchCard> {
       ),
     );
   }
+
+  LinearGradient _cardGradient() {
+    if (widget.isSelected) {
+      return const LinearGradient(
+        colors: [Color(0xFF4A74F5), Color(0xFF3155D9)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      );
+    }
+
+    if (widget.isSubmitted) {
+      return LinearGradient(
+        colors: [
+          Colors.white,
+          const Color(0xFFECFDF5).withValues(alpha: _isHovered ? 1 : 0.82),
+        ],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      );
+    }
+
+    return LinearGradient(
+      colors: [
+        Colors.white,
+        const Color(0xFFFFFBEB).withValues(alpha: _isHovered ? 1 : 0.75),
+      ],
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+    );
+  }
+
+  Color _borderColor() {
+    if (widget.isSelected) return const Color(0xFF3155D9);
+    return _accentColor.withValues(alpha: _isHovered ? 0.42 : 0.18);
+  }
+
+  Color _shadowColor() {
+    if (widget.isSelected) {
+      return const Color(
+        0xFF3155D9,
+      ).withValues(alpha: _isHovered ? 0.28 : 0.15);
+    }
+
+    return _accentColor.withValues(alpha: _isHovered ? 0.20 : 0.08);
+  }
 }
 
-class _ZdDeadlinePill extends StatelessWidget {
-  final int hour;
-  final bool submitted;
+class _ZdBranchBackgroundDecoration extends StatelessWidget {
+  final Color color;
+  final bool isHovered;
 
-  const _ZdDeadlinePill({required this.hour, required this.submitted});
+  const _ZdBranchBackgroundDecoration({
+    required this.color,
+    required this.isHovered,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final color = submitted ? _zdGreenDark : _zdAmber;
-    final background = submitted ? _zdGreenCard : _zdAmberSoft;
-    final border = submitted ? _zdGreenBorder : _zdAmberBorder;
+    return Stack(
+      children: [
+        AnimatedPositioned(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+          right: isHovered ? -23 : -32,
+          bottom: isHovered ? -38 : -45,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            width: isHovered ? 105 : 92,
+            height: isHovered ? 105 : 92,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: isHovered ? 0.10 : 0.06),
+              shape: BoxShape.circle,
+            ),
+          ),
+        ),
+        AnimatedPositioned(
+          duration: const Duration(milliseconds: 340),
+          curve: Curves.easeOutCubic,
+          right: isHovered ? 56 : 49,
+          bottom: isHovered ? 15 : 10,
+          child: Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
 
+class _ZdBranchStatusIcon extends StatelessWidget {
+  final bool isSubmitted;
+  final bool isSelected;
+  final bool isHovered;
+
+  const _ZdBranchStatusIcon({
+    required this.isSubmitted,
+    required this.isSelected,
+    required this.isHovered,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isSelected
+        ? Colors.white
+        : isSubmitted
+        ? const Color(0xFF10B981)
+        : const Color(0xFFF59E0B);
+
+    return AnimatedScale(
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutBack,
+      scale: isHovered ? 1.10 : 1,
+      child: AnimatedRotation(
+        duration: const Duration(milliseconds: 240),
+        turns: isHovered ? 0.025 : 0,
+        child: Container(
+          width: 31,
+          height: 31,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: isSelected
+                ? Colors.white.withValues(alpha: 0.18)
+                : color.withValues(alpha: 0.11),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSelected
+                  ? Colors.white.withValues(alpha: 0.20)
+                  : color.withValues(alpha: 0.16),
+            ),
+          ),
+          child: Icon(
+            isSubmitted ? Icons.check_rounded : Icons.storefront_rounded,
+            color: color,
+            size: 18,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ZdBranchStatusLabel extends StatelessWidget {
+  final bool isSubmitted;
+  final bool isSelected;
+  final String? submittedTime;
+
+  const _ZdBranchStatusLabel({
+    required this.isSubmitted,
+    required this.isSelected,
+    required this.submittedTime,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final label = isSubmitted
+        ? submittedTime == null
+              ? 'Order submitted'
+              : 'Submitted at $submittedTime'
+        : 'Waiting for submission';
+
+    final color = isSelected
+        ? Colors.white.withValues(alpha: 0.78)
+        : isSubmitted
+        ? const Color(0xFF059669)
+        : const Color(0xFFB45309);
+
+    return Row(
+      children: [
+        Container(
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ZdBranchBadge extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final Color color;
+  final bool isSelected;
+
+  const _ZdBranchBadge({
+    required this.icon,
+    required this.text,
+    required this.color,
+    required this.isSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
       decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(99),
-        border: Border.all(color: border.withValues(alpha: .72)),
+        color: isSelected ? Colors.white.withValues(alpha: 0.18) : color,
+        borderRadius: BorderRadius.circular(999),
+        border: isSelected
+            ? Border.all(color: Colors.white.withValues(alpha: 0.18))
+            : null,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.schedule_rounded, size: 12, color: color),
-          const SizedBox(width: 5),
+          Icon(icon, size: 10, color: Colors.white),
+          const SizedBox(width: 3),
+          Text(
+            text,
+            style: const TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ZdBranchDeadlinePill extends StatelessWidget {
+  final int hour;
+  final bool isSelected;
+  final bool isSubmitted;
+
+  const _ZdBranchDeadlinePill({
+    required this.hour,
+    required this.isSelected,
+    required this.isSubmitted,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor = isSelected
+        ? Colors.white
+        : isSubmitted
+        ? const Color(0xFF047857)
+        : const Color(0xFF92400E);
+
+    final backgroundColor = isSelected
+        ? Colors.white.withValues(alpha: 0.17)
+        : isSubmitted
+        ? const Color(0xFFD1FAE5)
+        : const Color(0xFFFEF3C7);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: isSelected
+              ? Colors.white.withValues(alpha: 0.20)
+              : textColor.withValues(alpha: 0.10),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.schedule_rounded, size: 13, color: textColor),
+          const SizedBox(width: 4),
           Text(
             'Deadline ${_formatHour(hour)}',
             style: TextStyle(
-              color: color,
-              fontSize: 10,
-              fontWeight: FontWeight.w900,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+              color: textColor,
             ),
           ),
         ],
@@ -2298,73 +3006,12 @@ class _ZdDeadlinePill extends StatelessWidget {
 
   static String _formatHour(int hour) {
     if (hour >= 24) return '12:00 AM';
-    final normalized = hour.clamp(0, 23);
-    final period = normalized >= 12 ? 'PM' : 'AM';
-    final display = normalized % 12 == 0 ? 12 : normalized % 12;
-    return '$display:00 $period';
-  }
-}
 
-class _ZdCountBadge extends StatelessWidget {
-  final int count;
+    final normalizedHour = hour.clamp(0, 23);
+    final period = normalizedHour >= 12 ? 'PM' : 'AM';
+    final displayHour = normalizedHour % 12 == 0 ? 12 : normalizedHour % 12;
 
-  const _ZdCountBadge({required this.count});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: _zdSurfaceSoft,
-        border: Border.all(color: _zdBorder),
-        borderRadius: BorderRadius.circular(99),
-      ),
-      child: Text(
-        '$count',
-        style: const TextStyle(
-          color: _zdTextSubtle,
-          fontSize: 11,
-          height: 1,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-    );
-  }
-}
-
-class _ZdMiniBadge extends StatelessWidget {
-  final String text;
-  final Color color;
-  final Color background;
-  final Color border;
-
-  const _ZdMiniBadge({
-    required this.text,
-    required this.color,
-    required this.background,
-    required this.border,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-        color: background,
-        border: Border.all(color: border),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: color,
-          fontSize: 9.5,
-          height: 1,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 0.25,
-        ),
-      ),
-    );
+    return '$displayHour:00 $period';
   }
 }
 
@@ -2373,22 +3020,71 @@ class _ZdEmptyBranches extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: _zdSurface,
-        border: Border.all(color: _zdBorder),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: const Center(
-        child: Text(
-          'No branches have submitted an order today.',
-          style: TextStyle(
-            color: _zdTextMuted,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-          ),
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.all(18),
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.88),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFDCEAF2)),
+          boxShadow: [
+            BoxShadow(
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+              color: Colors.black.withValues(alpha: 0.05),
+            ),
+          ],
         ),
+        child: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _ZdEmptyBranchesIcon(),
+            SizedBox(height: 14),
+            Text(
+              'No Branches Ordering Today',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+                color: AppColors.secondaryColor,
+              ),
+            ),
+            SizedBox(height: 7),
+            Text(
+              'No branch orders match the selected filters.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.4,
+                color: Color(0xFF64748B),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ZdEmptyBranchesIcon extends StatelessWidget {
+  const _ZdEmptyBranchesIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 50,
+      height: 50,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: const Color(0xFFE0F2FE),
+        borderRadius: BorderRadius.circular(15),
+      ),
+      child: const Icon(
+        Icons.event_available_rounded,
+        color: AppColors.primaryColor,
+        size: 26,
       ),
     );
   }
