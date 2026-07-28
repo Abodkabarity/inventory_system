@@ -19,6 +19,8 @@ extension _ZoneOrderEditsPageView on _ZoneManagerPageState {
       accent: const Color(0xff2563EB),
       rows: rows,
       columns: columns,
+      searchController: _search,
+      onSearchChanged: _onSearchChanged,
       kpis: [
         _ReportKpi(
           Icons.edit_note_rounded,

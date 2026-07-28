@@ -2,8 +2,10 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../domain/entities/store_order_item.dart';
+import 'store_branch_identity_registry.dart';
 
 class PrintService {
   static Future<void> printOrders({
@@ -11,11 +13,13 @@ class PrintService {
     required List<StoreOrderItem> items,
     required bool isGeneral,
   }) async {
+    await StoreBranchIdentityRegistry.load(Supabase.instance.client);
+
     final pdf = pw.Document();
 
     final filtered = items.where((e) {
       final qty = e.quantity;
-      final cls = (e.classification ?? '').toLowerCase().trim();
+      final cls = e.classification.toLowerCase().trim();
 
       if (qty <= 0) return false;
 
@@ -115,10 +119,7 @@ class PrintService {
       child: pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
-          pw.Text(
-            branch,
-            style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
-          ),
+          _printedBranchHeading(branch),
 
           pw.Text(
             "${date.day}/${date.month}/${date.year}",
@@ -126,6 +127,38 @@ class PrintService {
           ),
         ],
       ),
+    );
+  }
+
+  static pw.Widget _printedBranchHeading(String branch) {
+    final is71 = StoreBranchIdentityRegistry.isSeventyOne(branch);
+    return pw.Row(
+      mainAxisSize: pw.MainAxisSize.min,
+      children: [
+        pw.Text(
+          branch,
+          style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+        ),
+        if (is71) ...[
+          pw.SizedBox(width: 7),
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            decoration: pw.BoxDecoration(
+              color: PdfColors.orange100,
+              border: pw.Border.all(color: PdfColors.deepOrange400, width: 0.8),
+              borderRadius: pw.BorderRadius.circular(4),
+            ),
+            child: pw.Text(
+              '71 BRANCH',
+              style: pw.TextStyle(
+                color: PdfColors.deepOrange800,
+                fontSize: 9,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 

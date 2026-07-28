@@ -66,7 +66,6 @@ extension _ZoneStockCheckPageView on _ZoneManagerPageState {
         )
         .toList(growable: false);
     const columns = [
-      _ColumnDef('title', 'Project'),
       _ColumnDef('branch_name', 'Branch'),
       _ColumnDef('item_code', 'Item Code'),
       _ColumnDef('item_name', 'Item Name'),
@@ -95,6 +94,9 @@ extension _ZoneStockCheckPageView on _ZoneManagerPageState {
       accent: const Color(0xff0EA5E9),
       rows: tableRows,
       columns: columns,
+      searchController: _search,
+      onSearchChanged: _onSearchChanged,
+      searchHint: 'Search branch, item code, item name, status, or user…',
       kpis: [
         _ReportKpi(
           Icons.folder_copy_outlined,
@@ -131,20 +133,8 @@ extension _ZoneStockCheckPageView on _ZoneManagerPageState {
           icon: const Icon(Icons.arrow_back_rounded),
           label: const Text('Back to Projects'),
         ),
-        OutlinedButton.icon(
-          onPressed: entireProjectRows.isEmpty
-              ? null
-              : () => _exportStockChecks(
-                  entireProjectRows,
-                  'Stock_Check_${_safe(projectTitle)}_All_Branches',
-                ),
-          icon: const Icon(Icons.archive_outlined),
-          label: const Text('Download Full Project'),
-        ),
       ],
-      exportLabel: _selectedBranch == 'ALL'
-          ? 'Download Visible'
-          : 'Download Branch',
+      exportLabel: 'Download Project',
       onExport: () => _exportStockChecks(
         rows,
         _selectedBranch == 'ALL'
@@ -200,24 +190,7 @@ extension _ZoneStockCheckPageView on _ZoneManagerPageState {
               '${widget.zoneName} • ${_selectedBranch == 'ALL' ? 'All branches' : _selectedBranch} • Open a project to view its item details.',
           accent: const Color(0xff0EA5E9),
           metrics: const [],
-          actions: [
-            FilledButton.icon(
-              onPressed: branchRows.isEmpty
-                  ? null
-                  : () => _exportStockChecks(
-                      branchRows,
-                      _selectedBranch == 'ALL'
-                          ? 'Stock_Check_${_safe(widget.zoneName)}_All_Projects'
-                          : 'Stock_Check_${_safe(_selectedBranch)}_All_Projects',
-                    ),
-              icon: const Icon(Icons.download_rounded),
-              label: Text(
-                _selectedBranch == 'ALL'
-                    ? 'Download All Zone'
-                    : 'Download Branch Projects',
-              ),
-            ),
-          ],
+          actions: const [],
         ),
         const SizedBox(height: 10),
         _ReportKpiStrip(
@@ -252,17 +225,25 @@ extension _ZoneStockCheckPageView on _ZoneManagerPageState {
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
+        _ZoneTableToolbar(
+          controller: _search,
+          onChanged: _onSearchChanged,
+          accent: const Color(0xff0EA5E9),
+          resultCount: projects.length,
+          hintText: 'Search project, branch, item code, or item name…',
+        ),
+        const SizedBox(height: 10),
         Expanded(
           child: projects.isEmpty
               ? const _EmptyState(color: Color(0xff0EA5E9))
               : GridView.builder(
                   padding: const EdgeInsets.only(bottom: 8),
                   gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 430,
-                    mainAxisExtent: 238,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
+                    maxCrossAxisExtent: 500,
+                    mainAxisExtent: 272,
+                    crossAxisSpacing: 14,
+                    mainAxisSpacing: 14,
                   ),
                   itemCount: projects.length,
                   itemBuilder: (context, index) => _StockCheckProjectCard(
@@ -270,10 +251,6 @@ extension _ZoneStockCheckPageView on _ZoneManagerPageState {
                     onOpen: () => setState(
                       () =>
                           _selectedStockCheckBatchId = projects[index].batchId,
-                    ),
-                    onDownload: () => _exportStockChecks(
-                      projects[index].rows,
-                      'Stock_Check_${_safe(projects[index].title)}',
                     ),
                   ),
                 ),
@@ -304,139 +281,161 @@ class _StockCheckProjectSummary {
       );
 }
 
-class _StockCheckProjectCard extends StatelessWidget {
+class _StockCheckProjectCard extends StatefulWidget {
   final _StockCheckProjectSummary project;
-  final VoidCallback onOpen, onDownload;
+  final VoidCallback onOpen;
 
-  const _StockCheckProjectCard({
-    required this.project,
-    required this.onOpen,
-    required this.onDownload,
-  });
+  const _StockCheckProjectCard({required this.project, required this.onOpen});
+
+  @override
+  State<_StockCheckProjectCard> createState() => _StockCheckProjectCardState();
+}
+
+class _StockCheckProjectCardState extends State<_StockCheckProjectCard> {
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
+    final project = widget.project;
     final complete = project.pending == 0 && project.rows.isNotEmpty;
     final statusColor = complete
         ? const Color(0xff16A34A)
         : const Color(0xffF59E0B);
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.border),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xff0F2942).withValues(alpha: .055),
-            blurRadius: 18,
-            offset: const Offset(0, 7),
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        transform: Matrix4.translationValues(0, _hovered ? -4 : 0, 0),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: _hovered
+                ? const Color(0xff0EA5E9).withValues(alpha: .62)
+                : AppColors.border,
+            width: _hovered ? 1.5 : 1,
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: const Color(0xff0EA5E9).withValues(alpha: .11),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.folder_copy_outlined,
-                  color: Color(0xff0284C7),
-                ),
-              ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: .1),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  complete ? 'Completed' : 'In Progress',
-                  style: TextStyle(
-                    color: statusColor,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
+          boxShadow: [
+            BoxShadow(
+              color: const Color(
+                0xff0F2942,
+              ).withValues(alpha: _hovered ? .14 : .055),
+              blurRadius: _hovered ? 26 : 18,
+              offset: Offset(0, _hovered ? 11 : 7),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: const Color(0xff0EA5E9).withValues(alpha: .11),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.folder_copy_outlined,
+                    color: Color(0xff0284C7),
+                    size: 25,
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 11),
-          Text(
-            project.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppColors.secondaryColor,
-              fontSize: 15,
-              fontWeight: FontWeight.w900,
-              height: 1.2,
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: .1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    complete ? 'Completed' : 'In Progress',
+                    style: TextStyle(
+                      color: statusColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            '${project.branches.length} branch${project.branches.length == 1 ? '' : 'es'} • ${project.rows.length} items • ${DateFormat('dd MMM yyyy').format(project.sentAt.toLocal())}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: AppColors.subText, fontSize: 10.5),
-          ),
-          const SizedBox(height: 11),
-          Row(
-            children: [
-              _ProjectMiniMetric(
-                'Submitted',
-                project.submitted,
-                const Color(0xff16A34A),
+            const SizedBox(height: 14),
+            Text(
+              project.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.secondaryColor,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                height: 1.2,
               ),
-              _ProjectMiniMetric(
-                'Pending',
-                project.pending,
-                const Color(0xffF59E0B),
-              ),
-              _ProjectMiniMetric(
-                'Variance',
-                project.variances,
-                const Color(0xffEF4444),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: LinearProgressIndicator(
-              value: project.completion,
-              minHeight: 6,
-              backgroundColor: const Color(0xffE2E8F0),
-              color: statusColor,
             ),
-          ),
-          const Spacer(),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: onOpen,
-                  icon: const Icon(Icons.visibility_outlined, size: 18),
-                  label: const Text('Open Project'),
+            const SizedBox(height: 7),
+            Text(
+              '${project.branches.length} branch${project.branches.length == 1 ? '' : 'es'} • ${project.rows.length} items • ${DateFormat('dd MMM yyyy').format(project.sentAt.toLocal())}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.subText,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                _ProjectMiniMetric(
+                  'Submitted',
+                  project.submitted,
+                  const Color(0xff16A34A),
+                ),
+                _ProjectMiniMetric(
+                  'Pending',
+                  project.pending,
+                  const Color(0xffF59E0B),
+                ),
+                _ProjectMiniMetric(
+                  'Variance',
+                  project.variances,
+                  const Color(0xffEF4444),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: LinearProgressIndicator(
+                value: project.completion,
+                minHeight: 6,
+                backgroundColor: const Color(0xffE2E8F0),
+                color: statusColor,
+              ),
+            ),
+            const Spacer(),
+            SizedBox(
+              width: double.infinity,
+              height: 42,
+              child: FilledButton.icon(
+                onPressed: widget.onOpen,
+                icon: const Icon(Icons.visibility_outlined, size: 20),
+                label: const Text(
+                  'Open Project Details',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
                 ),
               ),
-              const SizedBox(width: 8),
-              IconButton.outlined(
-                onPressed: onDownload,
-                tooltip: 'Download project',
-                icon: const Icon(Icons.download_rounded, size: 19),
-              ),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -458,12 +457,16 @@ class _ProjectMiniMetric extends StatelessWidget {
           style: TextStyle(
             fontWeight: FontWeight.w900,
             color: color,
-            fontSize: 14,
+            fontSize: 17,
           ),
         ),
         Text(
           label,
-          style: const TextStyle(color: AppColors.subText, fontSize: 9),
+          style: const TextStyle(
+            color: AppColors.subText,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ],
     ),

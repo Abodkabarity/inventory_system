@@ -118,7 +118,7 @@ class _AdditionalOrderAnalysisPageState
     final result = await showDialog<DateTimeRange>(
       context: context,
       barrierColor: Colors.black26,
-      builder: (_) => _DateRangePickerDialog(
+      builder: (_) => AdditionalAnalysisDateRangePickerDialog(
         initialRange: DateTimeRange(start: _from, end: _to),
       ),
     );
@@ -1571,15 +1571,20 @@ class _TabDef {
 // DATE RANGE PICKER DIALOG  (unchanged — kept here for self-containment)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-class _DateRangePickerDialog extends StatefulWidget {
+class AdditionalAnalysisDateRangePickerDialog extends StatefulWidget {
   final DateTimeRange initialRange;
-  const _DateRangePickerDialog({required this.initialRange});
+  const AdditionalAnalysisDateRangePickerDialog({
+    super.key,
+    required this.initialRange,
+  });
 
   @override
-  State<_DateRangePickerDialog> createState() => _DateRangePickerDialogState();
+  State<AdditionalAnalysisDateRangePickerDialog> createState() =>
+      _DateRangePickerDialogState();
 }
 
-class _DateRangePickerDialogState extends State<_DateRangePickerDialog> {
+class _DateRangePickerDialogState
+    extends State<AdditionalAnalysisDateRangePickerDialog> {
   late DateTime _start;
   DateTime? _end;
   DateTime? _hoverDay;
@@ -1995,10 +2000,11 @@ class _DateRangePickerDialogState extends State<_DateRangePickerDialog> {
     }
 
     Color textColor = isFuture ? const Color(0xffCBD5E1) : _textPri;
-    if (isEdge)
+    if (isEdge) {
       textColor = Colors.white;
-    else if (inRange)
+    } else if (inRange) {
       textColor = _accent;
+    }
 
     return MouseRegion(
       onEnter: (_) => _onHover(day),

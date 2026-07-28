@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../widgets/store_branch_identity.dart';
+
 import '../../../core/theme/app_colors.dart';
 import '../../../data/datasources/remote/store_remote_ds.dart';
 import '../../../data/repositories/store_repository_impl.dart';
@@ -35,6 +37,7 @@ class _StoreShellPageState extends State<StoreShellPage> {
   @override
   void initState() {
     super.initState();
+    StoreBranchIdentityRegistry.load(Supabase.instance.client);
     _loadStoreStockCheckBadges();
     _stockCheckChannel = Supabase.instance.client
         .channel('store-stock-check-badges')

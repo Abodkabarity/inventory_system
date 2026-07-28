@@ -7,6 +7,7 @@ import '../../../domain/entities/product_movement.dart';
 import '../product_movement/bloc/product_movement_bloc.dart';
 import '../product_movement/bloc/product_movement_event.dart';
 import '../product_movement/bloc/product_movement_state.dart';
+import '../widgets/store_branch_identity.dart';
 
 class ProductMovementPage extends StatefulWidget {
   const ProductMovementPage({super.key});
@@ -375,14 +376,22 @@ class _BranchSelector extends StatelessWidget {
         child: Row(
           children: [
             Expanded(
-              child: Text(
-                state.selectedBranch ?? 'All Branches',
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xff102A43),
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
+              child: state.selectedBranch == null
+                  ? const Text(
+                      'All Branches',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Color(0xff102A43),
+                        fontWeight: FontWeight.w900,
+                      ),
+                    )
+                  : StoreBranchLabel(
+                      branchName: state.selectedBranch!,
+                      style: const TextStyle(
+                        color: Color(0xff102A43),
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
             ),
             const Icon(
               Icons.keyboard_arrow_down_rounded,
@@ -590,8 +599,8 @@ class _FilterChip extends StatelessWidget {
         children: [
           Icon(icon, size: 16, color: color),
           const SizedBox(width: 7),
-          Text(
-            label,
+          StoreBranchLabel(
+            branchName: label,
             style: TextStyle(
               color: color,
               fontWeight: FontWeight.w900,
@@ -784,9 +793,9 @@ class _MovementRow extends StatelessWidget {
           ),
           Expanded(
             flex: 2,
-            child: SelectableText(
-              row.branch,
-              //  overflow: TextOverflow.ellipsis,
+            child: StoreBranchLabel(
+              branchName: row.branch,
+              maxLines: 2,
               style: const TextStyle(
                 color: Color(0xff102A43),
                 fontWeight: FontWeight.w900,
@@ -1610,13 +1619,22 @@ Future<String?> _showBranchPicker({
                                       ),
                                       const SizedBox(width: 12),
                                       Expanded(
-                                        child: Text(
-                                          branch ?? 'All Branches',
-                                          style: const TextStyle(
-                                            color: Color(0xff102A43),
-                                            fontWeight: FontWeight.w900,
-                                          ),
-                                        ),
+                                        child: branch == null
+                                            ? const Text(
+                                                'All Branches',
+                                                style: TextStyle(
+                                                  color: Color(0xff102A43),
+                                                  fontWeight: FontWeight.w900,
+                                                ),
+                                              )
+                                            : StoreBranchLabel(
+                                                branchName: branch,
+                                                compactBadge: false,
+                                                style: const TextStyle(
+                                                  color: Color(0xff102A43),
+                                                  fontWeight: FontWeight.w900,
+                                                ),
+                                              ),
                                       ),
                                     ],
                                   ),

@@ -7,6 +7,7 @@ import '../bloc/store_bloc.dart';
 import '../bloc/store_event.dart';
 import '../bloc/store_state.dart';
 import 'order_panel.dart';
+import 'store_branch_identity.dart';
 
 class BranchGrid extends StatelessWidget {
   final List<String> branches;
@@ -215,8 +216,9 @@ class BranchGrid extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.center,
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text(
-                                branch,
+                              StoreBranchLabel(
+                                branchName: branch,
+                                mainAxisAlignment: MainAxisAlignment.center,
                                 style: TextStyle(
                                   fontWeight: FontWeight.w600,
                                   color: isSelected

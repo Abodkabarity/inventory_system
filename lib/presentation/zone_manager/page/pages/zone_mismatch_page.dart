@@ -21,6 +21,8 @@ extension _ZoneMismatchPageView on _ZoneManagerPageState {
       accent: const Color(0xffF97316),
       rows: rows,
       columns: columns,
+      searchController: _search,
+      onSearchChanged: _onSearchChanged,
       kpis: [
         _ReportKpi(
           Icons.inventory_2_outlined,

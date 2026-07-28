@@ -3,6 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../../data/models/transfer_report_row.dart';
+import '../../widgets/store_branch_identity.dart';
 
 class TransferReportGrid extends StatefulWidget {
   final List<TransferReportRow> rows;
@@ -269,7 +270,19 @@ class TransferReportDataSource extends DataGridSource {
           ),
         ),
 
-        _cell(row.getCells()[1].value),
+        Container(
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xffD6DCE5), width: 0.8),
+          ),
+          child: StoreBranchLabel(
+            branchName: row.getCells()[1].value.toString(),
+            mainAxisAlignment: MainAxisAlignment.center,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+          ),
+        ),
         _cell(row.getCells()[2].value),
         _cell(row.getCells()[3].value),
         _cell(row.getCells()[4].value, alignment: Alignment.centerLeft),

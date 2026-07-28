@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../domain/entities/additional_request_group.dart';
 import 'additional_request_dialog.dart';
+import 'store_branch_identity.dart';
 
 class AdditionalRequestTile extends StatelessWidget {
   final AdditionalRequestGroup request;
@@ -46,15 +47,23 @@ class AdditionalRequestTile extends StatelessWidget {
       color: isUrgent ? Colors.red.shade50 : AppColors.white,
       margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
       child: ListTile(
-        title: Text(
-          request.sourceTable == 'additional_order_inventory'
-              ? 'Additional Order - From Inventory'
-              : "${request.branchName} Additional Order",
-          style: TextStyle(
-            color: AppColors.secondaryColor,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        title: request.sourceTable == 'additional_order_inventory'
+            ? Text(
+                'Additional Order - From Inventory',
+                style: TextStyle(
+                  color: AppColors.secondaryColor,
+                  fontWeight: FontWeight.bold,
+                ),
+              )
+            : StoreBranchLabel(
+                branchName: request.branchName,
+                suffix: 'Additional Order',
+                compactBadge: false,
+                style: TextStyle(
+                  color: AppColors.secondaryColor,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
         subtitle: Text(
           _formatDate(request.createdAt),
           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),

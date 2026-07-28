@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/print_service.dart';
 import '../../../domain/entities/store_order_item.dart';
+import 'store_branch_identity.dart';
 
 class OrdersPanel extends StatelessWidget {
   final List<StoreOrderItem> items;
@@ -41,13 +42,27 @@ class OrdersPanel extends StatelessWidget {
               children: [
                 const Spacer(),
 
-                Text(
-                  "Branch: $branch",
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.secondaryColor,
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Branch: ',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.secondaryColor,
+                      ),
+                    ),
+                    StoreBranchLabel(
+                      branchName: branch!,
+                      compactBadge: false,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.secondaryColor,
+                      ),
+                    ),
+                  ],
                 ),
 
                 const Spacer(),

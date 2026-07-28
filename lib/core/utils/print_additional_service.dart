@@ -1,11 +1,16 @@
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'store_branch_identity_registry.dart';
 
 class PrintAdditionalService {
   static Future<void> printBatch(
     Map<String, List<Map<String, dynamic>>> batch,
   ) async {
+    await StoreBranchIdentityRegistry.load(Supabase.instance.client);
+
     final pdf = pw.Document();
     var hasPrintableContent = false;
 
@@ -174,7 +179,7 @@ class PrintAdditionalService {
                 ? const pw.BoxDecoration(color: PdfColors.red50)
                 : null,
             children: [
-              _cell(_string(e['branch_name']), align: pw.TextAlign.left),
+              _branchCell(_string(e['branch_name'])),
               _cell(_qty(e), bold: true),
               _cell(
                 urgent ? 'URGENT - $itemName' : itemName,
@@ -307,6 +312,46 @@ class PrintAdditionalService {
           fontSize: 10,
           color: color,
           fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+        ),
+      ),
+    );
+  }
+
+  static pw.Widget _branchCell(String branchName) {
+    final is71 = StoreBranchIdentityRegistry.isSeventyOne(branchName);
+    return pw.Padding(
+      padding: const pw.EdgeInsets.all(6),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.center,
+        children: [
+          pw.Expanded(
+            child: pw.Text(
+              branchName,
+              maxLines: 2,
+              overflow: pw.TextOverflow.clip,
+              style: const pw.TextStyle(fontSize: 10),
+            ),
+          ),
+          if (is71) ...[pw.SizedBox(width: 5), _printed71Badge()],
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _printed71Badge() {
+    return pw.Container(
+      padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.orange100,
+        border: pw.Border.all(color: PdfColors.deepOrange400, width: 0.7),
+        borderRadius: pw.BorderRadius.circular(3),
+      ),
+      child: pw.Text(
+        '71',
+        style: pw.TextStyle(
+          color: PdfColors.deepOrange800,
+          fontSize: 8,
+          fontWeight: pw.FontWeight.bold,
         ),
       ),
     );

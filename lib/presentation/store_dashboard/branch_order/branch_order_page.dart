@@ -8,6 +8,7 @@ import '../../../core/utils/branch_order_excel_exporter.dart';
 import 'bloc/branch_order_bloc.dart';
 import 'bloc/branch_order_event.dart';
 import 'bloc/branch_order_state.dart';
+import '../widgets/store_branch_identity.dart';
 
 class BranchOrderPage extends StatefulWidget {
   const BranchOrderPage({super.key});
@@ -252,16 +253,22 @@ class _Filters extends StatelessWidget {
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        state.selectedBranch ?? 'Select Branch',
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: state.selectedBranch == null
-                              ? const Color(0xff94A3B8)
-                              : const Color(0xff102A43),
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
+                      child: state.selectedBranch == null
+                          ? const Text(
+                              'Select Branch',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Color(0xff94A3B8),
+                                fontWeight: FontWeight.w900,
+                              ),
+                            )
+                          : StoreBranchLabel(
+                              branchName: state.selectedBranch!,
+                              style: const TextStyle(
+                                color: Color(0xff102A43),
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
                     ),
                     const Icon(
                       Icons.keyboard_arrow_down_rounded,
@@ -825,8 +832,9 @@ Future<String?> _showBranchPicker({
                                       ),
                                       const SizedBox(width: 12),
                                       Expanded(
-                                        child: Text(
-                                          branch,
+                                        child: StoreBranchLabel(
+                                          branchName: branch,
+                                          compactBadge: false,
                                           style: const TextStyle(
                                             color: Color(0xff102A43),
                                             fontWeight: FontWeight.w900,

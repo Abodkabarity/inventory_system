@@ -98,7 +98,16 @@ extension _ZoneDailyOrderPageView on _ZoneManagerPageState {
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
+        _ZoneTableToolbar(
+          controller: _search,
+          onChanged: _onSearchChanged,
+          accent: AppColors.primaryColor,
+          resultCount: rows.length,
+          hintText: 'Search item code, item name, barcode, or category…',
+          showResizeHint: true,
+        ),
+        const SizedBox(height: 10),
         Expanded(
           child: Container(
             padding: const EdgeInsets.all(4),

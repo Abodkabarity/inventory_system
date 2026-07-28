@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/app_colors.dart';
+import 'store_branch_identity.dart';
 import '../../../core/utils/print_additional_service.dart';
 
 class AdditionalRequestDialog extends StatefulWidget {
@@ -144,15 +145,21 @@ class _AdditionalRequestDialogState extends State<AdditionalRequestDialog> {
           children: [
             Row(
               children: [
-                Text(
-                  widget.sourceTable == 'additional_order_inventory'
-                      ? 'Additional Order - From Inventory'
-                      : "${widget.branch} Additional Order",
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                if (widget.sourceTable == 'additional_order_inventory')
+                  const Text(
+                    'Additional Order - From Inventory',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  )
+                else
+                  StoreBranchLabel(
+                    branchName: widget.branch,
+                    suffix: 'Additional Order',
+                    compactBadge: false,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
                 const Spacer(),
                 IconButton(
                   icon: const Icon(Icons.close),
@@ -319,12 +326,26 @@ class _AdditionalRequestDialogState extends State<AdditionalRequestDialog> {
             const SizedBox(height: 15),
 
             if (inventoryOrder) ...[
-              Text(
-                'Branch: ${(item['branch_name'] ?? '').toString()}',
-                style: const TextStyle(
-                  color: AppColors.primaryColor,
-                  fontWeight: FontWeight.w800,
-                ),
+              Row(
+                children: [
+                  const Text(
+                    'Branch: ',
+                    style: TextStyle(
+                      color: AppColors.primaryColor,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  Expanded(
+                    child: StoreBranchLabel(
+                      branchName: (item['branch_name'] ?? '').toString(),
+                      compactBadge: false,
+                      style: const TextStyle(
+                        color: AppColors.secondaryColor,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
             ],

@@ -4,6 +4,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/app_colors.dart';
+import 'store_branch_identity.dart';
 import '../../../core/utils/print_additional_service.dart';
 import '../bloc/store_bloc.dart';
 import '../bloc/store_event.dart';
@@ -345,8 +346,9 @@ class _ProcessingAdditionalDialogState
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                branch,
+              StoreBranchLabel(
+                branchName: branch,
+                compactBadge: false,
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -535,10 +537,19 @@ class _ProcessingAdditionalDialogState
                         .map(
                           (b) => DropdownMenuItem(
                             value: b,
-                            child: Text(
-                              b,
-                              style: TextStyle(color: AppColors.secondaryColor),
-                            ),
+                            child: b == 'ALL'
+                                ? Text(
+                                    b,
+                                    style: TextStyle(
+                                      color: AppColors.secondaryColor,
+                                    ),
+                                  )
+                                : StoreBranchLabel(
+                                    branchName: b,
+                                    style: TextStyle(
+                                      color: AppColors.secondaryColor,
+                                    ),
+                                  ),
                           ),
                         )
                         .toList(),

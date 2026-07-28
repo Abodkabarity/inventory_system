@@ -1,9 +1,11 @@
 // ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use, unused_element
 
+import 'dart:async';
 import 'dart:html' as html;
 
 import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:syncfusion_flutter_core/theme.dart';
@@ -18,6 +20,8 @@ import '../../../domain/entities/daily_order_row.dart';
 import '../../../domain/entities/stock_check_task.dart';
 import '../../orders/widgets/orders_grid_controller.dart';
 import '../../orders/widgets/orders_table.dart';
+import '../../inventory_dashboard/page/additional_order_analysis_page.dart'
+    show AdditionalAnalysisDateRangePickerDialog;
 
 part 'pages/zone_additional_orders_page.dart';
 part 'pages/zone_daily_order_history_page.dart';
@@ -83,16 +87,31 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     'barcode': 170,
   };
   List<Map<String, dynamic>> _additional = const [];
+  List<Map<String, dynamic>> _additionalReport = const [];
+  late DateTime _additionalFrom;
+  late DateTime _additionalTo;
+  bool _additionalReportLoading = false;
   List<Map<String, dynamic>> _mismatch = const [];
   List<Map<String, dynamic>> _maxAdj = const [];
+  Map<String, Map<String, dynamic>> _maxCredits = const {};
   List<Map<String, dynamic>> _dailyExports = const [];
   List<Map<String, dynamic>> _nonReceivedExports = const [];
   List<Map<String, dynamic>> _edits = const [];
   List<StockCheckTask> _stockChecks = const [];
+  List<StockCheckTask> _dashboardStockChecks = const [];
   bool _stockCheckLoading = false;
   String? _stockCheckError;
   String? _selectedStockCheckBatchId;
   Map<String, Map<String, dynamic>> _submissions = const {};
+  List<_ZoneLiveActivity> _liveActivities = const [];
+  RealtimeChannel? _zoneActivityChannel;
+  Timer? _dashboardClock;
+  Timer? _stockCheckRealtimeDebounce;
+  StreamSubscription<html.Event>? _dashboardFocusSubscription;
+  bool _dashboardStockCheckSyncing = false;
+  int _dashboardStockCheckClockMinute = -1;
+  Set<String> _zoneActivityBranchKeys = const {};
+  bool _liveActivityConnected = false;
 
   static const _pages = [
     _PageDef(Icons.dashboard_rounded, 'Dashboard'),
@@ -109,11 +128,30 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
   @override
   void initState() {
     super.initState();
+    final today = DateTime.now();
+    _additionalFrom = DateTime(today.year, today.month, today.day);
+    _additionalTo = DateTime(today.year, today.month, today.day, 23, 59, 59);
+    _dashboardClock = Timer.periodic(const Duration(seconds: 8), (_) {
+      if (!mounted || _page != 0) return;
+      unawaited(_refreshDashboardStockChecks());
+    });
+    _dashboardFocusSubscription = html.window.onFocus.listen((_) {
+      if (mounted && _page == 0) {
+        unawaited(_refreshDashboardStockChecks());
+      }
+    });
     _load();
   }
 
   @override
   void dispose() {
+    _dashboardClock?.cancel();
+    _stockCheckRealtimeDebounce?.cancel();
+    _dashboardFocusSubscription?.cancel();
+    final activityChannel = _zoneActivityChannel;
+    if (activityChannel != null) {
+      _client.removeChannel(activityChannel);
+    }
     _search.dispose();
     super.dispose();
   }
@@ -126,11 +164,16 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     try {
       final branchData = await _client
           .from('branches')
-          .select('branch_name,zone')
+          .select('branch_name,zone,submit_end_hour,max_adj_limit')
           .eq('is_active', true)
           .eq('zone', widget.zoneName)
           .order('branch_name');
       final branches = List<Map<String, dynamic>>.from(branchData);
+      branches.sort(
+        (left, right) => _text(
+          left['branch_name'],
+        ).toLowerCase().compareTo(_text(right['branch_name']).toLowerCase()),
+      );
       final names = branches
           .map((row) => _text(row['branch_name']))
           .where((name) => name.isNotEmpty)
@@ -142,6 +185,10 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
         _loadNonReceivedExports(names),
         _loadEdits(names),
         _loadSubmissions(names),
+        _loadRecentZoneActivity(names),
+        _loadMaxCredits(names),
+        _loadDashboardStockChecks(names),
+        _loadAdditionalRange(names, _additionalFrom, _additionalTo),
       ]);
       if (!mounted) return;
       setState(() {
@@ -151,11 +198,16 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
         _nonReceivedExports = result[2];
         _edits = result[3];
         _submissions = result[4];
+        _liveActivities = result[5];
+        _maxCredits = result[6];
+        _dashboardStockChecks = result[7];
+        _additionalReport = result[8];
         if (_selectedBranch != 'ALL' && !names.contains(_selectedBranch)) {
           _selectedBranch = 'ALL';
         }
         _loading = false;
       });
+      _subscribeToZoneActivity(names);
       if (_page == 3) await _loadDailyBranch();
       if (_page == 6) await _loadStockChecks();
     } catch (error) {
@@ -216,6 +268,83 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     orderBy: 'created_at',
   );
 
+  Future<List<Map<String, dynamic>>> _loadAdditionalRange(
+    List<String> branches,
+    DateTime from,
+    DateTime to,
+  ) async {
+    if (branches.isEmpty) return const [];
+    final output = <Map<String, dynamic>>[];
+    final fromDate = _dateKey(from);
+    final toDate = _dateKey(to);
+    for (final chunk in _chunks(branches, 20)) {
+      var offset = 0;
+      const batchSize = 1000;
+      while (true) {
+        final rows = List<Map<String, dynamic>>.from(
+          await _client
+              .from('additional_requests')
+              .select(
+                'id,run_date,branch_name,item_code,item_name,status,request_qty,inventory_qty,fulfilled_qty,branch_stock,store_stock,sales_45d,final_reorder_qty,item_purchase_type,inventory_note,store_note,created_at,inventory_approved_at,done_at',
+              )
+              .inFilter('branch_name', chunk)
+              .gte('run_date', fromDate)
+              .lte('run_date', toDate)
+              .order('created_at', ascending: false)
+              .range(offset, offset + batchSize - 1),
+        );
+        output.addAll(rows);
+        if (rows.length < batchSize) break;
+        offset += batchSize;
+      }
+    }
+    return output;
+  }
+
+  Future<void> _reloadAdditionalReport() async {
+    if (_additionalReportLoading || !mounted) return;
+    final branches = _branches
+        .map((row) => _text(row['branch_name']))
+        .where((name) => name.isNotEmpty)
+        .toList(growable: false);
+    setState(() => _additionalReportLoading = true);
+    try {
+      final rows = await _loadAdditionalRange(
+        branches,
+        _additionalFrom,
+        _additionalTo,
+      );
+      if (!mounted) return;
+      setState(() => _additionalReport = rows);
+    } catch (error) {
+      if (mounted) {
+        _message('Could not load Additional Orders: $error', error: true);
+      }
+    } finally {
+      if (mounted) setState(() => _additionalReportLoading = false);
+    }
+  }
+
+  String _dateKey(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+  bool _additionalRangeContains(dynamic value) {
+    final date = DateTime.tryParse(_text(value));
+    if (date == null) return false;
+    final day = DateTime(date.year, date.month, date.day);
+    final from = DateTime(
+      _additionalFrom.year,
+      _additionalFrom.month,
+      _additionalFrom.day,
+    );
+    final to = DateTime(
+      _additionalTo.year,
+      _additionalTo.month,
+      _additionalTo.day,
+    );
+    return !day.isBefore(from) && !day.isAfter(to);
+  }
+
   Future<List<Map<String, dynamic>>> _loadMismatch(
     List<String> branches,
   ) => _fetchPreviewByBranch(
@@ -237,6 +366,31 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
         'id,branch_name,item_code,item_name,current_demand_30d,max_adjustment_30d,adjustment_type,qty,reason,update_date,added_by,created_at,end_date',
     orderBy: 'created_at',
   );
+
+  Future<Map<String, Map<String, dynamic>>> _loadMaxCredits(
+    List<String> branches,
+  ) async {
+    final output = <String, Map<String, dynamic>>{};
+    for (final chunk in _chunks(branches, 20)) {
+      try {
+        final rows = List<Map<String, dynamic>>.from(
+          await _client
+              .from('vw_max_adj_usage')
+              .select(
+                'branch_name,used_slots,remaining_slots,next_available_date,days_until_next_slot',
+              )
+              .inFilter('branch_name', chunk),
+        );
+        for (final row in rows) {
+          final branch = _text(row['branch_name']);
+          if (branch.isNotEmpty) output[_key(branch)] = row;
+        }
+      } catch (error) {
+        debugPrint('Max credit preview skipped: $error');
+      }
+    }
+    return output;
+  }
 
   Future<List<Map<String, dynamic>>> _loadDailyExports(List<String> branches) =>
       _fetchByBranch(
@@ -266,6 +420,297 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
             'branch_name,item_code,item_name,old_qty,new_qty,diff,created_at',
         runDateColumn: 'run_date',
       );
+
+  Future<List<_ZoneLiveActivity>> _loadRecentZoneActivity(
+    List<String> branches,
+  ) async {
+    if (branches.isEmpty) return const [];
+    final groups = await Future.wait([
+      _fetchRecentActivityRows(
+        table: 'max_adj',
+        branches: branches,
+        columns:
+            'id,branch_name,item_code,item_name,current_demand_30d,max_adjustment_30d,adjustment_type,qty,reason,update_date,created_at,added_by',
+        orderBy: 'created_at',
+      ),
+      _fetchRecentActivityRows(
+        table: 'stk_mismatch',
+        branches: branches,
+        columns:
+            'id,branch_name,item_code,item_name,system_stock,actual_stock,diff,update_date,created_at',
+        orderBy: 'update_date',
+      ),
+    ]);
+    const sources = ['max', 'mismatch'];
+    final activities = <_ZoneLiveActivity>[];
+    for (var index = 0; index < groups.length; index++) {
+      activities.addAll(
+        groups[index].map(
+          (row) => _ZoneLiveActivity.fromRecord(sources[index], row),
+        ),
+      );
+    }
+    activities.sort(
+      (left, right) => right.occurredAt.compareTo(left.occurredAt),
+    );
+    return activities.take(30).toList(growable: false);
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchRecentActivityRows({
+    required String table,
+    required List<String> branches,
+    required String columns,
+    required String orderBy,
+    String? runDateColumn,
+  }) async {
+    final output = <Map<String, dynamic>>[];
+    for (final chunk in _chunks(branches, 20)) {
+      try {
+        dynamic query = _client
+            .from(table)
+            .select(columns)
+            .inFilter('branch_name', chunk);
+        if (runDateColumn != null) {
+          query = query.eq(runDateColumn, widget.runDate);
+        }
+        final rows = List<Map<String, dynamic>>.from(
+          await query.order(orderBy, ascending: false).limit(10),
+        );
+        output.addAll(rows);
+      } catch (error) {
+        debugPrint('Live activity preview skipped for $table: $error');
+      }
+    }
+    return output;
+  }
+
+  void _subscribeToZoneActivity(List<String> branches) {
+    final previousChannel = _zoneActivityChannel;
+    if (previousChannel != null) {
+      _client.removeChannel(previousChannel);
+    }
+    _zoneActivityBranchKeys = branches.map(_key).toSet();
+    _liveActivityConnected = false;
+    final channel = _client
+        .channel(
+          'zone-manager-live-${_safe(widget.zoneName)}-${DateTime.now().microsecondsSinceEpoch}',
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'max_adj',
+          callback: (payload) => _handleZoneActivity('max', payload),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'stk_mismatch',
+          callback: (payload) => _handleZoneActivity('mismatch', payload),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'additional_requests',
+          callback: (payload) => _handleZoneActivity('additional', payload),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'order_submissions',
+          callback: _handleZoneSubmission,
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'stock_check_tasks',
+          callback: _handleZoneStockCheck,
+        );
+    _zoneActivityChannel = channel;
+    channel.subscribe((status, [error]) {
+      if (!mounted || _zoneActivityChannel != channel) return;
+      setState(() {
+        _liveActivityConnected = status == RealtimeSubscribeStatus.subscribed;
+      });
+    });
+  }
+
+  void _handleZoneActivity(String source, dynamic payload) {
+    final newRecord = Map<String, dynamic>.from(payload.newRecord as Map);
+    final oldRecord = Map<String, dynamic>.from(payload.oldRecord as Map);
+    final record = newRecord.isNotEmpty ? newRecord : oldRecord;
+    final branch = _text(record['branch_name']);
+    if (branch.isEmpty || !_zoneActivityBranchKeys.contains(_key(branch))) {
+      return;
+    }
+    final isDelete = payload.eventType == PostgresChangeEvent.delete;
+    if (source == 'additional') {
+      if (!mounted) return;
+      final matchesDashboard = _text(record['run_date']) == widget.runDate;
+      final matchesReport = _additionalRangeContains(record['run_date']);
+      if (!matchesDashboard && !matchesReport) return;
+      setState(() {
+        if (matchesDashboard) {
+          _additional = isDelete
+              ? _removeRealtimeRow(_additional, record)
+              : _upsertRealtimeRow(_additional, record);
+        }
+        if (matchesReport) {
+          _additionalReport = isDelete
+              ? _removeRealtimeRow(_additionalReport, record)
+              : _upsertRealtimeRow(_additionalReport, record);
+        }
+      });
+      return;
+    }
+    final activity = _ZoneLiveActivity.fromRecord(
+      source,
+      record,
+      occurredAt: DateTime.now(),
+      isDelete: isDelete,
+    );
+    if (!mounted) return;
+    setState(() {
+      _liveActivities = [
+        activity,
+        ..._liveActivities,
+      ].take(30).toList(growable: false);
+    });
+  }
+
+  void _handleZoneSubmission(dynamic payload) {
+    final newRecord = Map<String, dynamic>.from(payload.newRecord as Map);
+    final oldRecord = Map<String, dynamic>.from(payload.oldRecord as Map);
+    final record = newRecord.isNotEmpty ? newRecord : oldRecord;
+    final branch = _text(record['branch_name']);
+    final runDate = _text(record['run_date']);
+    if (branch.isEmpty ||
+        runDate != widget.runDate ||
+        !_zoneActivityBranchKeys.contains(_key(branch))) {
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      final updated = Map<String, Map<String, dynamic>>.from(_submissions);
+      if (payload.eventType == PostgresChangeEvent.delete) {
+        updated.remove(_key(branch));
+      } else {
+        updated[_key(branch)] = record;
+      }
+      _submissions = updated;
+    });
+  }
+
+  void _handleZoneStockCheck(dynamic payload) {
+    final newRecord = Map<String, dynamic>.from(payload.newRecord as Map);
+    final oldRecord = Map<String, dynamic>.from(payload.oldRecord as Map);
+    final record = newRecord.isNotEmpty ? newRecord : oldRecord;
+    final branch = _text(record['branch_name']);
+    if (branch.isEmpty ||
+        !_zoneActivityBranchKeys.contains(_key(branch)) ||
+        _text(record['source']).toLowerCase() != 'inventory' ||
+        !mounted) {
+      return;
+    }
+
+    _stockCheckRealtimeDebounce?.cancel();
+    _stockCheckRealtimeDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      unawaited(_refreshDashboardStockChecks());
+      if (_page == 6) unawaited(_loadStockChecks());
+    });
+  }
+
+  Future<List<StockCheckTask>> _loadDashboardStockChecks(
+    List<String> branches,
+  ) async {
+    if (branches.isEmpty) return const [];
+    final output = <StockCheckTask>[];
+    for (final chunk in _chunks(branches, 20)) {
+      var offset = 0;
+      const batchSize = 1000;
+      while (true) {
+        final data = List<Map<String, dynamic>>.from(
+          await _client
+              .from('stock_check_tasks')
+              .select()
+              .eq('source', 'inventory')
+              .neq('status', 'submitted')
+              .inFilter('branch_name', chunk)
+              .order('expires_at')
+              .range(offset, offset + batchSize - 1),
+        );
+        output.addAll(data.map(StockCheckTask.fromMap));
+        if (data.length < batchSize) break;
+        offset += batchSize;
+      }
+    }
+    return output;
+  }
+
+  Future<void> _refreshDashboardStockChecks() async {
+    if (_dashboardStockCheckSyncing || !mounted) return;
+    final branches = _branches
+        .map((row) => _text(row['branch_name']))
+        .where((name) => name.isNotEmpty)
+        .toList(growable: false);
+    if (branches.isEmpty) return;
+    _dashboardStockCheckSyncing = true;
+    try {
+      final latest = await _loadDashboardStockChecks(branches);
+      if (!mounted) return;
+      final latestSignature = _dashboardStockCheckSignature(latest);
+      final currentSignature = _dashboardStockCheckSignature(
+        _dashboardStockChecks,
+      );
+      final clockMinute =
+          DateTime.now().millisecondsSinceEpoch ~/
+          Duration.millisecondsPerMinute;
+      if (latestSignature != currentSignature ||
+          clockMinute != _dashboardStockCheckClockMinute) {
+        setState(() {
+          _dashboardStockChecks = latest;
+          _dashboardStockCheckClockMinute = clockMinute;
+        });
+      }
+    } catch (error) {
+      debugPrint('Dashboard Stock Check sync skipped: $error');
+    } finally {
+      _dashboardStockCheckSyncing = false;
+    }
+  }
+
+  String _dashboardStockCheckSignature(List<StockCheckTask> tasks) {
+    final values =
+        tasks
+            .map(
+              (task) =>
+                  '${task.id}|${task.batchId}|${task.branchName}|${task.status}|${task.expiresAt?.millisecondsSinceEpoch ?? 0}',
+            )
+            .toList(growable: false)
+          ..sort();
+    return values.join('~');
+  }
+
+  List<Map<String, dynamic>> _upsertRealtimeRow(
+    List<Map<String, dynamic>> rows,
+    Map<String, dynamic> record,
+  ) {
+    final id = _text(record['id']);
+    final updated = rows
+        .where((row) => id.isEmpty || _text(row['id']) != id)
+        .toList();
+    updated.insert(0, record);
+    return updated;
+  }
+
+  List<Map<String, dynamic>> _removeRealtimeRow(
+    List<Map<String, dynamic>> rows,
+    Map<String, dynamic> record,
+  ) {
+    final id = _text(record['id']);
+    if (id.isEmpty) return rows;
+    return rows.where((row) => _text(row['id']) != id).toList(growable: false);
+  }
 
   Future<void> _loadStockChecks() async {
     if (_stockCheckLoading) return;
@@ -388,6 +833,10 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
   }
 
   Future<void> _changePage(int page) async {
+    if (_page != page) {
+      _search.clear();
+      _query = '';
+    }
     if (page == 3 && _selectedBranch == 'ALL' && _branches.isNotEmpty) {
       _selectedBranch = _text(_branches.first['branch_name']);
     }
@@ -738,30 +1187,70 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
           branches: _branches.map((row) => _text(row['branch_name'])).toList(),
           selectedBranch: _selectedBranch,
           allowAllBranches: _page != 3,
-          search: _search,
           onBranchChanged: _onBranchChanged,
-          onSearchChanged: _onSearchChanged,
           onRefresh: _load,
+        ),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 320),
+          reverseDuration: const Duration(milliseconds: 220),
+          transitionBuilder: (child, animation) => SizeTransition(
+            sizeFactor: CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+            ),
+            axisAlignment: -1,
+            child: FadeTransition(opacity: animation, child: child),
+          ),
+          child: _selectedBranch != 'ALL' && _page != 3
+              ? Padding(
+                  key: ValueKey('active-filter-$_selectedBranch'),
+                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 2),
+                  child: _ZoneActiveFilterBanner(
+                    branchName: _selectedBranch,
+                    onClear: () => _onBranchChanged('ALL'),
+                  ),
+                )
+              : const SizedBox.shrink(key: ValueKey('no-active-filter')),
         ),
         Expanded(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
-            child: switch (_page) {
-              0 => buildZoneDashboardPage(),
-              1 => buildZoneMismatchPage(),
-              2 => buildZoneMaxAdjustmentPage(),
-              3 => buildZoneDailyOrderPage(),
-              4 => buildZoneAdditionalOrdersPage(),
-              5 => buildZoneOrderEditsPage(),
-              6 => buildZoneStockCheckPage(),
-              7 => buildZoneNonReceivedPage(),
-              _ => buildZoneDailyOrderHistoryPage(),
-            },
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 340),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) {
+                final slide = Tween<Offset>(
+                  begin: const Offset(.025, 0),
+                  end: Offset.zero,
+                ).animate(animation);
+                return FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(position: slide, child: child),
+                );
+              },
+              child: KeyedSubtree(
+                key: ValueKey('page-$_page-branch-$_selectedBranch'),
+                child: _buildCurrentZonePage(),
+              ),
+            ),
           ),
         ),
       ],
     );
   }
+
+  Widget _buildCurrentZonePage() => switch (_page) {
+    0 => buildZoneDashboardPage(),
+    1 => buildZoneMismatchPage(),
+    2 => buildZoneMaxAdjustmentPage(),
+    3 => buildZoneDailyOrderPage(),
+    4 => buildZoneAdditionalOrdersPage(),
+    5 => buildZoneOrderEditsPage(),
+    6 => buildZoneStockCheckPage(),
+    7 => buildZoneNonReceivedPage(),
+    _ => buildZoneDailyOrderHistoryPage(),
+  };
 }
 
 class _ZoneDrawer extends StatelessWidget {
@@ -908,8 +1397,7 @@ class _ZoneDrawer extends StatelessWidget {
 class _ZoneHeader extends StatelessWidget {
   final String title, zoneName, runDate, selectedBranch;
   final List<String> branches;
-  final TextEditingController search;
-  final ValueChanged<String> onBranchChanged, onSearchChanged;
+  final ValueChanged<String> onBranchChanged;
   final VoidCallback onRefresh;
   final bool allowAllBranches;
 
@@ -920,14 +1408,15 @@ class _ZoneHeader extends StatelessWidget {
     required this.branches,
     required this.selectedBranch,
     required this.allowAllBranches,
-    required this.search,
     required this.onBranchChanged,
-    required this.onSearchChanged,
     required this.onRefresh,
   });
 
   @override
   Widget build(BuildContext context) {
+    final sortedBranches = [
+      ...branches,
+    ]..sort((left, right) => left.toLowerCase().compareTo(right.toLowerCase()));
     return Padding(
       padding: const EdgeInsets.fromLTRB(38, 20, 24, 10),
       child: Row(
@@ -967,7 +1456,7 @@ class _ZoneHeader extends StatelessWidget {
               initialValue: selectedBranch,
               isExpanded: true,
               decoration: _inputDecoration('Branch', Icons.store_outlined),
-              items: [if (allowAllBranches) 'ALL', ...branches]
+              items: [if (allowAllBranches) 'ALL', ...sortedBranches]
                   .map(
                     (branch) => DropdownMenuItem(
                       value: branch,
@@ -984,24 +1473,143 @@ class _ZoneHeader extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          SizedBox(
-            width: 290,
-            child: TextField(
-              controller: search,
-              onChanged: onSearchChanged,
-              decoration: _inputDecoration(
-                'Search branch, item code, or name…',
-                Icons.search_rounded,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
           IconButton.filledTonal(
             onPressed: onRefresh,
             tooltip: 'Refresh',
             icon: const Icon(Icons.refresh_rounded),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ZoneActiveFilterBanner extends StatelessWidget {
+  final String branchName;
+  final VoidCallback onClear;
+
+  const _ZoneActiveFilterBanner({
+    required this.branchName,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const accent = Color(0xff7C3AED);
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 620),
+      curve: Curves.elasticOut,
+      builder: (context, value, child) => Transform.scale(
+        scale: .97 + (.03 * value),
+        alignment: Alignment.centerLeft,
+        child: child,
+      ),
+      child: Container(
+        height: 54,
+        padding: const EdgeInsets.fromLTRB(14, 8, 10, 8),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xffF5F3FF), Color(0xffEFF6FF)],
+          ),
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(color: accent.withValues(alpha: .28)),
+          boxShadow: [
+            BoxShadow(
+              color: accent.withValues(alpha: .10),
+              blurRadius: 18,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: accent,
+                borderRadius: BorderRadius.circular(11),
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withValues(alpha: .26),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.filter_alt_rounded,
+                color: Colors.white,
+                size: 19,
+              ),
+            ),
+            const SizedBox(width: 11),
+            const Text(
+              'FILTER ACTIVE',
+              style: TextStyle(
+                color: accent,
+                fontSize: 9.5,
+                fontWeight: FontWeight.w900,
+                letterSpacing: .9,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: accent.withValues(alpha: .24)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.storefront_rounded, color: accent, size: 16),
+                  const SizedBox(width: 7),
+                  Text(
+                    branchName,
+                    style: const TextStyle(
+                      color: AppColors.secondaryColor,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Page data is filtered to this branch • Live Activity continues monitoring the full zone',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: AppColors.subText,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            OutlinedButton.icon(
+              onPressed: onClear,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: accent,
+                side: BorderSide(color: accent.withValues(alpha: .34)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 13,
+                  vertical: 10,
+                ),
+              ),
+              icon: const Icon(Icons.close_rounded, size: 17),
+              label: const Text(
+                'Clear Filter',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1016,6 +1624,9 @@ class _ReportPage extends StatelessWidget {
   final List<_ReportKpi> kpis;
   final List<Widget> extraActions;
   final String exportLabel;
+  final TextEditingController searchController;
+  final ValueChanged<String> onSearchChanged;
+  final String searchHint;
   const _ReportPage({
     required this.title,
     required this.subtitle,
@@ -1023,9 +1634,12 @@ class _ReportPage extends StatelessWidget {
     required this.rows,
     required this.columns,
     required this.onExport,
+    required this.searchController,
+    required this.onSearchChanged,
     this.kpis = const [],
     this.extraActions = const [],
     this.exportLabel = 'Export Excel',
+    this.searchHint = 'Search this table…',
   });
   @override
   Widget build(BuildContext context) {
@@ -1060,11 +1674,132 @@ class _ReportPage extends StatelessWidget {
           const SizedBox(height: 10),
           _ReportKpiStrip(kpis: kpis),
         ],
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
+        _ZoneTableToolbar(
+          controller: searchController,
+          onChanged: onSearchChanged,
+          accent: accent,
+          resultCount: rows.length,
+          hintText: searchHint,
+          showResizeHint: true,
+        ),
+        const SizedBox(height: 10),
         Expanded(
           child: _DataTableCard(rows: rows, columns: columns, accent: accent),
         ),
       ],
+    );
+  }
+}
+
+class _ZoneTableToolbar extends StatelessWidget {
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final Color accent;
+  final int resultCount;
+  final String hintText;
+  final bool showResizeHint;
+
+  const _ZoneTableToolbar({
+    required this.controller,
+    required this.onChanged,
+    required this.accent,
+    required this.resultCount,
+    required this.hintText,
+    this.showResizeHint = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xff0F2942).withValues(alpha: .045),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: .10),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Icon(Icons.manage_search_rounded, color: accent, size: 22),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              onChanged: onChanged,
+              style: const TextStyle(
+                color: AppColors.secondaryColor,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+              decoration: InputDecoration(
+                hintText: hintText,
+                hintStyle: const TextStyle(color: AppColors.subText),
+                border: InputBorder.none,
+                isDense: true,
+                suffixIcon: controller.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Clear search',
+                        onPressed: () {
+                          controller.clear();
+                          onChanged('');
+                        },
+                        icon: const Icon(Icons.close_rounded, size: 19),
+                      ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: .08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: accent.withValues(alpha: .18)),
+            ),
+            child: Text(
+              '$resultCount results',
+              style: TextStyle(
+                color: accent,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          if (showResizeHint) ...[
+            const SizedBox(width: 12),
+            const Icon(
+              Icons.width_normal_rounded,
+              size: 17,
+              color: AppColors.subText,
+            ),
+            const SizedBox(width: 6),
+            const Text(
+              'Drag column edges to resize',
+              style: TextStyle(
+                color: AppColors.subText,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -1097,76 +1832,105 @@ class _ReportKpiStrip extends StatelessWidget {
   );
 }
 
-class _ReportKpiCard extends StatelessWidget {
+class _ReportKpiCard extends StatefulWidget {
   final _ReportKpi kpi;
   const _ReportKpiCard({required this.kpi});
 
   @override
-  Widget build(BuildContext context) => Container(
-    height: 86,
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: AppColors.border.withValues(alpha: .9)),
-      boxShadow: [
-        BoxShadow(
-          color: const Color(0xff0F2942).withValues(alpha: .045),
-          blurRadius: 14,
-          offset: const Offset(0, 5),
-        ),
-      ],
-    ),
-    child: Row(
-      children: [
-        Container(
-          width: 46,
-          height: 46,
-          decoration: BoxDecoration(
-            color: kpi.color.withValues(alpha: .11),
-            borderRadius: BorderRadius.circular(13),
+  State<_ReportKpiCard> createState() => _ReportKpiCardState();
+}
+
+class _ReportKpiCardState extends State<_ReportKpiCard> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final kpi = widget.kpi;
+    return MouseRegion(
+      cursor: SystemMouseCursors.basic,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        height: 100,
+        transform: Matrix4.translationValues(0, _hovered ? -3 : 0, 0),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: _hovered
+                ? kpi.color.withValues(alpha: .50)
+                : AppColors.border.withValues(alpha: .9),
+            width: _hovered ? 1.4 : 1,
           ),
-          child: Icon(kpi.icon, color: kpi.color, size: 23),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(
+                0xff0F2942,
+              ).withValues(alpha: _hovered ? .13 : .055),
+              blurRadius: _hovered ? 22 : 14,
+              offset: Offset(0, _hovered ? 8 : 5),
+            ),
+          ],
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                kpi.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.subText,
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w700,
-                ),
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: kpi.color.withValues(alpha: .11),
+                borderRadius: BorderRadius.circular(13),
               ),
-              const SizedBox(height: 2),
-              Text(
-                kpi.value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.secondaryColor,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w900,
-                ),
+              child: Icon(kpi.icon, color: kpi.color, size: 23),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    kpi.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.subText,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    kpi.value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.secondaryColor,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  Text(
+                    kpi.subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.subText,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
-              Text(
-                kpi.subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: AppColors.subText, fontSize: 9.5),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
-      ],
-    ),
-  );
+      ),
+    );
+  }
 }
 
 class _DailyPagination extends StatelessWidget {
@@ -1318,7 +2082,7 @@ class _DailyOrderError extends StatelessWidget {
   );
 }
 
-class _DataTableCard extends StatelessWidget {
+class _DataTableCard extends StatefulWidget {
   final List<Map<String, dynamic>> rows;
   final List<_ColumnDef> columns;
   final Color accent;
@@ -1329,12 +2093,19 @@ class _DataTableCard extends StatelessWidget {
   });
 
   @override
+  State<_DataTableCard> createState() => _DataTableCardState();
+}
+
+class _DataTableCardState extends State<_DataTableCard> {
+  final Map<String, double> _resizedWidths = {};
+
+  @override
   Widget build(BuildContext context) {
-    if (rows.isEmpty) return _EmptyState(color: accent);
+    if (widget.rows.isEmpty) return _EmptyState(color: widget.accent);
     final source = _ZoneGridSource(
-      rows: rows,
-      columns: columns,
-      accent: accent,
+      rows: widget.rows,
+      columns: widget.columns,
+      accent: widget.accent,
     );
     return Container(
       decoration: BoxDecoration(
@@ -1353,11 +2124,11 @@ class _DataTableCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         child: SfDataGridTheme(
           data: SfDataGridThemeData(
-            headerColor: accent.withValues(alpha: .09),
+            headerColor: widget.accent.withValues(alpha: .09),
             gridLineColor: AppColors.border.withValues(alpha: .72),
-            selectionColor: accent.withValues(alpha: .10),
-            filterIconColor: accent,
-            sortIconColor: accent,
+            selectionColor: widget.accent.withValues(alpha: .10),
+            filterIconColor: widget.accent,
+            sortIconColor: widget.accent,
           ),
           child: SfDataGrid(
             source: source,
@@ -1365,17 +2136,25 @@ class _DataTableCard extends StatelessWidget {
             allowMultiColumnSorting: true,
             allowFiltering: true,
             allowColumnsResizing: true,
+            onColumnResizeUpdate: (details) {
+              setState(() {
+                _resizedWidths[details.column.columnName] = details.width;
+              });
+              return true;
+            },
             columnWidthMode: ColumnWidthMode.none,
-            gridLinesVisibility: GridLinesVisibility.horizontal,
-            headerGridLinesVisibility: GridLinesVisibility.none,
+            gridLinesVisibility: GridLinesVisibility.both,
+            headerGridLinesVisibility: GridLinesVisibility.vertical,
             frozenColumnsCount: 1,
-            rowHeight: 58,
-            headerRowHeight: 62,
-            columns: columns
+            rowHeight: 62,
+            headerRowHeight: 64,
+            columns: widget.columns
                 .map(
                   (column) => GridColumn(
                     columnName: column.key,
-                    width: _columnWidth(column.key) + 34,
+                    width:
+                        _resizedWidths[column.key] ??
+                        (_columnWidth(column.key) + 34),
                     minimumWidth: 110,
                     label: Container(
                       alignment: column.key == 'item_name'
@@ -1390,7 +2169,7 @@ class _DataTableCard extends StatelessWidget {
                             : TextAlign.center,
                         style: const TextStyle(
                           color: AppColors.secondaryColor,
-                          fontSize: 11,
+                          fontSize: 12,
                           fontWeight: FontWeight.w900,
                           letterSpacing: .35,
                         ),
@@ -1451,7 +2230,7 @@ class _ZoneGridSource extends DataGridSource {
         Widget child;
         if (key == 'status') {
           child = Align(
-            alignment: Alignment.centerLeft,
+            alignment: Alignment.center,
             child: _StatusChip(_text(value)),
           );
         } else if (key == 'diff' || key == 'remaining_qty') {
@@ -1469,7 +2248,7 @@ class _ZoneGridSource extends DataGridSource {
                 ? TextAlign.left
                 : TextAlign.center,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 13,
               fontWeight: isIdentity ? FontWeight.w800 : FontWeight.w500,
               color: isIdentity
                   ? AppColors.secondaryColor
@@ -1856,7 +2635,6 @@ class _DownloadCenterState extends State<_DownloadCenter> {
 
   static const Color _pageText = Color(0xFF172033);
   static const Color _secondaryText = Color(0xFF64748B);
-  static const Color _mutedText = Color(0xFF94A3B8);
   static const Color _surface = Color(0xFFFFFFFF);
   static const Color _softSurface = Color(0xFFF8FAFC);
   static const Color _border = Color(0xFFE2E8F0);
@@ -1865,9 +2643,7 @@ class _DownloadCenterState extends State<_DownloadCenter> {
   static const Color _successSoft = Color(0xFFECFDF3);
   static const Color _successBorder = Color(0xFFBBF7D0);
   static const Color _purple = Color(0xFF7C3AED);
-  static const Color _purpleDark = Color(0xFF5B21B6);
   static const Color _purpleSoft = Color(0xFFF5F3FF);
-  static const Color _purpleBorder = Color(0xFFDDD6FE);
 
   List<String> get _dates {
     final values =
@@ -1876,7 +2652,7 @@ class _DownloadCenterState extends State<_DownloadCenter> {
             .where((value) => value.isNotEmpty)
             .toSet()
             .toList()
-          ..sort((a, b) => b.compareTo(a));
+          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
 
     return values;
   }
@@ -1944,6 +2720,9 @@ class _DownloadCenterState extends State<_DownloadCenter> {
     required List<Map<String, dynamic>> selection,
     required List<String> dates,
   }) {
+    final sortedBranches = [
+      ...widget.zoneBranches,
+    ]..sort((left, right) => left.toLowerCase().compareTo(right.toLowerCase()));
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
@@ -2016,7 +2795,7 @@ class _DownloadCenterState extends State<_DownloadCenter> {
                     color: _secondaryText,
                   ),
                   decoration: _dcInputDecoration(),
-                  items: ['ALL', ...widget.zoneBranches]
+                  items: ['ALL', ...sortedBranches]
                       .map(
                         (branch) => DropdownMenuItem<String>(
                           value: branch,
@@ -2091,7 +2870,7 @@ class _DownloadCenterState extends State<_DownloadCenter> {
         child: ListView.separated(
           padding: const EdgeInsets.all(22),
           itemCount: selection.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 14),
+          separatorBuilder: (_, _) => const SizedBox(height: 14),
           itemBuilder: (context, index) {
             final row = selection[index];
 
@@ -2204,8 +2983,6 @@ class _DcToolbarActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final multipleFiles = fileCount > 1;
-
     return Wrap(
       spacing: 14,
       runSpacing: 12,
@@ -2655,7 +3432,6 @@ class _BranchQuickView extends StatelessWidget {
 
   static const Color _text = Color(0xFF111827);
   static const Color _textSecondary = Color(0xFF64748B);
-  static const Color _textMuted = Color(0xFF94A3B8);
   static const Color _border = Color(0xFFE2E8F0);
 
   @override
@@ -3828,11 +4604,15 @@ Color _statusColor(String value) {
   }
   if (status.contains('done') ||
       status.contains('complete') ||
-      status.contains('approved')) {
-    return Colors.green;
+      status.contains('approved') ||
+      status.contains('submitted')) {
+    return const Color(0xff16A34A);
   }
   if (status.contains('sent')) return Colors.blue;
-  return Colors.orange;
+  if (status.contains('pending') || status.contains('progress')) {
+    return const Color(0xffF59E0B);
+  }
+  return const Color(0xffF59E0B);
 }
 
 double _columnWidth(String key) {
@@ -4071,8 +4851,7 @@ class _Stat {
   final IconData icon;
   final String title, value;
   final Color color;
-  final String? subtitle;
-  const _Stat(this.icon, this.title, this.value, this.color, {this.subtitle});
+  const _Stat(this.icon, this.title, this.value, this.color);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4220,18 +4999,6 @@ class _StatCard extends StatelessWidget {
                             backgroundColor: const Color(0xFFE2E8F0),
                             valueColor: AlwaysStoppedAnimation(stat.color),
                             minHeight: 4,
-                          ),
-                        ),
-                      ],
-                      if (stat.subtitle != null && progress == null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          stat.subtitle!.toUpperCase(),
-                          style: const TextStyle(
-                            fontSize: 8,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.5,
-                            color: _kTextMute,
                           ),
                         ),
                       ],
@@ -4407,10 +5174,10 @@ class _BranchCard extends StatelessWidget {
 
                 // Badges (edits + additional)
                 if (additionalCount > 0)
-                  _MiniBadge('${additionalCount} ADD', _kRed),
+                  _MiniBadge('$additionalCount ADD', _kRed),
                 if (additionalCount > 0 && editCount > 0)
                   const SizedBox(width: 4),
-                if (editCount > 0) _MiniBadge('${editCount} EDITS', _kOrange),
+                if (editCount > 0) _MiniBadge('$editCount EDITS', _kOrange),
               ],
             ),
 
@@ -4567,7 +5334,7 @@ class _AdditionalPanel extends StatelessWidget {
                 : ListView.separated(
                     padding: const EdgeInsets.all(10),
                     itemCount: rows.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
                     itemBuilder: (_, i) => _AdditionalRequestCard(row: rows[i]),
                   ),
           ),
@@ -4859,19 +5626,37 @@ class _StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = _statusColor(status);
+    final normalized = status.toLowerCase();
+    final submitted = normalized.contains('submitted');
+    final pending =
+        normalized.contains('pending') || normalized.contains('progress');
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      constraints: const BoxConstraints(minHeight: 30),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: .09),
-        border: Border.all(color: color.withValues(alpha: .28)),
+        color: color.withValues(alpha: submitted || pending ? .13 : .09),
+        border: Border.all(
+          color: color.withValues(alpha: submitted || pending ? .48 : .30),
+          width: submitted || pending ? 1.2 : 1,
+        ),
         borderRadius: BorderRadius.circular(20),
+        boxShadow: submitted || pending
+            ? [
+                BoxShadow(
+                  color: color.withValues(alpha: .10),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ]
+            : null,
       ),
       child: Text(
         _prettyStatus(status).toUpperCase(),
         style: TextStyle(
-          fontSize: 8,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 0.7,
+          fontSize: 10.5,
+          height: 1,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0.65,
           color: color,
         ),
       ),

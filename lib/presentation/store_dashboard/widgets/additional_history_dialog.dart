@@ -8,6 +8,7 @@ import '../bloc/store_bloc.dart';
 import '../bloc/store_event.dart';
 import '../bloc/store_state.dart';
 import 'additional_request_dialog.dart';
+import 'store_branch_identity.dart';
 
 class AdditionalHistoryDialog extends StatefulWidget {
   const AdditionalHistoryDialog({super.key});
@@ -320,12 +321,17 @@ class _AdditionalHistoryDialogState extends State<AdditionalHistoryDialog> {
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
 
-        title: Text(
-          r.sourceTable == 'additional_order_inventory'
-              ? 'Additional Order - From Inventory'
-              : "${r.branchName} Order",
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
+        title: r.sourceTable == 'additional_order_inventory'
+            ? const Text(
+                'Additional Order - From Inventory',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              )
+            : StoreBranchLabel(
+                branchName: r.branchName,
+                suffix: 'Order',
+                compactBadge: false,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
 
         subtitle: Text(DateFormat("yyyy-MM-dd HH:mm").format(r.createdAt)),
 
