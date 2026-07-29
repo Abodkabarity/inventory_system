@@ -1571,7 +1571,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
               },
               child: KeyedSubtree(
                 key: ValueKey('page-$_page-branch-$_selectedBranch'),
-                child: _buildCurrentZonePage(),
+                child: SelectionArea(child: _buildCurrentZonePage()),
               ),
             ),
           ),
@@ -3021,7 +3021,14 @@ class _DownloadCenterState extends State<_DownloadCenter> {
             .where((value) => value.isNotEmpty)
             .toSet()
             .toList()
-          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+          ..sort((a, b) {
+            final aDate = DateTime.tryParse(a);
+            final bDate = DateTime.tryParse(b);
+            if (aDate != null && bDate != null) {
+              return bDate.compareTo(aDate);
+            }
+            return b.toLowerCase().compareTo(a.toLowerCase());
+          });
 
     return values;
   }

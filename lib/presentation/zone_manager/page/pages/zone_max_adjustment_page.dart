@@ -662,7 +662,10 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
           children: [
             TextButton(
               onPressed: _saving ? null : () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: AppColors.secondaryColor),
+              ),
             ),
             const SizedBox(width: 10),
             FilledButton.icon(
