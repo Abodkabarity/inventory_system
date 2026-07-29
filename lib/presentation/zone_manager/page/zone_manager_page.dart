@@ -18,15 +18,16 @@ import '../../../core/utils/stock_check_excel_exporter.dart';
 import '../../../data/datasources/remote/orders_remote_ds.dart';
 import '../../../domain/entities/daily_order_row.dart';
 import '../../../domain/entities/stock_check_task.dart';
-import '../../orders/widgets/orders_grid_controller.dart';
-import '../../orders/widgets/orders_table.dart';
 import '../../inventory_dashboard/page/additional_order_analysis_page.dart'
     show AdditionalAnalysisDateRangePickerDialog;
+import '../../orders/widgets/orders_grid_controller.dart';
+import '../../orders/widgets/orders_table.dart';
 
 part 'pages/zone_additional_orders_page.dart';
 part 'pages/zone_daily_order_history_page.dart';
 part 'pages/zone_daily_order_page.dart';
 part 'pages/zone_dashboard_page.dart';
+part 'pages/zone_handover_page.dart';
 part 'pages/zone_max_adjustment_page.dart';
 part 'pages/zone_mismatch_page.dart';
 part 'pages/zone_non_received_page.dart';
@@ -35,12 +36,14 @@ part 'pages/zone_stock_check_page.dart';
 
 class ZoneManagerPage extends StatefulWidget {
   final String runDate;
-  final String zoneName;
+  final List<String> zoneNames;
+
+  String get zoneName => zoneNames.join(' + ');
 
   const ZoneManagerPage({
     super.key,
     required this.runDate,
-    required this.zoneName,
+    required this.zoneNames,
   });
 
   @override
@@ -104,14 +107,36 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
   String? _selectedStockCheckBatchId;
   Map<String, Map<String, dynamic>> _submissions = const {};
   List<_ZoneLiveActivity> _liveActivities = const [];
+  List<String> _effectiveZones = const [];
+  List<String> _permanentZones = const [];
+  List<Map<String, dynamic>> _zoneDelegations = const [];
+  List<Map<String, dynamic>> _zoneManagerDirectory = const [];
+  String _currentZoneManagerName = 'Zone Manager';
+  bool _handoverAvailable = true;
+  bool _handoverBusy = false;
+  bool _handoverContextLoading = false;
   RealtimeChannel? _zoneActivityChannel;
+  RealtimeChannel? _delegationChannel;
   Timer? _dashboardClock;
   Timer? _stockCheckRealtimeDebounce;
+  Timer? _delegationRealtimeDebounce;
+  Timer? _delegationClock;
   StreamSubscription<html.Event>? _dashboardFocusSubscription;
   bool _dashboardStockCheckSyncing = false;
   int _dashboardStockCheckClockMinute = -1;
   Set<String> _zoneActivityBranchKeys = const {};
   bool _liveActivityConnected = false;
+
+  String get _zoneLabel =>
+      _effectiveZones.isEmpty ? widget.zoneName : _effectiveZones.join(' + ');
+
+  void _setBusy(bool value) {
+    if (mounted) setState(() => _busy = value);
+  }
+
+  void _selectStockCheckBatch(String? batchId) {
+    if (mounted) setState(() => _selectedStockCheckBatchId = batchId);
+  }
 
   static const _pages = [
     _PageDef(Icons.dashboard_rounded, 'Dashboard'),
@@ -123,12 +148,15 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     _PageDef(Icons.fact_check_outlined, 'Stock Check'),
     _PageDef(Icons.inventory_2_outlined, 'Non Received'),
     _PageDef(Icons.download_rounded, 'Daily Order History'),
+    _PageDef(Icons.handshake_outlined, 'Zone Handover'),
   ];
 
   @override
   void initState() {
     super.initState();
     final today = DateTime.now();
+    _effectiveZones = List<String>.from(widget.zoneNames);
+    _permanentZones = List<String>.from(widget.zoneNames);
     _additionalFrom = DateTime(today.year, today.month, today.day);
     _additionalTo = DateTime(today.year, today.month, today.day, 23, 59, 59);
     _dashboardClock = Timer.periodic(const Duration(seconds: 8), (_) {
@@ -138,7 +166,11 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     _dashboardFocusSubscription = html.window.onFocus.listen((_) {
       if (mounted && _page == 0) {
         unawaited(_refreshDashboardStockChecks());
+        unawaited(_refreshDelegationContext());
       }
+    });
+    _delegationClock = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) unawaited(_refreshDelegationContext());
     });
     _load();
   }
@@ -147,10 +179,16 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
   void dispose() {
     _dashboardClock?.cancel();
     _stockCheckRealtimeDebounce?.cancel();
+    _delegationRealtimeDebounce?.cancel();
+    _delegationClock?.cancel();
     _dashboardFocusSubscription?.cancel();
     final activityChannel = _zoneActivityChannel;
     if (activityChannel != null) {
       _client.removeChannel(activityChannel);
+    }
+    final delegationChannel = _delegationChannel;
+    if (delegationChannel != null) {
+      _client.removeChannel(delegationChannel);
     }
     _search.dispose();
     super.dispose();
@@ -162,11 +200,15 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
       _error = null;
     });
     try {
+      final zoneContext = await _loadZoneContext();
+      final activeZones = zoneContext.effectiveZones.isEmpty
+          ? List<String>.from(widget.zoneNames)
+          : zoneContext.effectiveZones;
       final branchData = await _client
           .from('branches')
           .select('branch_name,zone,submit_end_hour,max_adj_limit')
           .eq('is_active', true)
-          .eq('zone', widget.zoneName)
+          .inFilter('zone', activeZones)
           .order('branch_name');
       final branches = List<Map<String, dynamic>>.from(branchData);
       branches.sort(
@@ -202,12 +244,19 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
         _maxCredits = result[6];
         _dashboardStockChecks = result[7];
         _additionalReport = result[8];
+        _effectiveZones = activeZones;
+        _permanentZones = zoneContext.permanentZones;
+        _zoneDelegations = zoneContext.delegations;
+        _zoneManagerDirectory = zoneContext.directory;
+        _currentZoneManagerName = zoneContext.currentUserName;
+        _handoverAvailable = zoneContext.handoverAvailable;
         if (_selectedBranch != 'ALL' && !names.contains(_selectedBranch)) {
           _selectedBranch = 'ALL';
         }
         _loading = false;
       });
       _subscribeToZoneActivity(names);
+      _subscribeToDelegations();
       if (_page == 3) await _loadDailyBranch();
       if (_page == 6) await _loadStockChecks();
     } catch (error) {
@@ -216,6 +265,252 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
         _loading = false;
         _error = error.toString();
       });
+    }
+  }
+
+  Future<_ZoneContextData> _loadZoneContext() async {
+    final uid = _client.auth.currentUser?.id ?? '';
+    final effective = <String>{...widget.zoneNames};
+    final permanent = <String>{...widget.zoneNames};
+    var delegations = <Map<String, dynamic>>[];
+    var directory = <Map<String, dynamic>>[];
+    var currentName =
+        _client.auth.currentUser?.email?.split('@').first.trim() ??
+        'Zone Manager';
+    var handoverAvailable = true;
+
+    if (uid.isEmpty) {
+      return _ZoneContextData(
+        effectiveZones: effective.toList()..sort(),
+        permanentZones: permanent.toList()..sort(),
+        delegations: const [],
+        directory: const [],
+        currentUserName: currentName,
+        handoverAvailable: false,
+      );
+    }
+
+    try {
+      final rows = List<Map<String, dynamic>>.from(
+        await _client.rpc('get_my_effective_zones'),
+      );
+      effective.clear();
+      permanent.clear();
+      for (final row in rows) {
+        final zone = _text(row['zone']);
+        if (zone.isEmpty) continue;
+        effective.add(zone);
+        if (_text(row['assignment_kind']).toLowerCase() == 'permanent') {
+          permanent.add(zone);
+        }
+      }
+    } catch (error) {
+      debugPrint('Effective zone RPC fallback: $error');
+      try {
+        final rows = List<Map<String, dynamic>>.from(
+          await _client
+              .from('app_user_zones')
+              .select('zone')
+              .eq('user_id', uid),
+        );
+        for (final row in rows) {
+          final zone = _text(row['zone']);
+          if (zone.isNotEmpty) {
+            effective.add(zone);
+            permanent.add(zone);
+          }
+        }
+      } catch (_) {
+        handoverAvailable = false;
+      }
+    }
+
+    try {
+      directory = List<Map<String, dynamic>>.from(
+        await _client.rpc('get_zone_manager_directory'),
+      );
+      delegations = List<Map<String, dynamic>>.from(
+        await _client
+            .from('zone_management_delegations')
+            .select()
+            .or('requester_user_id.eq.$uid,recipient_user_id.eq.$uid')
+            .order('created_at', ascending: false)
+            .limit(200),
+      );
+    } catch (error) {
+      debugPrint('Zone handover module unavailable: $error');
+      handoverAvailable = false;
+    }
+
+    try {
+      final profile = await _client
+          .from('app_users')
+          .select('user_name')
+          .eq('user_id', uid)
+          .maybeSingle();
+      final profileName = _text(profile?['user_name']);
+      if (profileName.isNotEmpty) currentName = profileName;
+    } catch (_) {
+      // Email prefix remains a safe display fallback.
+    }
+
+    final effectiveList = effective.where((zone) => zone.isNotEmpty).toList()
+      ..sort(
+        (left, right) => left.toLowerCase().compareTo(right.toLowerCase()),
+      );
+    final permanentList = permanent.where((zone) => zone.isNotEmpty).toList()
+      ..sort(
+        (left, right) => left.toLowerCase().compareTo(right.toLowerCase()),
+      );
+    return _ZoneContextData(
+      effectiveZones: effectiveList,
+      permanentZones: permanentList,
+      delegations: delegations,
+      directory: directory,
+      currentUserName: currentName,
+      handoverAvailable: handoverAvailable,
+    );
+  }
+
+  Future<void> _refreshDelegationContext() async {
+    if (_handoverContextLoading || !mounted) return;
+    _handoverContextLoading = true;
+    try {
+      final contextData = await _loadZoneContext();
+      if (!mounted) return;
+      if (!_sameZoneSet(_effectiveZones, contextData.effectiveZones)) {
+        await _load();
+        return;
+      }
+      setState(() {
+        _permanentZones = contextData.permanentZones;
+        _zoneDelegations = contextData.delegations;
+        _zoneManagerDirectory = contextData.directory;
+        _currentZoneManagerName = contextData.currentUserName;
+        _handoverAvailable = contextData.handoverAvailable;
+      });
+    } finally {
+      _handoverContextLoading = false;
+    }
+  }
+
+  bool _sameZoneSet(List<String> left, List<String> right) {
+    final leftKeys = left.map(_key).toSet();
+    final rightKeys = right.map(_key).toSet();
+    return leftKeys.length == rightKeys.length &&
+        leftKeys.containsAll(rightKeys);
+  }
+
+  List<String> _delegationZones(dynamic value) {
+    if (value is List) {
+      return value
+          .map((zone) => _text(zone))
+          .where((zone) => zone.isNotEmpty)
+          .toList(growable: false);
+    }
+    final text = _text(value).replaceAll(RegExp(r'[{}\[\]"]'), '');
+    return text
+        .split(',')
+        .map((zone) => zone.trim())
+        .where((zone) => zone.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  String _zoneManagerName(String userId) {
+    final uid = _client.auth.currentUser?.id ?? '';
+    if (userId == uid) return _currentZoneManagerName;
+    for (final row in _zoneManagerDirectory) {
+      if (_text(row['user_id']) == userId) {
+        final name = _text(row['user_name']);
+        if (name.isNotEmpty) return name;
+      }
+    }
+    return 'Zone Manager';
+  }
+
+  Future<bool> _createZoneHandover({
+    required String recipientUserId,
+    required List<String> zones,
+    required DateTime startAt,
+    required DateTime endAt,
+    required String reason,
+  }) async {
+    if (_handoverBusy) return false;
+    setState(() => _handoverBusy = true);
+    try {
+      await _client.rpc(
+        'create_zone_delegation',
+        params: {
+          'p_recipient_user_id': recipientUserId,
+          'p_zones': zones,
+          'p_start_at': startAt.toUtc().toIso8601String(),
+          'p_end_at': endAt.toUtc().toIso8601String(),
+          'p_reason': reason.trim(),
+        },
+      );
+      if (!mounted) return false;
+      _message('Zone handover request sent successfully.');
+      await _refreshDelegationContext();
+      return true;
+    } catch (error) {
+      if (mounted) _message('Could not send handover: $error', error: true);
+      return false;
+    } finally {
+      if (mounted) setState(() => _handoverBusy = false);
+    }
+  }
+
+  Future<void> _respondToZoneHandover(String id, bool accept) async {
+    if (_handoverBusy) return;
+    if (!accept) {
+      final row = _zoneDelegations
+          .where((item) => _text(item['id']) == id)
+          .firstOrNull;
+      final confirmed = await _showZoneHandoverConfirmation(
+        action: _ZoneHandoverConfirmAction.decline,
+        row: row,
+      );
+      if (!confirmed || !mounted) return;
+    }
+    setState(() => _handoverBusy = true);
+    try {
+      await _client.rpc(
+        'respond_zone_delegation',
+        params: {'p_delegation_id': id, 'p_accept': accept},
+      );
+      if (!mounted) return;
+      _message(accept ? 'Handover accepted.' : 'Handover declined.');
+      await _refreshDelegationContext();
+    } catch (error) {
+      if (mounted) _message('Could not respond: $error', error: true);
+    } finally {
+      if (mounted) setState(() => _handoverBusy = false);
+    }
+  }
+
+  Future<void> _cancelZoneHandover(String id) async {
+    if (_handoverBusy) return;
+    final row = _zoneDelegations
+        .where((item) => _text(item['id']) == id)
+        .firstOrNull;
+    final confirmed = await _showZoneHandoverConfirmation(
+      action: _ZoneHandoverConfirmAction.cancel,
+      row: row,
+    );
+    if (!confirmed || !mounted) return;
+    setState(() => _handoverBusy = true);
+    try {
+      await _client.rpc(
+        'cancel_zone_delegation',
+        params: {'p_delegation_id': id},
+      );
+      if (!mounted) return;
+      _message('Handover cancelled.');
+      await _refreshDelegationContext();
+    } catch (error) {
+      if (mounted) _message('Could not cancel: $error', error: true);
+    } finally {
+      if (mounted) setState(() => _handoverBusy = false);
     }
   }
 
@@ -493,7 +788,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     _liveActivityConnected = false;
     final channel = _client
         .channel(
-          'zone-manager-live-${_safe(widget.zoneName)}-${DateTime.now().microsecondsSinceEpoch}',
+          'zone-manager-live-${_safe(_zoneLabel)}-${DateTime.now().microsecondsSinceEpoch}',
         )
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
@@ -532,6 +827,46 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
         _liveActivityConnected = status == RealtimeSubscribeStatus.subscribed;
       });
     });
+  }
+
+  void _subscribeToDelegations() {
+    final previous = _delegationChannel;
+    if (previous != null) _client.removeChannel(previous);
+    if (!_handoverAvailable) {
+      _delegationChannel = null;
+      return;
+    }
+    final uid = _client.auth.currentUser?.id ?? '';
+    if (uid.isEmpty) return;
+    final channel = _client
+        .channel('zone-handover-$uid')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'zone_management_delegations',
+          callback: (payload) {
+            final newRecord = Map<String, dynamic>.from(
+              payload.newRecord as Map,
+            );
+            final oldRecord = Map<String, dynamic>.from(
+              payload.oldRecord as Map,
+            );
+            final record = newRecord.isNotEmpty ? newRecord : oldRecord;
+            if (_text(record['requester_user_id']) != uid &&
+                _text(record['recipient_user_id']) != uid) {
+              return;
+            }
+            _delegationRealtimeDebounce?.cancel();
+            _delegationRealtimeDebounce = Timer(
+              const Duration(milliseconds: 300),
+              () {
+                if (mounted) unawaited(_refreshDelegationContext());
+              },
+            );
+          },
+        );
+    _delegationChannel = channel;
+    channel.subscribe();
   }
 
   void _handleZoneActivity(String source, dynamic payload) {
@@ -833,9 +1168,13 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
   }
 
   Future<void> _changePage(int page) async {
+    final leavingDailyOrder = _page == 3 && page != 3;
     if (_page != page) {
       _search.clear();
       _query = '';
+    }
+    if (leavingDailyOrder) {
+      _selectedBranch = 'ALL';
     }
     if (page == 3 && _selectedBranch == 'ALL' && _branches.isNotEmpty) {
       _selectedBranch = _text(_branches.first['branch_name']);
@@ -990,7 +1329,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
       final url = html.Url.createObjectUrlFromBlob(blob);
       final title = nonReceived ? 'Non_Received' : 'Daily_Order_History';
       html.AnchorElement(href: url)
-        ..download = '${title}_${_safe(widget.zoneName)}.zip'
+        ..download = '${title}_${_safe(_zoneLabel)}.zip'
         ..click();
       html.Url.revokeObjectUrl(url);
     } catch (error) {
@@ -1017,7 +1356,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
       sheet.name = 'Zone Report';
       final titleRange = sheet.getRangeByIndex(1, 1, 1, columns.length);
       titleRange.merge();
-      titleRange.setText('$title • ${widget.zoneName}');
+      titleRange.setText('$title • $_zoneLabel');
       titleRange.cellStyle
         ..backColor = '#122D40'
         ..fontColor = '#FFFFFF'
@@ -1052,7 +1391,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
       final url = html.Url.createObjectUrlFromBlob(blob);
       final date = DateFormat('yyyyMMdd').format(DateTime.now());
       html.AnchorElement(href: url)
-        ..download = '${_safe(title)}_${_safe(widget.zoneName)}_$date.xlsx'
+        ..download = '${_safe(title)}_${_safe(_zoneLabel)}_$date.xlsx'
         ..click();
       html.Url.revokeObjectUrl(url);
     } catch (error) {
@@ -1118,8 +1457,9 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     if (_loading) {
       return const Scaffold(
         backgroundColor: Color(0xffF4F7FB),
-        body: Center(
-          child: CircularProgressIndicator(color: AppColors.primaryColor),
+        body: _ZoneOperationOverlay(
+          label: 'Loading your zone workspace…',
+          dimBackground: false,
         ),
       );
     }
@@ -1129,6 +1469,12 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
         body: _ErrorView(message: _error!, onRetry: _load),
       );
     }
+    // Page-level fetches already render their own loading state. Keep this
+    // overlay only for actions that have no dedicated in-page indicator.
+    final showOperationLoading = _busy || _handoverBusy;
+    final operationLabel = _handoverBusy
+        ? 'Updating zone handover…'
+        : 'Preparing your request…';
     return Scaffold(
       backgroundColor: const Color(0xffF4F7FB),
       body: Stack(
@@ -1144,7 +1490,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
                     widthFactor: _drawerCollapsed ? 0 : 1,
                     child: _ZoneDrawer(
                       currentPage: _page,
-                      zoneName: widget.zoneName,
+                      zoneName: _zoneLabel,
                       onChanged: _changePage,
                     ),
                   ),
@@ -1161,16 +1507,9 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
               onTap: () => setState(() => _drawerCollapsed = !_drawerCollapsed),
             ),
           ),
-          if (_busy)
+          if (showOperationLoading)
             Positioned.fill(
-              child: ColoredBox(
-                color: Colors.black26,
-                child: const Center(
-                  child: CircularProgressIndicator(
-                    color: AppColors.primaryColor,
-                  ),
-                ),
-              ),
+              child: _ZoneOperationOverlay(label: operationLabel),
             ),
         ],
       ),
@@ -1182,7 +1521,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
       children: [
         _ZoneHeader(
           title: _page == 0 ? 'Zone Manager Dashboard' : _pages[_page].label,
-          zoneName: widget.zoneName,
+          zoneName: _zoneLabel,
           runDate: widget.runDate,
           branches: _branches.map((row) => _text(row['branch_name'])).toList(),
           selectedBranch: _selectedBranch,
@@ -1249,7 +1588,8 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     5 => buildZoneOrderEditsPage(),
     6 => buildZoneStockCheckPage(),
     7 => buildZoneNonReceivedPage(),
-    _ => buildZoneDailyOrderHistoryPage(),
+    8 => buildZoneDailyOrderHistoryPage(),
+    _ => buildZoneHandoverPage(),
   };
 }
 
@@ -1307,6 +1647,9 @@ class _ZoneDrawer extends StatelessWidget {
                   ),
                   child: Text(
                     zoneName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: AppColors.secondaryColor,
                       fontSize: 11,
@@ -1440,7 +1783,7 @@ class _ZoneHeader extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '$zoneName Zone • ${_displayDate(runDate)}',
+                  '$zoneName • ${_displayDate(runDate)}',
                   style: const TextStyle(
                     color: AppColors.subText,
                     fontSize: 12,
@@ -1471,12 +1814,6 @@ class _ZoneHeader extends StatelessWidget {
                 if (value != null) onBranchChanged(value);
               },
             ),
-          ),
-          const SizedBox(width: 10),
-          IconButton.filledTonal(
-            onPressed: onRefresh,
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh_rounded),
           ),
         ],
       ),
@@ -2129,6 +2466,36 @@ class _DataTableCardState extends State<_DataTableCard> {
             selectionColor: widget.accent.withValues(alpha: .10),
             filterIconColor: widget.accent,
             sortIconColor: widget.accent,
+            filterPopupBackgroundColor: Colors.white,
+            filterPopupTextStyle: const TextStyle(
+              color: Color(0xff1E293B),
+              fontWeight: FontWeight.w500,
+            ),
+            filterPopupDisabledTextStyle: const TextStyle(
+              color: Color(0xff94A3B8),
+            ),
+            filterPopupIconColor: AppColors.primaryColor,
+            filterPopupDisabledIconColor: const Color(0xffCBD5E1),
+            filterPopupInputBorderColor: AppColors.primaryColor,
+            filterPopupCheckColor: Colors.white,
+            filterPopupCheckboxFillColor:
+                WidgetStateProperty.resolveWith<Color?>((states) {
+                  if (states.contains(WidgetState.disabled)) {
+                    return const Color(0xffE2E8F0);
+                  }
+                  if (states.contains(WidgetState.selected)) {
+                    return AppColors.primaryColor;
+                  }
+                  return Colors.white;
+                }),
+            okFilteringLabelButtonColor: AppColors.primaryColor,
+            okFilteringLabelColor: Colors.white,
+            cancelFilteringLabelButtonColor: Colors.white,
+            cancelFilteringLabelColor: AppColors.primaryColor,
+            searchAreaFocusedBorderColor: AppColors.primaryColor,
+            searchAreaCursorColor: AppColors.primaryColor,
+            filterPopupTopDividerColor: AppColors.border,
+            filterPopupBottomDividerColor: AppColors.border,
           ),
           child: SfDataGrid(
             source: source,
@@ -4453,6 +4820,101 @@ class _DifferenceCell extends StatelessWidget {
   }
 }
 
+class _ZoneOperationOverlay extends StatelessWidget {
+  final String label;
+  final bool dimBackground;
+
+  const _ZoneOperationOverlay({required this.label, this.dimBackground = true});
+
+  @override
+  Widget build(BuildContext context) {
+    return AbsorbPointer(
+      child: ColoredBox(
+        color: dimBackground
+            ? const Color(0x330F172A)
+            : const Color(0xffF4F7FB),
+        child: Center(
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: .92, end: 1),
+            duration: const Duration(milliseconds: 240),
+            curve: Curves.easeOutBack,
+            builder: (context, scale, child) => Transform.scale(
+              scale: scale,
+              child: Opacity(opacity: scale.clamp(0, 1), child: child),
+            ),
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 285, maxWidth: 340),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 17),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: AppColors.primaryColor.withValues(alpha: .18),
+                ),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x260F172A),
+                    blurRadius: 30,
+                    offset: Offset(0, 12),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryColor.withValues(alpha: .09),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: const CircularProgressIndicator(
+                      strokeWidth: 2.7,
+                      color: AppColors.primaryColor,
+                    ),
+                  ),
+                  const SizedBox(width: 13),
+                  Flexible(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xff0F172A),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        const Text(
+                          'Please wait while the data is synchronized.',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Color(0xff64748B),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ErrorView extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
@@ -4490,6 +4952,24 @@ class _ErrorView extends StatelessWidget {
       ),
     ),
   );
+}
+
+class _ZoneContextData {
+  final List<String> effectiveZones;
+  final List<String> permanentZones;
+  final List<Map<String, dynamic>> delegations;
+  final List<Map<String, dynamic>> directory;
+  final String currentUserName;
+  final bool handoverAvailable;
+
+  const _ZoneContextData({
+    required this.effectiveZones,
+    required this.permanentZones,
+    required this.delegations,
+    required this.directory,
+    required this.currentUserName,
+    required this.handoverAvailable,
+  });
 }
 
 class _PageDef {

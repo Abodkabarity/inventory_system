@@ -6,13 +6,13 @@ extension _ZoneStockCheckPageView on _ZoneManagerPageState {
     String title,
   ) async {
     if (rows.isEmpty) return;
-    setState(() => _busy = true);
+    _setBusy(true);
     try {
       await StockCheckExcelExporter.export(rows: rows, title: title);
     } catch (error) {
       _message('Stock Check export failed: $error', error: true);
     } finally {
-      if (mounted) setState(() => _busy = false);
+      _setBusy(false);
     }
   }
 
@@ -129,7 +129,7 @@ extension _ZoneStockCheckPageView on _ZoneManagerPageState {
       ],
       extraActions: [
         OutlinedButton.icon(
-          onPressed: () => setState(() => _selectedStockCheckBatchId = null),
+          onPressed: () => _selectStockCheckBatch(null),
           icon: const Icon(Icons.arrow_back_rounded),
           label: const Text('Back to Projects'),
         ),
@@ -138,7 +138,7 @@ extension _ZoneStockCheckPageView on _ZoneManagerPageState {
       onExport: () => _exportStockChecks(
         rows,
         _selectedBranch == 'ALL'
-            ? 'Stock_Check_${_safe(widget.zoneName)}_Visible'
+            ? 'Stock_Check_${_safe(_zoneLabel)}_Visible'
             : 'Stock_Check_${_safe(projectTitle)}_${_safe(_selectedBranch)}',
       ),
     );
@@ -187,7 +187,7 @@ extension _ZoneStockCheckPageView on _ZoneManagerPageState {
           eyebrow: 'STOCK CHECK CENTER',
           title: 'Stock Check Projects',
           subtitle:
-              '${widget.zoneName} • ${_selectedBranch == 'ALL' ? 'All branches' : _selectedBranch} • Open a project to view its item details.',
+              '$_zoneLabel • ${_selectedBranch == 'ALL' ? 'All branches' : _selectedBranch} • Open a project to view its item details.',
           accent: const Color(0xff0EA5E9),
           metrics: const [],
           actions: const [],
@@ -248,10 +248,8 @@ extension _ZoneStockCheckPageView on _ZoneManagerPageState {
                   itemCount: projects.length,
                   itemBuilder: (context, index) => _StockCheckProjectCard(
                     project: projects[index],
-                    onOpen: () => setState(
-                      () =>
-                          _selectedStockCheckBatchId = projects[index].batchId,
-                    ),
+                    onOpen: () =>
+                        _selectStockCheckBatch(projects[index].batchId),
                   ),
                 ),
         ),

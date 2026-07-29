@@ -17,7 +17,7 @@ extension _ZoneMismatchPageView on _ZoneManagerPageState {
     ];
     return _ReportPage(
       title: 'Mismatch Report',
-      subtitle: 'Current stock differences for branches in ${widget.zoneName}.',
+      subtitle: 'Current stock differences for branches in $_zoneLabel.',
       accent: const Color(0xffF97316),
       rows: rows,
       columns: columns,

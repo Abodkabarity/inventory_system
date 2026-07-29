@@ -75,6 +75,13 @@ extension _ZoneDashboardPageView on _ZoneManagerPageState {
     final stockCheckAlerts = _ZdStockCheckAlert.fromTasks(
       _dashboardStockChecks,
     );
+    final incomingHandovers = _incomingPendingHandovers;
+    final activeHandovers = _activeIncomingHandovers;
+    final outgoingHandovers = _outgoingDashboardHandovers;
+    final hasHandoverNotifications =
+        incomingHandovers.isNotEmpty ||
+        activeHandovers.isNotEmpty ||
+        outgoingHandovers.isNotEmpty;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -91,6 +98,20 @@ extension _ZoneDashboardPageView on _ZoneManagerPageState {
             padding: const EdgeInsets.only(right: 4, bottom: 8),
             child: Column(
               children: [
+                if (hasHandoverNotifications) ...[
+                  _ZdZoneHandoverStrip(
+                    pendingRows: incomingHandovers,
+                    activeRows: activeHandovers,
+                    outgoingRows: outgoingHandovers,
+                    busy: _handoverBusy,
+                    managerName: _zoneManagerName,
+                    zonesOf: _delegationZones,
+                    dateOf: _handoverDate,
+                    onRespond: _respondToZoneHandover,
+                    onOpenCenter: () => _changePage(9),
+                  ),
+                  const SizedBox(height: 10),
+                ],
                 _ZdStatsSection(
                   stats: [
                     _ZdStat(
@@ -233,7 +254,6 @@ const Color _zdPurple = Color(0xFF7E22CE);
 const Color _zdGreen = Color(0xFF059669);
 const Color _zdGreenDark = Color(0xFF065F46);
 const Color _zdGreenSoft = Color(0xFFECFDF5);
-const Color _zdGreenCard = Color(0xFFD1FAE5);
 const Color _zdGreenBorder = Color(0xFF6EE7B7);
 
 const Color _zdOrange = Color(0xFFEA580C);
@@ -251,6 +271,624 @@ const Color _zdAmberBorder = Color(0xFFFCD34D);
 const Color _zdCyan = Color(0xFF0E7490);
 const Color _zdCyanSoft = Color(0xFFECFEFF);
 const Color _zdCyanBorder = Color(0xFF67E8F9);
+
+// -----------------------------------------------------------------------------
+// Zone responsibility handover
+// -----------------------------------------------------------------------------
+
+class _ZdZoneHandoverStrip extends StatelessWidget {
+  final List<Map<String, dynamic>> pendingRows;
+  final List<Map<String, dynamic>> activeRows;
+  final List<Map<String, dynamic>> outgoingRows;
+  final bool busy;
+  final String Function(String) managerName;
+  final List<String> Function(dynamic) zonesOf;
+  final DateTime? Function(dynamic) dateOf;
+  final Future<void> Function(String, bool) onRespond;
+  final VoidCallback onOpenCenter;
+
+  const _ZdZoneHandoverStrip({
+    required this.pendingRows,
+    required this.activeRows,
+    required this.outgoingRows,
+    required this.busy,
+    required this.managerName,
+    required this.zonesOf,
+    required this.dateOf,
+    required this.onRespond,
+    required this.onOpenCenter,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = <({Map<String, dynamic> row, String kind})>[
+      ...pendingRows.map((row) => (row: row, kind: 'incoming')),
+      ...outgoingRows.map((row) => (row: row, kind: 'outgoing')),
+      ...activeRows.map((row) => (row: row, kind: 'active')),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) => SizedBox(
+        height: 84,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: entries.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 10),
+          itemBuilder: (context, index) {
+            final entry = entries[index];
+            final multipleWidth = constraints.maxWidth < 700
+                ? constraints.maxWidth * .94
+                : 610.0;
+            return SizedBox(
+              width: entries.length == 1 ? constraints.maxWidth : multipleWidth,
+              child: switch (entry.kind) {
+                'incoming' => _ZdIncomingHandoverCard(
+                  row: entry.row,
+                  busy: busy,
+                  managerName: managerName,
+                  zonesOf: zonesOf,
+                  dateOf: dateOf,
+                  onRespond: onRespond,
+                  onOpenCenter: onOpenCenter,
+                ),
+                'outgoing' => _ZdOutgoingHandoverCard(
+                  row: entry.row,
+                  managerName: managerName,
+                  zonesOf: zonesOf,
+                  dateOf: dateOf,
+                  onOpenCenter: onOpenCenter,
+                ),
+                _ => _ZdActiveHandoverCard(
+                  row: entry.row,
+                  managerName: managerName,
+                  zonesOf: zonesOf,
+                  dateOf: dateOf,
+                  onOpenCenter: onOpenCenter,
+                ),
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _ZdIncomingHandoverCard extends StatefulWidget {
+  final Map<String, dynamic> row;
+  final bool busy;
+  final String Function(String) managerName;
+  final List<String> Function(dynamic) zonesOf;
+  final DateTime? Function(dynamic) dateOf;
+  final Future<void> Function(String, bool) onRespond;
+  final VoidCallback onOpenCenter;
+
+  const _ZdIncomingHandoverCard({
+    required this.row,
+    required this.busy,
+    required this.managerName,
+    required this.zonesOf,
+    required this.dateOf,
+    required this.onRespond,
+    required this.onOpenCenter,
+  });
+
+  @override
+  State<_ZdIncomingHandoverCard> createState() =>
+      _ZdIncomingHandoverCardState();
+}
+
+class _ZdIncomingHandoverCardState extends State<_ZdIncomingHandoverCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _glow;
+
+  @override
+  void initState() {
+    super.initState();
+    _glow = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1300),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _glow.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final requester = widget.managerName(
+      (widget.row['requester_user_id'] ?? '').toString(),
+    );
+    final zones = widget.zonesOf(widget.row['zones']).join(' • ');
+    final start = widget.dateOf(widget.row['start_at']);
+    final end = widget.dateOf(widget.row['end_at']);
+    return AnimatedBuilder(
+      animation: _glow,
+      builder: (context, _) => Transform.translate(
+        offset: Offset(0, -1.5 * _glow.value),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xffFFF7ED), Colors.white],
+            ),
+            borderRadius: BorderRadius.circular(17),
+            border: Border.all(color: const Color(0xffFDBA74), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(
+                  0xffF97316,
+                ).withValues(alpha: .07 + _glow.value * .13),
+                blurRadius: 8 + _glow.value * 10,
+                spreadRadius: _glow.value * .8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0xffFFEDD5),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.mark_email_unread_outlined,
+                  color: Color(0xffEA580C),
+                  size: 21,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const _ZdMiniLabel(
+                          text: 'PRIORITY • COVERAGE',
+                          color: Color(0xffEA580C),
+                        ),
+                        const SizedBox(width: 7),
+                        Expanded(
+                          child: Text(
+                            '$requester asks you to manage $zones',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: _zdText,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            (widget.row['reason'] ?? '').toString(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: _zdTextSubtle,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${start == null ? '—' : DateFormat('dd MMM, hh:mm a').format(start)} → ${end == null ? '—' : DateFormat('dd MMM, hh:mm a').format(end)}',
+                          style: const TextStyle(
+                            color: Color(0xff9A3412),
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              OutlinedButton(
+                onPressed: widget.busy
+                    ? null
+                    : () => widget.onRespond(
+                        (widget.row['id'] ?? '').toString(),
+                        false,
+                      ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xffDC2626),
+                  side: const BorderSide(color: Color(0xffFCA5A5)),
+                  minimumSize: const Size(58, 34),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: const Text('No'),
+              ),
+              const SizedBox(width: 7),
+              FilledButton.icon(
+                onPressed: widget.busy
+                    ? null
+                    : () => widget.onRespond(
+                        (widget.row['id'] ?? '').toString(),
+                        true,
+                      ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xff059669),
+                  minimumSize: const Size(88, 34),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: const Icon(Icons.check_rounded, size: 17),
+                label: const Text('Accept'),
+              ),
+              IconButton(
+                onPressed: widget.onOpenCenter,
+                tooltip: 'Open Zone Handover',
+                icon: const Icon(
+                  Icons.arrow_forward_rounded,
+                  color: Color(0xffEA580C),
+                ),
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ZdOutgoingHandoverCard extends StatefulWidget {
+  final Map<String, dynamic> row;
+  final String Function(String) managerName;
+  final List<String> Function(dynamic) zonesOf;
+  final DateTime? Function(dynamic) dateOf;
+  final VoidCallback onOpenCenter;
+
+  const _ZdOutgoingHandoverCard({
+    required this.row,
+    required this.managerName,
+    required this.zonesOf,
+    required this.dateOf,
+    required this.onOpenCenter,
+  });
+
+  @override
+  State<_ZdOutgoingHandoverCard> createState() =>
+      _ZdOutgoingHandoverCardState();
+}
+
+class _ZdOutgoingHandoverCardState extends State<_ZdOutgoingHandoverCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accepted =
+        (widget.row['status'] ?? '').toString().toLowerCase() == 'accepted';
+    final accent = accepted ? const Color(0xff059669) : const Color(0xffD97706);
+    final soft = accepted ? const Color(0xffECFDF5) : const Color(0xffFFFBEB);
+    final border = accepted ? const Color(0xff6EE7B7) : const Color(0xffFCD34D);
+    final recipient = widget.managerName(
+      (widget.row['recipient_user_id'] ?? '').toString(),
+    );
+    final zones = widget.zonesOf(widget.row['zones']).join(' • ');
+    final end = widget.dateOf(widget.row['end_at']);
+
+    return AnimatedBuilder(
+      animation: _pulse,
+      builder: (context, _) => Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.onOpenCenter,
+          borderRadius: BorderRadius.circular(17),
+          child: Ink(
+            padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [soft, Colors.white]),
+              borderRadius: BorderRadius.circular(17),
+              border: Border.all(color: border, width: 1.1),
+              boxShadow: [
+                BoxShadow(
+                  color: accent.withValues(
+                    alpha: .06 + (_pulse.value * (accepted ? .05 : .10)),
+                  ),
+                  blurRadius: 8 + _pulse.value * 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Transform.scale(
+                  scale: 1 + _pulse.value * .055,
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: .11),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      accepted ? Icons.verified_rounded : Icons.outgoing_mail,
+                      color: accent,
+                      size: 21,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          _ZdMiniLabel(
+                            text: accepted ? 'ACCEPTED' : 'AWAITING APPROVAL',
+                            color: accent,
+                          ),
+                          const SizedBox(width: 7),
+                          Expanded(
+                            child: Text(
+                              accepted
+                                  ? '$recipient accepted your handover'
+                                  : 'Handover request sent to $recipient',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: _zdText,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '$zones${end == null ? '' : ' • until ${DateFormat('dd MMM, hh:mm a').format(end)}'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: accepted
+                              ? const Color(0xff047857)
+                              : const Color(0xff92400E),
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: .09),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        accepted ? Icons.check_circle : Icons.schedule_rounded,
+                        size: 14,
+                        color: accent,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        accepted ? 'Approved' : 'Pending',
+                        style: TextStyle(
+                          color: accent,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.arrow_forward_rounded, color: accent, size: 20),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ZdActiveHandoverCard extends StatelessWidget {
+  final Map<String, dynamic> row;
+  final String Function(String) managerName;
+  final List<String> Function(dynamic) zonesOf;
+  final DateTime? Function(dynamic) dateOf;
+  final VoidCallback onOpenCenter;
+
+  const _ZdActiveHandoverCard({
+    required this.row,
+    required this.managerName,
+    required this.zonesOf,
+    required this.dateOf,
+    required this.onOpenCenter,
+  });
+
+  String _remaining(DateTime? start, DateTime? end) {
+    if (end == null) return 'No end time';
+    final now = DateTime.now();
+    if (start != null && now.isBefore(start)) {
+      final duration = start.difference(now);
+      return 'Starts in ${_shortDuration(duration)}';
+    }
+    return 'Returns in ${_shortDuration(end.difference(now))}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final start = dateOf(row['start_at']);
+    final end = dateOf(row['end_at']);
+    final owner = managerName((row['requester_user_id'] ?? '').toString());
+    final zones = zonesOf(row['zones']).join(' • ');
+    return InkWell(
+      onTap: onOpenCenter,
+      borderRadius: BorderRadius.circular(17),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xffECFDF5), Colors.white],
+          ),
+          borderRadius: BorderRadius.circular(17),
+          border: Border.all(color: const Color(0xff6EE7B7)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x14059669),
+              blurRadius: 16,
+              offset: Offset(0, 5),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xffD1FAE5),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.shield_outlined,
+                color: Color(0xff059669),
+                size: 21,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const _ZdMiniLabel(
+                    text: 'TEMPORARY ZONE RESPONSIBILITY',
+                    color: Color(0xff059669),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    zones,
+                    style: const TextStyle(
+                      color: Color(0xff065F46),
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    'Covering for $owner • ${_remaining(start, end)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xff047857),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color: const Color(0xffD1FAE5),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.circle, size: 8, color: Color(0xff10B981)),
+                  SizedBox(width: 6),
+                  Text(
+                    'ACTIVE',
+                    style: TextStyle(
+                      color: Color(0xff047857),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 7),
+            const Icon(Icons.arrow_forward_rounded, color: Color(0xff059669)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ZdMiniLabel extends StatelessWidget {
+  final String text;
+  final Color color;
+  const _ZdMiniLabel({required this.text, required this.color});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: .09),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Text(
+      text,
+      style: TextStyle(
+        color: color,
+        fontSize: 8.5,
+        fontWeight: FontWeight.w900,
+        letterSpacing: .45,
+      ),
+    ),
+  );
+}
+
+String _shortDuration(Duration duration) {
+  if (duration.isNegative) return '0m';
+  if (duration.inDays > 0) {
+    return '${duration.inDays}d ${duration.inHours.remainder(24)}h';
+  }
+  if (duration.inHours > 0) {
+    return '${duration.inHours}h ${duration.inMinutes.remainder(60)}m';
+  }
+  return '${duration.inMinutes.clamp(1, 59)}m';
+}
 
 // -----------------------------------------------------------------------------
 // Pending Stock Check alert
@@ -459,7 +1097,7 @@ class _ZdStockCheckAlertStripState extends State<_ZdStockCheckAlertStrip>
                   : (constraints.maxWidth * .72).clamp(560.0, 780.0))
             : constraints.maxWidth;
         return SizedBox(
-          height: 108,
+          height: 82,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             physics: multiple
@@ -510,7 +1148,7 @@ class _ZdStockCheckAlertCard extends StatelessWidget {
         begin: Alignment.centerLeft,
         end: Alignment.centerRight,
       ),
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(15),
       border: Border.all(color: border, width: danger ? 1.5 : 1),
       boxShadow: [
         BoxShadow(
@@ -527,7 +1165,7 @@ class _ZdStockCheckAlertCard extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(15),
           hoverColor: accent.withValues(alpha: .045),
           splashColor: accent.withValues(alpha: .10),
           child: Ink(
@@ -537,25 +1175,25 @@ class _ZdStockCheckAlertCard extends StatelessWidget {
                 Container(width: 5, color: accent),
                 Expanded(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 9, 14, 9),
+                    padding: const EdgeInsets.fromLTRB(11, 7, 11, 7),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
                             Container(
-                              width: 36,
-                              height: 36,
+                              width: 32,
+                              height: 32,
                               decoration: BoxDecoration(
                                 color: accent.withValues(alpha: .12),
-                                borderRadius: BorderRadius.circular(11),
+                                borderRadius: BorderRadius.circular(10),
                               ),
                               child: Icon(
                                 danger
                                     ? Icons.notification_important_rounded
                                     : Icons.fact_check_outlined,
                                 color: accent,
-                                size: 21,
+                                size: 18,
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -569,7 +1207,7 @@ class _ZdStockCheckAlertCard extends StatelessWidget {
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
                                       color: _zdText,
-                                      fontSize: 15,
+                                      fontSize: 13,
                                       fontWeight: FontWeight.w800,
                                     ),
                                   ),
@@ -581,7 +1219,7 @@ class _ZdStockCheckAlertCard extends StatelessWidget {
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       color: danger ? accent : _zdTextMuted,
-                                      fontSize: 11.5,
+                                      fontSize: 10.5,
                                       fontWeight: danger
                                           ? FontWeight.w700
                                           : FontWeight.w500,

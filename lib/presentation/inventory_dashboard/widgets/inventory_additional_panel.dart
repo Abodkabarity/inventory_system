@@ -1,6 +1,7 @@
 import 'package:daily_order/core/theme/app_colors.dart';
 import 'package:daily_order/presentation/inventory_dashboard/bloc/inventory_state.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 
@@ -532,7 +533,7 @@ class _InventoryAdditionalPanelState extends State<InventoryAdditionalPanel> {
                   : ListView.builder(
                       padding: const EdgeInsets.fromLTRB(14, 13, 14, 20),
                       physics: const ClampingScrollPhysics(),
-                      cacheExtent: 700,
+                      scrollCacheExtent: const ScrollCacheExtent.pixels(700),
                       addAutomaticKeepAlives: false,
                       addRepaintBoundaries: true,
                       itemCount: groupedRequests.length,
@@ -610,7 +611,7 @@ class _LuxuryPanelHeader extends StatelessWidget {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final compact = constraints.maxWidth < 1000;
+          final narrow = constraints.maxWidth < 820;
 
           final identity = _HeaderIdentity(
             pendingCount: pendingCount,
@@ -632,7 +633,7 @@ class _LuxuryPanelHeader extends StatelessWidget {
             onPressed: onConfirmAll,
           );
 
-          if (compact) {
+          if (narrow) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -647,11 +648,11 @@ class _LuxuryPanelHeader extends StatelessWidget {
 
           return Row(
             children: [
-              SizedBox(width: 330, child: identity),
-              const SizedBox(width: 18),
+              SizedBox(width: 290, child: identity),
+              const SizedBox(width: 16),
               Expanded(child: searchField),
               const SizedBox(width: 12),
-              confirmationButton,
+              SizedBox(width: 190, child: confirmationButton),
             ],
           );
         },
@@ -717,49 +718,6 @@ class _HeaderIdentity extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _SummaryBadge extends StatelessWidget {
-  final String label;
-  final int value;
-  final Color color;
-
-  const _SummaryBadge({
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.88),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.18)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 5),
-          Text(
-            '$label $value',
-            style: const TextStyle(
-              color: Color(0xFF475569),
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

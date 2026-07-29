@@ -138,6 +138,7 @@ extension _ZoneDailyOrderPageView on _ZoneManagerPageState {
               showAdditionalRowActions: false,
               submitStartHour: 0,
               submitEndHour: 23,
+              usePrimaryFilterTheme: true,
               controller: _dailyGridController.controller,
               gridController: _dailyGridController,
               onColumnResized: (key, width) {

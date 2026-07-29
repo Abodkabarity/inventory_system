@@ -38,14 +38,42 @@ class SupabaseAuthRemoteDs {
     }
 
     if (role == 'zone_manager') {
-      if (zone.isEmpty) {
-        throw Exception('No zone assigned for this Zone Manager in app_users.');
+      final zones = <String>{if (zone.isNotEmpty) zone};
+      try {
+        final effective = List<Map<String, dynamic>>.from(
+          await client.rpc('get_my_effective_zones'),
+        );
+        zones.addAll(
+          effective
+              .map((row) => (row['zone'] ?? '').toString().trim())
+              .where((value) => value.isNotEmpty),
+        );
+      } catch (_) {
+        try {
+          final assigned = List<Map<String, dynamic>>.from(
+            await client
+                .from('app_user_zones')
+                .select('zone')
+                .eq('user_id', uid),
+          );
+          zones.addAll(
+            assigned
+                .map((row) => (row['zone'] ?? '').toString().trim())
+                .where((value) => value.isNotEmpty),
+          );
+        } catch (_) {
+          // The legacy app_users.zone remains a safe fallback before migration.
+        }
+      }
+      if (zones.isEmpty) {
+        throw Exception('No zone assigned for this Zone Manager.');
       }
       return AppUserModel.fromMap({
         'user_id': data['user_id'],
         'role': data['role'],
         'branch_name': null,
         'zone': zone,
+        'zones': zones.toList(growable: false),
         'is_active': isActive,
       });
     }

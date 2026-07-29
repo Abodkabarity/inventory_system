@@ -80,7 +80,7 @@ class RoleGatePage extends StatelessWidget {
         if (role == 'zone_manager') {
           return ZoneManagerPage(
             runDate: runDate,
-            zoneName: (s.me!.zone ?? '').trim(),
+            zoneNames: s.me!.effectiveZones,
           );
         }
 

@@ -37,6 +37,7 @@ class OrdersTable extends StatefulWidget {
   final bool showAdditionalRowActions;
   final int submitStartHour;
   final int submitEndHour;
+  final bool usePrimaryFilterTheme;
   // Controller for selection/scroll.
   final DataGridController? controller;
 
@@ -65,6 +66,7 @@ class OrdersTable extends StatefulWidget {
     this.controller,
     required this.submitStartHour,
     required this.submitEndHour,
+    this.usePrimaryFilterTheme = false,
   });
 
   static const List<String> allColumns = [
@@ -353,6 +355,62 @@ class _OrdersTableState extends State<OrdersTable> {
               headerColor: const Color(0xFFF7F8FC),
               gridLineColor: AppColors.border.withValues(alpha: .8),
               selectionColor: const Color(0xFFEAF2FF),
+              filterPopupBackgroundColor: widget.usePrimaryFilterTheme
+                  ? Colors.white
+                  : null,
+              filterPopupTextStyle: widget.usePrimaryFilterTheme
+                  ? const TextStyle(color: Color(0xff1E293B))
+                  : null,
+              filterPopupDisabledTextStyle: widget.usePrimaryFilterTheme
+                  ? const TextStyle(color: Color(0xff94A3B8))
+                  : null,
+              filterPopupIconColor: widget.usePrimaryFilterTheme
+                  ? AppColors.primaryColor
+                  : null,
+              filterPopupDisabledIconColor: widget.usePrimaryFilterTheme
+                  ? const Color(0xffCBD5E1)
+                  : null,
+              filterPopupInputBorderColor: widget.usePrimaryFilterTheme
+                  ? AppColors.primaryColor
+                  : null,
+              filterPopupCheckColor: widget.usePrimaryFilterTheme
+                  ? Colors.white
+                  : null,
+              filterPopupCheckboxFillColor: widget.usePrimaryFilterTheme
+                  ? WidgetStateProperty.resolveWith<Color?>((states) {
+                      if (states.contains(WidgetState.disabled)) {
+                        return const Color(0xffE2E8F0);
+                      }
+                      if (states.contains(WidgetState.selected)) {
+                        return AppColors.primaryColor;
+                      }
+                      return Colors.white;
+                    })
+                  : null,
+              okFilteringLabelButtonColor: widget.usePrimaryFilterTheme
+                  ? AppColors.primaryColor
+                  : null,
+              okFilteringLabelColor: widget.usePrimaryFilterTheme
+                  ? Colors.white
+                  : null,
+              cancelFilteringLabelButtonColor: widget.usePrimaryFilterTheme
+                  ? Colors.white
+                  : null,
+              cancelFilteringLabelColor: widget.usePrimaryFilterTheme
+                  ? AppColors.primaryColor
+                  : null,
+              searchAreaFocusedBorderColor: widget.usePrimaryFilterTheme
+                  ? AppColors.primaryColor
+                  : null,
+              searchAreaCursorColor: widget.usePrimaryFilterTheme
+                  ? AppColors.primaryColor
+                  : null,
+              filterPopupTopDividerColor: widget.usePrimaryFilterTheme
+                  ? AppColors.border
+                  : null,
+              filterPopupBottomDividerColor: widget.usePrimaryFilterTheme
+                  ? AppColors.border
+                  : null,
             ),
             child: SfDataGrid(
               controller: widget.controller,
@@ -414,7 +472,7 @@ class _OrdersTableState extends State<OrdersTable> {
         if (widget.isLoading)
           Container(
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.55),
+              color: Colors.white.withValues(alpha: 0.55),
               borderRadius: BorderRadius.circular(14),
             ),
             child: const Center(

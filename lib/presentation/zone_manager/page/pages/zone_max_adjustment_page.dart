@@ -80,7 +80,18 @@ extension _ZoneMaxAdjustmentPageView on _ZoneManagerPageState {
         .map((row) => _text(row['branch_name']))
         .where((name) => name.isNotEmpty)
         .toList(growable: false);
-    final latestCredits = await _loadMaxCredits(names);
+    _setBusy(true);
+    Map<String, Map<String, dynamic>> latestCredits;
+    try {
+      latestCredits = await _loadMaxCredits(names);
+    } catch (error) {
+      if (mounted) {
+        _message('Could not load branch Max credit: $error', error: true);
+      }
+      return;
+    } finally {
+      _setBusy(false);
+    }
     if (!mounted) return;
     if (latestCredits.isNotEmpty) {
       // ignore: invalid_use_of_protected_member

@@ -432,7 +432,7 @@ class _HoverCardState extends State<_HoverCard> {
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 260),
             curve: Curves.easeOutCubic,
-            height: 132.h,
+            height: 138.h,
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
               gradient: LinearGradient(
