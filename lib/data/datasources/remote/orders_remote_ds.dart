@@ -15,7 +15,7 @@ class OrdersRemoteDs {
   Future<List<Map<String, dynamic>>> fetchOrdersAll({
     required String runDate,
     required String branchName,
-    int batchSize = 1000,
+    int batchSize = 500,
     void Function(int loaded)? onProgress,
   }) async {
     final out = <Map<String, dynamic>>[];
@@ -75,8 +75,6 @@ total_sales_last_90_days,
 
       lastItemCode = (list.last['item_code'] ?? '').toString().trim();
       if (lastItemCode.isEmpty) break;
-
-      if (list.length < batchSize) break;
     }
 
     return out;
@@ -771,6 +769,55 @@ total_sales_last_90_days,
     };
 
     await client.from('max_adj').insert(payload);
+  }
+
+  Future<Map<String, dynamic>?> fetchMaxAdjForItem({
+    required String branch,
+    required String itemCode,
+  }) async {
+    final row = await client
+        .from('max_adj')
+        .select()
+        .eq('branch_name', branch)
+        .eq('item_code', itemCode)
+        .maybeSingle();
+
+    return row == null ? null : Map<String, dynamic>.from(row);
+  }
+
+  /// Archives the current values, then replaces the active adjustment.
+  /// Keeping the same active row avoids a delete/insert gap while preserving
+  /// the same history behavior used by the branch workspace.
+  Future<void> replaceMaxAdj({
+    required Map<String, dynamic> existing,
+    required Map<String, dynamic> data,
+  }) async {
+    final id = existing['id'];
+    if (id == null) {
+      throw StateError('The existing Max adjustment has no id.');
+    }
+
+    final now = DateTime.now().toIso8601String();
+    await client.from('max_adj_log').insert({
+      'branch_name': existing['branch_name'],
+      'item_code': existing['item_code'],
+      'item_name': existing['item_name'],
+      'current_demand_30d': existing['current_demand_30d'],
+      'max_adjustment_30d': existing['max_adjustment_30d'],
+      'qty': existing['qty'],
+      'adjustment_type': existing['adjustment_type'],
+      'reason': existing['reason'],
+      'added_by': existing['added_by'],
+      'update_date': existing['update_date'],
+      'action_type': 'update_by_branch',
+      'original_id': id,
+      'moved_at': now,
+    });
+
+    await client
+        .from('max_adj')
+        .update({...data, 'update_date': now.split('T')[0], 'created_at': now})
+        .eq('id', id);
   }
 
   Future<int> fetchItemReportCount() async {

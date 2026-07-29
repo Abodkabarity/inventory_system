@@ -106,6 +106,7 @@ extension _ZoneMaxAdjustmentPageView on _ZoneManagerPageState {
       builder: (dialogContext) => _ZoneAddMaxDialog(
         branches: _branches,
         credits: _maxCredits,
+        adjustments: _maxAdj,
         initialBranch: initialBranch,
         remote: OrdersRemoteDs(_client),
         onSubmit: _submitZoneMax,
@@ -113,38 +114,73 @@ extension _ZoneMaxAdjustmentPageView on _ZoneManagerPageState {
     );
   }
 
-  Future<String?> _submitZoneMax(Map<String, dynamic> draft) async {
+  Future<_ZoneMaxSubmitResult> _submitZoneMax(
+    Map<String, dynamic> draft,
+  ) async {
     final branch = _text(draft['branch_name']);
     final allowed = _branches.any(
       (row) => _key(row['branch_name']) == _key(branch),
     );
-    if (!allowed) return 'This branch does not belong to your zone.';
+    if (!allowed) {
+      return const _ZoneMaxSubmitResult.error(
+        'This branch does not belong to your zone.',
+      );
+    }
 
     final itemCode = _text(draft['item_code']);
     final itemName = _text(draft['item_name']);
     final reason = _text(draft['reason']);
     final maxValue = num.tryParse(_text(draft['max_adjustment_30d']));
-    if (itemCode.isEmpty || itemName.isEmpty) return 'Select a valid item.';
-    if (maxValue == null || maxValue < 0) return 'Enter a valid Max value.';
-    if (reason.isEmpty) return 'Reason is required.';
+    if (itemCode.isEmpty || itemName.isEmpty) {
+      return const _ZoneMaxSubmitResult.error('Select a valid item.');
+    }
+    if (maxValue == null || maxValue < 0) {
+      return const _ZoneMaxSubmitResult.error('Enter a valid Max value.');
+    }
+    if (reason.isEmpty) {
+      return const _ZoneMaxSubmitResult.error('Reason is required.');
+    }
 
     final remote = OrdersRemoteDs(_client);
     try {
+      final existing = await remote.fetchMaxAdjForItem(
+        branch: branch,
+        itemCode: itemCode,
+      );
       final demand = await remote.fetchItemDemand(
         branch: branch,
         itemCode: itemCode,
       );
       final type = maxValue <= demand ? 'DECREASE' : 'INCREASE';
+      if (existing != null) {
+        final oldMax = num.tryParse(_text(existing['max_adjustment_30d']));
+        final oldDemand = num.tryParse(_text(existing['current_demand_30d']));
+        final oldReason = _text(existing['reason']).replaceFirst(
+          RegExp(r'\s*-\s*Added by Zone\s*$', caseSensitive: false),
+          '',
+        );
+        if (oldMax == maxValue &&
+            oldDemand == demand &&
+            oldReason.trim() == reason.trim()) {
+          return const _ZoneMaxSubmitResult.error(
+            'No values changed. Update the Max value or reason before replacing this adjustment.',
+          );
+        }
+      }
+      final existingType = _text(existing?['adjustment_type']).toUpperCase();
+      final existingUsesCredit = existing != null && existingType == 'INCREASE';
       final branchInfo = await remote.fetchBranchInfo(branchName: branch);
       final remaining = _zmInt(branchInfo['remaining_slots']);
-      if (type == 'INCREASE' && remaining <= 0) {
-        return 'No increase credit remains for $branch. Decreases are still allowed.';
+      if (type == 'INCREASE' && !existingUsesCredit && remaining <= 0) {
+        return _ZoneMaxSubmitResult.error(
+          'No increase credit remains for $branch. Decreases are still allowed.',
+        );
       }
 
       final taggedReason = reason.toLowerCase().endsWith('added by zone')
           ? reason
           : '$reason - Added by Zone';
-      await remote.insertMaxAdj({
+      final payload = <String, dynamic>{
         'branch_name': branch,
         'item_code': itemCode,
         'item_name': itemName,
@@ -154,43 +190,100 @@ extension _ZoneMaxAdjustmentPageView on _ZoneManagerPageState {
         'adjustment_type': type,
         'reason': taggedReason,
         'added_by': 'branch',
-      });
+      };
+      if (existing == null) {
+        await remote.insertMaxAdj(payload);
+      } else {
+        await remote.replaceMaxAdj(existing: existing, data: payload);
+      }
 
       final names = _branches
           .map((row) => _text(row['branch_name']))
           .where((name) => name.isNotEmpty)
           .toList(growable: false);
       final refreshed = await Future.wait<dynamic>([
-        _loadMaxAdj(names),
+        remote.fetchMaxAdjForItem(branch: branch, itemCode: itemCode),
         _loadMaxCredits(names),
       ]);
-      if (!mounted) return null;
+      final saved = refreshed[0] as Map<String, dynamic>?;
+      final adjustments = _maxAdj
+          .where(
+            (row) =>
+                _key(row['branch_name']) != _key(branch) ||
+                _key(row['item_code']) != _key(itemCode),
+          )
+          .toList(growable: true);
+      if (saved != null) adjustments.add(saved);
+      adjustments.sort(_compareBranchItem);
+      final credits = Map<String, Map<String, dynamic>>.from(refreshed[1]);
+      if (!mounted) {
+        return _ZoneMaxSubmitResult.success(
+          message: existing == null
+              ? 'Max adjustment added for $branch.'
+              : 'Max adjustment replaced for $branch.',
+          adjustments: adjustments,
+          credits: credits,
+        );
+      }
       // ignore: invalid_use_of_protected_member
       setState(() {
-        _maxAdj = List<Map<String, dynamic>>.from(refreshed[0])
-          ..sort(_compareBranchItem);
-        _maxCredits = Map<String, Map<String, dynamic>>.from(refreshed[1]);
+        _maxAdj = adjustments;
+        _maxCredits = credits;
       });
-      _message('Max adjustment added for $branch.');
-      return null;
+      final message = existing == null
+          ? 'Max adjustment added for $branch.'
+          : 'Existing Max adjustment replaced for $branch.';
+      _message(message);
+      return _ZoneMaxSubmitResult.success(
+        message: message,
+        adjustments: adjustments,
+        credits: credits,
+      );
     } catch (error) {
       final message = error.toString();
       if (message.contains('Item already exists')) {
-        return 'This item already exists in the Max list for $branch.';
+        return _ZoneMaxSubmitResult.error(
+          'This item was changed by another user. Select it again to load the latest values.',
+        );
       }
       if (message.contains('Max limit reached')) {
-        return 'The increase credit limit has been reached for $branch.';
+        return _ZoneMaxSubmitResult.error(
+          'The increase credit limit has been reached for $branch.',
+        );
       }
-      return 'Could not add Max adjustment: $message';
+      return _ZoneMaxSubmitResult.error(
+        'Could not save Max adjustment: $message',
+      );
     }
   }
 }
 
-typedef _ZoneMaxSubmit = Future<String?> Function(Map<String, dynamic> draft);
+class _ZoneMaxSubmitResult {
+  final String? error;
+  final String message;
+  final List<Map<String, dynamic>> adjustments;
+  final Map<String, Map<String, dynamic>> credits;
+
+  const _ZoneMaxSubmitResult.error(String message)
+    : error = message,
+      message = '',
+      adjustments = const [],
+      credits = const {};
+
+  const _ZoneMaxSubmitResult.success({
+    required this.message,
+    required this.adjustments,
+    required this.credits,
+  }) : error = null;
+}
+
+typedef _ZoneMaxSubmit =
+    Future<_ZoneMaxSubmitResult> Function(Map<String, dynamic> draft);
 
 class _ZoneAddMaxDialog extends StatefulWidget {
   final List<Map<String, dynamic>> branches;
   final Map<String, Map<String, dynamic>> credits;
+  final List<Map<String, dynamic>> adjustments;
   final String initialBranch;
   final OrdersRemoteDs remote;
   final _ZoneMaxSubmit onSubmit;
@@ -198,6 +291,7 @@ class _ZoneAddMaxDialog extends StatefulWidget {
   const _ZoneAddMaxDialog({
     required this.branches,
     required this.credits,
+    required this.adjustments,
     required this.initialBranch,
     required this.remote,
     required this.onSubmit,
@@ -212,14 +306,21 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
   final _name = TextEditingController();
   final _max = TextEditingController();
   final _reason = TextEditingController();
+  final _creditScrollController = ScrollController();
   late String _branch;
   num _demand = 0;
   bool _demandLoading = false;
   bool _searching = false;
   bool _saving = false;
   String? _error;
+  String? _success;
   int _searchRequest = 0;
+  int _demandRequest = 0;
   List<Map<String, dynamic>> _suggestions = const [];
+  late Map<String, Map<String, dynamic>> _credits;
+  late List<Map<String, dynamic>> _adjustments;
+  late Map<String, Map<String, dynamic>> _adjustmentsByBranchItem;
+  final List<Map<String, String>> _sessionSaves = [];
 
   List<Map<String, dynamic>> get _branches {
     final rows = List<Map<String, dynamic>>.from(widget.branches);
@@ -234,8 +335,24 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
     orElse: () => const {},
   );
 
-  Map<String, dynamic> get _credit =>
-      widget.credits[_zmKey(_branch)] ?? const {};
+  Map<String, dynamic> get _credit => _credits[_zmKey(_branch)] ?? const {};
+
+  Map<String, dynamic>? get _existingAdjustment {
+    final code = _code.text.trim();
+    if (code.isEmpty) return null;
+    return _adjustmentsByBranchItem[_adjustmentKey(_branch, code)];
+  }
+
+  String _adjustmentKey(dynamic branch, dynamic itemCode) =>
+      '${_zmKey(branch)}|${_zmKey(itemCode)}';
+
+  void _replaceAdjustmentSnapshot(List<Map<String, dynamic>> rows) {
+    _adjustments = List<Map<String, dynamic>>.from(rows);
+    _adjustmentsByBranchItem = {
+      for (final row in _adjustments)
+        _adjustmentKey(row['branch_name'], row['item_code']): row,
+    };
+  }
 
   int get _limit {
     final value = _zmInt(_branchRow['max_adj_limit']);
@@ -255,9 +372,20 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
 
   bool get _isIncrease => _maxValue != null && _maxValue! > _demand;
 
+  bool get _existingUsesCredit =>
+      _zmText(_existingAdjustment?['adjustment_type']).toUpperCase() ==
+      'INCREASE';
+
+  bool get _canSaveIncrease => _remaining > 0 || _existingUsesCredit;
+
   @override
   void initState() {
     super.initState();
+    _credits = {
+      for (final entry in widget.credits.entries)
+        entry.key: Map<String, dynamic>.from(entry.value),
+    };
+    _replaceAdjustmentSnapshot(widget.adjustments);
     _branch = widget.initialBranch;
     if (!_branches.any(
       (row) => _zmKey(row['branch_name']) == _zmKey(_branch),
@@ -272,6 +400,7 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
     _name.dispose();
     _max.dispose();
     _reason.dispose();
+    _creditScrollController.dispose();
     super.dispose();
   }
 
@@ -305,29 +434,71 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
   Future<void> _selectItem(Map<String, dynamic> row) async {
     _code.text = _zmText(row['item_code']);
     _name.text = _zmText(row['item_name']);
+    _applyExistingValues(clearWhenMissing: true);
     setState(() {
       _suggestions = const [];
       _error = null;
+      _success = null;
     });
     await _loadDemand();
+  }
+
+  String _editableReason(dynamic value) {
+    return _zmText(value).replaceFirst(
+      RegExp(r'\s*-\s*Added by Zone\s*$', caseSensitive: false),
+      '',
+    );
+  }
+
+  void _applyExistingValues({required bool clearWhenMissing}) {
+    final existing = _existingAdjustment;
+    if (existing != null) {
+      _name.text = _zmText(existing['item_name']);
+      _max.text = _zmNumber(existing['max_adjustment_30d']);
+      _reason.text = _editableReason(existing['reason']);
+    } else if (clearWhenMissing) {
+      _max.clear();
+      _reason.clear();
+    }
+  }
+
+  void _startAnotherItem() {
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _code.clear();
+      _name.clear();
+      _max.clear();
+      _reason.clear();
+      _demand = 0;
+      _suggestions = const [];
+      _error = null;
+      _success = null;
+      _searchRequest++;
+      _demandRequest++;
+      _demandLoading = false;
+    });
   }
 
   Future<void> _loadDemand() async {
     final code = _code.text.trim();
     if (code.isEmpty) return;
+    final branch = _branch;
+    final request = ++_demandRequest;
     setState(() => _demandLoading = true);
     try {
       final value = await widget.remote.fetchItemDemand(
-        branch: _branch,
+        branch: branch,
         itemCode: code,
       );
-      if (!mounted) return;
+      if (!mounted || request != _demandRequest) return;
       setState(() => _demand = value);
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || request != _demandRequest) return;
       setState(() => _error = 'Could not load item demand: $error');
     } finally {
-      if (mounted) setState(() => _demandLoading = false);
+      if (mounted && request == _demandRequest) {
+        setState(() => _demandLoading = false);
+      }
     }
   }
 
@@ -335,8 +506,15 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
     setState(() {
       _branch = value;
       _error = null;
+      _success = null;
     });
-    if (_code.text.trim().isNotEmpty) await _loadDemand();
+    if (_code.text.trim().isNotEmpty) {
+      // Existing values for the target branch take precedence. When the item
+      // is new there, retain the entered Max and reason so the manager can
+      // apply the same item across several branches quickly.
+      _applyExistingValues(clearWhenMissing: false);
+      await _loadDemand();
+    }
   }
 
   Future<void> _save() async {
@@ -354,7 +532,7 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
       setState(() => _error = 'Reason is required.');
       return;
     }
-    if (_isIncrease && _remaining <= 0) {
+    if (_isIncrease && !_canSaveIncrease) {
       setState(
         () => _error =
             'No increase credit remains for $_branch. You can still submit a decrease.',
@@ -365,7 +543,7 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
       _saving = true;
       _error = null;
     });
-    final error = await widget.onSubmit({
+    final result = await widget.onSubmit({
       'branch_name': _branch,
       'item_code': _code.text.trim(),
       'item_name': _name.text.trim(),
@@ -373,13 +551,29 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
       'reason': _reason.text.trim(),
     });
     if (!mounted) return;
-    if (error == null) {
-      Navigator.of(context).pop();
+    if (result.error == null) {
+      setState(() {
+        _saving = false;
+        _error = null;
+        _success = result.message;
+        _credits = {
+          for (final entry in result.credits.entries)
+            entry.key: Map<String, dynamic>.from(entry.value),
+        };
+        _replaceAdjustmentSnapshot(result.adjustments);
+        _sessionSaves.insert(0, {
+          'branch': _branch,
+          'item_code': _code.text.trim(),
+          'item_name': _name.text.trim(),
+        });
+        if (_sessionSaves.length > 4) _sessionSaves.removeLast();
+      });
       return;
     }
     setState(() {
       _saving = false;
-      _error = error;
+      _error = result.error;
+      _success = null;
     });
   }
 
@@ -387,7 +581,7 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
   Widget build(BuildContext context) {
     final screen = MediaQuery.sizeOf(context);
     final compact = screen.width < 980;
-    final canIncrease = _remaining > 0;
+    final canIncrease = _canSaveIncrease;
     return Dialog(
       insetPadding: const EdgeInsets.all(22),
       backgroundColor: Colors.transparent,
@@ -423,7 +617,8 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
                               height: 230,
                               child: _ZoneMaxCreditRail(
                                 branches: _branches,
-                                credits: widget.credits,
+                                credits: _credits,
+                                scrollController: _creditScrollController,
                                 selectedBranch: _branch,
                                 onSelected: _changeBranch,
                               ),
@@ -440,7 +635,8 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
                             width: 330,
                             child: _ZoneMaxCreditRail(
                               branches: _branches,
-                              credits: widget.credits,
+                              credits: _credits,
+                              scrollController: _creditScrollController,
                               selectedBranch: _branch,
                               onSelected: _changeBranch,
                             ),
@@ -464,6 +660,7 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
 
   Widget _buildForm(bool canIncrease) {
     final increase = _isIncrease;
+    final existing = _existingAdjustment;
     final typeColor = increase
         ? const Color(0xff16A34A)
         : const Color(0xffEF4444);
@@ -487,15 +684,24 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
             fontWeight: FontWeight.w600,
           ),
         ),
+        if (_success != null || _sessionSaves.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          _ZoneMaxSessionBanner(
+            message: _success,
+            saves: _sessionSaves,
+            onAddAnother: _saving ? null : _startAnotherItem,
+          ),
+        ],
         const SizedBox(height: 18),
         DropdownButtonFormField<String>(
+          key: ValueKey(_branch),
           initialValue: _branch,
           isExpanded: true,
           decoration: _zmInputDecoration('Branch', Icons.storefront_rounded),
           items: _branches
               .map((row) {
                 final name = _zmText(row['branch_name']);
-                final credit = widget.credits[_zmKey(name)] ?? const {};
+                final credit = _credits[_zmKey(name)] ?? const {};
                 final limit = _zmInt(row['max_adj_limit']) > 0
                     ? _zmInt(row['max_adj_limit'])
                     : 50;
@@ -559,6 +765,10 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
           const LinearProgressIndicator(minHeight: 2)
         else if (_suggestions.isNotEmpty)
           _ZoneMaxSuggestions(rows: _suggestions, onSelected: _selectItem),
+        if (existing != null) ...[
+          const SizedBox(height: 12),
+          _ZoneExistingMaxCard(row: existing),
+        ],
         const SizedBox(height: 14),
         Row(
           children: [
@@ -606,7 +816,9 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
               Expanded(
                 child: Text(
                   increase
-                      ? 'INCREASE • consumes 1 credit after a successful save.'
+                      ? existing != null && _existingUsesCredit
+                            ? 'INCREASE • replaces the current adjustment and reuses its credit.'
+                            : 'INCREASE • consumes 1 credit after a successful save.'
                       : 'DECREASE • does not consume increase credit.',
                   style: TextStyle(
                     color: typeColor,
@@ -662,7 +874,10 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
           children: [
             TextButton(
               onPressed: _saving ? null : () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: const Text(
+                'Close',
+                style: TextStyle(color: AppColors.secondaryColor),
+              ),
             ),
             const SizedBox(width: 10),
             FilledButton.icon(
@@ -683,12 +898,273 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
                         color: Colors.white,
                       ),
                     )
-                  : const Icon(Icons.add_rounded),
-              label: Text(_saving ? 'Adding…' : 'Add Max for $_branch'),
+                  : Icon(
+                      existing == null ? Icons.add_rounded : Icons.sync_rounded,
+                    ),
+              label: Text(
+                _saving
+                    ? 'Saving…'
+                    : existing == null
+                    ? 'Save & Continue'
+                    : 'Replace & Continue',
+              ),
             ),
           ],
         ),
       ],
+    );
+  }
+}
+
+class _ZoneExistingMaxCard extends StatelessWidget {
+  final Map<String, dynamic> row;
+
+  const _ZoneExistingMaxCard({required this.row});
+
+  @override
+  Widget build(BuildContext context) {
+    const accent = Color(0xff7C3AED);
+    final type = _zmText(row['adjustment_type']).toUpperCase();
+    final reason = _zmText(row['reason']);
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
+      width: double.infinity,
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xffF5F3FF), Colors.white],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xffC4B5FD)),
+        boxShadow: [
+          BoxShadow(
+            color: accent.withValues(alpha: .08),
+            blurRadius: 18,
+            offset: const Offset(0, 7),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(Icons.history_rounded, color: accent),
+              ),
+              const SizedBox(width: 11),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'EXISTING ADJUSTMENT FOUND',
+                      style: TextStyle(
+                        color: accent,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .45,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Saving will archive these values and replace the active record.',
+                      style: TextStyle(
+                        color: Color(0xff64748B),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: .10),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Text(
+                  type.isEmpty ? 'ACTIVE' : type,
+                  style: const TextStyle(
+                    color: accent,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 13),
+          Row(
+            children: [
+              Expanded(
+                child: _ZoneExistingMaxValue(
+                  label: 'OLD DEMAND',
+                  value: _zmNumber(row['current_demand_30d']),
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: _ZoneExistingMaxValue(
+                  label: 'OLD MAX',
+                  value: _zmNumber(row['max_adjustment_30d']),
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: _ZoneExistingMaxValue(
+                  label: 'LAST UPDATE',
+                  value: _zmText(row['update_date']).isEmpty
+                      ? '—'
+                      : _zmText(row['update_date']),
+                ),
+              ),
+            ],
+          ),
+          if (reason.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: .78),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xffDDD6FE)),
+              ),
+              child: Text(
+                'Previous reason: $reason',
+                style: const TextStyle(
+                  color: Color(0xff4C1D95),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ZoneExistingMaxValue extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _ZoneExistingMaxValue({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: const Color(0xffE2E8F0)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xff94A3B8),
+            fontSize: 9,
+            fontWeight: FontWeight.w900,
+            letterSpacing: .35,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Color(0xff0F2942),
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ZoneMaxSessionBanner extends StatelessWidget {
+  final String? message;
+  final List<Map<String, String>> saves;
+  final VoidCallback? onAddAnother;
+
+  const _ZoneMaxSessionBanner({
+    required this.message,
+    required this.saves,
+    required this.onAddAnother,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(13, 11, 10, 11),
+      decoration: BoxDecoration(
+        color: const Color(0xffECFDF3),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xff86EFAC)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.check_circle_rounded, color: Color(0xff16A34A)),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  message ?? '${saves.length} saved in this session',
+                  style: const TextStyle(
+                    color: Color(0xff166534),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                if (saves.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    '${saves.first['branch']} • ${saves.first['item_code']} • ${saves.first['item_name']}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xff15803D),
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton.icon(
+            onPressed: onAddAnother,
+            icon: const Icon(Icons.add_rounded, size: 17),
+            label: const Text('Another item'),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xff166534),
+              backgroundColor: Colors.white.withValues(alpha: .72),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -732,7 +1208,7 @@ class _ZoneMaxDialogHeader extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  'Select a zone branch, review its credit, then create an adjustment.',
+                  'Create, replace, and reuse items across zone branches without closing.',
                   style: TextStyle(
                     color: Color(0xffC8D8E5),
                     fontSize: 11,
@@ -756,12 +1232,14 @@ class _ZoneMaxDialogHeader extends StatelessWidget {
 class _ZoneMaxCreditRail extends StatelessWidget {
   final List<Map<String, dynamic>> branches;
   final Map<String, Map<String, dynamic>> credits;
+  final ScrollController scrollController;
   final String selectedBranch;
   final ValueChanged<String> onSelected;
 
   const _ZoneMaxCreditRail({
     required this.branches,
     required this.credits,
+    required this.scrollController,
     required this.selectedBranch,
     required this.onSelected,
   });
@@ -795,7 +1273,10 @@ class _ZoneMaxCreditRail extends StatelessWidget {
           const SizedBox(height: 12),
           Expanded(
             child: Scrollbar(
+              controller: scrollController,
+              thumbVisibility: true,
               child: ListView.separated(
+                controller: scrollController,
                 itemCount: branches.length,
                 separatorBuilder: (_, _) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
