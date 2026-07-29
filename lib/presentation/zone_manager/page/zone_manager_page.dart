@@ -101,6 +101,10 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
   List<Map<String, dynamic>> _dailyExports = const [];
   List<Map<String, dynamic>> _nonReceivedExports = const [];
   List<Map<String, dynamic>> _edits = const [];
+  List<Map<String, dynamic>> _editsReport = const [];
+  late DateTime _editsFrom;
+  late DateTime _editsTo;
+  bool _editsReportLoading = false;
   List<StockCheckTask> _stockChecks = const [];
   List<StockCheckTask> _dashboardStockChecks = const [];
   bool _stockCheckLoading = false;
@@ -160,6 +164,8 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     _permanentZones = List<String>.from(widget.zoneNames);
     _additionalFrom = DateTime(today.year, today.month, today.day);
     _additionalTo = DateTime(today.year, today.month, today.day, 23, 59, 59);
+    _editsFrom = DateTime(today.year, today.month, today.day);
+    _editsTo = DateTime(today.year, today.month, today.day, 23, 59, 59);
     _dashboardClock = Timer.periodic(const Duration(seconds: 8), (_) {
       if (!mounted || _page != 0) return;
       unawaited(_refreshDashboardStockChecks());
@@ -233,6 +239,11 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
         _loadDashboardStockChecks(names),
         _loadAdditionalRange(names, _additionalFrom, _additionalTo),
       ]);
+      final editsReport =
+          _dateKey(_editsFrom) == widget.runDate &&
+              _dateKey(_editsTo) == widget.runDate
+          ? List<Map<String, dynamic>>.from(result[3])
+          : await _loadEditsRange(names, _editsFrom, _editsTo);
       if (!mounted) return;
       setState(() {
         _branches = branches;
@@ -240,6 +251,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
         _dailyExports = result[1];
         _nonReceivedExports = result[2];
         _edits = result[3];
+        _editsReport = editsReport;
         _submissions = result[4];
         _liveActivities = result[5];
         _maxCredits = result[6];
@@ -260,6 +272,9 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
       _subscribeToDelegations();
       if (_page == 3) await _loadDailyBranch();
       if (_page == 6) await _loadStockChecks();
+      if (_page == 1 || _page == 2) {
+        await _loadZoneReport(_page, force: true);
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -575,7 +590,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     final toDate = _dateKey(to);
     for (final chunk in _chunks(branches, 20)) {
       var offset = 0;
-      const batchSize = 1000;
+      const batchSize = 500;
       while (true) {
         final rows = List<Map<String, dynamic>>.from(
           await _client
@@ -589,9 +604,9 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
               .order('created_at', ascending: false)
               .range(offset, offset + batchSize - 1),
         );
+        if (rows.isEmpty) break;
         output.addAll(rows);
-        if (rows.length < batchSize) break;
-        offset += batchSize;
+        offset += rows.length;
       }
     }
     return output;
@@ -643,24 +658,26 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
 
   Future<List<Map<String, dynamic>>> _loadMismatch(
     List<String> branches,
-  ) => _fetchPreviewByBranch(
+  ) => _fetchByBranch(
     table: 'stk_mismatch',
     branchColumn: 'branch_name',
     branches: branches,
     columns:
         'id,branch_name,item_code,item_name,system_stock,actual_stock,diff,update_date,created_at',
     orderBy: 'update_date',
+    tieBreaker: 'id',
   );
 
   Future<List<Map<String, dynamic>>> _loadMaxAdj(
     List<String> branches,
-  ) => _fetchPreviewByBranch(
+  ) => _fetchByBranch(
     table: 'max_adj',
     branchColumn: 'branch_name',
     branches: branches,
     columns:
         'id,branch_name,item_code,item_name,current_demand_30d,max_adjustment_30d,adjustment_type,qty,reason,update_date,added_by,created_at,end_date',
     orderBy: 'created_at',
+    tieBreaker: 'id',
   );
 
   Future<Map<String, Map<String, dynamic>>> _loadMaxCredits(
@@ -707,15 +724,70 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     orderBy: 'run_date',
   );
 
-  Future<List<Map<String, dynamic>>> _loadEdits(List<String> branches) =>
-      _fetchByBranch(
-        table: 'order_edits',
-        branchColumn: 'branch_name',
-        branches: branches,
-        columns:
-            'branch_name,item_code,item_name,old_qty,new_qty,diff,created_at',
-        runDateColumn: 'run_date',
-      );
+  Future<List<Map<String, dynamic>>> _loadEdits(
+    List<String> branches,
+  ) => _fetchByBranch(
+    table: 'order_edits',
+    branchColumn: 'branch_name',
+    branches: branches,
+    columns:
+        'run_date,branch_name,item_code,item_name,old_qty,new_qty,diff,created_at',
+    runDateColumn: 'run_date',
+    orderBy: 'created_at',
+  );
+
+  Future<List<Map<String, dynamic>>> _loadEditsRange(
+    List<String> branches,
+    DateTime from,
+    DateTime to,
+  ) async {
+    if (branches.isEmpty) return const [];
+    final output = <Map<String, dynamic>>[];
+    final fromDate = _dateKey(from);
+    final toDate = _dateKey(to);
+    for (final chunk in _chunks(branches, 20)) {
+      var offset = 0;
+      const batchSize = 500;
+      while (true) {
+        final rows = List<Map<String, dynamic>>.from(
+          await _client
+              .from('order_edits')
+              .select(
+                'run_date,branch_name,item_code,item_name,old_qty,new_qty,diff,created_at',
+              )
+              .inFilter('branch_name', chunk)
+              .gte('run_date', fromDate)
+              .lte('run_date', toDate)
+              .order('created_at', ascending: false)
+              .range(offset, offset + batchSize - 1),
+        );
+        if (rows.isEmpty) break;
+        output.addAll(rows);
+        offset += rows.length;
+      }
+    }
+    return output;
+  }
+
+  Future<void> _reloadEditsReport() async {
+    if (_editsReportLoading || !mounted) return;
+    final branches = _branches
+        .map((row) => _text(row['branch_name']))
+        .where((name) => name.isNotEmpty)
+        .toList(growable: false);
+    setState(() => _editsReportLoading = true);
+    try {
+      final rows = await _loadEditsRange(branches, _editsFrom, _editsTo);
+      if (!mounted) return;
+      setState(() => _editsReport = rows);
+    } catch (error) {
+      if (mounted) {
+        _message('Could not load Order Edits: $error', error: true);
+      }
+    } finally {
+      if (mounted) setState(() => _editsReportLoading = false);
+    }
+  }
 
   Future<List<_ZoneLiveActivity>> _loadRecentZoneActivity(
     List<String> branches,
@@ -963,7 +1035,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     final output = <StockCheckTask>[];
     for (final chunk in _chunks(branches, 20)) {
       var offset = 0;
-      const batchSize = 1000;
+      const batchSize = 500;
       while (true) {
         final data = List<Map<String, dynamic>>.from(
           await _client
@@ -975,9 +1047,9 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
               .order('expires_at')
               .range(offset, offset + batchSize - 1),
         );
+        if (data.isEmpty) break;
         output.addAll(data.map(StockCheckTask.fromMap));
-        if (data.length < batchSize) break;
-        offset += batchSize;
+        offset += data.length;
       }
     }
     return output;
@@ -1063,7 +1135,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
       final output = <StockCheckTask>[];
       for (final chunk in _chunks(branches, 20)) {
         var offset = 0;
-        const batchSize = 5000;
+        const batchSize = 500;
         while (true) {
           final data = List<Map<String, dynamic>>.from(
             await _client
@@ -1074,9 +1146,9 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
                 .order('sent_at', ascending: false)
                 .range(offset, offset + batchSize - 1),
           );
+          if (data.isEmpty) break;
           output.addAll(data.map(StockCheckTask.fromMap));
-          if (data.length < batchSize) break;
-          offset += batchSize;
+          offset += data.length;
         }
       }
       output.sort((left, right) {
@@ -1118,12 +1190,13 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     required String columns,
     String? runDateColumn,
     String? orderBy,
+    String? tieBreaker,
   }) async {
     if (branches.isEmpty) return const [];
     final output = <Map<String, dynamic>>[];
     for (final chunk in _chunks(branches, 20)) {
       var offset = 0;
-      const batch = 5000;
+      const batch = 500;
       while (true) {
         dynamic query = _client
             .from(table)
@@ -1135,35 +1208,16 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
         if (orderBy != null) {
           query = query.order(orderBy, ascending: false);
         }
+        if (tieBreaker != null && tieBreaker != orderBy) {
+          query = query.order(tieBreaker, ascending: false);
+        }
         final data = List<Map<String, dynamic>>.from(
           await query.range(offset, offset + batch - 1),
         );
+        if (data.isEmpty) break;
         output.addAll(data);
-        if (data.length < batch) break;
-        offset += batch;
+        offset += data.length;
       }
-    }
-    return output;
-  }
-
-  Future<List<Map<String, dynamic>>> _fetchPreviewByBranch({
-    required String table,
-    required String branchColumn,
-    required List<String> branches,
-    required String columns,
-    String? orderBy,
-  }) async {
-    if (branches.isEmpty) return const [];
-    final output = <Map<String, dynamic>>[];
-    for (final chunk in _chunks(branches, 20)) {
-      dynamic query = _client
-          .from(table)
-          .select(columns)
-          .inFilter(branchColumn, chunk);
-      if (orderBy != null) {
-        query = query.order(orderBy, ascending: false);
-      }
-      output.addAll(List<Map<String, dynamic>>.from(await query.range(0, 499)));
     }
     return output;
   }
@@ -1192,9 +1246,13 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
       if (_stockChecks.isEmpty) await _loadStockChecks();
       return;
     }
+    await _loadZoneReport(page);
+  }
+
+  Future<void> _loadZoneReport(int page, {bool force = false}) async {
     if (page != 1 && page != 2) return;
-    if (page == 1 && _mismatch.isNotEmpty) return;
-    if (page == 2 && _maxAdj.isNotEmpty) return;
+    if (!force && page == 1 && _mismatch.isNotEmpty) return;
+    if (!force && page == 2 && _maxAdj.isNotEmpty) return;
     setState(() => _reportLoading = true);
     try {
       final branches = _branches

@@ -15,7 +15,7 @@ class OrdersRemoteDs {
   Future<List<Map<String, dynamic>>> fetchOrdersAll({
     required String runDate,
     required String branchName,
-    int batchSize = 1000,
+    int batchSize = 500,
     void Function(int loaded)? onProgress,
   }) async {
     final out = <Map<String, dynamic>>[];
@@ -75,8 +75,6 @@ total_sales_last_90_days,
 
       lastItemCode = (list.last['item_code'] ?? '').toString().trim();
       if (lastItemCode.isEmpty) break;
-
-      if (list.length < batchSize) break;
     }
 
     return out;

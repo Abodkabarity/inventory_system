@@ -202,11 +202,19 @@ extension _ZoneMaxAdjustmentPageView on _ZoneManagerPageState {
           .where((name) => name.isNotEmpty)
           .toList(growable: false);
       final refreshed = await Future.wait<dynamic>([
-        _loadMaxAdj(names),
+        remote.fetchMaxAdjForItem(branch: branch, itemCode: itemCode),
         _loadMaxCredits(names),
       ]);
-      final adjustments = List<Map<String, dynamic>>.from(refreshed[0])
-        ..sort(_compareBranchItem);
+      final saved = refreshed[0] as Map<String, dynamic>?;
+      final adjustments = _maxAdj
+          .where(
+            (row) =>
+                _key(row['branch_name']) != _key(branch) ||
+                _key(row['item_code']) != _key(itemCode),
+          )
+          .toList(growable: true);
+      if (saved != null) adjustments.add(saved);
+      adjustments.sort(_compareBranchItem);
       final credits = Map<String, Map<String, dynamic>>.from(refreshed[1]);
       if (!mounted) {
         return _ZoneMaxSubmitResult.success(
@@ -311,6 +319,7 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
   List<Map<String, dynamic>> _suggestions = const [];
   late Map<String, Map<String, dynamic>> _credits;
   late List<Map<String, dynamic>> _adjustments;
+  late Map<String, Map<String, dynamic>> _adjustmentsByBranchItem;
   final List<Map<String, String>> _sessionSaves = [];
 
   List<Map<String, dynamic>> get _branches {
@@ -331,13 +340,18 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
   Map<String, dynamic>? get _existingAdjustment {
     final code = _code.text.trim();
     if (code.isEmpty) return null;
-    for (final row in _adjustments) {
-      if (_zmKey(row['branch_name']) == _zmKey(_branch) &&
-          _zmKey(row['item_code']) == _zmKey(code)) {
-        return row;
-      }
-    }
-    return null;
+    return _adjustmentsByBranchItem[_adjustmentKey(_branch, code)];
+  }
+
+  String _adjustmentKey(dynamic branch, dynamic itemCode) =>
+      '${_zmKey(branch)}|${_zmKey(itemCode)}';
+
+  void _replaceAdjustmentSnapshot(List<Map<String, dynamic>> rows) {
+    _adjustments = List<Map<String, dynamic>>.from(rows);
+    _adjustmentsByBranchItem = {
+      for (final row in _adjustments)
+        _adjustmentKey(row['branch_name'], row['item_code']): row,
+    };
   }
 
   int get _limit {
@@ -371,7 +385,7 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
       for (final entry in widget.credits.entries)
         entry.key: Map<String, dynamic>.from(entry.value),
     };
-    _adjustments = List<Map<String, dynamic>>.from(widget.adjustments);
+    _replaceAdjustmentSnapshot(widget.adjustments);
     _branch = widget.initialBranch;
     if (!_branches.any(
       (row) => _zmKey(row['branch_name']) == _zmKey(_branch),
@@ -546,7 +560,7 @@ class _ZoneAddMaxDialogState extends State<_ZoneAddMaxDialog> {
           for (final entry in result.credits.entries)
             entry.key: Map<String, dynamic>.from(entry.value),
         };
-        _adjustments = List<Map<String, dynamic>>.from(result.adjustments);
+        _replaceAdjustmentSnapshot(result.adjustments);
         _sessionSaves.insert(0, {
           'branch': _branch,
           'item_code': _code.text.trim(),
