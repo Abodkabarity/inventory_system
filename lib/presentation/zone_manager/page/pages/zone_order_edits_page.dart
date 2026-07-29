@@ -9,7 +9,7 @@ extension _ZoneOrderEditsPageView on _ZoneManagerPageState {
       _ColumnDef('item_name', 'Item Name'),
       _ColumnDef('old_qty', 'Original Qty'),
       _ColumnDef('new_qty', 'Edited Qty'),
-      _ColumnDef('diff', 'Difference'),
+      _ColumnDef('diff', 'Diff'),
       _ColumnDef('created_at', 'Edited At'),
     ];
     return _ReportPage(

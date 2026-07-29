@@ -71,7 +71,7 @@ extension _ZoneStockCheckPageView on _ZoneManagerPageState {
       _ColumnDef('item_name', 'Item Name'),
       _ColumnDef('system_qty', 'System Qty'),
       _ColumnDef('actual_qty', 'Actual Qty'),
-      _ColumnDef('diff', 'Variance'),
+      _ColumnDef('diff', 'Diff'),
       _ColumnDef('status', 'Status'),
       _ColumnDef('submitted_by_name', 'Submitted By'),
       _ColumnDef('submitted_at', 'Submitted At'),
@@ -130,8 +130,14 @@ extension _ZoneStockCheckPageView on _ZoneManagerPageState {
       extraActions: [
         OutlinedButton.icon(
           onPressed: () => _selectStockCheckBatch(null),
-          icon: const Icon(Icons.arrow_back_rounded),
-          label: const Text('Back to Projects'),
+          icon: const Icon(
+            Icons.arrow_back_rounded,
+            color: AppColors.secondaryColor,
+          ),
+          label: const Text(
+            'Back to Projects',
+            style: TextStyle(color: AppColors.secondaryColor),
+          ),
         ),
       ],
       exportLabel: 'Download Project',
@@ -403,7 +409,7 @@ class _StockCheckProjectCardState extends State<_StockCheckProjectCard> {
                   const Color(0xffF59E0B),
                 ),
                 _ProjectMiniMetric(
-                  'Variance',
+                  'Diff',
                   project.variances,
                   const Color(0xffEF4444),
                 ),
@@ -425,6 +431,9 @@ class _StockCheckProjectCardState extends State<_StockCheckProjectCard> {
               height: 42,
               child: FilledButton.icon(
                 onPressed: widget.onOpen,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primaryColor,
+                ),
                 icon: const Icon(Icons.visibility_outlined, size: 20),
                 label: const Text(
                   'Open Project Details',

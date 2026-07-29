@@ -379,20 +379,38 @@ class _ZdIncomingHandoverCard extends StatefulWidget {
 
 class _ZdIncomingHandoverCardState extends State<_ZdIncomingHandoverCard>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _glow;
+  late final AnimationController _pulseController;
+
+  bool _hovered = false;
+
+  static const Color _blue = Color(0xFF3155D9);
+  static const Color _blueDark = Color(0xFF1E3A8A);
+  static const Color _blueSoft = Color(0xFFEEF3FF);
+
+  static const Color _orange = Color(0xFFF97316);
+  static const Color _orangeDark = Color(0xFFC2410C);
+  static const Color _orangeSoft = Color(0xFFFFF3E8);
+
+  static const Color _green = Color(0xFF059669);
+  static const Color _red = Color(0xFFDC2626);
+
+  static const Color _text = Color(0xFF101828);
+  static const Color _textSubtle = Color(0xFF475569);
+  static const Color _border = Color(0xFFE2E8F0);
 
   @override
   void initState() {
     super.initState();
-    _glow = AnimationController(
+
+    _pulseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1300),
+      duration: const Duration(milliseconds: 1400),
     )..repeat(reverse: true);
   }
 
   @override
   void dispose() {
-    _glow.dispose();
+    _pulseController.dispose();
     super.dispose();
   }
 
@@ -401,147 +419,583 @@ class _ZdIncomingHandoverCardState extends State<_ZdIncomingHandoverCard>
     final requester = widget.managerName(
       (widget.row['requester_user_id'] ?? '').toString(),
     );
-    final zones = widget.zonesOf(widget.row['zones']).join(' • ');
+
+    final zonesList = widget.zonesOf(widget.row['zones']);
+    final zones = zonesList.isEmpty ? 'Selected Zone' : zonesList.join(' • ');
+
+    final reason = (widget.row['reason'] ?? '').toString().trim();
+    final requestId = (widget.row['id'] ?? '').toString();
+
     final start = widget.dateOf(widget.row['start_at']);
     final end = widget.dateOf(widget.row['end_at']);
-    return AnimatedBuilder(
-      animation: _glow,
-      builder: (context, _) => Transform.translate(
-        offset: Offset(0, -1.5 * _glow.value),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xffFFF7ED), Colors.white],
-            ),
-            borderRadius: BorderRadius.circular(17),
-            border: Border.all(color: const Color(0xffFDBA74), width: 1.2),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(
-                  0xffF97316,
-                ).withValues(alpha: .07 + _glow.value * .13),
-                blurRadius: 8 + _glow.value * 10,
-                spreadRadius: _glow.value * .8,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
+
+    final startText = start == null
+        ? 'Not specified'
+        : DateFormat('dd MMM, hh:mm a').format(start);
+
+    final endText = end == null
+        ? 'Not specified'
+        : DateFormat('dd MMM, hh:mm a').format(end);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compactActions = constraints.maxWidth < 820;
+        final veryCompact = constraints.maxWidth < 620;
+
+        return MouseRegion(
+          cursor: SystemMouseCursors.basic,
+          onEnter: (_) {
+            if (!_hovered) setState(() => _hovered = true);
+          },
+          onExit: (_) {
+            if (_hovered) setState(() => _hovered = false);
+          },
+          child: AnimatedBuilder(
+            animation: _pulseController,
+            builder: (context, _) {
+              final pulse = _pulseController.value;
+
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
-                  color: const Color(0xffFFEDD5),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.mark_email_unread_outlined,
-                  color: Color(0xffEA580C),
-                  size: 21,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const _ZdMiniLabel(
-                          text: 'PRIORITY • COVERAGE',
-                          color: Color(0xffEA580C),
-                        ),
-                        const SizedBox(width: 7),
-                        Expanded(
-                          child: Text(
-                            '$requester asks you to manage $zones',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: _zdText,
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                      ],
+                  gradient: LinearGradient(
+                    colors: _hovered
+                        ? const [
+                            Color(0xFFFFFFFF),
+                            Color(0xFFFFFAF5),
+                            Color(0xFFF5F8FF),
+                          ]
+                        : const [
+                            Color(0xFFFFFFFF),
+                            Color(0xFFFFFCF9),
+                            Color(0xFFF9FBFF),
+                          ],
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                  ),
+                  borderRadius: BorderRadius.circular(17),
+                  border: Border.all(
+                    color: _hovered
+                        ? _orange.withValues(alpha: 0.48)
+                        : _orange.withValues(alpha: 0.30),
+                    width: _hovered ? 1.3 : 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _orange.withValues(alpha: _hovered ? 0.13 : 0.06),
+                      blurRadius: _hovered ? 22 : 14,
+                      offset: Offset(0, _hovered ? 7 : 4),
                     ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            (widget.row['reason'] ?? '').toString(),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: _zdTextSubtle,
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${start == null ? '—' : DateFormat('dd MMM, hh:mm a').format(start)} → ${end == null ? '—' : DateFormat('dd MMM, hh:mm a').format(end)}',
-                          style: const TextStyle(
-                            color: Color(0xff9A3412),
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
+                    BoxShadow(
+                      color: const Color(0xFF0F172A).withValues(alpha: 0.025),
+                      blurRadius: 5,
+                      offset: const Offset(0, 1),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(width: 10),
-              OutlinedButton(
-                onPressed: widget.busy
-                    ? null
-                    : () => widget.onRespond(
-                        (widget.row['id'] ?? '').toString(),
-                        false,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 5,
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Color(0xFFFFB45E),
+                            Color(0xFFF97316),
+                            Color(0xFFEA580C),
+                          ],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        ),
                       ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xffDC2626),
-                  side: const BorderSide(color: Color(0xffFCA5A5)),
-                  minimumSize: const Size(58, 34),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  visualDensity: VisualDensity.compact,
-                ),
-                child: const Text('No'),
-              ),
-              const SizedBox(width: 7),
-              FilledButton.icon(
-                onPressed: widget.busy
-                    ? null
-                    : () => widget.onRespond(
-                        (widget.row['id'] ?? '').toString(),
-                        true,
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
+                        child: Row(
+                          children: [
+                            _buildLeadingIcon(pulse),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildInformation(
+                                requester: requester,
+                                zones: zones,
+                                reason: reason,
+                                startText: startText,
+                                endText: endText,
+                                veryCompact: veryCompact,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            _buildActions(
+                              requestId: requestId,
+                              compact: compactActions,
+                            ),
+                          ],
+                        ),
                       ),
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xff059669),
-                  minimumSize: const Size(88, 34),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  visualDensity: VisualDensity.compact,
+                    ),
+                  ],
                 ),
-                icon: const Icon(Icons.check_rounded, size: 17),
-                label: const Text('Accept'),
-              ),
-              IconButton(
-                onPressed: widget.onOpenCenter,
-                tooltip: 'Open Zone Handover',
-                icon: const Icon(
-                  Icons.arrow_forward_rounded,
-                  color: Color(0xffEA580C),
-                ),
-                visualDensity: VisualDensity.compact,
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildLeadingIcon(double pulse) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          width: 44,
+          height: 44,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: _hovered
+                  ? const [Color(0xFFFFE4CC), Color(0xFFFFF2E7)]
+                  : const [Color(0xFFFFF1E5), Color(0xFFFFE8D5)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(13),
+            border: Border.all(
+              color: _orange.withValues(alpha: _hovered ? 0.30 : 0.18),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: _orange.withValues(alpha: _hovered ? 0.16 : 0.09),
+                blurRadius: _hovered ? 12 : 8,
+                offset: const Offset(0, 4),
               ),
             ],
+          ),
+          child: const Icon(
+            Icons.handshake_outlined,
+            size: 22,
+            color: _orangeDark,
+          ),
+        ),
+        Positioned(
+          top: -2,
+          right: -2,
+          child: Container(
+            width: 11,
+            height: 11,
+            decoration: BoxDecoration(
+              color: _orange,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: [
+                BoxShadow(
+                  color: _orange.withValues(alpha: 0.22 + (pulse * 0.22)),
+                  blurRadius: 5 + (pulse * 4),
+                  spreadRadius: pulse * 0.8,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInformation({
+    required String requester,
+    required String zones,
+    required String reason,
+    required String startText,
+    required String endText,
+    required bool veryCompact,
+  }) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            _buildTypeBadge(),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                '$requester Requests Temporary Coverage',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _text,
+                  fontSize: 14.sp,
+                  height: 1,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.15,
+                ),
+              ),
+            ),
+            const SizedBox(width: 9),
+            _buildZoneBadge(zones),
+          ],
+        ),
+        const SizedBox(height: 7),
+        Row(
+          children: [
+            if (reason.isNotEmpty && !veryCompact) ...[
+              Flexible(
+                flex: 2,
+                child: _buildMetadataItem(
+                  icon: Icons.medical_services_outlined,
+                  text: reason,
+                  color: AppColors.secondaryColor,
+                  background: const Color(0xFFF8FAFC),
+                  borderColor: _border,
+                ),
+              ),
+              const SizedBox(width: 7),
+            ],
+            Flexible(
+              flex: 3,
+              child: _buildMetadataItem(
+                icon: Icons.schedule_rounded,
+                text: '$startText  →  $endText',
+                color: _blueDark,
+                background: const Color(0xFFF8FAFF),
+                borderColor: const Color(0xFFDCE6FF),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTypeBadge() {
+    return Container(
+      height: 22,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: _orangeSoft,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: _orange.withValues(alpha: 0.23)),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.priority_high_rounded, size: 13, color: _orangeDark),
+          SizedBox(width: 3),
+          Text(
+            'COVERAGE REQUEST',
+            style: TextStyle(
+              color: _orangeDark,
+              fontSize: 10,
+              height: 1,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.35,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildZoneBadge(String zones) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
+      constraints: const BoxConstraints(minWidth: 88, maxWidth: 190),
+      height: 30,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFE9EFFF), Color(0xFFF4F7FF)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: _blue.withValues(alpha: _hovered ? 0.32 : 0.20),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: _blue.withValues(alpha: _hovered ? 0.11 : 0.05),
+            blurRadius: _hovered ? 10 : 6,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 20,
+            height: 20,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: _blue.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Icon(
+              Icons.location_city_rounded,
+              size: 12,
+              color: _blue,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              zones,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: _blueDark,
+                fontSize: 11.5.sp,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetadataItem({
+    required IconData icon,
+    required String text,
+    required Color color,
+    required Color background,
+    required Color borderColor,
+  }) {
+    return Container(
+      height: 26,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontSize: 11.sp,
+                height: 1,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActions({required String requestId, required bool compact}) {
+    final disabled = widget.busy || requestId.isEmpty;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (compact)
+          _buildIconAction(
+            tooltip: 'Decline request',
+            icon: Icons.close_rounded,
+            color: _red,
+            enabled: !disabled,
+            onTap: () => widget.onRespond(requestId, false),
+          )
+        else
+          _buildTextAction(
+            text: 'Decline',
+            icon: Icons.close_rounded,
+            color: _red,
+            filled: false,
+            enabled: !disabled,
+            loading: false,
+            onTap: () => widget.onRespond(requestId, false),
+          ),
+        const SizedBox(width: 7),
+        if (compact)
+          _buildIconAction(
+            tooltip: 'Accept request',
+            icon: Icons.check_rounded,
+            color: _green,
+            filled: true,
+            enabled: !disabled,
+            loading: widget.busy,
+            onTap: () => widget.onRespond(requestId, true),
+          )
+        else
+          _buildTextAction(
+            text: widget.busy ? 'Please wait' : 'Accept',
+            icon: Icons.check_rounded,
+            color: _green,
+            filled: true,
+            enabled: !disabled,
+            loading: widget.busy,
+            onTap: () => widget.onRespond(requestId, true),
+          ),
+        const SizedBox(width: 7),
+        _buildIconAction(
+          tooltip: 'Open Zone Handover',
+          icon: Icons.arrow_forward_rounded,
+          color: _blue,
+          enabled: true,
+          onTap: widget.onOpenCenter,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTextAction({
+    required String text,
+    required IconData icon,
+    required Color color,
+    required bool filled,
+    required bool enabled,
+    required bool loading,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: filled
+          ? enabled
+                ? color
+                : const Color(0xFFCBD5E1)
+          : Colors.white,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(10),
+        hoverColor: filled
+            ? Colors.white.withValues(alpha: 0.10)
+            : color.withValues(alpha: 0.06),
+        child: Container(
+          height: 36,
+          width: 100.w,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 13),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: filled
+                ? null
+                : Border.all(
+                    color: enabled
+                        ? color.withValues(alpha: 0.28)
+                        : const Color(0xFFE2E8F0),
+                  ),
+            boxShadow: filled && enabled
+                ? [
+                    BoxShadow(
+                      color: color.withValues(alpha: 0.17),
+                      blurRadius: 9,
+                      offset: const Offset(0, 3),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (loading)
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              else
+                Icon(
+                  icon,
+                  size: 16,
+                  color: filled
+                      ? Colors.white
+                      : enabled
+                      ? color
+                      : const Color(0xFF94A3B8),
+                ),
+              const SizedBox(width: 6),
+              Text(
+                text,
+                style: TextStyle(
+                  color: filled
+                      ? Colors.white
+                      : enabled
+                      ? color
+                      : const Color(0xFF94A3B8),
+                  fontSize: 12.sp,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIconAction({
+    required String tooltip,
+    required IconData icon,
+    required Color color,
+    required bool enabled,
+    required VoidCallback onTap,
+    bool filled = false,
+    bool loading = false,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: filled
+            ? enabled
+                  ? color
+                  : const Color(0xFFCBD5E1)
+            : color.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          borderRadius: BorderRadius.circular(10),
+          hoverColor: filled
+              ? Colors.white.withValues(alpha: 0.10)
+              : color.withValues(alpha: 0.08),
+          child: Container(
+            width: 36,
+            height: 36,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: filled
+                  ? null
+                  : Border.all(color: color.withValues(alpha: 0.20)),
+            ),
+            child: loading
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Icon(
+                    icon,
+                    size: 18,
+                    color: filled
+                        ? Colors.white
+                        : enabled
+                        ? color
+                        : const Color(0xFF94A3B8),
+                  ),
           ),
         ),
       ),

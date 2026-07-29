@@ -6,6 +6,7 @@ import 'dart:html' as html;
 import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:syncfusion_flutter_core/theme.dart';
@@ -1632,8 +1633,8 @@ class _ZoneDrawer extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Inventory Management',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  'Zone Management',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                 ),
                 const SizedBox(height: 7),
                 Container(
@@ -1652,7 +1653,7 @@ class _ZoneDrawer extends StatelessWidget {
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: AppColors.secondaryColor,
-                      fontSize: 11,
+                      fontSize: 13,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -1787,6 +1788,7 @@ class _ZoneHeader extends StatelessWidget {
                   style: const TextStyle(
                     color: AppColors.subText,
                     fontSize: 12,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ],
