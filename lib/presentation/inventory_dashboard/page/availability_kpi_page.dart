@@ -405,10 +405,13 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
       });
     } catch (error) {
       if (!mounted) return;
+      final isTimeout = error is PostgrestException && error.code == '57014';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Preview failed. Run the latest availability_kpi_allocation.sql in Supabase, then retry. $error',
+            isTimeout
+                ? 'Allocation preview exceeded the database time limit. Run availability_kpi_allocation_timeout_fix.sql once in Supabase, then retry.'
+                : 'Allocation preview failed. Please retry. If the problem continues, run the latest availability_kpi_allocation.sql in Supabase. $error',
           ),
           backgroundColor: const Color(0xffDC2626),
         ),
