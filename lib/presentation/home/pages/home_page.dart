@@ -538,7 +538,7 @@ class _HomeViewState extends State<_HomeView> {
         },
 
         if (tma != null) ...{
-          'tma_qty': tma['final_qty_to_keep'] ?? r['tma_qty'] ?? '',
+          'tma_qty': tma['qty_per_duration'] ?? r['tma_qty'] ?? '',
           'tma_start': tma['start_date'] ?? r['tma_start'] ?? '',
           'tma_end': tma['end_date'] ?? r['tma_end'] ?? '',
         },
