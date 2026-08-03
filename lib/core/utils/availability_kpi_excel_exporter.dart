@@ -183,7 +183,7 @@ class AvailabilityKpiExcelExporter {
 
   static String _selectionReason(AvailabilityKpiItem item) {
     return item.inPareto
-        ? 'Top seller — 60% of branch sales value'
+        ? 'Top seller — 80% of branch sales value'
         : 'Sold regularly';
   }
 
