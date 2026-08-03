@@ -38,6 +38,7 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
   final _systemControllers = <String, TextEditingController>{};
   final _actualControllers = <String, TextEditingController>{};
   final _barcodeStickerValues = <String, bool?>{};
+  final _itemStatusValues = <String, String?>{};
   final _autosaveTimers = <String, Timer>{};
   final _autosavingIds = <String>{};
   final _dirtyDraftIds = <String>{};
@@ -114,6 +115,12 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
             () => row.barcodeStickerIsCorrect,
           );
         }
+        if (row.requiresItemStatus) {
+          _itemStatusValues.putIfAbsent(
+            row.id,
+            () => row.itemStatusValue.isEmpty ? null : row.itemStatusValue,
+          );
+        }
         if (_parseQty(_systemControllers[row.id]?.text ?? '') != null &&
             _parseQty(_actualControllers[row.id]?.text ?? '') != null) {
           _lastSavedDraftSignatures[row.id] ??= _draftSignature(row);
@@ -184,6 +191,22 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
       return;
     }
 
+    final missingItemStatuses = rows.where((row) {
+      if (!row.requiresItemStatus) return false;
+      final system = _parseQty(_systemControllers[row.id]?.text ?? '');
+      final actual = _parseQty(_actualControllers[row.id]?.text ?? '');
+      if (system == null || actual == null) return false;
+      return (_itemStatusValues[row.id] ?? '').trim().isEmpty;
+    }).length;
+    if (missingItemStatuses > 0) {
+      setState(() {
+        _error =
+            'Select Item Status for $missingItemStatuses completed item(s) before submitting.';
+        _message = '';
+      });
+      return;
+    }
+
     final submitter = await showDialog<_SubmitterInfo>(
       context: context,
       barrierDismissible: false,
@@ -208,6 +231,8 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
         final system = _parseQty(systemText);
         final actual = _parseQty(actualText);
         if (system == null || actual == null) continue;
+        final itemStatus = (_itemStatusValues[row.id] ?? '').trim();
+        if (row.requiresItemStatus && itemStatus.isEmpty) continue;
         final currentSignature = _draftSignature(row);
         final alreadySubmitted = row.isSubmitted;
         final submittedRowChanged =
@@ -234,6 +259,9 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
           'include_barcode_sticker_check': row.includeBarcodeStickerCheck,
           if (row.includeBarcodeStickerCheck)
             'barcode_sticker_is_correct': _barcodeStickerValues[row.id],
+          'include_item_status': row.includeItemStatus,
+          'item_status_options': row.itemStatusOptions,
+          'item_status_value': row.requiresItemStatus ? itemStatus : null,
           'status': 'submitted',
           'note': row.note,
           'sent_at': row.sentAt?.toIso8601String(),
@@ -264,6 +292,9 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
             barcodeStickerIsCorrect: row.includeBarcodeStickerCheck
                 ? _barcodeStickerValues[row.id]
                 : row.barcodeStickerIsCorrect,
+            itemStatusValue: row.requiresItemStatus
+                ? (_itemStatusValues[row.id] ?? '')
+                : row.itemStatusValue,
             status: 'submitted',
             submittedAt: DateTime.tryParse(now),
             submittedByName: submittedByThisUserIds.contains(row.id)
@@ -333,11 +364,15 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
     final actualText = _actualControllers[row.id]?.text.trim() ?? '';
     final system = _parseQty(systemText);
     final actual = _parseQty(actualText);
+    final itemStatus = (_itemStatusValues[row.id] ?? '').trim();
     if ((systemText.isNotEmpty && system == null) ||
         (actualText.isNotEmpty && actual == null)) {
       return false;
     }
-    if (requireCompleteDraft && (system == null || actual == null)) {
+    if (requireCompleteDraft &&
+        (system == null ||
+            actual == null ||
+            (row.requiresItemStatus && itemStatus.isEmpty))) {
       return false;
     }
     final signature = _draftSignature(row);
@@ -355,6 +390,7 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
             'actual_qty': actual,
             if (row.includeBarcodeStickerCheck)
               'barcode_sticker_is_correct': _barcodeStickerValues[row.id],
+            if (row.requiresItemStatus) 'item_status_value': itemStatus,
             if (markSubmitted) 'status': 'submitted',
             if (markSubmitted) 'submitted_at': submittedAtIso ?? now,
             'updated_at': now,
@@ -381,14 +417,22 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
     final barcode = row.includeBarcodeStickerCheck
         ? (_barcodeStickerValues[row.id]?.toString() ?? '')
         : '';
-    return '$systemText|$actualText|$barcode';
+    final itemStatus = row.requiresItemStatus
+        ? (_itemStatusValues[row.id] ?? '').trim()
+        : '';
+    return '$systemText|$actualText|$barcode|$itemStatus';
   }
 
   bool _hasCompleteDraft(StockCheckTask row) {
     if (row.isExpired) return false;
     final systemText = _systemControllers[row.id]?.text.trim() ?? '';
     final actualText = _actualControllers[row.id]?.text.trim() ?? '';
-    return _parseQty(systemText) != null && _parseQty(actualText) != null;
+    final itemStatusComplete =
+        !row.requiresItemStatus ||
+        (_itemStatusValues[row.id] ?? '').trim().isNotEmpty;
+    return _parseQty(systemText) != null &&
+        _parseQty(actualText) != null &&
+        itemStatusComplete;
   }
 
   bool _hasAnyDraftValue(StockCheckTask row) {
@@ -396,6 +440,7 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
     final actualText = _actualControllers[row.id]?.text.trim() ?? '';
     return systemText.isNotEmpty ||
         actualText.isNotEmpty ||
+        (_itemStatusValues[row.id] ?? '').trim().isNotEmpty ||
         row.systemQty != null ||
         row.actualQty != null;
   }
@@ -837,12 +882,20 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
                           systemControllers: _systemControllers,
                           actualControllers: _actualControllers,
                           barcodeStickerValues: _barcodeStickerValues,
+                          itemStatusValues: _itemStatusValues,
                           onBarcodeStickerChanged: (id, value) {
                             final row = selectedRows.firstWhere(
                               (item) => item.id == id,
                             );
                             setState(() => _barcodeStickerValues[id] = value);
                             _scheduleAutosave(row);
+                          },
+                          onItemStatusChanged: (id, value) {
+                            final row = selectedRows.firstWhere(
+                              (item) => item.id == id,
+                            );
+                            setState(() => _itemStatusValues[id] = value);
+                            _scheduleAutosave(row, force: true);
                           },
                           saving: _saving,
                           importing: _importing,
@@ -1896,7 +1949,9 @@ class _BatchEditor extends StatefulWidget {
   final Map<String, TextEditingController> systemControllers;
   final Map<String, TextEditingController> actualControllers;
   final Map<String, bool?> barcodeStickerValues;
+  final Map<String, String?> itemStatusValues;
   final void Function(String id, bool? value) onBarcodeStickerChanged;
+  final void Function(String id, String? value) onItemStatusChanged;
   final bool saving;
   final bool importing;
   final bool exporting;
@@ -1917,7 +1972,9 @@ class _BatchEditor extends StatefulWidget {
     required this.systemControllers,
     required this.actualControllers,
     required this.barcodeStickerValues,
+    required this.itemStatusValues,
     required this.onBarcodeStickerChanged,
+    required this.onItemStatusChanged,
     required this.saving,
     required this.importing,
     required this.exporting,
@@ -2459,6 +2516,23 @@ class _BatchEditorState extends State<_BatchEditor> {
                                     employeeId: row.submittedByEmployeeId,
                                   ),
                                   const SizedBox(width: 12),
+                                ],
+                                if (row.requiresItemStatus) ...[
+                                  SizedBox(
+                                    width: 220,
+                                    child: _RequiredItemStatusField(
+                                      options: row.itemStatusOptions,
+                                      value: widget.itemStatusValues[row.id],
+                                      enabled: !locked,
+                                      onChanged: (value) {
+                                        widget.onItemStatusChanged(
+                                          row.id,
+                                          value,
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
                                 ],
                                 SizedBox(
                                   width: 150,
@@ -3593,6 +3667,75 @@ class _QtyField extends StatelessWidget {
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5),
+        ),
+        disabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+        ),
+      ),
+    );
+  }
+}
+
+class _RequiredItemStatusField extends StatelessWidget {
+  final List<String> options;
+  final String? value;
+  final bool enabled;
+  final ValueChanged<String?> onChanged;
+
+  const _RequiredItemStatusField({
+    required this.options,
+    required this.value,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cleanOptions = options
+        .map((option) => option.trim())
+        .where((option) => option.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    final selected = cleanOptions.contains(value) ? value : null;
+
+    return DropdownButtonFormField<String>(
+      key: ValueKey('${cleanOptions.join('|')}|$selected|$enabled'),
+      initialValue: selected,
+      isExpanded: true,
+      icon: const Icon(Icons.keyboard_arrow_down_rounded),
+      items: cleanOptions
+          .map(
+            (option) => DropdownMenuItem<String>(
+              value: option,
+              child: Text(
+                option,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+          )
+          .toList(growable: false),
+      onChanged: enabled ? onChanged : null,
+      decoration: InputDecoration(
+        labelText: 'Item Status *',
+        helperText: 'Required by Inventory',
+        helperMaxLines: 1,
+        prefixIcon: const Icon(Icons.fact_check_outlined, size: 19),
+        filled: true,
+        fillColor: enabled ? Colors.white : const Color(0xFFF1F5F9),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: 10,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFF93C5FD)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.6),
         ),
         disabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),

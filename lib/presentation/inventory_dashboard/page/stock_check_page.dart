@@ -84,6 +84,8 @@ class _StockCheckPageState extends State<StockCheckPage> {
   bool _exporting = false;
   String? _deletingBatchId;
   bool _includeBarcodeStickerCheck = false;
+  bool _includeItemStatus = false;
+  List<String> _itemStatusOptions = [];
   String _message = '';
   String _error = '';
 
@@ -333,6 +335,13 @@ class _StockCheckPageState extends State<StockCheckPage> {
       });
       return;
     }
+    if (_includeItemStatus && _itemStatusOptions.length < 2) {
+      setState(() {
+        _error =
+            'Add at least two Item Status options before sending the stock check.';
+      });
+      return;
+    }
 
     setState(() {
       _sending = true;
@@ -357,6 +366,11 @@ class _StockCheckPageState extends State<StockCheckPage> {
           'system_qty': null,
           'include_barcode_sticker_check': _includeBarcodeStickerCheck,
           'barcode_sticker_is_correct': null,
+          'include_item_status': _includeItemStatus,
+          'item_status_options': _includeItemStatus
+              ? _itemStatusOptions
+              : const <String>[],
+          'item_status_value': null,
           'status': 'pending',
           'sent_at': now,
           'expires_at': expiresAt,
@@ -379,6 +393,24 @@ class _StockCheckPageState extends State<StockCheckPage> {
         _sending = false;
       });
     }
+  }
+
+  Future<void> _configureItemStatus() async {
+    final result = await showDialog<_ItemStatusConfiguration>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black45,
+      builder: (_) => _StockCheckStatusOptionsDialog(
+        enabled: _includeItemStatus,
+        initialOptions: _itemStatusOptions,
+      ),
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      _includeItemStatus = result.enabled;
+      _itemStatusOptions = result.options;
+      _error = '';
+    });
   }
 
   Future<void> _deleteBatch(_StockCheckBatch batch) async {
@@ -779,6 +811,15 @@ class _StockCheckPageState extends State<StockCheckPage> {
                   onChanged: (value) {
                     setState(() => _includeBarcodeStickerCheck = value);
                   },
+                ),
+              ),
+              const SizedBox(width: 10),
+              SizedBox(
+                width: 218,
+                child: _ItemStatusOption(
+                  enabled: _includeItemStatus,
+                  optionCount: _itemStatusOptions.length,
+                  onTap: _configureItemStatus,
                 ),
               ),
               const SizedBox(width: 10),
@@ -4393,6 +4434,7 @@ class _FastStockCheckResultsTableState
     'system',
     'actual',
     'diff',
+    'itemStatus',
     'barcode',
     'submittedByName',
     'submittedByEmployeeId',
@@ -4406,6 +4448,7 @@ class _FastStockCheckResultsTableState
     'system': 'System Qty',
     'actual': 'Actual Qty',
     'diff': 'Difference',
+    'itemStatus': 'Item Status',
     'barcode': 'Barcode Sticker is Correct',
     'submittedByName': 'Submitted By',
     'submittedByEmployeeId': 'Employee ID',
@@ -4419,6 +4462,7 @@ class _FastStockCheckResultsTableState
     'system': 120,
     'actual': 120,
     'diff': 105,
+    'itemStatus': 180,
     'barcode': 225,
     'submittedByName': 190,
     'submittedByEmployeeId': 150,
@@ -4453,11 +4497,34 @@ class _FastStockCheckResultsTableState
         _columnOrder.remove('barcode');
       }
     }
+    final oldShowItemStatus = oldWidget.rows.any(
+      (row) => row.includeItemStatus,
+    );
+    final showItemStatus = widget.rows.any((row) => row.includeItemStatus);
+    if (oldShowItemStatus != showItemStatus) {
+      if (showItemStatus && !_columnOrder.contains('itemStatus')) {
+        final barcodeIndex = _columnOrder.indexOf('barcode');
+        final submittedIndex = _columnOrder.indexOf('submittedByName');
+        final insertAt = barcodeIndex >= 0
+            ? barcodeIndex
+            : submittedIndex >= 0
+            ? submittedIndex
+            : _columnOrder.length;
+        _columnOrder.insert(insertAt, 'itemStatus');
+      } else if (!showItemStatus) {
+        _columnOrder.remove('itemStatus');
+      }
+    }
     _source.update(rows: widget.rows, columns: _columnOrder);
   }
 
   List<String> _visibleBaseOrder() => _baseOrder
-      .where((column) => column != 'barcode' || widget.showBarcodeSticker)
+      .where(
+        (column) =>
+            (column != 'barcode' || widget.showBarcodeSticker) &&
+            (column != 'itemStatus' ||
+                widget.rows.any((row) => row.includeItemStatus)),
+      )
       .toList();
 
   void _notifyVisibleRows() {
@@ -4640,6 +4707,7 @@ class _StockCheckResultsGridSource extends DataGridSource {
       'system' => row.systemQty,
       'actual' => row.actualQty,
       'diff' => row.variance,
+      'itemStatus' => row.includeItemStatus ? row.itemStatusValue : '',
       'barcode' =>
         row.includeBarcodeStickerCheck
             ? _StockCheckResultTableState._yesNo(row.barcodeStickerIsCorrect)
@@ -6751,6 +6819,371 @@ class _BarcodeStickerOption extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ItemStatusConfiguration {
+  final bool enabled;
+  final List<String> options;
+
+  const _ItemStatusConfiguration({
+    required this.enabled,
+    required this.options,
+  });
+}
+
+class _ItemStatusOption extends StatelessWidget {
+  final bool enabled;
+  final int optionCount;
+  final VoidCallback onTap;
+
+  const _ItemStatusOption({
+    required this.enabled,
+    required this.optionCount,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: enabled
+          ? AppColors.primaryColor.withValues(alpha: .08)
+          : Colors.white,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          height: 38,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: enabled
+                  ? AppColors.primaryColor.withValues(alpha: .55)
+                  : const Color(0xFFCBD5E1),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                enabled ? Icons.task_alt_rounded : Icons.rule_folder_outlined,
+                color: enabled
+                    ? AppColors.primaryColor
+                    : const Color(0xFF64748B),
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Item status',
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    Text(
+                      enabled ? '$optionCount required options' : 'Optional',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: enabled
+                            ? AppColors.primaryColor
+                            : const Color(0xFF64748B),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.tune_rounded, size: 17),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StockCheckStatusOptionsDialog extends StatefulWidget {
+  final bool enabled;
+  final List<String> initialOptions;
+
+  const _StockCheckStatusOptionsDialog({
+    required this.enabled,
+    required this.initialOptions,
+  });
+
+  @override
+  State<_StockCheckStatusOptionsDialog> createState() =>
+      _StockCheckStatusOptionsDialogState();
+}
+
+class _StockCheckStatusOptionsDialogState
+    extends State<_StockCheckStatusOptionsDialog> {
+  final _controller = TextEditingController();
+  late bool _enabled;
+  late List<String> _options;
+  String _error = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _enabled = widget.enabled;
+    _options = [...widget.initialOptions];
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _addOption() {
+    final value = _controller.text.trim();
+    if (value.isEmpty) return;
+    if (_options.any((item) => item.toLowerCase() == value.toLowerCase())) {
+      setState(() => _error = 'This option already exists.');
+      return;
+    }
+    setState(() {
+      _options.add(value);
+      _controller.clear();
+      _error = '';
+    });
+  }
+
+  void _apply() {
+    if (_enabled && _options.length < 2) {
+      setState(() => _error = 'Add at least two choices for the branch.');
+      return;
+    }
+    Navigator.of(
+      context,
+    ).pop(_ItemStatusConfiguration(enabled: _enabled, options: _options));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: SizedBox(
+        width: 560,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppColors.primaryColor.withValues(alpha: .08),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(18),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryColor,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.fact_check_rounded,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Required Item Status',
+                          style: TextStyle(
+                            color: Color(0xFF0F172A),
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        SizedBox(height: 3),
+                        Text(
+                          'Create the choices the branch must select for every item.',
+                          style: TextStyle(color: Color(0xFF64748B)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+              child: SwitchListTile.adaptive(
+                value: _enabled,
+                activeThumbColor: Colors.white,
+                activeTrackColor: AppColors.primaryColor,
+                contentPadding: EdgeInsets.zero,
+                title: const Text(
+                  'Ask the branch to select a status',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                subtitle: const Text(
+                  'When enabled, System Qty, Actual Qty, and Item Status are all required before submission.',
+                ),
+                onChanged: (value) => setState(() {
+                  _enabled = value;
+                  _error = '';
+                }),
+              ),
+            ),
+            if (_enabled) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        onSubmitted: (_) => _addOption(),
+                        textCapitalization: TextCapitalization.sentences,
+                        decoration: InputDecoration(
+                          labelText: 'New status option',
+                          hintText: 'Example: Damaged',
+                          prefixIcon: const Icon(Icons.label_outline_rounded),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(
+                              color: AppColors.primaryColor,
+                              width: 1.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    IconButton.filled(
+                      tooltip: 'Add option',
+                      onPressed: _addOption,
+                      style: IconButton.styleFrom(
+                        backgroundColor: AppColors.primaryColor,
+                      ),
+                      icon: const Icon(Icons.add_rounded),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                constraints: const BoxConstraints(maxHeight: 230),
+                margin: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: _options.isEmpty
+                    ? const Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Center(
+                          child: Text(
+                            'Add at least two clear choices.',
+                            style: TextStyle(color: Color(0xFF64748B)),
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        itemCount: _options.length,
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (_, index) => ListTile(
+                          dense: true,
+                          leading: CircleAvatar(
+                            radius: 14,
+                            backgroundColor: AppColors.primaryColor.withValues(
+                              alpha: .12,
+                            ),
+                            child: Text(
+                              '${index + 1}',
+                              style: const TextStyle(
+                                color: AppColors.primaryColor,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                          title: Text(
+                            _options[index],
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          trailing: IconButton(
+                            tooltip: 'Remove',
+                            onPressed: () =>
+                                setState(() => _options.removeAt(index)),
+                            icon: const Icon(
+                              Icons.delete_outline_rounded,
+                              color: Color(0xFFDC2626),
+                            ),
+                          ),
+                        ),
+                      ),
+              ),
+            ],
+            if (_error.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                child: Text(
+                  _error,
+                  style: const TextStyle(
+                    color: Color(0xFFDC2626),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton.icon(
+                    onPressed: _apply,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primaryColor,
+                    ),
+                    icon: const Icon(Icons.check_rounded),
+                    label: Text(
+                      _enabled ? 'Apply requirement' : 'Save as optional',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

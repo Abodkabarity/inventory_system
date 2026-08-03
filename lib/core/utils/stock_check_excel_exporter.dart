@@ -77,6 +77,7 @@ class StockCheckExcelExporter {
     final showBarcodeSticker = rows.any(
       (row) => row.includeBarcodeStickerCheck,
     );
+    final showItemStatus = rows.any((row) => row.includeItemStatus);
 
     final headers = [
       '#',
@@ -87,6 +88,7 @@ class StockCheckExcelExporter {
       'System Qty',
       'Actual Qty',
       'Variance',
+      if (showItemStatus) 'Item Status',
       if (showBarcodeSticker) 'Barcode Sticker is Correct',
       'Status',
       'Note',
@@ -126,6 +128,7 @@ class StockCheckExcelExporter {
         row.systemQty ?? '',
         row.actualQty ?? '',
         row.variance ?? '',
+        if (showItemStatus) row.includeItemStatus ? row.itemStatusValue : '',
         if (showBarcodeSticker)
           row.includeBarcodeStickerCheck
               ? _yesNo(row.barcodeStickerIsCorrect)
@@ -146,7 +149,7 @@ class StockCheckExcelExporter {
           cell.setText(value.toString());
         }
         cell.cellStyle
-          ..hAlign = c == 4 || c == (showBarcodeSticker ? 10 : 9)
+          ..hAlign = headers[c] == 'Item Name' || headers[c] == 'Note'
               ? xlsio.HAlignType.left
               : xlsio.HAlignType.center
           ..vAlign = xlsio.VAlignType.center;
@@ -156,24 +159,22 @@ class StockCheckExcelExporter {
       }
     }
 
-    final widths = <int, double>{
-      1: 7,
-      2: 30,
-      3: 24,
-      4: 18,
-      5: 44,
-      6: 13,
-      7: 13,
-      8: 12,
-      if (showBarcodeSticker) 9: 28,
-      showBarcodeSticker ? 10 : 9: 14,
-      showBarcodeSticker ? 11 : 10: 34,
-      showBarcodeSticker ? 12 : 11: 22,
-      showBarcodeSticker ? 13 : 12: 16,
-      showBarcodeSticker ? 14 : 13: 20,
-    };
-    widths.forEach((column, width) {
-      sheet.getRangeByIndex(1, column).columnWidth = width;
+    _setColumnWidths(sheet, headers, const {
+      '#': 7,
+      'Title': 30,
+      'Branch': 24,
+      'Item Code': 18,
+      'Item Name': 44,
+      'System Qty': 13,
+      'Actual Qty': 13,
+      'Variance': 12,
+      'Item Status': 22,
+      'Barcode Sticker is Correct': 28,
+      'Status': 14,
+      'Note': 34,
+      'Submitted By': 22,
+      'Employee ID': 16,
+      'Submitted At': 20,
     });
 
     final bytes = workbook.saveAsStream();
@@ -196,6 +197,7 @@ class StockCheckExcelExporter {
     final workbook = xlsio.Workbook();
     final sheet = workbook.worksheets[0];
     sheet.name = 'Branch Stock Check';
+    final showItemStatus = rows.any((row) => row.includeItemStatus);
 
     final headers = [
       'Branch',
@@ -204,6 +206,7 @@ class StockCheckExcelExporter {
       'System Qty',
       'Actual Qty',
       'Difference',
+      if (showItemStatus) 'Item Status',
       'Submitted By',
     ];
 
@@ -240,6 +243,7 @@ class StockCheckExcelExporter {
         row.systemQty ?? '',
         row.actualQty ?? '',
         row.variance ?? '',
+        if (showItemStatus) row.includeItemStatus ? row.itemStatusValue : '',
         row.submittedByName,
       ];
 
@@ -260,17 +264,15 @@ class StockCheckExcelExporter {
       }
     }
 
-    final widths = <int, double>{
-      1: 24,
-      2: 18,
-      3: 52,
-      4: 14,
-      5: 14,
-      6: 14,
-      7: 28,
-    };
-    widths.forEach((column, width) {
-      sheet.getRangeByIndex(1, column).columnWidth = width;
+    _setColumnWidths(sheet, headers, const {
+      'Branch': 24,
+      'Item Code': 18,
+      'Item Name': 52,
+      'System Qty': 14,
+      'Actual Qty': 14,
+      'Difference': 14,
+      'Item Status': 22,
+      'Submitted By': 28,
     });
 
     final bytes = workbook.saveAsStream();
@@ -624,6 +626,17 @@ class StockCheckExcelExporter {
         ..hAlign = xlsio.HAlignType.center
         ..vAlign = xlsio.VAlignType.center;
       cell.cellStyle.borders.all.lineStyle = xlsio.LineStyle.thin;
+    }
+  }
+
+  static void _setColumnWidths(
+    xlsio.Worksheet sheet,
+    List<String> headers,
+    Map<String, double> widths,
+  ) {
+    for (var index = 0; index < headers.length; index++) {
+      sheet.getRangeByIndex(1, index + 1).columnWidth =
+          widths[headers[index]] ?? 16;
     }
   }
 
