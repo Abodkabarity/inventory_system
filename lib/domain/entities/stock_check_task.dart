@@ -13,6 +13,7 @@ class StockCheckTask {
   final bool includeItemStatus;
   final List<String> itemStatusOptions;
   final String itemStatusValue;
+  final Map<String, num> itemStatusBreakdown;
   final String status;
   final String note;
   final DateTime? sentAt;
@@ -36,6 +37,7 @@ class StockCheckTask {
     required this.includeItemStatus,
     required this.itemStatusOptions,
     required this.itemStatusValue,
+    required this.itemStatusBreakdown,
     required this.status,
     required this.note,
     required this.sentAt,
@@ -49,6 +51,19 @@ class StockCheckTask {
   bool get isPending => !isSubmitted;
   bool get requiresItemStatus =>
       includeItemStatus && itemStatusOptions.isNotEmpty;
+  String get itemStatusDisplay {
+    if (itemStatusBreakdown.isEmpty) return itemStatusValue;
+    final orderedKeys = <String>[
+      ...itemStatusOptions.where(itemStatusBreakdown.containsKey),
+      ...itemStatusBreakdown.keys.where(
+        (key) => !itemStatusOptions.contains(key),
+      ),
+    ];
+    return orderedKeys
+        .map((key) => '$key: ${_formatNum(itemStatusBreakdown[key]!)}')
+        .join(' | ');
+  }
+
   bool get isExpired =>
       expiresAt != null && DateTime.now().isAfter(expiresAt!.toLocal());
   num? get variance {
@@ -64,6 +79,7 @@ class StockCheckTask {
     bool? includeItemStatus,
     List<String>? itemStatusOptions,
     String? itemStatusValue,
+    Map<String, num>? itemStatusBreakdown,
     String? status,
     String? note,
     DateTime? sentAt,
@@ -92,6 +108,7 @@ class StockCheckTask {
       includeItemStatus: includeItemStatus ?? this.includeItemStatus,
       itemStatusOptions: itemStatusOptions ?? this.itemStatusOptions,
       itemStatusValue: itemStatusValue ?? this.itemStatusValue,
+      itemStatusBreakdown: itemStatusBreakdown ?? this.itemStatusBreakdown,
       status: status ?? this.status,
       note: note ?? this.note,
       sentAt: sentAt ?? this.sentAt,
@@ -143,6 +160,27 @@ class StockCheckTask {
         .toList(growable: false);
   }
 
+  static Map<String, num> _numberMap(dynamic value) {
+    if (value is! Map) return const {};
+    final result = <String, num>{};
+    for (final entry in value.entries) {
+      final key = entry.key.toString().trim();
+      final quantity = _nullableNum(entry.value);
+      if (key.isNotEmpty && quantity != null && quantity > 0) {
+        result[key] = quantity;
+      }
+    }
+    return Map.unmodifiable(result);
+  }
+
+  static String _formatNum(num value) {
+    if (value == value.roundToDouble()) return value.toInt().toString();
+    return value
+        .toStringAsFixed(5)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+  }
+
   factory StockCheckTask.fromMap(Map<String, dynamic> map) {
     return StockCheckTask(
       id: (map['id'] ?? '').toString(),
@@ -159,6 +197,7 @@ class StockCheckTask {
       includeItemStatus: _bool(map['include_item_status']),
       itemStatusOptions: _stringList(map['item_status_options']),
       itemStatusValue: (map['item_status_value'] ?? '').toString().trim(),
+      itemStatusBreakdown: _numberMap(map['item_status_breakdown']),
       status: (map['status'] ?? 'pending').toString(),
       note: (map['note'] ?? '').toString(),
       sentAt: _date(map['sent_at']),

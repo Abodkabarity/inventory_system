@@ -39,6 +39,7 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
   final _actualControllers = <String, TextEditingController>{};
   final _barcodeStickerValues = <String, bool?>{};
   final _itemStatusValues = <String, String?>{};
+  final _itemStatusBreakdowns = <String, Map<String, num>>{};
   final _autosaveTimers = <String, Timer>{};
   final _autosavingIds = <String>{};
   final _dirtyDraftIds = <String>{};
@@ -120,6 +121,10 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
             row.id,
             () => row.itemStatusValue.isEmpty ? null : row.itemStatusValue,
           );
+          _itemStatusBreakdowns.putIfAbsent(
+            row.id,
+            () => Map<String, num>.from(row.itemStatusBreakdown),
+          );
         }
         if (_parseQty(_systemControllers[row.id]?.text ?? '') != null &&
             _parseQty(_actualControllers[row.id]?.text ?? '') != null) {
@@ -196,12 +201,13 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
       final system = _parseQty(_systemControllers[row.id]?.text ?? '');
       final actual = _parseQty(_actualControllers[row.id]?.text ?? '');
       if (system == null || actual == null) return false;
-      return (_itemStatusValues[row.id] ?? '').trim().isEmpty;
+      if (!_requiresItemStatusForQuantities(row, system, actual)) return false;
+      return !_hasValidItemStatus(row, system, actual);
     }).length;
     if (missingItemStatuses > 0) {
       setState(() {
         _error =
-            'Select Item Status for $missingItemStatuses completed item(s) before submitting.';
+            'Choose one Item Status, or split the full Actual Qty across statuses, for $missingItemStatuses completed item(s) before submitting.';
         _message = '';
       });
       return;
@@ -232,7 +238,15 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
         final actual = _parseQty(actualText);
         if (system == null || actual == null) continue;
         final itemStatus = (_itemStatusValues[row.id] ?? '').trim();
-        if (row.requiresItemStatus && itemStatus.isEmpty) continue;
+        final itemStatusBreakdown = _cleanItemStatusBreakdown(row);
+        final itemStatusRequired = _requiresItemStatusForQuantities(
+          row,
+          system,
+          actual,
+        );
+        if (itemStatusRequired && !_hasValidItemStatus(row, system, actual)) {
+          continue;
+        }
         final currentSignature = _draftSignature(row);
         final alreadySubmitted = row.isSubmitted;
         final submittedRowChanged =
@@ -261,7 +275,8 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
             'barcode_sticker_is_correct': _barcodeStickerValues[row.id],
           'include_item_status': row.includeItemStatus,
           'item_status_options': row.itemStatusOptions,
-          'item_status_value': row.requiresItemStatus ? itemStatus : null,
+          'item_status_value': itemStatus.isEmpty ? null : itemStatus,
+          'item_status_breakdown': itemStatusBreakdown,
           'status': 'submitted',
           'note': row.note,
           'sent_at': row.sentAt?.toIso8601String(),
@@ -295,6 +310,9 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
             itemStatusValue: row.requiresItemStatus
                 ? (_itemStatusValues[row.id] ?? '')
                 : row.itemStatusValue,
+            itemStatusBreakdown: row.requiresItemStatus
+                ? _cleanItemStatusBreakdown(row)
+                : row.itemStatusBreakdown,
             status: 'submitted',
             submittedAt: DateTime.tryParse(now),
             submittedByName: submittedByThisUserIds.contains(row.id)
@@ -365,6 +383,12 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
     final system = _parseQty(systemText);
     final actual = _parseQty(actualText);
     final itemStatus = (_itemStatusValues[row.id] ?? '').trim();
+    final itemStatusBreakdown = _cleanItemStatusBreakdown(row);
+    final itemStatusRequired = _requiresItemStatusForQuantities(
+      row,
+      system,
+      actual,
+    );
     if ((systemText.isNotEmpty && system == null) ||
         (actualText.isNotEmpty && actual == null)) {
       return false;
@@ -372,7 +396,8 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
     if (requireCompleteDraft &&
         (system == null ||
             actual == null ||
-            (row.requiresItemStatus && itemStatus.isEmpty))) {
+            (itemStatusRequired &&
+                !_hasValidItemStatus(row, system, actual)))) {
       return false;
     }
     final signature = _draftSignature(row);
@@ -390,7 +415,10 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
             'actual_qty': actual,
             if (row.includeBarcodeStickerCheck)
               'barcode_sticker_is_correct': _barcodeStickerValues[row.id],
-            if (row.requiresItemStatus) 'item_status_value': itemStatus,
+            if (row.requiresItemStatus)
+              'item_status_value': itemStatus.isEmpty ? null : itemStatus,
+            if (row.requiresItemStatus)
+              'item_status_breakdown': itemStatusBreakdown,
             if (markSubmitted) 'status': 'submitted',
             if (markSubmitted) 'submitted_at': submittedAtIso ?? now,
             'updated_at': now,
@@ -420,19 +448,35 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
     final itemStatus = row.requiresItemStatus
         ? (_itemStatusValues[row.id] ?? '').trim()
         : '';
-    return '$systemText|$actualText|$barcode|$itemStatus';
+    final breakdown = row.requiresItemStatus
+        ? _cleanItemStatusBreakdown(
+            row,
+          ).entries.map((entry) => '${entry.key}:${entry.value}').join(',')
+        : '';
+    return '$systemText|$actualText|$barcode|$itemStatus|$breakdown';
   }
 
   bool _hasCompleteDraft(StockCheckTask row) {
     if (row.isExpired) return false;
     final systemText = _systemControllers[row.id]?.text.trim() ?? '';
     final actualText = _actualControllers[row.id]?.text.trim() ?? '';
+    final system = _parseQty(systemText);
+    final actual = _parseQty(actualText);
     final itemStatusComplete =
-        !row.requiresItemStatus ||
-        (_itemStatusValues[row.id] ?? '').trim().isNotEmpty;
-    return _parseQty(systemText) != null &&
-        _parseQty(actualText) != null &&
-        itemStatusComplete;
+        !_requiresItemStatusForQuantities(row, system, actual) ||
+        _hasValidItemStatus(row, system, actual);
+    return system != null && actual != null && itemStatusComplete;
+  }
+
+  bool _requiresItemStatusForQuantities(
+    StockCheckTask row,
+    num? system,
+    num? actual,
+  ) {
+    if (!row.requiresItemStatus || system == null || actual == null) {
+      return false;
+    }
+    return system > 0 || actual > 0;
   }
 
   bool _hasAnyDraftValue(StockCheckTask row) {
@@ -441,8 +485,29 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
     return systemText.isNotEmpty ||
         actualText.isNotEmpty ||
         (_itemStatusValues[row.id] ?? '').trim().isNotEmpty ||
+        (_itemStatusBreakdowns[row.id]?.isNotEmpty ?? false) ||
         row.systemQty != null ||
         row.actualQty != null;
+  }
+
+  Map<String, num> _cleanItemStatusBreakdown(StockCheckTask row) {
+    final allowed = row.itemStatusOptions.toSet();
+    final source = _itemStatusBreakdowns[row.id] ?? const <String, num>{};
+    return Map<String, num>.fromEntries(
+      source.entries.where(
+        (entry) => allowed.contains(entry.key) && entry.value > 0,
+      ),
+    );
+  }
+
+  bool _hasValidItemStatus(StockCheckTask row, num? system, num? actual) {
+    if (!_requiresItemStatusForQuantities(row, system, actual)) return true;
+    final breakdown = _cleanItemStatusBreakdown(row);
+    if (breakdown.isNotEmpty) {
+      final allocated = breakdown.values.fold<num>(0, (sum, qty) => sum + qty);
+      return actual != null && (allocated - actual).abs() <= 0.00001;
+    }
+    return (_itemStatusValues[row.id] ?? '').trim().isNotEmpty;
   }
 
   Future<void> _syncCompletedDrafts() async {
@@ -883,6 +948,7 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
                           actualControllers: _actualControllers,
                           barcodeStickerValues: _barcodeStickerValues,
                           itemStatusValues: _itemStatusValues,
+                          itemStatusBreakdowns: _itemStatusBreakdowns,
                           onBarcodeStickerChanged: (id, value) {
                             final row = selectedRows.firstWhere(
                               (item) => item.id == id,
@@ -894,7 +960,20 @@ class _BranchStockCheckPageState extends State<BranchStockCheckPage> {
                             final row = selectedRows.firstWhere(
                               (item) => item.id == id,
                             );
-                            setState(() => _itemStatusValues[id] = value);
+                            setState(() {
+                              _itemStatusValues[id] = value;
+                              _itemStatusBreakdowns[id] = {};
+                            });
+                            _scheduleAutosave(row, force: true);
+                          },
+                          onItemStatusBreakdownChanged: (id, value) {
+                            final row = selectedRows.firstWhere(
+                              (item) => item.id == id,
+                            );
+                            setState(() {
+                              _itemStatusBreakdowns[id] = value;
+                              _itemStatusValues[id] = null;
+                            });
                             _scheduleAutosave(row, force: true);
                           },
                           saving: _saving,
@@ -1950,8 +2029,11 @@ class _BatchEditor extends StatefulWidget {
   final Map<String, TextEditingController> actualControllers;
   final Map<String, bool?> barcodeStickerValues;
   final Map<String, String?> itemStatusValues;
+  final Map<String, Map<String, num>> itemStatusBreakdowns;
   final void Function(String id, bool? value) onBarcodeStickerChanged;
   final void Function(String id, String? value) onItemStatusChanged;
+  final void Function(String id, Map<String, num> value)
+  onItemStatusBreakdownChanged;
   final bool saving;
   final bool importing;
   final bool exporting;
@@ -1973,8 +2055,10 @@ class _BatchEditor extends StatefulWidget {
     required this.actualControllers,
     required this.barcodeStickerValues,
     required this.itemStatusValues,
+    required this.itemStatusBreakdowns,
     required this.onBarcodeStickerChanged,
     required this.onItemStatusChanged,
+    required this.onItemStatusBreakdownChanged,
     required this.saving,
     required this.importing,
     required this.exporting,
@@ -2519,13 +2603,25 @@ class _BatchEditorState extends State<_BatchEditor> {
                                 ],
                                 if (row.requiresItemStatus) ...[
                                   SizedBox(
-                                    width: 220,
+                                    width: 330,
                                     child: _RequiredItemStatusField(
                                       options: row.itemStatusOptions,
                                       value: widget.itemStatusValues[row.id],
+                                      breakdown:
+                                          widget.itemStatusBreakdowns[row.id] ??
+                                          const {},
+                                      actualController: actualController,
+                                      itemCode: row.itemCode,
+                                      itemName: row.itemName,
                                       enabled: !locked,
                                       onChanged: (value) {
                                         widget.onItemStatusChanged(
+                                          row.id,
+                                          value,
+                                        );
+                                      },
+                                      onBreakdownChanged: (value) {
+                                        widget.onItemStatusBreakdownChanged(
                                           row.id,
                                           value,
                                         );
@@ -3680,15 +3776,56 @@ class _QtyField extends StatelessWidget {
 class _RequiredItemStatusField extends StatelessWidget {
   final List<String> options;
   final String? value;
+  final Map<String, num> breakdown;
+  final TextEditingController actualController;
+  final String itemCode;
+  final String itemName;
   final bool enabled;
   final ValueChanged<String?> onChanged;
+  final ValueChanged<Map<String, num>> onBreakdownChanged;
 
   const _RequiredItemStatusField({
     required this.options,
     required this.value,
+    required this.breakdown,
+    required this.actualController,
+    required this.itemCode,
+    required this.itemName,
     required this.enabled,
     required this.onChanged,
+    required this.onBreakdownChanged,
   });
+
+  num? _parseQty(String value) {
+    final text = value.trim().replaceAll(',', '');
+    if (text.isEmpty) return null;
+    return num.tryParse(text);
+  }
+
+  String _formatQty(num value) {
+    if (value == value.roundToDouble()) return value.toInt().toString();
+    return value
+        .toStringAsFixed(5)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+  }
+
+  Future<void> _openBreakdown(BuildContext context, num actual) async {
+    final result = await showDialog<Map<String, num>>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black45,
+      builder: (_) => _ItemStatusBreakdownDialog(
+        options: options,
+        initialBreakdown: breakdown,
+        selectedStatus: value,
+        actualQty: actual,
+        itemCode: itemCode,
+        itemName: itemName,
+      ),
+    );
+    if (result != null) onBreakdownChanged(result);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -3699,47 +3836,489 @@ class _RequiredItemStatusField extends StatelessWidget {
         .toList(growable: false);
     final selected = cleanOptions.contains(value) ? value : null;
 
-    return DropdownButtonFormField<String>(
-      key: ValueKey('${cleanOptions.join('|')}|$selected|$enabled'),
-      initialValue: selected,
-      isExpanded: true,
-      icon: const Icon(Icons.keyboard_arrow_down_rounded),
-      items: cleanOptions
-          .map(
-            (option) => DropdownMenuItem<String>(
-              value: option,
-              child: Text(
-                option,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w800),
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: actualController,
+      builder: (context, actualValue, _) {
+        final actual = _parseQty(actualValue.text);
+        final allocated = breakdown.values.fold<num>(
+          0,
+          (sum, quantity) => sum + quantity,
+        );
+        final hasBreakdown = breakdown.isNotEmpty;
+        final allocationMatches =
+            actual != null && (allocated - actual).abs() <= 0.00001;
+
+        if (hasBreakdown) {
+          return InkWell(
+            onTap: enabled && actual != null && actual > 0
+                ? () => _openBreakdown(context, actual)
+                : null,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              height: 58,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: enabled ? AppColors.blueSoft : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: allocationMatches
+                      ? AppColors.primaryColor
+                      : const Color(0xFFEF4444),
+                  width: 1.3,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.call_split_rounded,
+                    color: allocationMatches
+                        ? AppColors.primaryColor
+                        : const Color(0xFFEF4444),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${breakdown.length} statuses',
+                          style: const TextStyle(
+                            color: AppColors.text,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        Text(
+                          '${_formatQty(allocated)} / ${actual == null ? '-' : _formatQty(actual)} allocated',
+                          style: TextStyle(
+                            color: allocationMatches
+                                ? AppColors.subText
+                                : const Color(0xFFDC2626),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (enabled)
+                    const Icon(
+                      Icons.edit_outlined,
+                      size: 19,
+                      color: AppColors.primaryColor,
+                    ),
+                ],
               ),
             ),
-          )
-          .toList(growable: false),
-      onChanged: enabled ? onChanged : null,
-      decoration: InputDecoration(
-        labelText: 'Item Status *',
-        helperText: 'Required by Inventory',
-        helperMaxLines: 1,
-        prefixIcon: const Icon(Icons.fact_check_outlined, size: 19),
-        filled: true,
-        fillColor: enabled ? Colors.white : const Color(0xFFF1F5F9),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 10,
-          vertical: 10,
+          );
+        }
+
+        return Row(
+          children: [
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                key: ValueKey('${cleanOptions.join('|')}|$selected|$enabled'),
+                initialValue: selected,
+                isExpanded: true,
+                icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                items: cleanOptions
+                    .map(
+                      (option) => DropdownMenuItem<String>(
+                        value: option,
+                        child: Text(
+                          option,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    )
+                    .toList(growable: false),
+                onChanged: enabled ? onChanged : null,
+                decoration: InputDecoration(
+                  labelText: 'Item Status',
+                  prefixIcon: const Icon(Icons.fact_check_outlined, size: 19),
+                  filled: true,
+                  fillColor: enabled ? Colors.white : const Color(0xFFF1F5F9),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 10,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF93C5FD)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(
+                      color: AppColors.primaryColor,
+                      width: 1.6,
+                    ),
+                  ),
+                  disabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Tooltip(
+              message: actual == null || actual <= 0
+                  ? 'Enter Actual Qty first'
+                  : 'Split Actual Qty across statuses',
+              child: IconButton.filledTonal(
+                onPressed: enabled && actual != null && actual > 0
+                    ? () => _openBreakdown(context, actual)
+                    : null,
+                style: IconButton.styleFrom(
+                  fixedSize: const Size(48, 48),
+                  backgroundColor: AppColors.blueSoft,
+                  foregroundColor: AppColors.primaryColor,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: const BorderSide(color: Color(0xFFBFDBFE)),
+                  ),
+                ),
+                icon: const Icon(Icons.call_split_rounded),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ItemStatusBreakdownDialog extends StatefulWidget {
+  final List<String> options;
+  final Map<String, num> initialBreakdown;
+  final String? selectedStatus;
+  final num actualQty;
+  final String itemCode;
+  final String itemName;
+
+  const _ItemStatusBreakdownDialog({
+    required this.options,
+    required this.initialBreakdown,
+    required this.selectedStatus,
+    required this.actualQty,
+    required this.itemCode,
+    required this.itemName,
+  });
+
+  @override
+  State<_ItemStatusBreakdownDialog> createState() =>
+      _ItemStatusBreakdownDialogState();
+}
+
+class _ItemStatusBreakdownDialogState
+    extends State<_ItemStatusBreakdownDialog> {
+  late final Map<String, TextEditingController> _controllers;
+
+  @override
+  void initState() {
+    super.initState();
+    _controllers = {
+      for (final option in widget.options)
+        option: TextEditingController(
+          text:
+              widget.initialBreakdown[option]?.toString() ??
+              (widget.initialBreakdown.isEmpty &&
+                      widget.selectedStatus == option
+                  ? widget.actualQty.toString()
+                  : ''),
         ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF93C5FD)),
+    };
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _controllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  num? _parse(String value) {
+    final text = value.trim().replaceAll(',', '');
+    if (text.isEmpty) return null;
+    return num.tryParse(text);
+  }
+
+  num get _allocated => _controllers.values.fold<num>(
+    0,
+    (sum, controller) => sum + (_parse(controller.text) ?? 0),
+  );
+
+  String _format(num value) {
+    if (value == value.roundToDouble()) return value.toInt().toString();
+    return value
+        .toStringAsFixed(5)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+  }
+
+  void _apply() {
+    final allocated = _allocated;
+    if ((allocated - widget.actualQty).abs() > 0.00001) return;
+    final result = <String, num>{};
+    for (final entry in _controllers.entries) {
+      final quantity = _parse(entry.value.text);
+      if (quantity != null && quantity > 0) result[entry.key] = quantity;
+    }
+    if (result.isEmpty) return;
+    Navigator.of(context).pop(result);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final allocated = _allocated;
+    final remaining = widget.actualQty - allocated;
+    final valid = remaining.abs() <= 0.00001 && allocated > 0;
+
+    return Dialog(
+      backgroundColor: AppColors.card,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 620, maxHeight: 720),
+        child: Padding(
+          padding: const EdgeInsets.all(22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: AppColors.blueSoft,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.call_split_rounded,
+                      color: AppColors.primaryColor,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Split actual quantity by status',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            color: AppColors.text,
+                          ),
+                        ),
+                        SizedBox(height: 3),
+                        Text(
+                          'Assign every counted unit to its correct condition.',
+                          style: TextStyle(color: AppColors.subText),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.itemName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.text,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      widget.itemCode,
+                      style: const TextStyle(color: AppColors.subText),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  _BreakdownMetric(
+                    label: 'Actual Qty',
+                    value: _format(widget.actualQty),
+                    color: AppColors.secondaryColor,
+                  ),
+                  const SizedBox(width: 10),
+                  _BreakdownMetric(
+                    label: 'Allocated',
+                    value: _format(allocated),
+                    color: AppColors.primaryColor,
+                  ),
+                  const SizedBox(width: 10),
+                  _BreakdownMetric(
+                    label: 'Remaining',
+                    value: _format(remaining),
+                    color: valid
+                        ? const Color(0xFF16A34A)
+                        : const Color(0xFFDC2626),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: widget.options.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
+                  itemBuilder: (context, index) {
+                    final option = widget.options[index];
+                    return TextField(
+                      controller: _controllers[option],
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      onChanged: (_) => setState(() {}),
+                      decoration: InputDecoration(
+                        labelText: option,
+                        hintText: '0',
+                        prefixIcon: const Icon(Icons.inventory_2_outlined),
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: AppColors.border),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: AppColors.primaryColor,
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 14),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: valid
+                      ? const Color(0xFFECFDF5)
+                      : const Color(0xFFFEF2F2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  valid
+                      ? 'Ready to apply. All ${_format(widget.actualQty)} units are allocated.'
+                      : 'The allocated total must equal Actual Qty (${_format(widget.actualQty)}).',
+                  style: TextStyle(
+                    color: valid
+                        ? const Color(0xFF047857)
+                        : const Color(0xFFB91C1C),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  TextButton(
+                    onPressed: () {
+                      for (final controller in _controllers.values) {
+                        controller.clear();
+                      }
+                      setState(() {});
+                    },
+                    child: const Text('Clear'),
+                  ),
+                  const Spacer(),
+                  OutlinedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton.icon(
+                    onPressed: valid ? _apply : null,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primaryColor,
+                      foregroundColor: Colors.white,
+                    ),
+                    icon: const Icon(Icons.check_rounded),
+                    label: const Text('Apply split'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.6),
+      ),
+    );
+  }
+}
+
+class _BreakdownMetric extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _BreakdownMetric({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: .08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: .25)),
         ),
-        disabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(fontSize: 11, color: AppColors.subText),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              value,
+              style: TextStyle(
+                color: color,
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
         ),
       ),
     );

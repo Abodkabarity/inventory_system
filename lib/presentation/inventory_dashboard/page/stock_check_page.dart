@@ -371,6 +371,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
               ? _itemStatusOptions
               : const <String>[],
           'item_status_value': null,
+          'item_status_breakdown': const <String, num>{},
           'status': 'pending',
           'sent_at': now,
           'expires_at': expiresAt,
@@ -4707,7 +4708,7 @@ class _StockCheckResultsGridSource extends DataGridSource {
       'system' => row.systemQty,
       'actual' => row.actualQty,
       'diff' => row.variance,
-      'itemStatus' => row.includeItemStatus ? row.itemStatusValue : '',
+      'itemStatus' => row.includeItemStatus ? row.itemStatusDisplay : '',
       'barcode' =>
         row.includeBarcodeStickerCheck
             ? _StockCheckResultTableState._yesNo(row.barcodeStickerIsCorrect)

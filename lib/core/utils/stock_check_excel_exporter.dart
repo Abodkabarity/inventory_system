@@ -128,7 +128,7 @@ class StockCheckExcelExporter {
         row.systemQty ?? '',
         row.actualQty ?? '',
         row.variance ?? '',
-        if (showItemStatus) row.includeItemStatus ? row.itemStatusValue : '',
+        if (showItemStatus) row.includeItemStatus ? row.itemStatusDisplay : '',
         if (showBarcodeSticker)
           row.includeBarcodeStickerCheck
               ? _yesNo(row.barcodeStickerIsCorrect)
@@ -243,7 +243,7 @@ class StockCheckExcelExporter {
         row.systemQty ?? '',
         row.actualQty ?? '',
         row.variance ?? '',
-        if (showItemStatus) row.includeItemStatus ? row.itemStatusValue : '',
+        if (showItemStatus) row.includeItemStatus ? row.itemStatusDisplay : '',
         row.submittedByName,
       ];
 
