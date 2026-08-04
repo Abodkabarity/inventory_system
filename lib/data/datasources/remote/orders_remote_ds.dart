@@ -7,6 +7,23 @@ class OrdersRemoteDs {
   OrdersRemoteDs(this.client);
   bool _additionalRequestRpcSupportsPrintMetadata = true;
 
+  Future<int> countOrders({
+    required String runDate,
+    required String branchName,
+  }) async {
+    var query = client
+        .from('daily_order')
+        .select('item_code')
+        .eq('run_date', runDate);
+
+    if (branchName != '__ALL__') {
+      query = query.eq('branch', branchName);
+    }
+
+    final response = await query.limit(1).count(CountOption.exact);
+    return response.count;
+  }
+
   // ==========================
   // Fetch ALL rows for a branch (batched + progress)
   // - Keyset pagination to avoid OFFSET timeouts
@@ -1328,8 +1345,7 @@ total_sales_last_90_days,
     }
 
     final storagePath = row['storage_path']?.toString();
-    final bucketName =
-        row['bucket_name']?.toString().trim().isNotEmpty == true
+    final bucketName = row['bucket_name']?.toString().trim().isNotEmpty == true
         ? row['bucket_name'].toString()
         : 'non-recived-exports';
 

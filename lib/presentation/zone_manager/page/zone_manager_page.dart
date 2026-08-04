@@ -52,6 +52,8 @@ class ZoneManagerPage extends StatefulWidget {
 }
 
 class _ZoneManagerPageState extends State<ZoneManagerPage> {
+  static const int _fetchBatchSize = 5000;
+
   final _client = Supabase.instance.client;
   final _search = TextEditingController();
   final _dailyGridController = OrdersGridController();
@@ -69,6 +71,10 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
   List<Map<String, dynamic>> _dailyRawRows = const [];
   List<DailyOrderRow> _dailyRows = const [];
   bool _dailyLoading = false;
+  double _dailyLoadProgress = 0;
+  String _dailyLoadStage = 'Preparing daily order';
+  int _dailyLoadedRows = 0;
+  int? _dailyTotalRows;
   String? _dailyError;
   String _dailyRequestKey = '';
   int _dailyRequestId = 0;
@@ -213,7 +219,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
           : zoneContext.effectiveZones;
       final branchData = await _client
           .from('branches')
-          .select('branch_name,zone,submit_end_hour,max_adj_limit')
+          .select('branch_name,zone,order_days,submit_end_hour,max_adj_limit')
           .eq('is_active', true)
           .inFilter('zone', activeZones)
           .order('branch_name');
@@ -286,16 +292,19 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
 
   Future<_ZoneContextData> _loadZoneContext() async {
     final uid = _client.auth.currentUser?.id ?? '';
-    final effective = <String>{...widget.zoneNames};
-    final permanent = <String>{...widget.zoneNames};
+    final effective = <String>{};
+    final permanent = <String>{};
     var delegations = <Map<String, dynamic>>[];
     var directory = <Map<String, dynamic>>[];
     var currentName =
         _client.auth.currentUser?.email?.split('@').first.trim() ??
         'Zone Manager';
     var handoverAvailable = true;
+    var authoritativeAssignmentsLoaded = false;
 
     if (uid.isEmpty) {
+      effective.addAll(widget.zoneNames);
+      permanent.addAll(widget.zoneNames);
       return _ZoneContextData(
         effectiveZones: effective.toList()..sort(),
         permanentZones: permanent.toList()..sort(),
@@ -310,8 +319,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
       final rows = List<Map<String, dynamic>>.from(
         await _client.rpc('get_my_effective_zones'),
       );
-      effective.clear();
-      permanent.clear();
+      authoritativeAssignmentsLoaded = true;
       for (final row in rows) {
         final zone = _text(row['zone']);
         if (zone.isEmpty) continue;
@@ -329,6 +337,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
               .select('zone')
               .eq('user_id', uid),
         );
+        authoritativeAssignmentsLoaded = rows.isNotEmpty;
         for (final row in rows) {
           final zone = _text(row['zone']);
           if (zone.isNotEmpty) {
@@ -339,6 +348,14 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
       } catch (_) {
         handoverAvailable = false;
       }
+    }
+
+    // app_users.zone and the values supplied at sign-in are retained only for
+    // installations that have not migrated to app_user_zones yet. Mixing both
+    // sources would resurrect removed assignments.
+    if (!authoritativeAssignmentsLoaded) {
+      if (effective.isEmpty) effective.addAll(widget.zoneNames);
+      if (permanent.isEmpty) permanent.addAll(widget.zoneNames);
     }
 
     try {
@@ -538,6 +555,10 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
           _dailyRawRows = const [];
           _dailyRows = const [];
           _dailyError = null;
+          _dailyLoading = false;
+          _dailyLoadProgress = 0;
+          _dailyLoadedRows = 0;
+          _dailyTotalRows = null;
         });
       }
       return;
@@ -546,17 +567,91 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     setState(() {
       _dailyLoading = true;
       _dailyError = null;
+      _dailyRawRows = const [];
+      _dailyRows = const [];
+      _dailyLoadProgress = .03;
+      _dailyLoadStage = 'Connecting to the daily order';
+      _dailyLoadedRows = 0;
+      _dailyTotalRows = null;
     });
     try {
-      final rawRows = await OrdersRemoteDs(
-        _client,
-      ).fetchOrdersAll(runDate: widget.runDate, branchName: _selectedBranch);
+      final dataSource = OrdersRemoteDs(_client);
+      var loadedRows = 0;
+      int? totalRows;
+
+      final countFuture = dataSource
+          .countOrders(runDate: widget.runDate, branchName: _selectedBranch)
+          .then<int?>((value) {
+            totalRows = value;
+            if (mounted && requestId == _dailyRequestId) {
+              setState(() {
+                _dailyTotalRows = value;
+                _dailyLoadStage = value == 0
+                    ? 'No order lines found'
+                    : 'Loading order lines';
+                _dailyLoadProgress = value == 0
+                    ? .88
+                    : (.08 +
+                          (loadedRows / value).clamp(0.0, 1.0).toDouble() *
+                              .78);
+              });
+            }
+            return value;
+          })
+          .onError((_, _) => null);
+
+      final rowsFuture = dataSource.fetchOrdersAll(
+        runDate: widget.runDate,
+        branchName: _selectedBranch,
+        batchSize: _fetchBatchSize,
+        onProgress: (loaded) {
+          loadedRows = loaded;
+          if (!mounted || requestId != _dailyRequestId) return;
+          final total = totalRows;
+          setState(() {
+            _dailyLoadedRows = loaded;
+            _dailyLoadStage = 'Loading order lines';
+            _dailyLoadProgress = total != null && total > 0
+                ? (.08 + (loaded / total).clamp(0.0, 1.0).toDouble() * .78)
+                : (_dailyLoadProgress + .04).clamp(.08, .78).toDouble();
+          });
+        },
+      );
+
+      await countFuture;
+      final rawRows = await rowsFuture;
+      if (!mounted || requestId != _dailyRequestId) return;
+      if (_dailyTotalRows == null) {
+        setState(() => _dailyTotalRows = rawRows.length);
+      }
+
+      final mappedRows = <DailyOrderRow>[];
+      const mapBatchSize = 400;
+      for (var start = 0; start < rawRows.length; start += mapBatchSize) {
+        final proposedEnd = start + mapBatchSize;
+        final end = proposedEnd > rawRows.length ? rawRows.length : proposedEnd;
+        mappedRows.addAll(
+          rawRows.sublist(start, end).map(DailyOrderRow.fromMap),
+        );
+        if (!mounted || requestId != _dailyRequestId) return;
+        setState(() {
+          _dailyLoadedRows = rawRows.length;
+          _dailyLoadStage = 'Preparing the order table';
+          final ratio = rawRows.isEmpty ? 1.0 : end / rawRows.length;
+          _dailyLoadProgress = .88 + (ratio * .10);
+        });
+        await Future<void>.delayed(Duration.zero);
+      }
+
       if (!mounted || requestId != _dailyRequestId) return;
       setState(() {
         _dailyRawRows = rawRows;
-        _dailyRows = rawRows.map(DailyOrderRow.fromMap).toList(growable: false);
+        _dailyRows = List<DailyOrderRow>.unmodifiable(mappedRows);
         _dailyRequestKey = requestKey;
+        _dailyLoadProgress = 1;
+        _dailyLoadStage = 'Daily order ready';
       });
+      await Future<void>.delayed(const Duration(milliseconds: 140));
     } catch (error) {
       if (!mounted || requestId != _dailyRequestId) return;
       setState(() => _dailyError = error.toString());
@@ -590,7 +685,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     final toDate = _dateKey(to);
     for (final chunk in _chunks(branches, 20)) {
       var offset = 0;
-      const batchSize = 500;
+      const batchSize = _fetchBatchSize;
       while (true) {
         final rows = List<Map<String, dynamic>>.from(
           await _client
@@ -747,7 +842,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     final toDate = _dateKey(to);
     for (final chunk in _chunks(branches, 20)) {
       var offset = 0;
-      const batchSize = 500;
+      const batchSize = _fetchBatchSize;
       while (true) {
         final rows = List<Map<String, dynamic>>.from(
           await _client
@@ -1035,7 +1130,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     final output = <StockCheckTask>[];
     for (final chunk in _chunks(branches, 20)) {
       var offset = 0;
-      const batchSize = 500;
+      const batchSize = _fetchBatchSize;
       while (true) {
         final data = List<Map<String, dynamic>>.from(
           await _client
@@ -1135,7 +1230,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
       final output = <StockCheckTask>[];
       for (final chunk in _chunks(branches, 20)) {
         var offset = 0;
-        const batchSize = 500;
+        const batchSize = _fetchBatchSize;
         while (true) {
           final data = List<Map<String, dynamic>>.from(
             await _client
@@ -1196,7 +1291,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     final output = <Map<String, dynamic>>[];
     for (final chunk in _chunks(branches, 20)) {
       var offset = 0;
-      const batch = 500;
+      const batch = _fetchBatchSize;
       while (true) {
         dynamic query = _client
             .from(table)

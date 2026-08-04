@@ -3,7 +3,14 @@ part of '../zone_manager_page.dart';
 extension _ZoneDailyOrderPageView on _ZoneManagerPageState {
   Widget buildZoneDailyOrderPage() {
     if (_dailyLoading && _dailyRows.isEmpty) {
-      return const _ReportLoading(label: 'Loading daily order...');
+      return _DailyOrderProgressLoading(
+        branchName: _selectedBranch,
+        runDate: _displayDate(widget.runDate),
+        progress: _dailyLoadProgress,
+        stage: _dailyLoadStage,
+        loadedRows: _dailyLoadedRows,
+        totalRows: _dailyTotalRows,
+      );
     }
     if (_dailyError != null && _dailyRows.isEmpty) {
       return _DailyOrderError(message: _dailyError!, onRetry: _loadDailyBranch);
@@ -149,5 +156,192 @@ extension _ZoneDailyOrderPageView on _ZoneManagerPageState {
         ),
       ],
     );
+  }
+}
+
+class _DailyOrderProgressLoading extends StatelessWidget {
+  const _DailyOrderProgressLoading({
+    required this.branchName,
+    required this.runDate,
+    required this.progress,
+    required this.stage,
+    required this.loadedRows,
+    required this.totalRows,
+  });
+
+  final String branchName;
+  final String runDate;
+  final double progress;
+  final String stage;
+  final int loadedRows;
+  final int? totalRows;
+
+  @override
+  Widget build(BuildContext context) {
+    final safeProgress = progress.clamp(0.0, 1.0);
+    final percent = (safeProgress * 100).round();
+    final hasTotal = totalRows != null && totalRows! > 0;
+    final countLabel = hasTotal
+        ? '${_formatCount(loadedRows)} of ${_formatCount(totalRows!)} items'
+        : loadedRows > 0
+        ? '${_formatCount(loadedRows)} items received'
+        : 'Getting the order ready';
+
+    return ColoredBox(
+      color: const Color(0xFFF5F9FD),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Container(
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.border),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primaryColor.withValues(alpha: .10),
+                  blurRadius: 28,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryColor.withValues(alpha: .10),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.shopping_cart_checkout_rounded,
+                        color: AppColors.primaryColor,
+                        size: 27,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Opening daily order',
+                            style: TextStyle(
+                              color: AppColors.text,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '$branchName  |  $runDate',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppColors.subText,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    TweenAnimationBuilder<double>(
+                      tween: Tween(end: safeProgress),
+                      duration: const Duration(milliseconds: 260),
+                      builder: (context, value, _) => Text(
+                        '${(value * 100).round()}%',
+                        style: const TextStyle(
+                          color: AppColors.primaryColor,
+                          fontSize: 25,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(end: safeProgress),
+                    duration: const Duration(milliseconds: 260),
+                    builder: (context, value, _) => LinearProgressIndicator(
+                      value: value,
+                      minHeight: 10,
+                      color: AppColors.primaryColor,
+                      backgroundColor: AppColors.primaryColor.withValues(
+                        alpha: .12,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.primaryColor,
+                      ),
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        stage,
+                        style: const TextStyle(
+                          color: AppColors.text,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      countLabel,
+                      style: const TextStyle(
+                        color: AppColors.subText,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF4F8FC),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    percent < 100
+                        ? 'The order is being loaded securely. Keep this page open.'
+                        : 'Everything is ready. Opening the order now.',
+                    style: const TextStyle(
+                      color: AppColors.subText,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  static String _formatCount(int value) {
+    final digits = value.toString();
+    return digits.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',');
   }
 }
