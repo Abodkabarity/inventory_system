@@ -15,6 +15,7 @@ import '../../../data/datasources/remote/purchase_status_remote_ds.dart';
 import '../../../domain/entities/purchase_status_record.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
+import '../../items_tracker/page/items_tracker_page.dart';
 import '../widgets/purchase_status_grid.dart';
 
 class PurchaseStatusPage extends StatefulWidget {
@@ -627,6 +628,16 @@ class _PurchaseStatusPageState extends State<PurchaseStatusPage> {
                 onRefresh: _load,
                 onExport: _exportVisibleRecords,
                 onImport: _importExcel,
+                onItemsTracker: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const ItemsTrackerPage(
+                        role: 'purchase',
+                        showBackButton: true,
+                      ),
+                    ),
+                  );
+                },
                 isExporting: _exporting,
                 isImporting: _importing,
                 canExport: !_loading && filtered.isNotEmpty,
@@ -763,6 +774,7 @@ class _TopBar extends StatelessWidget {
   final VoidCallback onRefresh;
   final VoidCallback onExport;
   final VoidCallback onImport;
+  final VoidCallback onItemsTracker;
   final bool isExporting;
   final bool isImporting;
   final bool canExport;
@@ -773,6 +785,7 @@ class _TopBar extends StatelessWidget {
     required this.onRefresh,
     required this.onExport,
     required this.onImport,
+    required this.onItemsTracker,
     required this.isExporting,
     required this.isImporting,
     required this.canExport,
@@ -836,7 +849,24 @@ class _TopBar extends StatelessWidget {
             onPressed: onRefresh,
             icon: const Icon(Icons.refresh_rounded, color: Colors.white),
           ),
-          const SizedBox(width: 8),
+          /*  const SizedBox(width: 8),
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white,
+              side: BorderSide(color: Colors.white.withValues(alpha: .45)),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(13),
+              ),
+            ),
+            onPressed: onItemsTracker,
+            icon: const Icon(Icons.track_changes_rounded),
+            label: const Text(
+              'Items Tracker',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),*/
+          const SizedBox(width: 10),
           FilledButton.icon(
             style: FilledButton.styleFrom(
               backgroundColor: AppColors.primaryColor,

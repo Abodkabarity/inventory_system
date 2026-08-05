@@ -7,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'core/theme/app_colors.dart';
 import 'presentation/app/bloc/app_bloc.dart';
 import 'presentation/app/bloc/app_state.dart';
+import 'presentation/items_tracker/page/items_tracker_page.dart';
 import 'presentation/orders/pages/branch_orders_page.dart';
 import 'presentation/purchase/page/purchase_status_page.dart';
 import 'presentation/zone_manager/page/zone_manager_page.dart';
@@ -75,6 +76,10 @@ class RoleGatePage extends StatelessWidget {
 
         if (role == 'purchase') {
           return const PurchaseStatusPage();
+        }
+
+        if (role == 'category') {
+          return const ItemsTrackerPage(role: 'category');
         }
 
         if (role == 'zone_manager') {
