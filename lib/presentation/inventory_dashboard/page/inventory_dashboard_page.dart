@@ -8,6 +8,7 @@ import '../../../data/datasources/remote/inventory_remote_ds.dart';
 import '../../../data/repositories/inventory_repository_impl.dart';
 import '../../../domain/entities/inventory_page.dart';
 import '../../../domain/repositories/inventory_repository.dart';
+import '../../items_tracker/page/items_tracker_page.dart';
 import '../bloc/inventory_bloc.dart';
 import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
@@ -259,6 +260,8 @@ Widget _buildPage(InventoryState state, bool isSubmitted, String runDate) {
 
     case InventoryPageType.additionalOrders:
       return const InventoryAdditionalOrdersPage();
+    case InventoryPageType.itemsTracker:
+      return const ItemsTrackerPage(role: 'inventory', embedded: true);
 
     case InventoryPageType.dailyOrder:
       return InventoryDailyOrderPage(runDate: runDate);

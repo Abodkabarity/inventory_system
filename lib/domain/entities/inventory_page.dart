@@ -7,6 +7,7 @@ enum InventoryPageType {
   dailyOrder,
   tma,
   additionalOrders,
+  itemsTracker,
 
   additionalOrderAnalysis,
   orderEditAnalysis,

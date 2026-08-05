@@ -40,6 +40,7 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
 
   static const Set<InventoryPageType> _operationsPages = {
     InventoryPageType.additionalOrders,
+    InventoryPageType.itemsTracker,
     InventoryPageType.allocation,
     InventoryPageType.stockCheck,
     InventoryPageType.branchSubmissionTracker,
@@ -293,6 +294,14 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
                             page: InventoryPageType.additionalOrders,
                             icon: Icons.add_shopping_cart_rounded,
                             title: 'Additional Orders',
+                            nested: true,
+                          ),
+                          _menuItem(
+                            context: context,
+                            state: state,
+                            page: InventoryPageType.itemsTracker,
+                            icon: Icons.track_changes_rounded,
+                            title: 'Items Tracker',
                             nested: true,
                           ),
                           _menuItem(
