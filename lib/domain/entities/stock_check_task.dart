@@ -10,6 +10,10 @@ class StockCheckTask {
   final num? actualQty;
   final bool includeBarcodeStickerCheck;
   final bool? barcodeStickerIsCorrect;
+  final bool includeItemStatus;
+  final List<String> itemStatusOptions;
+  final String itemStatusValue;
+  final Map<String, num> itemStatusBreakdown;
   final String status;
   final String note;
   final DateTime? sentAt;
@@ -30,6 +34,10 @@ class StockCheckTask {
     required this.actualQty,
     required this.includeBarcodeStickerCheck,
     required this.barcodeStickerIsCorrect,
+    required this.includeItemStatus,
+    required this.itemStatusOptions,
+    required this.itemStatusValue,
+    required this.itemStatusBreakdown,
     required this.status,
     required this.note,
     required this.sentAt,
@@ -41,6 +49,21 @@ class StockCheckTask {
 
   bool get isSubmitted => status.trim().toLowerCase() == 'submitted';
   bool get isPending => !isSubmitted;
+  bool get requiresItemStatus =>
+      includeItemStatus && itemStatusOptions.isNotEmpty;
+  String get itemStatusDisplay {
+    if (itemStatusBreakdown.isEmpty) return itemStatusValue;
+    final orderedKeys = <String>[
+      ...itemStatusOptions.where(itemStatusBreakdown.containsKey),
+      ...itemStatusBreakdown.keys.where(
+        (key) => !itemStatusOptions.contains(key),
+      ),
+    ];
+    return orderedKeys
+        .map((key) => '$key: ${_formatNum(itemStatusBreakdown[key]!)}')
+        .join(' | ');
+  }
+
   bool get isExpired =>
       expiresAt != null && DateTime.now().isAfter(expiresAt!.toLocal());
   num? get variance {
@@ -53,8 +76,13 @@ class StockCheckTask {
     num? actualQty,
     bool? includeBarcodeStickerCheck,
     Object? barcodeStickerIsCorrect = _sentinel,
+    bool? includeItemStatus,
+    List<String>? itemStatusOptions,
+    String? itemStatusValue,
+    Map<String, num>? itemStatusBreakdown,
     String? status,
     String? note,
+    DateTime? sentAt,
     DateTime? expiresAt,
     DateTime? submittedAt,
     String? submittedByName,
@@ -77,9 +105,13 @@ class StockCheckTask {
       barcodeStickerIsCorrect: identical(barcodeStickerIsCorrect, _sentinel)
           ? this.barcodeStickerIsCorrect
           : barcodeStickerIsCorrect as bool?,
+      includeItemStatus: includeItemStatus ?? this.includeItemStatus,
+      itemStatusOptions: itemStatusOptions ?? this.itemStatusOptions,
+      itemStatusValue: itemStatusValue ?? this.itemStatusValue,
+      itemStatusBreakdown: itemStatusBreakdown ?? this.itemStatusBreakdown,
       status: status ?? this.status,
       note: note ?? this.note,
-      sentAt: sentAt,
+      sentAt: sentAt ?? this.sentAt,
       expiresAt: expiresAt ?? this.expiresAt,
       submittedAt: submittedAt ?? this.submittedAt,
       submittedByName: submittedByName ?? this.submittedByName,
@@ -120,6 +152,35 @@ class StockCheckTask {
     return null;
   }
 
+  static List<String> _stringList(dynamic value) {
+    if (value is! List) return const [];
+    return value
+        .map((item) => item.toString().trim())
+        .where((item) => item.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  static Map<String, num> _numberMap(dynamic value) {
+    if (value is! Map) return const {};
+    final result = <String, num>{};
+    for (final entry in value.entries) {
+      final key = entry.key.toString().trim();
+      final quantity = _nullableNum(entry.value);
+      if (key.isNotEmpty && quantity != null && quantity > 0) {
+        result[key] = quantity;
+      }
+    }
+    return Map.unmodifiable(result);
+  }
+
+  static String _formatNum(num value) {
+    if (value == value.roundToDouble()) return value.toInt().toString();
+    return value
+        .toStringAsFixed(5)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+  }
+
   factory StockCheckTask.fromMap(Map<String, dynamic> map) {
     return StockCheckTask(
       id: (map['id'] ?? '').toString(),
@@ -133,6 +194,10 @@ class StockCheckTask {
       actualQty: _nullableNum(map['actual_qty']),
       includeBarcodeStickerCheck: _bool(map['include_barcode_sticker_check']),
       barcodeStickerIsCorrect: _nullableBool(map['barcode_sticker_is_correct']),
+      includeItemStatus: _bool(map['include_item_status']),
+      itemStatusOptions: _stringList(map['item_status_options']),
+      itemStatusValue: (map['item_status_value'] ?? '').toString().trim(),
+      itemStatusBreakdown: _numberMap(map['item_status_breakdown']),
       status: (map['status'] ?? 'pending').toString(),
       note: (map['note'] ?? '').toString(),
       sentAt: _date(map['sent_at']),

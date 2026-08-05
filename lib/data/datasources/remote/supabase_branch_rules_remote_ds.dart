@@ -60,7 +60,7 @@ class SupabaseBranchRulesRemoteDs {
     final rows = await _fetchAll(
       table: 'tma',
       select:
-          'branch_name,item_code,item_name,start_date,end_date,final_qty_to_keep,qty_per_duration',
+          'branch_name,item_code,item_name,start_date,end_date,qty_per_duration',
       branchName: branchName,
     );
     return rows.map(TmaEntryModel.fromMap).toList();

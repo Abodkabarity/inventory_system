@@ -46,7 +46,7 @@ class TmaExcelExporter {
 
     /// history
     if (!isCompare && includeHistory) {
-      headers.addAll(['final_qty_to_keep', 'moved_at', 'action']);
+      headers.addAll(['moved_at', 'action']);
     }
 
     /// =========================
@@ -73,7 +73,6 @@ class TmaExcelExporter {
       'new_end': 'New End',
 
       /// HISTORY
-      'final_qty_to_keep': 'Final Qty',
       'moved_at': 'Moved At',
       'action': 'Action',
     };

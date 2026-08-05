@@ -405,10 +405,13 @@ class _AvailabilityKpiPageState extends State<AvailabilityKpiPage> {
       });
     } catch (error) {
       if (!mounted) return;
+      final isTimeout = error is PostgrestException && error.code == '57014';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Preview failed. Run the latest availability_kpi_allocation.sql in Supabase, then retry. $error',
+            isTimeout
+                ? 'Allocation preview exceeded the database time limit. Run availability_kpi_allocation_timeout_fix.sql once in Supabase, then retry.'
+                : 'Allocation preview failed. Please retry. If the problem continues, run the latest availability_kpi_allocation.sql in Supabase. $error',
           ),
           backgroundColor: const Color(0xffDC2626),
         ),
@@ -927,7 +930,7 @@ class _MethodCard extends StatelessWidget {
             number: '1',
             title: 'Top sellers',
             detail:
-                'Items that make up 60% of branch sales in the last 3 completed months',
+                'Items that make up 80% of branch sales in the last 3 completed months',
           ),
           const Icon(Icons.add_rounded, color: Color(0xff2563EB)),
           const _MethodStep(
@@ -940,7 +943,7 @@ class _MethodCard extends StatelessWidget {
             number: '3',
             title: '7-day stock need',
             detail:
-                '70% from 3-month history + 30% from the latest 45-day trend',
+                '30% from 3-month history + 70% from the latest 45-day trend',
           ),
           TextButton.icon(
             onPressed: () => _showCalculationDialog(context),
@@ -1003,7 +1006,7 @@ Future<void> _showCalculationDialog(BuildContext context) {
                   number: '1',
                   title: 'Items Included',
                   detail:
-                      'An item is included when it is a top seller in the group that makes 60% of branch sales value during the last 3 completed months, or when it was sold in at least 80% of the months studied. Only Normal Purchase items are included. After Store Stock is calculated, an item is excluded only when Store Stock is more than 4 and its 7-day coverage is below 100%.',
+                      'An item is included when it is a top seller in the group that makes 80% of branch sales value during the last 3 completed months, or when it was sold in at least 80% of the months studied. Only Normal Purchase items are included. After Store Stock is calculated, an item is excluded only when Store Stock is more than 4 and its 7-day coverage is below 100%.',
                 ),
                 const _CalculationRow(
                   number: '2',
@@ -1013,13 +1016,13 @@ Future<void> _showCalculationDialog(BuildContext context) {
                   formula:
                       '1. 3-Month Weekly Average = Total units in the last 3 completed months ÷ 3 ÷ 4.33\n\n'
                       '2. 45-Day Weekly Average = Units sold in the latest 45 days ÷ 6.43\n\n'
-                      '3. 7-Day Need = (3-Month Weekly Average × 70%) + (45-Day Weekly Average × 30%)',
+                      '3. 7-Day Need = (3-Month Weekly Average × 30%) + (45-Day Weekly Average × 70%)',
                   example:
                       'Example\n'
                       'April 15 + May 2 + June 0 = 17 units\n'
                       '3-Month Weekly Average = 17 ÷ 3 ÷ 4.33 = 1.31\n'
                       'Latest 45 days = 1 unit ÷ 6.43 = 0.16\n'
-                      '7-Day Need = (1.31 × 70%) + (0.16 × 30%) = 0.97 units, or about 1 unit.\n\n'
+                      '7-Day Need = (1.31 × 30%) + (0.16 × 70%) = 0.51 units.\n\n'
                       'Max Adj exception: DECREASE qty above zero replaces this calculation and is treated as 30-day demand. DECREASE qty of zero removes the item from the KPI list.',
                 ),
                 const _CalculationRow(
@@ -1712,7 +1715,7 @@ class _Filters extends StatelessWidget {
                 ),
                 DropdownMenuItem(
                   value: 'pareto',
-                  child: Text('Top seller — 60% of branch sales value'),
+                  child: Text('Top seller — 80% of branch sales value'),
                 ),
                 DropdownMenuItem(
                   value: 'consistent',
@@ -3355,7 +3358,7 @@ class _AvailabilityKpiGridSource extends DataGridSource {
 
 String _selectionLabel(AvailabilityKpiItem item) {
   return item.inPareto
-      ? 'Top seller — 60% of branch sales value'
+      ? 'Top seller — 80% of branch sales value'
       : 'Sold regularly';
 }
 
@@ -3366,7 +3369,7 @@ class _SourceBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = item.inPareto ? 'Top seller • Branch 60%' : 'Sold regularly';
+    final label = item.inPareto ? 'Top seller • Branch 80%' : 'Sold regularly';
     final color = item.inPareto
         ? AppColors.primaryColor
         : const Color(0xff0F766E);

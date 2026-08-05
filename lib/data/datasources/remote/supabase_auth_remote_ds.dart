@@ -38,11 +38,13 @@ class SupabaseAuthRemoteDs {
     }
 
     if (role == 'zone_manager') {
-      final zones = <String>{if (zone.isNotEmpty) zone};
+      final zones = <String>{};
+      var authoritativeAssignmentsLoaded = false;
       try {
         final effective = List<Map<String, dynamic>>.from(
           await client.rpc('get_my_effective_zones'),
         );
+        authoritativeAssignmentsLoaded = true;
         zones.addAll(
           effective
               .map((row) => (row['zone'] ?? '').toString().trim())
@@ -56,14 +58,19 @@ class SupabaseAuthRemoteDs {
                 .select('zone')
                 .eq('user_id', uid),
           );
+          authoritativeAssignmentsLoaded = assigned.isNotEmpty;
           zones.addAll(
             assigned
                 .map((row) => (row['zone'] ?? '').toString().trim())
                 .where((value) => value.isNotEmpty),
           );
         } catch (_) {
-          // The legacy app_users.zone remains a safe fallback before migration.
+          // The legacy app_users.zone is applied below only when no authoritative
+          // multi-zone assignment can be loaded.
         }
+      }
+      if (!authoritativeAssignmentsLoaded && zones.isEmpty && zone.isNotEmpty) {
+        zones.add(zone);
       }
       if (zones.isEmpty) {
         throw Exception('No zone assigned for this Zone Manager.');

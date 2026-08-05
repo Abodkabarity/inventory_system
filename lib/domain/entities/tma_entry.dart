@@ -6,7 +6,6 @@ class TmaEntry extends Equatable {
   final String? itemName;
   final DateTime? start;
   final DateTime? end;
-  final num? finalQtyToKeep;
   final num? qtyPerDuration;
 
   const TmaEntry({
@@ -15,7 +14,6 @@ class TmaEntry extends Equatable {
     this.itemName,
     this.start,
     this.end,
-    this.finalQtyToKeep,
     this.qtyPerDuration,
   });
 
@@ -26,7 +24,6 @@ class TmaEntry extends Equatable {
     itemName,
     start,
     end,
-    finalQtyToKeep,
     qtyPerDuration,
   ];
 }

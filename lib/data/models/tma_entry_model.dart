@@ -7,7 +7,6 @@ class TmaEntryModel extends TmaEntry {
     super.itemName,
     super.start,
     super.end,
-    super.finalQtyToKeep,
     super.qtyPerDuration,
   });
 
@@ -24,7 +23,6 @@ class TmaEntryModel extends TmaEntry {
       itemName: map['item_name'] as String?,
       start: _parseDate(map['start_date']),
       end: _parseDate(map['end_date']),
-      finalQtyToKeep: map['final_qty_to_keep'] as num?,
       qtyPerDuration: map['qty_per_duration'] as num?,
     );
   }

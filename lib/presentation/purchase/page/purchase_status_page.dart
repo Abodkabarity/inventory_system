@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -262,39 +263,349 @@ class _PurchaseStatusPageState extends State<PurchaseStatusPage> {
     final file = selection.files.single;
     final bytes = file.bytes;
     if (bytes == null) {
-      _showMessage('Could not read the selected Excel file.', isError: true);
+      await _showImportFailure(
+        file.name,
+        const PurchaseStatusImportFailure(
+          title: 'Could not open the selected file',
+          summary: 'The browser could not read the Excel file.',
+          issues: [
+            PurchaseStatusImportIssue(
+              field: 'File',
+              message: 'No file data was received from the browser.',
+              hint: 'Close the workbook in Excel, select it again, and retry.',
+            ),
+          ],
+        ),
+      );
       return;
     }
 
     setState(() => _importing = true);
+    PurchaseStatusExcelImportPreview? preview;
     try {
       await Future<void>.delayed(Duration.zero);
-      final preview = PurchaseStatusExcelImporter.parse(bytes, _statuses);
+      final parsedPreview = PurchaseStatusExcelImporter.parse(bytes, _statuses);
+      preview = parsedPreview;
       if (!mounted) return;
       final confirmed = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
-        builder: (_) =>
-            _ExcelImportPreviewDialog(fileName: file.name, preview: preview),
+        builder: (_) => _ExcelImportPreviewDialog(
+          fileName: file.name,
+          preview: parsedPreview,
+        ),
       );
       if (confirmed != true || !mounted) return;
 
       final result = await _remote.importExcelRows(
-        preview.rows.map((row) => row.toJson()).toList(growable: false),
+        parsedPreview.rows.map((row) => row.toJson()).toList(growable: false),
       );
       await _load();
       if (!mounted) return;
-      final updated = result['updated'] ?? preview.rows.length;
+      final updated = result['updated'] ?? parsedPreview.rows.length;
       final addedStatuses = result['new_statuses'] ?? 0;
       _showMessage(
         '$updated products updated successfully. '
         '$addedStatuses new statuses added.',
       );
     } catch (error) {
-      if (mounted) _showMessage(_friendlyError(error), isError: true);
+      if (mounted) {
+        await _showImportFailure(file.name, _mapImportFailure(error, preview));
+      }
     } finally {
       if (mounted) setState(() => _importing = false);
     }
+  }
+
+  Future<void> _showImportFailure(
+    String fileName,
+    PurchaseStatusImportFailure failure,
+  ) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) =>
+          _ExcelImportErrorDialog(fileName: fileName, failure: failure),
+    );
+  }
+
+  PurchaseStatusImportFailure _mapImportFailure(
+    Object error,
+    PurchaseStatusExcelImportPreview? preview,
+  ) {
+    if (error is PurchaseStatusImportFailure) return error;
+
+    if (error is PostgrestException) {
+      final code = error.code;
+      final message = error.message;
+      final structuredMismatch = message == 'PURCHASE_STATUS_ITEM_NAME_MISMATCH'
+          ? _purchaseStatusMismatchDetails(error.details)
+          : null;
+      if (structuredMismatch != null) {
+        final recordId = _asInt(structuredMismatch['record_id']);
+        PurchaseStatusExcelImportRow? sourceRow;
+        if (recordId != null && preview != null) {
+          for (final row in preview.rows) {
+            if (row.recordId == recordId) {
+              sourceRow = row;
+              break;
+            }
+          }
+        }
+        final field = structuredMismatch['field']?.toString() ?? 'Item Name';
+        final systemValue =
+            structuredMismatch['system_value']?.toString() ?? '';
+        final excelValue = structuredMismatch['excel_value']?.toString() ?? '';
+        return PurchaseStatusImportFailure(
+          title: 'Product name does not match',
+          summary: sourceRow == null
+              ? 'The product name in Excel is different from the current system record.'
+              : 'Excel row ${sourceRow.excelRow} has a different product name from the current system record.',
+          issues: [
+            PurchaseStatusImportIssue(
+              excelRow: sourceRow?.excelRow,
+              field: field,
+              message:
+                  'System value: "${systemValue.isEmpty ? '(empty)' : systemValue}"\n'
+                  'Excel value: "${excelValue.isEmpty ? '(empty)' : excelValue}"',
+              hint:
+                  'Restore the Item Name shown in the system, or export a fresh workbook. '
+                  'Review Status may be different and does not block the import.',
+            ),
+          ],
+          technicalCode: code,
+        );
+      }
+      final identityMatch = RegExp(
+        r'Item identity mismatch for record\s+(\d+)',
+        caseSensitive: false,
+      ).firstMatch(message);
+      if (identityMatch != null) {
+        final recordId = int.tryParse(identityMatch.group(1)!);
+        PurchaseStatusExcelImportRow? sourceRow;
+        if (recordId != null && preview != null) {
+          for (final row in preview.rows) {
+            if (row.recordId == recordId) {
+              sourceRow = row;
+              break;
+            }
+          }
+        }
+        final itemLabel = sourceRow == null
+            ? 'The product linked to record $recordId'
+            : '${sourceRow.itemCode.isEmpty ? 'No item code' : sourceRow.itemCode} - '
+                  '${sourceRow.itemName}';
+        return PurchaseStatusImportFailure(
+          title: 'Product identity does not match',
+          summary: sourceRow == null
+              ? 'A protected product value no longer matches the current Purchase Status record.'
+              : 'Excel row ${sourceRow.excelRow} contains product details that no longer match the current record.',
+          issues: [
+            PurchaseStatusImportIssue(
+              excelRow: sourceRow?.excelRow,
+              field: 'Item Name',
+              message:
+                  '$itemLabel does not match the protected record identity.',
+              hint:
+                  'Export a fresh Purchase Status workbook and edit only '
+                  'Status, Status Date, Alternative Item, and Note. Review '
+                  'Status may change and is not validated. Do not change Item '
+                  'Name or hidden columns.',
+            ),
+          ],
+          technicalCode: code,
+        );
+      }
+
+      if (code == '23505' || message.toLowerCase().contains('duplicate')) {
+        return PurchaseStatusImportFailure(
+          title: 'Duplicate product data',
+          summary:
+              'The workbook contains a product that would be saved more than once.',
+          issues: const [
+            PurchaseStatusImportIssue(
+              field: 'Duplicate record',
+              message: 'Two rows refer to the same Purchase Status record.',
+              hint: 'Keep only one row for each product, then import again.',
+            ),
+          ],
+          technicalCode: code,
+        );
+      }
+      if (code == '23503' ||
+          message.toLowerCase().contains('record not found')) {
+        return PurchaseStatusImportFailure(
+          title: 'Workbook is out of date',
+          summary:
+              'One or more products in this workbook no longer exist in Purchase Status.',
+          issues: const [
+            PurchaseStatusImportIssue(
+              field: 'Product record',
+              message: 'The workbook refers to an old or deleted record.',
+              hint:
+                  'Export a fresh workbook from Purchase Status and apply your changes there.',
+            ),
+          ],
+          technicalCode: code,
+        );
+      }
+      if (code == '23502') {
+        final column = RegExp(
+          r'column\s+"([^"]+)"',
+          caseSensitive: false,
+        ).firstMatch(message)?.group(1);
+        return PurchaseStatusImportFailure(
+          title: 'A required value is missing',
+          summary:
+              'The import could not save a required Purchase Status value.',
+          issues: [
+            PurchaseStatusImportIssue(
+              field: column ?? 'Required field',
+              message: 'A required value is empty.',
+              hint:
+                  'Export a fresh workbook and make sure the Status and Status Date are filled for every changed row.',
+            ),
+          ],
+          technicalCode: code,
+        );
+      }
+      if (code == '22P02' || code == '22007' || code == '22008') {
+        return PurchaseStatusImportFailure(
+          title: 'Invalid value format',
+          summary:
+              'A date, number, or protected identifier has an invalid format.',
+          issues: const [
+            PurchaseStatusImportIssue(
+              field: 'Cell value',
+              message:
+                  'At least one changed cell cannot be converted to the expected format.',
+              hint:
+                  'Use DD/MM/YYYY for dates and do not edit hidden system columns.',
+            ),
+          ],
+          technicalCode: code,
+        );
+      }
+      if (code == '42501') {
+        return PurchaseStatusImportFailure(
+          title: 'Import permission is unavailable',
+          summary:
+              'Your account is not allowed to update Purchase Status from Excel.',
+          contactSupport: true,
+          technicalCode: code,
+        );
+      }
+      if (code == '57014') {
+        return PurchaseStatusImportFailure(
+          title: 'Import took too long',
+          summary: 'The server stopped the import before it finished.',
+          issues: const [
+            PurchaseStatusImportIssue(
+              field: 'Import size',
+              message:
+                  'The workbook or current server load made processing exceed the allowed time.',
+              hint:
+                  'Retry once. If it happens again, export a fresh workbook or contact support.',
+            ),
+          ],
+          contactSupport: true,
+          technicalCode: code,
+        );
+      }
+      if ({'PGRST202', 'PGRST205', '42883', '42P01', '42703'}.contains(code)) {
+        return PurchaseStatusImportFailure(
+          title: 'Purchase Status import is not configured',
+          summary: 'A required database component is unavailable.',
+          contactSupport: true,
+          technicalCode: code,
+        );
+      }
+      if (code == 'P0001') {
+        return PurchaseStatusImportFailure(
+          title: 'The workbook could not be validated',
+          summary:
+              'A protected Purchase Status rule rejected one of the changed rows.',
+          issues: const [
+            PurchaseStatusImportIssue(
+              field: 'Changed row',
+              message: 'The row does not match the latest product data.',
+              hint:
+                  'Export a fresh workbook, repeat the change, and import it again.',
+            ),
+          ],
+          technicalCode: code,
+        );
+      }
+      return PurchaseStatusImportFailure(
+        title: 'The import could not be completed',
+        summary:
+            'The server could not process this workbook. No records were changed.',
+        contactSupport: true,
+        technicalCode: code,
+      );
+    }
+
+    final text = error.toString().toLowerCase();
+    if (error is TimeoutException || text.contains('timeout')) {
+      return const PurchaseStatusImportFailure(
+        title: 'Connection timed out',
+        summary:
+            'The import did not reach the server in time. No records were changed.',
+        issues: [
+          PurchaseStatusImportIssue(
+            field: 'Connection',
+            message: 'The server response took too long.',
+            hint: 'Check the internet connection and retry the import.',
+          ),
+        ],
+      );
+    }
+    if (text.contains('socket') ||
+        text.contains('network') ||
+        text.contains('failed to fetch')) {
+      return const PurchaseStatusImportFailure(
+        title: 'Could not connect to the server',
+        summary:
+            'The workbook was validated, but the server could not be reached.',
+        issues: [
+          PurchaseStatusImportIssue(
+            field: 'Connection',
+            message: 'The network connection was interrupted.',
+            hint:
+                'Check the internet connection, then retry. The file does not need to be edited.',
+          ),
+        ],
+      );
+    }
+    return const PurchaseStatusImportFailure(
+      title: 'Unexpected import problem',
+      summary: 'The import stopped safely and no records were changed.',
+      contactSupport: true,
+    );
+  }
+
+  Map<String, dynamic>? _purchaseStatusMismatchDetails(Object? details) {
+    if (details is Map) {
+      return details.map((key, value) => MapEntry(key.toString(), value));
+    }
+    final raw = details?.toString().trim() ?? '';
+    if (raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return decoded.map((key, value) => MapEntry(key.toString(), value));
+      }
+    } catch (_) {
+      return null;
+    }
+    return null;
+  }
+
+  int? _asInt(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '');
   }
 
   @override
@@ -798,7 +1109,7 @@ class _PurchaseLoadingState extends StatelessWidget {
           ),
           const SizedBox(height: 18),
           const Text(
-            'Loading purchase status…',
+            'Loading purchase status...',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w700,
@@ -809,6 +1120,331 @@ class _PurchaseLoadingState extends StatelessWidget {
           Text(
             'Fetching records securely. This should only take a moment.',
             style: TextStyle(color: Colors.blueGrey.shade500, fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExcelImportErrorDialog extends StatelessWidget {
+  final String fileName;
+  final PurchaseStatusImportFailure failure;
+
+  const _ExcelImportErrorDialog({
+    required this.fileName,
+    required this.failure,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleIssues = failure.issues.take(50).toList(growable: false);
+    final hiddenIssues = failure.issues.length - visibleIssues.length;
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      clipBehavior: Clip.antiAlias,
+      child: SelectionArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 720,
+            maxHeight: MediaQuery.sizeOf(context).height * .86,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.fromLTRB(24, 20, 14, 20),
+                color: AppColors.secondaryColor,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: .12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.error_outline_rounded,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            failure.title,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Excel import needs attention',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: .72),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close',
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        fileName,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.secondaryColor,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        failure.summary,
+                        style: TextStyle(
+                          color: Colors.blueGrey.shade700,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const _ImportSafetyNotice(),
+                      if (visibleIssues.isNotEmpty) ...[
+                        const SizedBox(height: 20),
+                        Text(
+                          '${failure.issues.length} issue${failure.issues.length == 1 ? '' : 's'} found',
+                          style: const TextStyle(
+                            color: AppColors.secondaryColor,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        ...visibleIssues.map(_ImportIssueCard.new),
+                        if (hiddenIssues > 0)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              '$hiddenIssues more issues are not shown. Fix the visible rows first, then import again.',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                      ],
+                      if (failure.contactSupport) ...[
+                        const SizedBox(height: 18),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(15),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryColor.withValues(
+                              alpha: .08,
+                            ),
+                            borderRadius: BorderRadius.circular(13),
+                            border: Border.all(
+                              color: AppColors.primaryColor.withValues(
+                                alpha: .3,
+                              ),
+                            ),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(
+                                Icons.support_agent_rounded,
+                                color: AppColors.primaryColor,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'This issue is not caused by the Excel data. Please contact the support team${failure.technicalCode == null ? '.' : ' and provide reference code ${failure.technicalCode}.'}',
+                                  style: const TextStyle(
+                                    color: AppColors.secondaryColor,
+                                    fontWeight: FontWeight.w700,
+                                    height: 1.35,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 16,
+                ),
+                decoration: const BoxDecoration(
+                  color: Color(0xfff8fafc),
+                  border: Border(top: BorderSide(color: Color(0xffe5eaf0))),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    FilledButton.icon(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.edit_note_rounded),
+                      label: Text(
+                        failure.contactSupport && failure.issues.isEmpty
+                            ? 'Close'
+                            : 'Close and fix file',
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.primaryColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ImportSafetyNotice extends StatelessWidget {
+  const _ImportSafetyNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xffecfdf5),
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: const Color(0xffa7f3d0)),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.verified_user_outlined, color: Color(0xff07875f)),
+          SizedBox(width: 11),
+          Expanded(
+            child: Text(
+              'No records were changed. Correct the listed issues and upload the workbook again.',
+              style: TextStyle(
+                color: Color(0xff07664b),
+                fontWeight: FontWeight.w700,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ImportIssueCard extends StatelessWidget {
+  final PurchaseStatusImportIssue issue;
+
+  const _ImportIssueCard(this.issue);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: const Color(0xfffff8f7),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xffffcdc7)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            constraints: const BoxConstraints(minWidth: 54),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xffffe4e0),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              issue.excelRow == null ? 'FILE' : 'ROW ${issue.excelRow}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xffb42318),
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  issue.field,
+                  style: const TextStyle(
+                    color: AppColors.secondaryColor,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(issue.message, style: const TextStyle(height: 1.35)),
+                const SizedBox(height: 7),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.lightbulb_outline_rounded,
+                      size: 17,
+                      color: AppColors.primaryColor,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        issue.hint,
+                        style: const TextStyle(
+                          color: AppColors.secondaryColor,
+                          fontWeight: FontWeight.w600,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),

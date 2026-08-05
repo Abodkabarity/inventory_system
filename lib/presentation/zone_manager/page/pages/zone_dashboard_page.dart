@@ -17,9 +17,7 @@ extension _ZoneDashboardPageView on _ZoneManagerPageState {
 
   Widget buildZoneDashboardPage() {
     final orderingBranches = _branches
-        .where(
-          (branch) => _submissions.containsKey(_zdKey(branch['branch_name'])),
-        )
+        .where(_zdIsScheduledForRunDate)
         .toList(growable: false);
     final visibleOrderingBranches = orderingBranches
         .where((branch) {
@@ -27,7 +25,10 @@ extension _ZoneDashboardPageView on _ZoneManagerPageState {
           return _selectedBranch == 'ALL' || branchName == _selectedBranch;
         })
         .toList(growable: false);
-    final submittedCount = visibleOrderingBranches.length;
+    final scheduledCount = visibleOrderingBranches.length;
+    final submittedCount = visibleOrderingBranches.where((branch) {
+      return _submissions.containsKey(_zdKey(branch['branch_name']));
+    }).length;
 
     final branchAdditionalRows = _additional
         .where((row) {
@@ -117,14 +118,14 @@ extension _ZoneDashboardPageView on _ZoneManagerPageState {
                     _ZdStat(
                       icon: Icons.storefront_rounded,
                       title: 'Zone Branches',
-                      value: '$submittedCount',
+                      value: '$scheduledCount',
                       color: const Color(0xFF8B5CF6),
-                      subtitle: 'Branches ordered today',
+                      subtitle: 'Branches scheduled today',
                     ),
                     _ZdStat(
                       icon: Icons.task_alt_rounded,
                       title: 'Submitted Orders',
-                      value: '$submittedCount / $submittedCount',
+                      value: '$submittedCount / $scheduledCount',
                       color: const Color(0xFF10B981),
                       showProgress: true,
                     ),
@@ -164,7 +165,7 @@ extension _ZoneDashboardPageView on _ZoneManagerPageState {
                   onChanged: _onSearchChanged,
                   accent: AppColors.primaryColor,
                   resultCount:
-                      submittedCount +
+                      scheduledCount +
                       zoneAdditionalRows.length +
                       visibleActivities.length,
                   hintText:
@@ -180,7 +181,7 @@ extension _ZoneDashboardPageView on _ZoneManagerPageState {
                         SizedBox(
                           width: constraints.maxWidth * 0.44,
                           child: _ZdBranchGrid(
-                            branches: _branches,
+                            branches: orderingBranches,
                             submissions: _submissions,
                             edits: _edits,
                             additional: _additional,
@@ -206,7 +207,7 @@ extension _ZoneDashboardPageView on _ZoneManagerPageState {
                       SizedBox(
                         height: 610,
                         child: _ZdBranchGrid(
-                          branches: _branches,
+                          branches: orderingBranches,
                           submissions: _submissions,
                           edits: _edits,
                           additional: _additional,
@@ -232,6 +233,16 @@ extension _ZoneDashboardPageView on _ZoneManagerPageState {
         );
       },
     );
+  }
+
+  bool _zdIsScheduledForRunDate(Map<String, dynamic> branch) {
+    final runDate = DateTime.tryParse(widget.runDate) ?? DateTime.now();
+    final weekday = DateFormat('EEEE').format(runDate).toLowerCase();
+    final rawDays = branch['order_days'];
+    final days = rawDays is Iterable
+        ? rawDays.map((value) => value.toString())
+        : rawDays.toString().replaceAll(RegExp(r'[{}\[\]"]'), '').split(',');
+    return days.any((day) => day.trim().toLowerCase() == weekday);
   }
 }
 
@@ -3340,15 +3351,12 @@ class _ZdBranchGrid extends StatelessWidget {
     final visibleBranches = branches
         .where((row) {
           final branchName = _zdString(row['branch_name']);
-          final branchKey = _zdKey(branchName);
           final matchesSelected =
               selectedBranch == 'ALL' || branchName == selectedBranch;
           final matchesSearch =
               normalizedQuery.isEmpty ||
               branchName.toLowerCase().contains(normalizedQuery);
-          final orderedToday = submissions.containsKey(branchKey);
-
-          return matchesSelected && matchesSearch && orderedToday;
+          return matchesSelected && matchesSearch;
         })
         .toList(growable: false);
 
@@ -3358,13 +3366,14 @@ class _ZdBranchGrid extends StatelessWidget {
       final leftTime = _submissionTime(leftName);
       final rightTime = _submissionTime(rightName);
 
+      final leftSubmitted = leftTime != null;
+      final rightSubmitted = rightTime != null;
+      if (leftSubmitted != rightSubmitted) {
+        return leftSubmitted ? 1 : -1;
+      }
       if (leftTime != null && rightTime != null) {
         final byTime = leftTime.compareTo(rightTime);
         if (byTime != 0) return byTime;
-      } else if (leftTime != null) {
-        return -1;
-      } else if (rightTime != null) {
-        return 1;
       }
 
       return leftName.toLowerCase().compareTo(rightName.toLowerCase());
