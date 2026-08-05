@@ -7,6 +7,7 @@ import 'package:xml/xml.dart';
 import '../../domain/entities/purchase_status_record.dart';
 
 class PurchaseStatusExcelImportRow {
+  final int excelRow;
   final int recordId;
   final String itemCode;
   final String itemName;
@@ -17,6 +18,7 @@ class PurchaseStatusExcelImportRow {
   final String note;
 
   const PurchaseStatusExcelImportRow({
+    required this.excelRow,
     required this.recordId,
     required this.itemCode,
     required this.itemName,
@@ -37,6 +39,39 @@ class PurchaseStatusExcelImportRow {
     'alternative_item_name': alternativeItemName,
     'note': note,
   };
+}
+
+class PurchaseStatusImportIssue {
+  final int? excelRow;
+  final String field;
+  final String message;
+  final String hint;
+
+  const PurchaseStatusImportIssue({
+    this.excelRow,
+    required this.field,
+    required this.message,
+    required this.hint,
+  });
+}
+
+class PurchaseStatusImportFailure implements Exception {
+  final String title;
+  final String summary;
+  final List<PurchaseStatusImportIssue> issues;
+  final bool contactSupport;
+  final String? technicalCode;
+
+  const PurchaseStatusImportFailure({
+    required this.title,
+    required this.summary,
+    this.issues = const [],
+    this.contactSupport = false,
+    this.technicalCode,
+  });
+
+  @override
+  String toString() => summary;
 }
 
 class PurchaseStatusExcelImportPreview {
@@ -76,28 +111,61 @@ class PurchaseStatusExcelImporter {
         bytes[1] != 0x4b ||
         bytes[2] != 0x03 ||
         bytes[3] != 0x04) {
-      throw const FormatException(
-        'The selected file is not a valid XLSX file.',
+      throw const PurchaseStatusImportFailure(
+        title: 'Unsupported file',
+        summary: 'The selected file is not a valid Excel workbook.',
+        issues: [
+          PurchaseStatusImportIssue(
+            field: 'File',
+            message: 'The file is not in XLSX format or is damaged.',
+            hint: 'Choose an .xlsx file exported from Purchase Status.',
+          ),
+        ],
       );
     }
 
-    final archive = ZipDecoder().decodeBytes(bytes);
-    final sharedStrings = _readSharedStrings(archive);
-    final worksheetFiles = archive.files
-        .where(
-          (file) =>
-              file.isFile &&
-              RegExp(r'^xl/worksheets/sheet\d+\.xml$').hasMatch(file.name),
-        )
-        .toList(growable: false);
+    try {
+      final archive = ZipDecoder().decodeBytes(bytes);
+      final sharedStrings = _readSharedStrings(archive);
+      final worksheetFiles = archive.files
+          .where(
+            (file) =>
+                file.isFile &&
+                RegExp(r'^xl/worksheets/sheet\d+\.xml$').hasMatch(file.name),
+          )
+          .toList(growable: false);
 
-    for (final file in worksheetFiles) {
-      final parsed = _tryParseWorksheet(file, sharedStrings, statuses);
-      if (parsed != null) return parsed;
+      for (final file in worksheetFiles) {
+        final parsed = _tryParseWorksheet(file, sharedStrings, statuses);
+        if (parsed != null) return parsed;
+      }
+    } on PurchaseStatusImportFailure {
+      rethrow;
+    } catch (_) {
+      throw const PurchaseStatusImportFailure(
+        title: 'Could not read the workbook',
+        summary: 'The Excel file is damaged or uses an unsupported structure.',
+        issues: [
+          PurchaseStatusImportIssue(
+            field: 'Workbook',
+            message: 'Purchase Status could not read the workbook data.',
+            hint: 'Open the file in Excel, save it as XLSX, and try again.',
+          ),
+        ],
+      );
     }
-    throw const FormatException(
-      'Purchase Status sheet or required import columns were not found. '
-      'Please import a file exported from this page.',
+    throw const PurchaseStatusImportFailure(
+      title: 'Wrong import template',
+      summary: 'The required Purchase Status columns were not found.',
+      issues: [
+        PurchaseStatusImportIssue(
+          field: 'Column headers',
+          message: 'This workbook was not exported from Purchase Status.',
+          hint:
+              'Export a fresh file from this page and edit only Status, '
+              'Status Date, Alternative Item, and Note.',
+        ),
+      ],
     );
   }
 
@@ -130,7 +198,7 @@ class PurchaseStatusExcelImporter {
     if (headerColumns == null) return null;
 
     final importedRows = <PurchaseStatusExcelImportRow>[];
-    final errors = <String>[];
+    final errors = <PurchaseStatusImportIssue>[];
     final seenIds = <int>{};
     var totalRows = 0;
     var unchangedRows = 0;
@@ -158,17 +226,37 @@ class PurchaseStatusExcelImporter {
 
       final recordId = int.tryParse(idText.replaceAll(RegExp(r'\.0$'), ''));
       if (recordId == null) {
-        errors.add('Row $excelRow: invalid or missing system record ID.');
+        errors.add(
+          PurchaseStatusImportIssue(
+            excelRow: excelRow,
+            field: 'System record ID',
+            message: 'The protected system record ID is missing or invalid.',
+            hint: 'Export a fresh workbook. Do not edit hidden columns.',
+          ),
+        );
         continue;
       }
       if (!seenIds.add(recordId)) {
         errors.add(
-          'Row $excelRow: record ID $recordId appears more than once.',
+          PurchaseStatusImportIssue(
+            excelRow: excelRow,
+            field: 'Duplicate row',
+            message: 'This product appears more than once in the workbook.',
+            hint:
+                'Keep one row for system record $recordId and remove the duplicate.',
+          ),
         );
         continue;
       }
       if (itemName.isEmpty) {
-        errors.add('Row $excelRow: Item Name is required.');
+        errors.add(
+          PurchaseStatusImportIssue(
+            excelRow: excelRow,
+            field: 'Item Name',
+            message: 'Item Name is empty.',
+            hint: 'Restore the original item name or export a fresh workbook.',
+          ),
+        );
         continue;
       }
 
@@ -177,7 +265,14 @@ class PurchaseStatusExcelImporter {
       final normalizedDate = _normalizedDate(dateText);
       final normalizedOriginalDate = _normalizedDate(originalDateText);
       if (normalizedDate == null || normalizedOriginalDate == null) {
-        errors.add('Row $excelRow: invalid Status Date. Use DD/MM/YYYY.');
+        errors.add(
+          PurchaseStatusImportIssue(
+            excelRow: excelRow,
+            field: 'Status Date',
+            message: 'The date is empty, invalid, or cannot be recognized.',
+            hint: 'Enter the date as DD/MM/YYYY, for example 05/08/2026.',
+          ),
+        );
         continue;
       }
 
@@ -196,7 +291,14 @@ class PurchaseStatusExcelImporter {
         continue;
       }
       if (statusName.isEmpty) {
-        errors.add('Row $excelRow: Status is required for a modified row.');
+        errors.add(
+          PurchaseStatusImportIssue(
+            excelRow: excelRow,
+            field: 'Status',
+            message: 'Status is required because this row was changed.',
+            hint: 'Choose or enter a status, then import the file again.',
+          ),
+        );
         continue;
       }
 
@@ -205,13 +307,19 @@ class PurchaseStatusExcelImporter {
           : _parseExcelDate(dateText);
       if (statusDate == null) {
         errors.add(
-          'Row $excelRow: invalid Status Date "$dateText". Use DD/MM/YYYY.',
+          PurchaseStatusImportIssue(
+            excelRow: excelRow,
+            field: 'Status Date',
+            message: '"$dateText" is not a valid date.',
+            hint: 'Use DD/MM/YYYY, for example 05/08/2026.',
+          ),
         );
         continue;
       }
 
       importedRows.add(
         PurchaseStatusExcelImportRow(
+          excelRow: excelRow,
           recordId: recordId,
           itemCode: itemCode,
           itemName: itemName,
@@ -225,10 +333,12 @@ class PurchaseStatusExcelImporter {
     }
 
     if (errors.isNotEmpty) {
-      final visible = errors.take(8).join('\n');
-      final remaining = errors.length - 8;
-      throw FormatException(
-        remaining > 0 ? '$visible\n...and $remaining more errors.' : visible,
+      throw PurchaseStatusImportFailure(
+        title: 'Fix the highlighted Excel rows',
+        summary:
+            '${errors.length} issue${errors.length == 1 ? '' : 's'} '
+            'must be corrected before this file can be imported.',
+        issues: errors,
       );
     }
     final existingStatuses = statuses

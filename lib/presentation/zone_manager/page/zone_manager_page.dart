@@ -819,17 +819,28 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     orderBy: 'run_date',
   );
 
-  Future<List<Map<String, dynamic>>> _loadEdits(
-    List<String> branches,
-  ) => _fetchByBranch(
-    table: 'order_edits',
-    branchColumn: 'branch_name',
-    branches: branches,
-    columns:
-        'run_date,branch_name,item_code,item_name,old_qty,new_qty,diff,created_at',
-    runDateColumn: 'run_date',
-    orderBy: 'created_at',
-  );
+  Future<List<Map<String, dynamic>>> _loadEdits(List<String> branches) async {
+    final rows = await _fetchByBranch(
+      table: 'order_edits',
+      branchColumn: 'branch_name',
+      branches: branches,
+      columns:
+          'run_date,branch_name,item_code,item_name,old_qty,new_qty,diff,created_at',
+      runDateColumn: 'run_date',
+      orderBy: 'created_at',
+    );
+    return rows.map(_normalizeOrderEdit).toList(growable: false);
+  }
+
+  Map<String, dynamic> _normalizeOrderEdit(Map<String, dynamic> row) {
+    final oldQty = num.tryParse(_text(row['old_qty']));
+    final newQty = num.tryParse(_text(row['new_qty']));
+    if (oldQty == null || newQty == null) return row;
+
+    // Derive the signed difference from the source quantities so decreases
+    // remain visible even when an older database row has a missing diff.
+    return <String, dynamic>{...row, 'diff': newQty - oldQty};
+  }
 
   Future<List<Map<String, dynamic>>> _loadEditsRange(
     List<String> branches,
@@ -857,7 +868,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
               .range(offset, offset + batchSize - 1),
         );
         if (rows.isEmpty) break;
-        output.addAll(rows);
+        output.addAll(rows.map(_normalizeOrderEdit));
         offset += rows.length;
       }
     }
