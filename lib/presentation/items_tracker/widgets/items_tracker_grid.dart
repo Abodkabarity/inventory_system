@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
+import '../../../core/theme/app_colors.dart';
 import '../../../domain/entities/items_tracker_record.dart';
 
 class ItemsTrackerGridController {
@@ -57,13 +58,14 @@ class _ItemsTrackerGridState extends State<ItemsTrackerGrid> {
     'inventory_note': 285,
     'required_qty': 130,
     'required_value': 150,
-    'follow_up': 150,
     'status_updated_to': 245,
+    'follow_up': 150,
+
     'case_status': 145,
-    'last_action': 310,
+    'last_action': 450,
     'action_date': 138,
     'latest_comment': 285,
-    'comment_by': 145,
+    'comment_by': 160,
     'actions': 190,
     'category': 160,
     'supplier': 225,
@@ -87,8 +89,9 @@ class _ItemsTrackerGridState extends State<ItemsTrackerGrid> {
     'required_value',
 
     // Workflow
-    'follow_up',
     'status_updated_to',
+    'follow_up',
+
     'case_status',
 
     // Activity
@@ -174,7 +177,7 @@ class _ItemsTrackerGridState extends State<ItemsTrackerGrid> {
         child: SfDataGridTheme(
           data: const SfDataGridThemeData(
             headerColor: Color(0xfff6f9fb),
-            gridLineColor: Color(0xffdce6eb),
+            gridLineColor: Color(0xffcfdde3),
             selectionColor: Color(0xffeaf5f7),
             filterIconColor: Color(0xff456d7a),
             sortIconColor: Color(0xff27798b),
@@ -196,8 +199,8 @@ class _ItemsTrackerGridState extends State<ItemsTrackerGrid> {
             headerGridLinesVisibility: GridLinesVisibility.both,
             columnWidthMode: ColumnWidthMode.none,
             frozenColumnsCount: 3,
-            rowHeight: 88,
-            headerRowHeight: 64,
+            rowHeight: 108,
+            headerRowHeight: 66,
             selectionMode: SelectionMode.single,
             navigationMode: GridNavigationMode.cell,
             stackedHeaderRows: _buildStackedHeaders(),
@@ -309,8 +312,9 @@ class _ItemsTrackerGridState extends State<ItemsTrackerGrid> {
           ),
           StackedHeaderCell(
             columnNames: const [
-              'follow_up',
               'status_updated_to',
+              'follow_up',
+
               'case_status',
             ],
             child: const _StackedHeaderLabel(
@@ -358,17 +362,7 @@ class _ItemsTrackerGridState extends State<ItemsTrackerGrid> {
       label: _ItemsTrackerHeader(
         title: _title(key),
         section: _sectionFor(key),
-        alignLeft: const {
-          'item_name',
-          'inventory_note',
-          'status_updated_to',
-          'last_action',
-          'latest_comment',
-          'category',
-          'supplier',
-          'company',
-          'item_status',
-        }.contains(key),
+        alignLeft: false,
       ),
     );
   }
@@ -380,8 +374,9 @@ class _ItemsTrackerGridState extends State<ItemsTrackerGrid> {
     'inventory_note' => 'Notes & reason',
     'required_qty' => 'Qty required',
     'required_value' => 'Value required',
-    'follow_up' => 'Follow-up team',
     'status_updated_to' => 'Status updated to',
+    'follow_up' => 'Follow-up team',
+
     'case_status' => 'Case status',
     'last_action' => 'Last action',
     'action_date' => 'Action date',
@@ -552,13 +547,14 @@ class ItemsTrackerDataSource extends DataGridSource {
             value: record.requiredValue,
           ),
           DataGridCell<String>(
-            columnName: 'follow_up',
-            value: record.followUpRole,
-          ),
-          DataGridCell<String>(
             columnName: 'status_updated_to',
             value: record.statusUpdatedTo,
           ),
+          DataGridCell<String>(
+            columnName: 'follow_up',
+            value: record.followUpRole,
+          ),
+
           DataGridCell<String>(
             columnName: 'case_status',
             value: record.caseStatus,
@@ -670,10 +666,6 @@ class ItemsTrackerDataSource extends DataGridSource {
                 );
                 break;
 
-              case 'follow_up':
-                child = Center(child: _RoleChip(role: record.followUpRole));
-                break;
-
               case 'status_updated_to':
                 if (ItemsTrackerRoles.canEditInventoryFields(role)) {
                   child = _StatusUpdatedToDropdown(
@@ -692,6 +684,9 @@ class ItemsTrackerDataSource extends DataGridSource {
                   );
                 }
                 break;
+              case 'follow_up':
+                child = Center(child: _RoleChip(role: record.followUpRole));
+                break;
 
               case 'case_status':
                 child = Center(
@@ -700,7 +695,10 @@ class ItemsTrackerDataSource extends DataGridSource {
                 break;
 
               case 'last_action':
-                child = _LastActionCell(record: record);
+                child = _LastActionCell(
+                  record: record,
+                  onTap: () => onHistory(record),
+                );
                 break;
 
               case 'action_date':
@@ -826,17 +824,20 @@ class _StackedHeaderLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: background,
-      alignment: Alignment.centerLeft,
+      alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 17, color: foreground),
           const SizedBox(width: 8),
           Text(
             label,
+            textAlign: TextAlign.center,
             style: TextStyle(
               color: foreground,
-              fontSize: 12.5,
+              fontSize: 12.8,
               fontWeight: FontWeight.w800,
               letterSpacing: .15,
             ),
@@ -862,18 +863,18 @@ class _ItemsTrackerHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: section.headerColor,
-      alignment: alignLeft ? Alignment.centerLeft : Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       child: Text(
         title,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
-        textAlign: alignLeft ? TextAlign.left : TextAlign.center,
-        style: TextStyle(
-          color: const Color(0xff263f4b),
-          fontSize: 11.8,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Color(0xff213d49),
+          fontSize: 12,
           height: 1.18,
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w800,
           letterSpacing: 0,
         ),
       ),
@@ -938,20 +939,20 @@ class _PlainTextCell extends StatelessWidget {
     final text = value.trim().isEmpty ? '—' : value.trim();
 
     return Container(
-      alignment: centered ? Alignment.center : Alignment.centerLeft,
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Tooltip(
         message: text == '—' ? '' : text,
         child: Text(
           text,
           maxLines: 3,
           overflow: TextOverflow.ellipsis,
-          textAlign: centered ? TextAlign.center : TextAlign.left,
+          textAlign: TextAlign.center,
           style: TextStyle(
-            color: muted ? const Color(0xff7e8f98) : const Color(0xff29404b),
+            color: muted ? const Color(0xff748791) : const Color(0xff243d48),
             fontSize: 12.5,
             height: 1.32,
-            fontWeight: semibold ? FontWeight.w700 : FontWeight.w500,
+            fontWeight: semibold ? FontWeight.w700 : FontWeight.w600,
           ),
         ),
       ),
@@ -1042,42 +1043,24 @@ class _ItemNameCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cleanName = name.trim().isEmpty ? '—' : name.trim();
-    final cleanCategory = category.trim();
 
-    return Padding(
+    return Container(
+      alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Tooltip(
-            message: cleanName == '—' ? '' : cleanName,
-            child: Text(
-              cleanName,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Color(0xff1f3540),
-                fontSize: 13,
-                height: 1.25,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+      child: Tooltip(
+        message: cleanName == '—' ? '' : cleanName,
+        child: Text(
+          cleanName,
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: Color(0xff18333f),
+            fontSize: 13,
+            height: 1.28,
+            fontWeight: FontWeight.w700,
           ),
-          if (cleanCategory.isNotEmpty) ...[
-            const SizedBox(height: 5),
-            Text(
-              cleanCategory,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Color(0xff6f858f),
-                fontSize: 10.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -1094,43 +1077,23 @@ class _ReasonCell extends StatelessWidget {
     final text = empty ? 'No reason added' : value.trim();
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: const Color(0xffffedc9),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(
-              Icons.notes_rounded,
-              size: 16,
-              color: Color(0xff9b6717),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Tooltip(
-              message: empty ? '' : text,
-              child: Text(
-                text,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: empty
-                      ? const Color(0xff87969e)
-                      : const Color(0xff384d57),
-                  fontSize: 12.3,
-                  height: 1.32,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Center(
+        child: Tooltip(
+          message: empty ? '' : text,
+          child: Text(
+            text,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: empty ? const Color(0xff7f9098) : const Color(0xff344b56),
+              fontSize: 12.1,
+              height: 1.25,
+              fontWeight: FontWeight.w600,
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1145,7 +1108,7 @@ class _NumberCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
@@ -1157,7 +1120,7 @@ class _NumberCell extends StatelessWidget {
             ),
           ),
           if (value != '—') ...[
-            const SizedBox(height: 3),
+            const SizedBox(width: 6),
             Text(
               label,
               style: const TextStyle(
@@ -1213,8 +1176,8 @@ class _RoleChip extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: foreground,
-          fontSize: compact ? 10 : 10.7,
-          fontWeight: FontWeight.w700,
+          fontSize: compact ? 11 : 13.7,
+          fontWeight: FontWeight.w900,
         ),
       ),
     );
@@ -1379,6 +1342,7 @@ class _StatusUpdatedToDropdownState extends State<_StatusUpdatedToDropdown> {
                   value: value,
                   height: 46,
                   child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
                         active
@@ -1393,6 +1357,7 @@ class _StatusUpdatedToDropdownState extends State<_StatusUpdatedToDropdown> {
                       Expanded(
                         child: Text(
                           value,
+                          textAlign: TextAlign.center,
                           style: TextStyle(
                             color: const Color(0xff2f4650),
                             fontSize: 12.3,
@@ -1417,6 +1382,7 @@ class _StatusUpdatedToDropdownState extends State<_StatusUpdatedToDropdown> {
             border: Border.all(color: const Color(0xffffd979), width: 1.2),
           ),
           child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
                 width: 26,
@@ -1436,6 +1402,7 @@ class _StatusUpdatedToDropdownState extends State<_StatusUpdatedToDropdown> {
                 child: Text(
                   selected.isEmpty ? 'Select status' : selected,
                   maxLines: 2,
+                  textAlign: TextAlign.center,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Color(0xff4f421f),
@@ -1475,28 +1442,28 @@ class _ReadOnlyStatusUpdatedTo extends StatelessWidget {
     final text = value.trim().isEmpty ? '—' : value.trim();
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const Icon(
             Icons.lock_outline_rounded,
             size: 15,
             color: Color(0xff8798a0),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Tooltip(
-              message: text == '—' ? '' : text,
-              child: Text(
-                text,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xff4b626d),
-                  fontSize: 12,
-                  height: 1.3,
-                  fontWeight: FontWeight.w600,
-                ),
+          const SizedBox(width: 6),
+          Tooltip(
+            message: text == '—' ? '' : text,
+            child: Text(
+              text,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xff445e69),
+                fontSize: 12,
+                height: 1.28,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -1516,28 +1483,28 @@ class _FixedStatusCell extends StatelessWidget {
     final text = value.trim().isEmpty ? '—' : value.trim();
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const Icon(
             Icons.lock_outline_rounded,
             size: 15,
             color: Color(0xff8798a0),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Tooltip(
-              message: text == '—' ? '' : text,
-              child: Text(
-                text,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xff465d68),
-                  fontSize: 12,
-                  height: 1.3,
-                  fontWeight: FontWeight.w600,
-                ),
+          const SizedBox(width: 6),
+          Tooltip(
+            message: text == '—' ? '' : text,
+            child: Text(
+              text,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xff405a65),
+                fontSize: 12,
+                height: 1.28,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -1547,69 +1514,130 @@ class _FixedStatusCell extends StatelessWidget {
   }
 }
 
-class _LastActionCell extends StatelessWidget {
+class _LastActionCell extends StatefulWidget {
   final ItemsTrackerRecord record;
+  final VoidCallback onTap;
 
-  const _LastActionCell({required this.record});
+  const _LastActionCell({required this.record, required this.onTap});
+
+  @override
+  State<_LastActionCell> createState() => _LastActionCellState();
+}
+
+class _LastActionCellState extends State<_LastActionCell> {
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
-    final text = record.displayedLastAction.trim();
-    final actionRole = record.displayedLastActionRole.trim();
+    final text = widget.record.displayedLastAction.trim();
+    final actionRole = widget.record.displayedLastActionRole.trim();
     final empty = text.isEmpty;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                empty
-                    ? Icons.horizontal_rule_rounded
-                    : Icons.check_circle_outline_rounded,
-                size: 16,
-                color: empty
-                    ? const Color(0xff89979e)
-                    : const Color(0xff2e8b72),
-              ),
-              const SizedBox(width: 7),
-              Text(
-                empty ? 'No action' : 'Action',
-                style: TextStyle(
-                  color: empty
-                      ? const Color(0xff78878e)
-                      : const Color(0xff26735f),
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              if (actionRole.isNotEmpty) ...[
-                const SizedBox(width: 8),
-                Flexible(child: _RoleChip(role: actionRole, compact: true)),
-              ],
-            ],
-          ),
-          const SizedBox(height: 7),
-          Tooltip(
-            message: empty ? '' : text,
-            child: Text(
-              empty ? 'No action recorded yet' : text,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: empty
-                    ? const Color(0xff8a989f)
-                    : const Color(0xff2f4650),
-                fontSize: 12.4,
-                height: 1.3,
-                fontWeight: FontWeight.w600,
+    return MouseRegion(
+      cursor: empty ? SystemMouseCursors.basic : SystemMouseCursors.click,
+      onEnter: empty ? null : (_) => setState(() => _hovered = true),
+      onExit: empty ? null : (_) => setState(() => _hovered = false),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: empty ? null : widget.onTap,
+          hoverColor: const Color(0xffeee8f7),
+          splashColor: const Color(0xffe4d9f1),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            width: double.infinity,
+            height: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: _hovered ? const Color(0xfff6f1fb) : Colors.transparent,
+              border: Border.all(
+                color: _hovered ? const Color(0xffcbb8dc) : Colors.transparent,
               ),
             ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      empty
+                          ? Icons.horizontal_rule_rounded
+                          : Icons.check_circle_outline_rounded,
+                      size: 16,
+                      color: empty
+                          ? const Color(0xff89979e)
+                          : const Color(0xff2e8b72),
+                    ),
+                    const SizedBox(width: 7),
+                    Text(
+                      empty ? 'No action' : 'Action',
+                      style: TextStyle(
+                        color: empty
+                            ? const Color(0xff78878e)
+                            : const Color(0xff26735f),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    if (actionRole.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: _RoleChip(role: actionRole, compact: true),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 7),
+                Tooltip(
+                  message: empty ? '' : text,
+                  child: Text(
+                    empty ? 'No action recorded yet' : text,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: empty
+                          ? const Color(0xff829198)
+                          : const Color(0xff2b444f),
+                      fontSize: 12.4,
+                      height: 1.28,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (!empty) ...[
+                  const SizedBox(height: 3),
+                  AnimatedOpacity(
+                    duration: const Duration(milliseconds: 150),
+                    opacity: _hovered ? 1 : .72,
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.open_in_new_rounded,
+                          size: 14,
+                          color: Colors.red,
+                        ),
+                        SizedBox(width: 5),
+                        Text(
+                          'Click To View Full Action',
+                          style: TextStyle(
+                            color: Colors.red,
+                            fontSize: 10.8,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1626,33 +1654,32 @@ class _CommentCell extends StatelessWidget {
     final empty = text.isEmpty;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
             empty
                 ? Icons.chat_bubble_outline_rounded
                 : Icons.chat_bubble_rounded,
             size: 16,
-            color: empty ? const Color(0xff9aa7ad) : const Color(0xff725887),
+            color: empty ? const Color(0xff9aa7ad) : AppColors.secondaryColor,
           ),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Tooltip(
-              message: empty ? '' : text,
-              child: Text(
-                empty ? 'No comments yet' : text,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: empty
-                      ? const Color(0xff87969d)
-                      : const Color(0xff40364a),
-                  fontSize: 12.2,
-                  height: 1.32,
-                  fontWeight: FontWeight.w500,
-                ),
+          const SizedBox(width: 6),
+          Tooltip(
+            message: empty ? '' : text,
+            child: Text(
+              empty ? 'No comments yet' : text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: empty
+                    ? const Color(0xff829198)
+                    : AppColors.secondaryColor,
+                fontSize: 14,
+                height: 1.28,
+                fontWeight: FontWeight.w900,
               ),
             ),
           ),

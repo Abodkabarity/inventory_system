@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/theme/app_colors.dart';
 import '../../../data/datasources/remote/items_tracker_remote_ds.dart';
 import '../../../domain/entities/items_tracker_record.dart';
 import '../../../domain/repositories/items_tracker_repository.dart';
@@ -1202,10 +1203,24 @@ class _Filters extends StatelessWidget {
           key: const ValueKey('itemsTrackerSearch'),
           controller: searchController,
           onChanged: (_) => onSearch(),
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             hintText: 'Search item, supplier, action, status or comment…',
             prefixIcon: Icon(Icons.search_rounded, size: 20),
             isDense: true,
+            fillColor: AppColors.backgroundWidget,
+            filled: true,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(15),
+              borderSide: BorderSide(color: AppColors.primaryColor),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(15),
+              borderSide: BorderSide(color: AppColors.primaryColor),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(15),
+              borderSide: BorderSide(color: AppColors.primaryColor),
+            ),
           ),
         );
 
@@ -1214,6 +1229,7 @@ class _Filters extends StatelessWidget {
           label: 'Follow-up team',
           icon: Icons.groups_2_outlined,
           value: department,
+
           items: [
             const DropdownMenuItem(value: 'all', child: Text('All teams')),
             ...ItemsTrackerRoles.allowed.map(
@@ -1226,7 +1242,7 @@ class _Filters extends StatelessWidget {
           onChanged: onDepartmentChanged,
         );
 
-        final statusField = _FilterSelect(
+        /*  final statusField = _FilterSelect(
           width: 175,
           label: 'Case status',
           icon: Icons.flag_outlined,
@@ -1241,14 +1257,14 @@ class _Filters extends StatelessWidget {
             ),
           ],
           onChanged: onCaseStatusChanged,
-        );
+        );*/
 
-        final queue = _QueueToggle(
+        /*       final queue = _QueueToggle(
           role: role,
           selected: myQueueOnly,
           onChanged: onMyQueueChanged,
         );
-
+*/
         final clear = Tooltip(
           message: 'Clear page and column filters',
           child: OutlinedButton.icon(
@@ -1266,10 +1282,10 @@ class _Filters extends StatelessWidget {
                 Expanded(child: search),
                 const SizedBox(width: 10),
                 departmentField,
-                const SizedBox(width: 10),
-                statusField,
-                const SizedBox(width: 10),
-                queue,
+                /*   const SizedBox(width: 10),
+                statusField,*/
+                /* const SizedBox(width: 10),
+                queue,*/
                 const SizedBox(width: 8),
                 clear,
               ],
@@ -1291,8 +1307,8 @@ class _Filters extends StatelessWidget {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     departmentField,
-                    statusField,
-                    queue,
+                    //statusField,
+                    //  queue,
                     clear,
                     if (!medium)
                       Container(
@@ -1354,6 +1370,20 @@ class _FilterSelect extends StatelessWidget {
           labelText: label,
           prefixIcon: Icon(icon, size: 18),
           isDense: true,
+          filled: true,
+          fillColor: AppColors.backgroundWidget,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(15),
+            borderSide: BorderSide(color: AppColors.primaryColor),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(15),
+            borderSide: BorderSide(color: AppColors.primaryColor),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(15),
+            borderSide: BorderSide(color: AppColors.primaryColor),
+          ),
         ),
         items: items,
         onChanged: onChanged,

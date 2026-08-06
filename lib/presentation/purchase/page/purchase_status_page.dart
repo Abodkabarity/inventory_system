@@ -849,7 +849,7 @@ class _TopBar extends StatelessWidget {
             onPressed: onRefresh,
             icon: const Icon(Icons.refresh_rounded, color: Colors.white),
           ),
-          /*  const SizedBox(width: 8),
+          const SizedBox(width: 8),
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
               foregroundColor: Colors.white,
@@ -865,7 +865,7 @@ class _TopBar extends StatelessWidget {
               'Items Tracker',
               style: TextStyle(fontWeight: FontWeight.w800),
             ),
-          ),*/
+          ),
           const SizedBox(width: 10),
           FilledButton.icon(
             style: FilledButton.styleFrom(

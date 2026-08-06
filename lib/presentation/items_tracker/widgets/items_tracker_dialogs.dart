@@ -216,13 +216,14 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
   }
 
   Future<void> _pickDate() async {
-    final selected = await showDatePicker(
+    final selected = await showItemsTrackerDatePicker(
       context: context,
       initialDate: _escalatedDate,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
     );
-    if (selected != null) setState(() => _escalatedDate = selected);
+
+    if (selected != null && mounted) {
+      setState(() => _escalatedDate = selected);
+    }
   }
 
   Future<void> _save() async {
@@ -340,6 +341,7 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
                                     dimension: 18,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
+                                      color: AppColors.primaryColor,
                                     ),
                                   ),
                                 )
@@ -618,13 +620,14 @@ class _ItemsTrackerActivityDialogState
   }
 
   Future<void> _pickDate() async {
-    final selected = await showDatePicker(
+    final selected = await showItemsTrackerDatePicker(
       context: context,
       initialDate: _date,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
     );
-    if (selected != null) setState(() => _date = selected);
+
+    if (selected != null && mounted) {
+      setState(() => _date = selected);
+    }
   }
 
   Future<void> _save() async {
@@ -702,6 +705,32 @@ class _ItemsTrackerActivityDialogState
                     const SizedBox(height: 20),
                     SegmentedButton<String>(
                       key: const ValueKey('itemsTrackerActivityMode'),
+
+                      style: SegmentedButton.styleFrom(
+                        backgroundColor: Colors.white,
+
+                        selectedBackgroundColor: const Color(0xffdff3f1),
+
+                        foregroundColor: const Color(0xff425966),
+
+                        selectedForegroundColor: const Color(0xff08746f),
+
+                        side: const BorderSide(
+                          color: Color(0xff9fb5bd),
+                          width: 1,
+                        ),
+
+                        textStyle: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                      ),
+
                       segments: const [
                         ButtonSegment(
                           value: 'action',
@@ -714,9 +743,13 @@ class _ItemsTrackerActivityDialogState
                           label: Text('Follow Up'),
                         ),
                       ],
+
                       selected: {_mode},
+
                       onSelectionChanged: ownsItem
-                          ? (values) => setState(() => _mode = values.first)
+                          ? (values) {
+                              setState(() => _mode = values.first);
+                            }
                           : null,
                     ),
                     const SizedBox(height: 20),
@@ -734,60 +767,6 @@ class _ItemsTrackerActivityDialogState
                             onTap: ownsItem ? _pickDate : null,
                           ),
                         ),
-                        if (_mode == 'action')
-                          _FieldBox(
-                            width: 300,
-                            child: DropdownButtonFormField<String>(
-                              initialValue: _caseStatus,
-                              decoration: const InputDecoration(
-                                labelText: 'Case status *',
-                              ),
-                              items: ItemsTrackerCaseStatuses.values
-                                  .map(
-                                    (value) => DropdownMenuItem(
-                                      value: value,
-                                      child: Text(
-                                        ItemsTrackerCaseStatuses.label(value),
-                                      ),
-                                    ),
-                                  )
-                                  .toList(growable: false),
-                              onChanged: ownsItem
-                                  ? (value) {
-                                      if (value != null) {
-                                        setState(() => _caseStatus = value);
-                                      }
-                                    }
-                                  : null,
-                            ),
-                          )
-                        else
-                          _FieldBox(
-                            width: 300,
-                            child: DropdownButtonFormField<String>(
-                              initialValue: _targetRole,
-                              decoration: const InputDecoration(
-                                labelText: 'Next follow-up department *',
-                              ),
-                              items: ItemsTrackerRoles.allowed
-                                  .map(
-                                    (value) => DropdownMenuItem(
-                                      value: value,
-                                      child: Text(
-                                        ItemsTrackerRoles.label(value),
-                                      ),
-                                    ),
-                                  )
-                                  .toList(growable: false),
-                              onChanged: ownsItem
-                                  ? (value) {
-                                      if (value != null) {
-                                        setState(() => _targetRole = value);
-                                      }
-                                    }
-                                  : null,
-                            ),
-                          ),
                       ],
                     ),
                     const SizedBox(height: 16),
@@ -805,6 +784,20 @@ class _ItemsTrackerActivityDialogState
                         hintText: _mode == 'action'
                             ? 'What was done, what was agreed, and what happens next?'
                             : 'Why is ownership being followed up or transferred?',
+                        fillColor: AppColors.backgroundWidget,
+                        filled: true,
+                        border: OutlineInputBorder(
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                          borderRadius: BorderRadius.circular(15),
+                        ),
                       ),
                     ),
                     if (_error != null) ...[
@@ -884,7 +877,11 @@ class _ItemsTrackerTimelineDialogState
                 future: _future,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
+                    return const Center(
+                      child: CircularProgressIndicator(
+                        color: AppColors.primaryColor,
+                      ),
+                    );
                   }
                   if (snapshot.hasError) {
                     return _DialogLoadError(
@@ -1012,7 +1009,7 @@ class _ItemsTrackerCommentsDialogState
               subtitle:
                   'Open to Inventory, Purchase and Category • comments are permanent',
               onClose: _saving ? null : _close,
-              accent: const Color(0xffb994f1),
+              accent: AppColors.primaryColor,
             ),
             _RecordSummary(record: widget.record),
             const Divider(height: 1),
@@ -1021,7 +1018,11 @@ class _ItemsTrackerCommentsDialogState
                 future: _future,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
+                    return const Center(
+                      child: CircularProgressIndicator(
+                        color: AppColors.primaryColor,
+                      ),
+                    );
                   }
                   if (snapshot.hasError) {
                     return _DialogLoadError(
@@ -1072,7 +1073,7 @@ class _ItemsTrackerCommentsDialogState
               child: Column(
                 children: [
                   Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -1080,13 +1081,13 @@ class _ItemsTrackerCommentsDialogState
                           vertical: 8,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xffeee7f8),
+                          color: AppColors.backgroundWidget,
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
                           ItemsTrackerRoles.label(widget.role),
                           style: const TextStyle(
-                            color: Color(0xff7650b7),
+                            color: AppColors.secondaryColor,
                             fontWeight: FontWeight.w800,
                             fontSize: 11,
                           ),
@@ -1100,8 +1101,28 @@ class _ItemsTrackerCommentsDialogState
                           enabled: !_saving,
                           minLines: 2,
                           maxLines: 4,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             hintText: 'Add a comment visible to all teams…',
+                            filled: true,
+                            fillColor: AppColors.backgroundWidget,
+                            border: OutlineInputBorder(
+                              borderSide: BorderSide(
+                                color: AppColors.primaryColor,
+                              ),
+                              borderRadius: BorderRadius.circular(15),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderSide: BorderSide(
+                                color: AppColors.primaryColor,
+                              ),
+                              borderRadius: BorderRadius.circular(15),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderSide: BorderSide(
+                                color: AppColors.primaryColor,
+                              ),
+                              borderRadius: BorderRadius.circular(15),
+                            ),
                           ),
                         ),
                       ),
@@ -1119,6 +1140,9 @@ class _ItemsTrackerCommentsDialogState
                               )
                             : const Icon(Icons.send_rounded),
                         label: const Text('Send'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.primaryColor,
+                        ),
                       ),
                     ],
                   ),
@@ -1385,7 +1409,7 @@ class _CommentBubble extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
-        color: const Color(0xfffaf7ff),
+        color: AppColors.backgroundWidget,
         borderRadius: BorderRadius.circular(15),
         border: Border.all(color: const Color(0xffe8ddf8)),
       ),
@@ -1396,14 +1420,14 @@ class _CommentBubble extends StatelessWidget {
             children: [
               const Icon(
                 Icons.account_circle_outlined,
-                color: Color(0xff7650b7),
+                color: AppColors.primaryColor,
                 size: 18,
               ),
               const SizedBox(width: 7),
               Text(
                 ItemsTrackerRoles.label(entry.actorRole),
                 style: const TextStyle(
-                  color: Color(0xff7650b7),
+                  color: AppColors.primaryColor,
                   fontWeight: FontWeight.w900,
                   fontSize: 11.5,
                 ),
@@ -1416,12 +1440,16 @@ class _CommentBubble extends StatelessWidget {
                 style: const TextStyle(
                   color: AppColors.subText,
                   fontSize: 10.5,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 9),
-          SelectableText(entry.body, style: const TextStyle(height: 1.45)),
+          SelectableText(
+            entry.body,
+            style: const TextStyle(height: 1.45, fontWeight: FontWeight.bold),
+          ),
         ],
       ),
     );
@@ -1526,11 +1554,20 @@ class _DialogFooter extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          TextButton(onPressed: onCancel, child: const Text('Cancel')),
+          TextButton(
+            onPressed: onCancel,
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.secondaryColor),
+            ),
+          ),
           const SizedBox(width: 10),
           FilledButton.icon(
             key: const ValueKey('itemsTrackerDialogSave'),
             onPressed: onSave,
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.primaryColor,
+            ),
             icon: saving
                 ? const SizedBox.square(
                     dimension: 17,
@@ -1620,8 +1657,22 @@ class _DateField extends StatelessWidget {
       child: InputDecorator(
         decoration: InputDecoration(
           labelText: label,
+          filled: true,
+          fillColor: AppColors.backgroundWidget,
           suffixIcon: const Icon(Icons.calendar_month_outlined),
           enabled: onTap != null,
+          border: OutlineInputBorder(
+            borderSide: BorderSide(color: AppColors.primaryColor),
+            borderRadius: BorderRadius.circular(15),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: AppColors.primaryColor),
+            borderRadius: BorderRadius.circular(15),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: AppColors.primaryColor),
+            borderRadius: BorderRadius.circular(15),
+          ),
         ),
         child: Text(
           DateFormat('dd MMMM yyyy').format(value),
@@ -1905,4 +1956,217 @@ String _friendlyError(Object error) {
       .split(', code:')
       .first
       .trim();
+}
+
+Future<DateTime?> showItemsTrackerDatePicker({
+  required BuildContext context,
+  required DateTime initialDate,
+}) {
+  const primary = Color(0xff08746f);
+  const darkText = Color(0xff173247);
+  const softText = Color(0xff657985);
+  const border = Color(0xffd7e3e8);
+
+  return showDatePicker(
+    context: context,
+    initialDate: initialDate,
+    firstDate: DateTime(2020),
+    lastDate: DateTime(2100),
+    helpText: 'SELECT DATE',
+    cancelText: 'Cancel',
+    confirmText: 'Select',
+    barrierColor: Colors.black.withValues(alpha: .52),
+    switchToInputEntryModeIcon: const Icon(Icons.edit_calendar_outlined),
+    switchToCalendarEntryModeIcon: const Icon(Icons.calendar_month_outlined),
+    builder: (context, child) {
+      final baseTheme = Theme.of(context);
+
+      final pickerTheme = baseTheme.copyWith(
+        useMaterial3: true,
+        colorScheme: baseTheme.colorScheme.copyWith(
+          primary: primary,
+          onPrimary: Colors.white,
+          surface: Colors.white,
+          onSurface: darkText,
+          surfaceContainerHigh: Colors.white,
+        ),
+        dialogTheme: DialogThemeData(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          elevation: 22,
+          shadowColor: Colors.black.withValues(alpha: .28),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+            side: const BorderSide(color: border),
+          ),
+        ),
+        datePickerTheme: DatePickerThemeData(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          elevation: 22,
+          shadowColor: Colors.black.withValues(alpha: .28),
+
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+            side: const BorderSide(color: border),
+          ),
+
+          headerBackgroundColor: primary,
+          headerForegroundColor: Colors.white,
+
+          headerHeadlineStyle: const TextStyle(
+            color: Colors.white,
+            fontSize: 26,
+            height: 1.15,
+            fontWeight: FontWeight.w800,
+          ),
+
+          headerHelpStyle: const TextStyle(
+            color: Color(0xffd9f1ee),
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: .7,
+          ),
+
+          dividerColor: border,
+
+          weekdayStyle: const TextStyle(
+            color: softText,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+
+          dayStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+
+          dayForegroundColor: WidgetStateProperty.resolveWith<Color?>((states) {
+            if (states.contains(WidgetState.disabled)) {
+              return const Color(0xffb3bec4);
+            }
+
+            if (states.contains(WidgetState.selected)) {
+              return Colors.white;
+            }
+
+            return darkText;
+          }),
+
+          dayBackgroundColor: WidgetStateProperty.resolveWith<Color?>((states) {
+            if (states.contains(WidgetState.selected)) {
+              return primary;
+            }
+
+            return Colors.transparent;
+          }),
+
+          dayOverlayColor: WidgetStateProperty.resolveWith<Color?>((states) {
+            if (states.contains(WidgetState.hovered)) {
+              return primary.withValues(alpha: .10);
+            }
+
+            if (states.contains(WidgetState.pressed)) {
+              return primary.withValues(alpha: .18);
+            }
+
+            return null;
+          }),
+
+          dayShape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+
+          todayForegroundColor: WidgetStateProperty.resolveWith<Color?>((
+            states,
+          ) {
+            if (states.contains(WidgetState.selected)) {
+              return Colors.white;
+            }
+
+            return primary;
+          }),
+
+          todayBackgroundColor: WidgetStateProperty.resolveWith<Color?>((
+            states,
+          ) {
+            if (states.contains(WidgetState.selected)) {
+              return primary;
+            }
+
+            return const Color(0xffe3f4f1);
+          }),
+
+          todayBorder: const BorderSide(color: primary, width: 1.2),
+
+          yearStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+
+          yearForegroundColor: WidgetStateProperty.resolveWith<Color?>((
+            states,
+          ) {
+            if (states.contains(WidgetState.selected)) {
+              return Colors.white;
+            }
+
+            return darkText;
+          }),
+
+          yearBackgroundColor: WidgetStateProperty.resolveWith<Color?>((
+            states,
+          ) {
+            if (states.contains(WidgetState.selected)) {
+              return primary;
+            }
+
+            return Colors.transparent;
+          }),
+
+          yearShape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+
+          cancelButtonStyle: TextButton.styleFrom(
+            foregroundColor: softText,
+            textStyle: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+
+          confirmButtonStyle: TextButton.styleFrom(
+            foregroundColor: primary,
+            textStyle: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+
+          toggleButtonTextStyle: const TextStyle(
+            color: primary,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(
+            foregroundColor: primary,
+            textStyle: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+        ),
+      );
+
+      final mediaQuery = MediaQuery.of(context);
+
+      return MediaQuery(
+        data: mediaQuery.copyWith(size: const Size(430, 760)),
+        child: Theme(
+          data: pickerTheme,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 430),
+              child: child!,
+            ),
+          ),
+        ),
+      );
+    },
+  );
 }
