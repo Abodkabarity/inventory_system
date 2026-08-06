@@ -5,11 +5,16 @@ abstract class ItemsTrackerRepository {
 
   Future<List<ItemsTrackerProduct>> searchProducts(String query);
 
+  /// Returns the distinct canonical values of item_report.item_status.
   Future<List<String>> fetchItemStatuses();
 
   Future<void> createRecord(CreateItemsTrackerRecord input);
 
   Future<void> updateInventoryFields(UpdateItemsTrackerRecord input);
+
+  /// Updates only status_updated_to. The database RPC enforces Inventory-only
+  /// access and validates the selected value against item_report.item_status.
+  Future<void> updateStatusUpdatedTo(UpdateItemsTrackerStatus input);
 
   Future<void> addAction(AddItemsTrackerAction input);
 
@@ -58,6 +63,18 @@ class UpdateItemsTrackerRecord {
     required this.requiredQty,
     required this.statusUpdatedTo,
     required this.followUpRole,
+    required this.expectedVersion,
+  });
+}
+
+class UpdateItemsTrackerStatus {
+  final String itemId;
+  final String statusUpdatedTo;
+  final int expectedVersion;
+
+  const UpdateItemsTrackerStatus({
+    required this.itemId,
+    required this.statusUpdatedTo,
     required this.expectedVersion,
   });
 }

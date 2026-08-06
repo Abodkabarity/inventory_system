@@ -107,6 +107,18 @@ class ItemsTrackerRemoteDs implements ItemsTrackerRepository {
   }
 
   @override
+  Future<void> updateStatusUpdatedTo(UpdateItemsTrackerStatus input) async {
+    await client.rpc(
+      'item_tracker_update_status_updated_to',
+      params: {
+        'p_item_id': input.itemId,
+        'p_status_updated_to': input.statusUpdatedTo.trim(),
+        'p_expected_version': input.expectedVersion,
+      },
+    );
+  }
+
+  @override
   Future<void> addAction(AddItemsTrackerAction input) async {
     await client.rpc(
       'item_tracker_add_action',

@@ -167,20 +167,21 @@ class ItemsTrackerRecord {
   bool canEditInventoryFields(String role) =>
       ItemsTrackerRoles.canEditInventoryFields(role);
 
-  String get displayedLastActivity {
-    if (lastActionBody.trim().isNotEmpty) return lastActionBody.trim();
-    if (lastFollowUpBody.trim().isNotEmpty) return lastFollowUpBody.trim();
-    return latestActivityBody.trim();
-  }
+  // The main grid must show the latest ACTION only. Follow-up transfers remain
+  // available in the permanent timeline and are not used as a fallback here.
+  String get displayedLastAction => lastActionBody.trim();
 
-  DateTime? get displayedLastActivityDate =>
-      lastActionDate ?? lastFollowUpDate ?? latestActivityDate;
+  DateTime? get displayedLastActionDate => lastActionDate;
 
-  String get displayedLastActivityRole {
-    if (lastActionBody.trim().isNotEmpty) return lastActionByRole;
-    if (lastFollowUpBody.trim().isNotEmpty) return lastFollowUpToRole;
-    return latestActivityByRole;
-  }
+  String get displayedLastActionRole => lastActionByRole.trim();
+
+  // Kept for backward compatibility with any older widgets still using the
+  // previous getter names. Their behavior is now action-only by design.
+  String get displayedLastActivity => displayedLastAction;
+
+  DateTime? get displayedLastActivityDate => displayedLastActionDate;
+
+  String get displayedLastActivityRole => displayedLastActionRole;
 
   factory ItemsTrackerRecord.fromMap(Map<String, dynamic> map) {
     final createdAt = _asDateTime(map['created_at']) ?? DateTime(1970);
