@@ -650,7 +650,7 @@ class _TopBar extends StatelessWidget {
                   key: const ValueKey('itemsTrackerAddItem'),
                   style: FilledButton.styleFrom(
                     elevation: 0,
-                    backgroundColor: const Color(0xffffcf4d),
+                    backgroundColor: AppColors.primaryColor,
                     foregroundColor: const Color(0xff173247),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 19,
@@ -661,11 +661,16 @@ class _TopBar extends StatelessWidget {
                     ),
                   ),
                   onPressed: onAdd,
-                  icon: const Icon(Icons.add_rounded, size: 21),
+                  icon: const Icon(
+                    Icons.add_rounded,
+                    size: 21,
+                    color: Colors.white,
+                  ),
                   label: Text(
                     compact ? 'Add' : 'Add Item',
                     style: const TextStyle(
                       fontSize: 13,
+                      color: Colors.white,
                       fontWeight: FontWeight.w800,
                     ),
                   ),

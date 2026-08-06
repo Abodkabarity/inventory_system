@@ -311,7 +311,7 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
               subtitle:
                   'Inventory-owned details • catalog values are filled automatically',
               onClose: _saving ? null : () => Navigator.pop(context),
-              accent: const Color(0xffffcf3e),
+              accent: AppColors.white,
             ),
             Expanded(
               child: SingleChildScrollView(
@@ -333,6 +333,26 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
                         onChanged: _scheduleSearch,
                         decoration: InputDecoration(
                           hintText: 'Type at least 2 characters…',
+                          border: OutlineInputBorder(
+                            borderSide: BorderSide(
+                              color: AppColors.primaryColor,
+                            ),
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderSide: BorderSide(
+                              color: AppColors.primaryColor,
+                            ),
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderSide: BorderSide(
+                              color: AppColors.primaryColor,
+                            ),
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                          filled: true,
+                          fillColor: AppColors.backgroundWidget,
                           prefixIcon: const Icon(Icons.search_rounded),
                           suffixIcon: _searching
                               ? const Padding(
@@ -414,7 +434,7 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
                       title: 'Escalation details',
                       subtitle: 'These fields can only be changed by Inventory',
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 16),
                     Wrap(
                       spacing: 14,
                       runSpacing: 14,
@@ -436,10 +456,30 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
                               decimal: true,
                             ),
                             onChanged: (_) => setState(() {}),
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
                               labelText: 'Item cost',
                               prefixText: 'AED  ',
                               helperText: 'Manual purchase cost',
+                              border: OutlineInputBorder(
+                                borderSide: BorderSide(
+                                  color: AppColors.primaryColor,
+                                ),
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderSide: BorderSide(
+                                  color: AppColors.primaryColor,
+                                ),
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderSide: BorderSide(
+                                  color: AppColors.primaryColor,
+                                ),
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                              filled: true,
+                              fillColor: AppColors.backgroundWidget,
                             ),
                           ),
                         ),
@@ -452,8 +492,28 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
                               decimal: true,
                             ),
                             onChanged: (_) => setState(() {}),
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
                               labelText: 'Qty required action *',
+                              border: OutlineInputBorder(
+                                borderSide: BorderSide(
+                                  color: AppColors.primaryColor,
+                                ),
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderSide: BorderSide(
+                                  color: AppColors.primaryColor,
+                                ),
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderSide: BorderSide(
+                                  color: AppColors.primaryColor,
+                                ),
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                              filled: true,
+                              fillColor: AppColors.backgroundWidget,
                             ),
                           ),
                         ),
@@ -469,8 +529,28 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
                             ),
                             initialValue: _statusUpdatedTo,
                             isExpanded: true,
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
                               labelText: 'Status Updated To *',
+                              border: OutlineInputBorder(
+                                borderSide: BorderSide(
+                                  color: AppColors.primaryColor,
+                                ),
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderSide: BorderSide(
+                                  color: AppColors.primaryColor,
+                                ),
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderSide: BorderSide(
+                                  color: AppColors.primaryColor,
+                                ),
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                              filled: true,
+                              fillColor: AppColors.backgroundWidget,
                             ),
                             items: _effectiveStatuses
                                 .map(
@@ -495,8 +575,28 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
                               'itemsTrackerFollowUp-$_followUpRole',
                             ),
                             initialValue: _followUpRole,
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
                               labelText: 'To Follow Up By *',
+                              border: OutlineInputBorder(
+                                borderSide: BorderSide(
+                                  color: AppColors.primaryColor,
+                                ),
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderSide: BorderSide(
+                                  color: AppColors.primaryColor,
+                                ),
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderSide: BorderSide(
+                                  color: AppColors.primaryColor,
+                                ),
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                              filled: true,
+                              fillColor: AppColors.backgroundWidget,
                             ),
                             items: ItemsTrackerRoles.allowed
                                 .map(
@@ -515,46 +615,31 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 14),
-                    Container(
-                      padding: const EdgeInsets.all(13),
-                      decoration: BoxDecoration(
-                        color: const Color(0xfffff8d9),
-                        borderRadius: BorderRadius.circular(13),
-                        border: Border.all(color: const Color(0xffffe18a)),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(
-                            Icons.info_outline_rounded,
-                            color: Color(0xff9a6c00),
-                            size: 19,
-                          ),
-                          const SizedBox(width: 9),
-                          Expanded(
-                            child: Text(
-                              'item_report does not contain purchase cost. Enter the actual item cost manually; retail price is shown above only as a reference and is never used silently.',
-                              style: TextStyle(
-                                color: Colors.brown.shade800,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+
                     const SizedBox(height: 16),
                     TextField(
                       key: const ValueKey('itemsTrackerInventoryNote'),
                       controller: _note,
                       minLines: 3,
                       maxLines: 5,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Notes & reason',
                         alignLabelWithHint: true,
                         hintText: 'Why does this item require action?',
+                        border: OutlineInputBorder(
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        filled: true,
+                        fillColor: AppColors.backgroundWidget,
                       ),
                     ),
                     if (_error != null) ...[
@@ -1691,9 +1776,23 @@ class _CalculatedValueField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InputDecorator(
-      decoration: const InputDecoration(
+      decoration: InputDecoration(
         labelText: 'Value required action',
         prefixIcon: Icon(Icons.calculate_outlined),
+        border: OutlineInputBorder(
+          borderSide: BorderSide(color: AppColors.primaryColor),
+          borderRadius: BorderRadius.circular(15),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: AppColors.primaryColor),
+          borderRadius: BorderRadius.circular(15),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: AppColors.primaryColor),
+          borderRadius: BorderRadius.circular(15),
+        ),
+        filled: true,
+        fillColor: AppColors.backgroundWidget,
       ),
       child: Text(
         value == null
