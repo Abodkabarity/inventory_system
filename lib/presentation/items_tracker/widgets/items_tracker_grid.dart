@@ -659,7 +659,11 @@ class ItemsTrackerDataSource extends DataGridSource {
                 break;
 
               case 'inventory_note':
-                child = _ReasonCell(value: record.inventoryNote);
+                child = _ReasonCell(
+                  value: record.inventoryNote,
+                  itemCode: record.itemCode,
+                  itemName: record.itemName,
+                );
                 break;
 
               case 'required_qty':
@@ -1088,35 +1092,194 @@ class _ItemNameCell extends StatelessWidget {
 
 class _ReasonCell extends StatelessWidget {
   final String value;
+  final String itemCode;
+  final String itemName;
 
-  const _ReasonCell({required this.value});
+  const _ReasonCell({
+    required this.value,
+    required this.itemCode,
+    required this.itemName,
+  });
 
   @override
   Widget build(BuildContext context) {
     final empty = value.trim().isEmpty;
     final text = empty ? 'No reason added' : value.trim();
 
+    const textStyle = TextStyle(
+      color: Color(0xff344b56),
+      fontSize: 12.1,
+      height: 1.25,
+      fontWeight: FontWeight.w600,
+    );
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Center(
-        child: Tooltip(
-          message: empty ? '' : text,
-          child: Text(
-            text,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final painter = TextPainter(
+            text: TextSpan(text: text, style: textStyle),
             maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: empty ? const Color(0xff7f9098) : const Color(0xff344b56),
-              fontSize: 12.1,
-              height: 1.25,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
+            textDirection: Directionality.of(context),
+          )..layout(maxWidth: constraints.maxWidth);
+          final showReadMore = !empty && painter.didExceedMaxLines;
+
+          return Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                text,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: empty
+                    ? textStyle.copyWith(color: const Color(0xff7f9098))
+                    : textStyle,
+              ),
+              if (showReadMore) ...[
+                const SizedBox(height: 2),
+                TextButton.icon(
+                  key: ValueKey('read-more-$itemCode'),
+                  onPressed: () => _showFullReasonDialog(
+                    context: context,
+                    itemCode: itemCode,
+                    itemName: itemName,
+                    reason: value.trim(),
+                  ),
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xff087e9b),
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 7),
+                    minimumSize: const Size(0, 24),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    textStyle: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  icon: const Icon(Icons.open_in_full_rounded, size: 12),
+                  label: const Text('Read more'),
+                ),
+              ],
+            ],
+          );
+        },
       ),
     );
   }
+}
+
+Future<void> _showFullReasonDialog({
+  required BuildContext context,
+  required String itemCode,
+  required String itemName,
+  required String reason,
+}) {
+  return showDialog<void>(
+    context: context,
+    builder: (dialogContext) => Dialog(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      insetPadding: const EdgeInsets.all(24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720, maxHeight: 680),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.fromLTRB(22, 18, 14, 18),
+              decoration: const BoxDecoration(
+                color: Color(0xffeaf6f8),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.notes_rounded,
+                      color: Color(0xff087e9b),
+                    ),
+                  ),
+                  const SizedBox(width: 13),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Notes & reason',
+                          style: TextStyle(
+                            color: Color(0xff173247),
+                            fontSize: 17,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '$itemCode · $itemName',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xff607985),
+                            fontSize: 11.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.pop(dialogContext),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: const Color(0xfff8fafc),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xffd7e3e8)),
+                  ),
+                  child: SelectableText(
+                    reason,
+                    style: const TextStyle(
+                      color: Color(0xff263f4a),
+                      fontSize: 14,
+                      height: 1.65,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton.icon(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  icon: const Icon(Icons.check_rounded, size: 18),
+                  label: const Text('Done'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class _NumberCell extends StatelessWidget {
