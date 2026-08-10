@@ -21,6 +21,8 @@ class ItemsTrackerGridController {
 
 typedef ItemsTrackerStatusChanged =
     Future<bool> Function(ItemsTrackerRecord record, String statusUpdatedTo);
+typedef ItemsTrackerCaseStatusChanged =
+    Future<bool> Function(ItemsTrackerRecord record, String trackerStatus);
 
 class ItemsTrackerGrid extends StatefulWidget {
   final ItemsTrackerGridController controller;
@@ -28,9 +30,11 @@ class ItemsTrackerGrid extends StatefulWidget {
   final String role;
   final List<String> statusOptions;
   final ItemsTrackerStatusChanged onStatusUpdatedToChanged;
+  final ItemsTrackerCaseStatusChanged onTrackerStatusChanged;
   final ValueChanged<ItemsTrackerRecord> onEditInventory;
   final ValueChanged<ItemsTrackerRecord> onAction;
   final ValueChanged<ItemsTrackerRecord> onHistory;
+  final ValueChanged<ItemsTrackerRecord> onAttachment;
   final ValueChanged<ItemsTrackerRecord> onComment;
 
   const ItemsTrackerGrid({
@@ -40,9 +44,11 @@ class ItemsTrackerGrid extends StatefulWidget {
     required this.role,
     required this.statusOptions,
     required this.onStatusUpdatedToChanged,
+    required this.onTrackerStatusChanged,
     required this.onEditInventory,
     required this.onAction,
     required this.onHistory,
+    required this.onAttachment,
     required this.onComment,
   });
 
@@ -122,9 +128,11 @@ class _ItemsTrackerGridState extends State<ItemsTrackerGrid> {
       role: widget.role,
       statusOptions: widget.statusOptions,
       onStatusUpdatedToChanged: widget.onStatusUpdatedToChanged,
+      onTrackerStatusChanged: widget.onTrackerStatusChanged,
       onEditInventory: widget.onEditInventory,
       onAction: widget.onAction,
       onHistory: widget.onHistory,
+      onAttachment: widget.onAttachment,
       onComment: widget.onComment,
     );
 
@@ -139,9 +147,11 @@ class _ItemsTrackerGridState extends State<ItemsTrackerGrid> {
     _source
       ..role = widget.role
       ..onStatusUpdatedToChanged = widget.onStatusUpdatedToChanged
+      ..onTrackerStatusChanged = widget.onTrackerStatusChanged
       ..onEditInventory = widget.onEditInventory
       ..onAction = widget.onAction
       ..onHistory = widget.onHistory
+      ..onAttachment = widget.onAttachment
       ..onComment = widget.onComment;
 
     if (!identical(oldWidget.statusOptions, widget.statusOptions)) {
@@ -377,9 +387,9 @@ class _ItemsTrackerGridState extends State<ItemsTrackerGrid> {
     'status_updated_to' => 'Status updated to',
     'follow_up' => 'Follow-up team',
 
-    'case_status' => 'Case status',
-    'last_action' => 'Last action',
-    'action_date' => 'Action date',
+    'case_status' => 'Tracker Status',
+    'last_action' => 'Last action / Follow-up',
+    'action_date' => 'Activity date',
     'latest_comment' => 'Latest comment',
     'comment_by' => 'Comment by',
     'actions' => 'Actions',
@@ -470,9 +480,11 @@ class ItemsTrackerDataSource extends DataGridSource {
   String role;
   List<String> statusOptions;
   ItemsTrackerStatusChanged onStatusUpdatedToChanged;
+  ItemsTrackerCaseStatusChanged onTrackerStatusChanged;
   ValueChanged<ItemsTrackerRecord> onEditInventory;
   ValueChanged<ItemsTrackerRecord> onAction;
   ValueChanged<ItemsTrackerRecord> onHistory;
+  ValueChanged<ItemsTrackerRecord> onAttachment;
   ValueChanged<ItemsTrackerRecord> onComment;
 
   ItemsTrackerDataSource({
@@ -480,9 +492,11 @@ class ItemsTrackerDataSource extends DataGridSource {
     required this.role,
     required this.statusOptions,
     required this.onStatusUpdatedToChanged,
+    required this.onTrackerStatusChanged,
     required this.onEditInventory,
     required this.onAction,
     required this.onHistory,
+    required this.onAttachment,
     required this.onComment,
   }) : _records = records {
     _rebuildRows();
@@ -613,9 +627,7 @@ class ItemsTrackerDataSource extends DataGridSource {
     }
 
     final rowIndex = _recordIndexById[record.id] ?? 0;
-    final completed =
-        record.caseStatus == ItemsTrackerCaseStatuses.resolved ||
-        record.caseStatus == ItemsTrackerCaseStatuses.closed;
+    final completed = record.caseStatus == ItemsTrackerCaseStatuses.done;
 
     return DataGridRowAdapter(
       color: rowIndex.isEven ? Colors.white : const Color(0xfffbfcfd),
@@ -689,15 +701,23 @@ class ItemsTrackerDataSource extends DataGridSource {
                 break;
 
               case 'case_status':
-                child = Center(
-                  child: _CaseStatusChip(status: record.caseStatus),
-                );
+                child = role == ItemsTrackerRoles.inventory
+                    ? _TrackerStatusDropdown(
+                        key: ValueKey(
+                          'tracker-status-${record.id}-${record.caseStatus}-${record.rowVersion}',
+                        ),
+                        record: record,
+                        onChanged: (value) =>
+                            onTrackerStatusChanged(record, value),
+                      )
+                    : Center(child: _CaseStatusChip(status: record.caseStatus));
                 break;
 
               case 'last_action':
                 child = _LastActionCell(
                   record: record,
                   onTap: () => onHistory(record),
+                  onAttachmentTap: () => onAttachment(record),
                 );
                 break;
 
@@ -1195,17 +1215,13 @@ class _CaseStatusChip extends StatelessWidget {
 
     final foreground = switch (normalized) {
       ItemsTrackerCaseStatuses.pending => const Color(0xffa85e10),
-      ItemsTrackerCaseStatuses.inProgress => const Color(0xff27697e),
-      ItemsTrackerCaseStatuses.resolved => const Color(0xff2f7354),
-      ItemsTrackerCaseStatuses.closed => const Color(0xff566872),
+      ItemsTrackerCaseStatuses.done => const Color(0xff2f7354),
       _ => const Color(0xff566872),
     };
 
     final background = switch (normalized) {
       ItemsTrackerCaseStatuses.pending => const Color(0xffffe6c4),
-      ItemsTrackerCaseStatuses.inProgress => const Color(0xffdceff5),
-      ItemsTrackerCaseStatuses.resolved => const Color(0xffdff2e8),
-      ItemsTrackerCaseStatuses.closed => const Color(0xffe8edf0),
+      ItemsTrackerCaseStatuses.done => const Color(0xffdff2e8),
       _ => const Color(0xffe8edf0),
     };
 
@@ -1223,6 +1239,127 @@ class _CaseStatusChip extends StatelessWidget {
           color: foreground,
           fontSize: 10.5,
           fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _TrackerStatusDropdown extends StatefulWidget {
+  final ItemsTrackerRecord record;
+  final Future<bool> Function(String value) onChanged;
+
+  const _TrackerStatusDropdown({
+    super.key,
+    required this.record,
+    required this.onChanged,
+  });
+
+  @override
+  State<_TrackerStatusDropdown> createState() => _TrackerStatusDropdownState();
+}
+
+class _TrackerStatusDropdownState extends State<_TrackerStatusDropdown> {
+  late String _selected;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.record.caseStatus;
+  }
+
+  Future<void> _change(String value) async {
+    if (_saving || value == _selected) return;
+    final previous = _selected;
+    setState(() {
+      _selected = value;
+      _saving = true;
+    });
+    final saved = await widget.onChanged(value);
+    if (!mounted) return;
+    setState(() {
+      _saving = false;
+      if (!saved) _selected = previous;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 12),
+      child: PopupMenuButton<String>(
+        enabled: !_saving,
+        tooltip: 'Change Tracker Status',
+        initialValue: _selected,
+        onSelected: _change,
+        itemBuilder: (context) => ItemsTrackerCaseStatuses.values
+            .map(
+              (value) => PopupMenuItem<String>(
+                value: value,
+                child: Row(
+                  children: [
+                    Icon(
+                      value == ItemsTrackerCaseStatuses.done
+                          ? Icons.check_circle_rounded
+                          : Icons.schedule_rounded,
+                      color: value == ItemsTrackerCaseStatuses.done
+                          ? const Color(0xff2f7354)
+                          : const Color(0xffa85e10),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(ItemsTrackerCaseStatuses.label(value)),
+                    const Spacer(),
+                    if (value == _selected)
+                      const Icon(Icons.check_rounded, size: 18),
+                  ],
+                ),
+              ),
+            )
+            .toList(growable: false),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: _selected == ItemsTrackerCaseStatuses.done
+                ? const Color(0xffdff2e8)
+                : const Color(0xffffe6c4),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: _selected == ItemsTrackerCaseStatuses.done
+                  ? const Color(0xff9bcdb4)
+                  : const Color(0xffffc978),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (_saving)
+                const SizedBox.square(
+                  dimension: 14,
+                  child: CircularProgressIndicator(strokeWidth: 1.8),
+                )
+              else
+                Icon(
+                  _selected == ItemsTrackerCaseStatuses.done
+                      ? Icons.check_circle_rounded
+                      : Icons.schedule_rounded,
+                  size: 15,
+                ),
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  ItemsTrackerCaseStatuses.label(_selected),
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 3),
+              const Icon(Icons.arrow_drop_down_rounded, size: 18),
+            ],
+          ),
         ),
       ),
     );
@@ -1517,8 +1654,13 @@ class _FixedStatusCell extends StatelessWidget {
 class _LastActionCell extends StatefulWidget {
   final ItemsTrackerRecord record;
   final VoidCallback onTap;
+  final VoidCallback onAttachmentTap;
 
-  const _LastActionCell({required this.record, required this.onTap});
+  const _LastActionCell({
+    required this.record,
+    required this.onTap,
+    required this.onAttachmentTap,
+  });
 
   @override
   State<_LastActionCell> createState() => _LastActionCellState();
@@ -1529,8 +1671,12 @@ class _LastActionCellState extends State<_LastActionCell> {
 
   @override
   Widget build(BuildContext context) {
-    final text = widget.record.displayedLastAction.trim();
-    final actionRole = widget.record.displayedLastActionRole.trim();
+    final text = widget.record.displayedLastActivity.trim();
+    final activityRole = widget.record.displayedLastActivityRole.trim();
+    final isFollowUp = widget.record.displayedLastActivityType == 'follow_up';
+    final activityColor = isFollowUp
+        ? const Color(0xff087e9b)
+        : const Color(0xff2e8b72);
     final empty = text.isEmpty;
 
     return MouseRegion(
@@ -1565,27 +1711,29 @@ class _LastActionCellState extends State<_LastActionCell> {
                     Icon(
                       empty
                           ? Icons.horizontal_rule_rounded
+                          : isFollowUp
+                          ? Icons.redo_rounded
                           : Icons.check_circle_outline_rounded,
                       size: 16,
-                      color: empty
-                          ? const Color(0xff89979e)
-                          : const Color(0xff2e8b72),
+                      color: empty ? const Color(0xff89979e) : activityColor,
                     ),
                     const SizedBox(width: 7),
                     Text(
-                      empty ? 'No action' : 'Action',
+                      empty
+                          ? 'No activity'
+                          : isFollowUp
+                          ? 'Follow-up'
+                          : 'Action',
                       style: TextStyle(
-                        color: empty
-                            ? const Color(0xff78878e)
-                            : const Color(0xff26735f),
+                        color: empty ? const Color(0xff78878e) : activityColor,
                         fontSize: 10.5,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    if (actionRole.isNotEmpty) ...[
+                    if (activityRole.isNotEmpty) ...[
                       const SizedBox(width: 8),
                       Flexible(
-                        child: _RoleChip(role: actionRole, compact: true),
+                        child: _RoleChip(role: activityRole, compact: true),
                       ),
                     ],
                   ],
@@ -1594,7 +1742,7 @@ class _LastActionCellState extends State<_LastActionCell> {
                 Tooltip(
                   message: empty ? '' : text,
                   child: Text(
-                    empty ? 'No action recorded yet' : text,
+                    empty ? 'No action or follow-up recorded yet' : text,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
@@ -1613,17 +1761,66 @@ class _LastActionCellState extends State<_LastActionCell> {
                   AnimatedOpacity(
                     duration: const Duration(milliseconds: 150),
                     opacity: _hovered ? 1 : .72,
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
+                        if (widget.record.displayedLastActivityHasAttachment)
+                          Tooltip(
+                            message:
+                                'Download ${widget.record.latestActivityAttachmentName}',
+                            child: InkWell(
+                              onTap: widget.onAttachmentTap,
+                              borderRadius: BorderRadius.circular(20),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xffeee8f8),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: const Color(0xffcdbce2),
+                                  ),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.attach_file_rounded,
+                                      size: 13,
+                                      color: Color(0xff68449c),
+                                    ),
+                                    SizedBox(width: 3),
+                                    Text(
+                                      'Attached',
+                                      style: TextStyle(
+                                        color: Color(0xff68449c),
+                                        fontSize: 10.2,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                    SizedBox(width: 2),
+                                    Icon(
+                                      Icons.download_rounded,
+                                      size: 12,
+                                      color: Color(0xff68449c),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        if (widget.record.displayedLastActivityHasAttachment)
+                          const SizedBox(width: 9),
+                        const Icon(
                           Icons.open_in_new_rounded,
                           size: 14,
                           color: Colors.red,
                         ),
-                        SizedBox(width: 5),
-                        Text(
-                          'Click To View Full Action',
+                        const SizedBox(width: 5),
+                        const Text(
+                          'View full activity history',
                           style: TextStyle(
                             color: Colors.red,
                             fontSize: 10.8,

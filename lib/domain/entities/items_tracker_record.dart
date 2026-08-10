@@ -29,18 +29,14 @@ class ItemsTrackerRoles {
 
 class ItemsTrackerCaseStatuses {
   static const pending = 'pending';
-  static const inProgress = 'in_progress';
-  static const resolved = 'resolved';
-  static const closed = 'closed';
+  static const done = 'done';
 
-  static const values = <String>[pending, inProgress, resolved, closed];
+  static const values = <String>[pending, done];
 
   static String label(String value) {
     return switch (value.trim().toLowerCase()) {
       pending => 'Pending',
-      inProgress => 'In progress',
-      resolved => 'Resolved',
-      closed => 'Closed',
+      done => 'Done',
       _ => value,
     };
   }
@@ -109,6 +105,11 @@ class ItemsTrackerRecord {
   final DateTime? latestActivityDate;
   final DateTime? latestActivityCreatedAt;
   final String latestActivityByRole;
+  final String latestActivityAttachmentId;
+  final String latestActivityAttachmentPath;
+  final String latestActivityAttachmentName;
+  final String latestActivityAttachmentMimeType;
+  final int? latestActivityAttachmentSize;
   final String lastActionBody;
   final DateTime? lastActionDate;
   final String lastActionByRole;
@@ -145,6 +146,11 @@ class ItemsTrackerRecord {
     required this.latestActivityDate,
     required this.latestActivityCreatedAt,
     required this.latestActivityByRole,
+    required this.latestActivityAttachmentId,
+    required this.latestActivityAttachmentPath,
+    required this.latestActivityAttachmentName,
+    required this.latestActivityAttachmentMimeType,
+    required this.latestActivityAttachmentSize,
     required this.lastActionBody,
     required this.lastActionDate,
     required this.lastActionByRole,
@@ -167,21 +173,28 @@ class ItemsTrackerRecord {
   bool canEditInventoryFields(String role) =>
       ItemsTrackerRoles.canEditInventoryFields(role);
 
-  // The main grid must show the latest ACTION only. Follow-up transfers remain
-  // available in the permanent timeline and are not used as a fallback here.
-  String get displayedLastAction => lastActionBody.trim();
+  // The grid shows whichever operational event was added most recently:
+  // Action or Follow-up. Creation and file-upload events are excluded by the
+  // database view, while the complete timeline still keeps them permanently.
+  String get displayedLastActivity => latestActivityBody.trim();
 
-  DateTime? get displayedLastActionDate => lastActionDate;
+  DateTime? get displayedLastActivityDate => latestActivityDate;
 
-  String get displayedLastActionRole => lastActionByRole.trim();
+  String get displayedLastActivityRole => latestActivityByRole.trim();
 
-  // Kept for backward compatibility with any older widgets still using the
-  // previous getter names. Their behavior is now action-only by design.
-  String get displayedLastActivity => displayedLastAction;
+  String get displayedLastActivityType =>
+      latestActivityType.trim().toLowerCase();
 
-  DateTime? get displayedLastActivityDate => displayedLastActionDate;
+  bool get displayedLastActivityHasAttachment =>
+      latestActivityAttachmentId.trim().isNotEmpty &&
+      latestActivityAttachmentPath.trim().isNotEmpty;
 
-  String get displayedLastActivityRole => displayedLastActionRole;
+  // Backward-compatible aliases for older grid code.
+  String get displayedLastAction => displayedLastActivity;
+
+  DateTime? get displayedLastActionDate => displayedLastActivityDate;
+
+  String get displayedLastActionRole => displayedLastActivityRole;
 
   factory ItemsTrackerRecord.fromMap(Map<String, dynamic> map) {
     final createdAt = _asDateTime(map['created_at']) ?? DateTime(1970);
@@ -220,6 +233,17 @@ class ItemsTrackerRecord {
         map['latest_activity_created_at'] ?? map['latest_activity_added_at'],
       ),
       latestActivityByRole: (map['latest_activity_by_role'] ?? '').toString(),
+      latestActivityAttachmentId: (map['latest_activity_attachment_id'] ?? '')
+          .toString(),
+      latestActivityAttachmentPath:
+          (map['latest_activity_attachment_path'] ?? '').toString(),
+      latestActivityAttachmentName:
+          (map['latest_activity_attachment_name'] ?? '').toString(),
+      latestActivityAttachmentMimeType:
+          (map['latest_activity_attachment_mime_type'] ?? '').toString(),
+      latestActivityAttachmentSize: _asInt(
+        map['latest_activity_attachment_size'],
+      ),
       lastActionBody: (map['last_action_body'] ?? map['last_action'] ?? '')
           .toString(),
       lastActionDate: _asDateTime(map['last_action_date']),
@@ -257,6 +281,11 @@ class ItemsTrackerTimelineEntry {
   final String toRole;
   final String fromStatus;
   final String toStatus;
+  final String attachmentId;
+  final String storagePath;
+  final String fileName;
+  final String mimeType;
+  final int? fileSize;
 
   const ItemsTrackerTimelineEntry({
     required this.id,
@@ -270,9 +299,19 @@ class ItemsTrackerTimelineEntry {
     required this.toRole,
     required this.fromStatus,
     required this.toStatus,
+    required this.attachmentId,
+    required this.storagePath,
+    required this.fileName,
+    required this.mimeType,
+    required this.fileSize,
   });
 
   bool get isComment => entryType == 'comment';
+
+  bool get hasAttachment =>
+      attachmentId.trim().isNotEmpty && storagePath.trim().isNotEmpty;
+
+  bool get isImageAttachment => mimeType.toLowerCase().startsWith('image/');
 
   factory ItemsTrackerTimelineEntry.fromMap(Map<String, dynamic> map) {
     return ItemsTrackerTimelineEntry(
@@ -287,6 +326,11 @@ class ItemsTrackerTimelineEntry {
       toRole: (map['to_follow_up_role'] ?? '').toString(),
       fromStatus: (map['from_case_status'] ?? '').toString(),
       toStatus: (map['to_case_status'] ?? '').toString(),
+      attachmentId: (map['attachment_id'] ?? '').toString(),
+      storagePath: (map['storage_path'] ?? '').toString(),
+      fileName: (map['file_name'] ?? '').toString(),
+      mimeType: (map['mime_type'] ?? '').toString(),
+      fileSize: _asInt(map['file_size']),
     );
   }
 }

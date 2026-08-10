@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/uae_date_time_formatter.dart';
@@ -688,6 +690,8 @@ class _ItemsTrackerActivityDialogState
   late String _caseStatus;
   late String _targetRole;
   bool _saving = false;
+  bool _activitySaved = false;
+  ItemsTrackerUploadFile? _attachment;
   String? _error;
 
   @override
@@ -715,9 +719,52 @@ class _ItemsTrackerActivityDialogState
     }
   }
 
+  Future<void> _pickAttachment() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png', 'webp'],
+      allowMultiple: false,
+      withData: true,
+    );
+    if (result == null || !mounted) return;
+
+    final selected = result.files.single;
+    final bytes = selected.bytes;
+    if (bytes == null) {
+      setState(() => _error = 'The selected file could not be read.');
+      return;
+    }
+    if (bytes.isEmpty || bytes.length > 15 * 1024 * 1024) {
+      setState(() => _error = 'Files must be between 1 byte and 15 MB.');
+      return;
+    }
+    final extension = (selected.extension ?? '').toLowerCase();
+    final mimeType = switch (extension) {
+      'pdf' => 'application/pdf',
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'webp' => 'image/webp',
+      _ => '',
+    };
+    if (mimeType.isEmpty) {
+      setState(
+        () => _error = 'Only PDF, JPG, PNG, and WEBP files are allowed.',
+      );
+      return;
+    }
+    setState(() {
+      _attachment = ItemsTrackerUploadFile(
+        name: selected.name,
+        mimeType: mimeType,
+        bytes: bytes,
+      );
+      _error = null;
+    });
+  }
+
   Future<void> _save() async {
     final body = _body.text.trim();
-    if (body.isEmpty) {
+    if (!_activitySaved && body.isEmpty) {
       setState(() => _error = 'Write a clear action or follow-up note.');
       return;
     }
@@ -726,25 +773,34 @@ class _ItemsTrackerActivityDialogState
       _error = null;
     });
     try {
-      if (_mode == 'action') {
-        await widget.repository.addAction(
-          AddItemsTrackerAction(
-            itemId: widget.record.id,
-            actionDate: _date,
-            body: body,
-            caseStatus: _caseStatus,
-            expectedVersion: widget.record.rowVersion,
-          ),
-        );
-      } else {
-        await widget.repository.changeFollowUp(
-          ChangeItemsTrackerFollowUp(
-            itemId: widget.record.id,
-            targetRole: _targetRole,
-            note: body,
-            actionDate: _date,
-            expectedVersion: widget.record.rowVersion,
-          ),
+      if (!_activitySaved) {
+        if (_mode == 'action') {
+          await widget.repository.addAction(
+            AddItemsTrackerAction(
+              itemId: widget.record.id,
+              actionDate: _date,
+              body: body,
+              caseStatus: _caseStatus,
+              expectedVersion: widget.record.rowVersion,
+            ),
+          );
+        } else {
+          await widget.repository.changeFollowUp(
+            ChangeItemsTrackerFollowUp(
+              itemId: widget.record.id,
+              targetRole: _targetRole,
+              note: body,
+              actionDate: _date,
+              expectedVersion: widget.record.rowVersion,
+            ),
+          );
+        }
+        _activitySaved = true;
+      }
+      if (_attachment != null) {
+        await widget.repository.uploadAttachment(
+          itemId: widget.record.id,
+          file: _attachment!,
         );
       }
       if (mounted) Navigator.pop(context, true);
@@ -752,7 +808,11 @@ class _ItemsTrackerActivityDialogState
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = _friendlyError(error);
+        _error = _activitySaved
+            ? 'The activity was saved, but the file upload failed. '
+                  'Your activity will not be duplicated; click Retry upload.\n'
+                  '${_friendlyError(error)}'
+            : _friendlyError(error);
       });
     }
   }
@@ -885,6 +945,13 @@ class _ItemsTrackerActivityDialogState
                         ),
                       ),
                     ),
+                    const SizedBox(height: 18),
+                    _AttachmentPickerCard(
+                      file: _attachment,
+                      enabled: ownsItem && !_saving,
+                      onPick: _pickAttachment,
+                      onRemove: () => setState(() => _attachment = null),
+                    ),
                     if (_error != null) ...[
                       const SizedBox(height: 16),
                       _ErrorBanner(message: _error!),
@@ -895,12 +962,122 @@ class _ItemsTrackerActivityDialogState
             ),
             _DialogFooter(
               saving: _saving,
-              saveLabel: _mode == 'action' ? 'Save action' : 'Save follow-up',
-              onCancel: _saving ? null : () => Navigator.pop(context),
+              saveLabel: _activitySaved
+                  ? _attachment == null
+                        ? 'Done'
+                        : 'Retry file upload'
+                  : _mode == 'action'
+                  ? 'Save action'
+                  : 'Save follow-up',
+              onCancel: _saving
+                  ? null
+                  : () => Navigator.pop(context, _activitySaved),
               onSave: !_saving && ownsItem ? _save : null,
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _AttachmentPickerCard extends StatelessWidget {
+  final ItemsTrackerUploadFile? file;
+  final bool enabled;
+  final VoidCallback onPick;
+  final VoidCallback onRemove;
+
+  const _AttachmentPickerCard({
+    required this.file,
+    required this.enabled,
+    required this.onPick,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = file;
+    final isPdf = selected?.mimeType == 'application/pdf';
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: selected == null
+            ? const Color(0xfff7fafc)
+            : const Color(0xffeef9f7),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: selected == null
+              ? const Color(0xffd7e3e8)
+              : const Color(0xff9dd8cf),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: selected == null
+                  ? Colors.white
+                  : isPdf
+                  ? const Color(0xffffecec)
+                  : const Color(0xffe5f4ff),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              selected == null
+                  ? Icons.cloud_upload_outlined
+                  : isPdf
+                  ? Icons.picture_as_pdf_outlined
+                  : Icons.image_outlined,
+              color: selected == null
+                  ? const Color(0xff55727f)
+                  : isPdf
+                  ? const Color(0xffc84343)
+                  : const Color(0xff287bac),
+            ),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  selected?.name ?? 'Add supporting document',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  selected == null
+                      ? 'Private PDF or image · Maximum 15 MB'
+                      : '${_formatFileSize(selected.size)} · Saved securely in the item history',
+                  style: const TextStyle(
+                    color: AppColors.subText,
+                    fontSize: 11.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (selected != null)
+            IconButton(
+              tooltip: 'Remove file',
+              onPressed: enabled ? onRemove : null,
+              icon: const Icon(Icons.close_rounded),
+            ),
+          OutlinedButton.icon(
+            onPressed: enabled ? onPick : null,
+            icon: Icon(
+              selected == null ? Icons.attach_file_rounded : Icons.swap_horiz,
+              size: 18,
+            ),
+            label: Text(selected == null ? 'Choose file' : 'Replace'),
+          ),
+        ],
       ),
     );
   }
@@ -924,6 +1101,7 @@ class ItemsTrackerTimelineDialog extends StatefulWidget {
 class _ItemsTrackerTimelineDialogState
     extends State<ItemsTrackerTimelineDialog> {
   late Future<List<ItemsTrackerTimelineEntry>> _future;
+  String? _openingAttachmentId;
 
   @override
   void initState() {
@@ -935,6 +1113,29 @@ class _ItemsTrackerTimelineDialogState
     setState(() {
       _future = widget.repository.fetchTimeline(widget.record.id);
     });
+  }
+
+  Future<void> _openAttachment(ItemsTrackerTimelineEntry entry) async {
+    if (!entry.hasAttachment || _openingAttachmentId != null) return;
+    setState(() => _openingAttachmentId = entry.attachmentId);
+    try {
+      final url = await widget.repository.createAttachmentDownloadUrl(
+        entry.storagePath,
+      );
+      final opened = await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened) throw Exception('Could not open the downloaded file.');
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_friendlyError(error))));
+      }
+    } finally {
+      if (mounted) setState(() => _openingAttachmentId = null);
+    }
   }
 
   @override
@@ -988,6 +1189,11 @@ class _ItemsTrackerTimelineDialogState
                       return _TimelineTile(
                         entry: entry,
                         isLast: index == entries.length - 1,
+                        openingAttachment:
+                            _openingAttachmentId == entry.attachmentId,
+                        onOpenAttachment: entry.hasAttachment
+                            ? () => _openAttachment(entry)
+                            : null,
                       );
                     },
                   );
@@ -1365,8 +1571,15 @@ class _RecordSummary extends StatelessWidget {
 class _TimelineTile extends StatelessWidget {
   final ItemsTrackerTimelineEntry entry;
   final bool isLast;
+  final bool openingAttachment;
+  final VoidCallback? onOpenAttachment;
 
-  const _TimelineTile({required this.entry, required this.isLast});
+  const _TimelineTile({
+    required this.entry,
+    required this.isLast,
+    this.openingAttachment = false,
+    this.onOpenAttachment,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1440,6 +1653,81 @@ class _TimelineTile extends StatelessWidget {
                       SelectableText(
                         entry.body,
                         style: const TextStyle(height: 1.45),
+                      ),
+                    ],
+                    if (entry.hasAttachment) ...[
+                      const SizedBox(height: 12),
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: openingAttachment ? null : onOpenAttachment,
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 13,
+                              vertical: 11,
+                            ),
+                            decoration: BoxDecoration(
+                              color: entry.isImageAttachment
+                                  ? const Color(0xffedf7ff)
+                                  : const Color(0xfffff1f1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: entry.isImageAttachment
+                                    ? const Color(0xffc8e5f5)
+                                    : const Color(0xffffd2d2),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  entry.isImageAttachment
+                                      ? Icons.image_outlined
+                                      : Icons.picture_as_pdf_outlined,
+                                  color: entry.isImageAttachment
+                                      ? const Color(0xff287bac)
+                                      : const Color(0xffc84343),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        entry.fileName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                      Text(
+                                        '${_formatFileSize(entry.fileSize ?? 0)} · Open secure file',
+                                        style: const TextStyle(
+                                          color: AppColors.subText,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (openingAttachment)
+                                  const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                else
+                                  const Icon(
+                                    Icons.download_rounded,
+                                    color: Color(0xff52707d),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                     const SizedBox(height: 8),
@@ -1997,6 +2285,7 @@ IconData _entryIcon(ItemsTrackerTimelineEntry entry) {
     'action' => Icons.task_alt_rounded,
     'follow_up' => Icons.redo_rounded,
     'status_change' => Icons.flag_outlined,
+    'file_uploaded' => Icons.attach_file_rounded,
     _ => Icons.history_rounded,
   };
 }
@@ -2009,6 +2298,7 @@ Color _entryColor(ItemsTrackerTimelineEntry entry) {
     'action' => const Color(0xff0f8f78),
     'follow_up' => const Color(0xff087e9b),
     'status_change' => const Color(0xffd4770a),
+    'file_uploaded' => const Color(0xff7650b7),
     _ => AppColors.primaryColor,
   };
 }
@@ -2021,8 +2311,17 @@ String _entryTitle(ItemsTrackerTimelineEntry entry) {
     'action' => 'ACTION',
     'follow_up' => 'FOLLOW-UP',
     'status_change' => 'STATUS CHANGE',
+    'file_uploaded' => 'FILE UPLOADED',
     _ => entry.eventType.toUpperCase(),
   };
+}
+
+String _formatFileSize(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  final kb = bytes / 1024;
+  if (kb < 1024) return '${kb.toStringAsFixed(kb < 10 ? 1 : 0)} KB';
+  final mb = kb / 1024;
+  return '${mb.toStringAsFixed(mb < 10 ? 1 : 0)} MB';
 }
 
 double? _parseNumber(String value) {

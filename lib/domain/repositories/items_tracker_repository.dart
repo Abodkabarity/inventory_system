@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../entities/items_tracker_record.dart';
 
 abstract class ItemsTrackerRepository {
@@ -16,6 +18,8 @@ abstract class ItemsTrackerRepository {
   /// access and validates the selected value against item_report.item_status.
   Future<void> updateStatusUpdatedTo(UpdateItemsTrackerStatus input);
 
+  Future<void> updateTrackerStatus(UpdateItemsTrackerCaseStatus input);
+
   Future<void> addAction(AddItemsTrackerAction input);
 
   Future<void> changeFollowUp(ChangeItemsTrackerFollowUp input);
@@ -23,6 +27,27 @@ abstract class ItemsTrackerRepository {
   Future<void> addComment({required String itemId, required String body});
 
   Future<List<ItemsTrackerTimelineEntry>> fetchTimeline(String itemId);
+
+  Future<void> uploadAttachment({
+    required String itemId,
+    required ItemsTrackerUploadFile file,
+  });
+
+  Future<String> createAttachmentDownloadUrl(String storagePath);
+}
+
+class ItemsTrackerUploadFile {
+  final String name;
+  final String mimeType;
+  final Uint8List bytes;
+
+  const ItemsTrackerUploadFile({
+    required this.name,
+    required this.mimeType,
+    required this.bytes,
+  });
+
+  int get size => bytes.length;
 }
 
 class CreateItemsTrackerRecord {
@@ -75,6 +100,18 @@ class UpdateItemsTrackerStatus {
   const UpdateItemsTrackerStatus({
     required this.itemId,
     required this.statusUpdatedTo,
+    required this.expectedVersion,
+  });
+}
+
+class UpdateItemsTrackerCaseStatus {
+  final String itemId;
+  final String trackerStatus;
+  final int expectedVersion;
+
+  const UpdateItemsTrackerCaseStatus({
+    required this.itemId,
+    required this.trackerStatus,
     required this.expectedVersion,
   });
 }

@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../domain/entities/items_tracker_record.dart';
 import '../../../domain/repositories/items_tracker_repository.dart';
@@ -7,6 +8,7 @@ class ItemsTrackerRemoteDs implements ItemsTrackerRepository {
   final SupabaseClient client;
 
   static const int _batchSize = 1000;
+  static const String attachmentsBucket = 'items-tracker-files';
 
   ItemsTrackerRemoteDs(this.client);
 
@@ -119,6 +121,18 @@ class ItemsTrackerRemoteDs implements ItemsTrackerRepository {
   }
 
   @override
+  Future<void> updateTrackerStatus(UpdateItemsTrackerCaseStatus input) async {
+    await client.rpc(
+      'item_tracker_update_tracker_status',
+      params: {
+        'p_item_id': input.itemId,
+        'p_tracker_status': input.trackerStatus.trim().toLowerCase(),
+        'p_expected_version': input.expectedVersion,
+      },
+    );
+  }
+
+  @override
   Future<void> addAction(AddItemsTrackerAction input) async {
     await client.rpc(
       'item_tracker_add_action',
@@ -172,6 +186,55 @@ class ItemsTrackerRemoteDs implements ItemsTrackerRepository {
         .toList(growable: false);
   }
 
+  @override
+  Future<void> uploadAttachment({
+    required String itemId,
+    required ItemsTrackerUploadFile file,
+  }) async {
+    final userId = client.auth.currentUser?.id;
+    if (userId == null) {
+      throw StateError('You must be signed in to upload a file.');
+    }
+
+    final safeName = _safeFileName(file.name);
+    final storagePath = '$itemId/$userId/${const Uuid().v4()}_$safeName';
+    await client.storage
+        .from(attachmentsBucket)
+        .uploadBinary(
+          storagePath,
+          file.bytes,
+          fileOptions: FileOptions(contentType: file.mimeType, upsert: false),
+        );
+
+    try {
+      await client.rpc(
+        'item_tracker_register_attachment',
+        params: {
+          'p_item_id': itemId,
+          'p_storage_path': storagePath,
+          'p_file_name': file.name.trim(),
+          'p_mime_type': file.mimeType,
+          'p_file_size': file.size,
+        },
+      );
+    } catch (_) {
+      try {
+        await client.storage.from(attachmentsBucket).remove([storagePath]);
+      } catch (_) {
+        // Registration is authoritative. A failed best-effort cleanup must not
+        // hide the original database error from the user.
+      }
+      rethrow;
+    }
+  }
+
+  @override
+  Future<String> createAttachmentDownloadUrl(String storagePath) {
+    return client.storage
+        .from(attachmentsBucket)
+        .createSignedUrl(storagePath, 120);
+  }
+
   static String _date(DateTime value) =>
       '${value.year.toString().padLeft(4, '0')}-'
       '${value.month.toString().padLeft(2, '0')}-'
@@ -180,5 +243,16 @@ class ItemsTrackerRemoteDs implements ItemsTrackerRepository {
   static String? _nullableText(String value) {
     final cleaned = value.trim();
     return cleaned.isEmpty ? null : cleaned;
+  }
+
+  static String _safeFileName(String value) {
+    final normalized = value.trim().replaceAll(
+      RegExp(r'[^A-Za-z0-9._-]+'),
+      '_',
+    );
+    if (normalized.isEmpty) return 'attachment';
+    return normalized.length <= 120
+        ? normalized
+        : normalized.substring(normalized.length - 120);
   }
 }

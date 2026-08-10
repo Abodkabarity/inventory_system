@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../data/datasources/remote/items_tracker_remote_ds.dart';
@@ -33,6 +34,7 @@ class ItemsTrackerPage extends StatefulWidget {
 
 class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
   late final ItemsTrackerRepository _repository;
+  String? _openingAttachmentId;
   late final String _role;
 
   final _searchController = TextEditingController();
@@ -174,10 +176,8 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
     final mineComparison = leftMine.compareTo(rightMine);
     if (mineComparison != 0) return mineComparison;
 
-    final leftClosed = left.caseStatus == ItemsTrackerCaseStatuses.closed
-        ? 1
-        : 0;
-    final rightClosed = right.caseStatus == ItemsTrackerCaseStatuses.closed
+    final leftClosed = left.caseStatus == ItemsTrackerCaseStatuses.done ? 1 : 0;
+    final rightClosed = right.caseStatus == ItemsTrackerCaseStatuses.done
         ? 1
         : 0;
     final closedComparison = leftClosed.compareTo(rightClosed);
@@ -295,12 +295,65 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
     }
   }
 
+  Future<bool> _updateTrackerStatus(
+    ItemsTrackerRecord record,
+    String value,
+  ) async {
+    if (!_canEditInventory) {
+      _showMessage('Only Inventory can change Tracker Status.', isError: true);
+      return false;
+    }
+    final normalized = value.trim().toLowerCase();
+    if (!ItemsTrackerCaseStatuses.values.contains(normalized)) return false;
+    if (normalized == record.caseStatus) return true;
+    try {
+      await _repository.updateTrackerStatus(
+        UpdateItemsTrackerCaseStatus(
+          itemId: record.id,
+          trackerStatus: normalized,
+          expectedVersion: record.rowVersion,
+        ),
+      );
+      if (!mounted) return true;
+      _showMessage(
+        'Tracker Status changed to ${ItemsTrackerCaseStatuses.label(normalized)}.',
+      );
+      await _load(silent: true);
+      return true;
+    } catch (error) {
+      if (mounted) _showMessage(_friendlyError(error), isError: true);
+      return false;
+    }
+  }
+
   Future<void> _openHistory(ItemsTrackerRecord record) {
     return showItemsTrackerTimelineDialog(
       context: context,
       repository: _repository,
       record: record,
     );
+  }
+
+  Future<void> _openLatestAttachment(ItemsTrackerRecord record) async {
+    if (!record.displayedLastActivityHasAttachment ||
+        _openingAttachmentId != null) {
+      return;
+    }
+    setState(() => _openingAttachmentId = record.latestActivityAttachmentId);
+    try {
+      final url = await _repository.createAttachmentDownloadUrl(
+        record.latestActivityAttachmentPath,
+      );
+      final opened = await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened) throw Exception('Could not open the attached file.');
+    } catch (error) {
+      _showMessage(_friendlyError(error), isError: true);
+    } finally {
+      if (mounted) setState(() => _openingAttachmentId = null);
+    }
   }
 
   Future<void> _openComments(ItemsTrackerRecord record) async {
@@ -339,11 +392,7 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
         .where((record) => record.canAct(_role))
         .length;
     final resolvedCount = _records
-        .where(
-          (record) =>
-              record.caseStatus == ItemsTrackerCaseStatuses.resolved ||
-              record.caseStatus == ItemsTrackerCaseStatuses.closed,
-        )
+        .where((record) => record.caseStatus == ItemsTrackerCaseStatuses.done)
         .length;
 
     final body = SafeArea(
@@ -494,6 +543,8 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
       onEditInventory: _openEditor,
       onAction: _openAction,
       onHistory: _openHistory,
+      onAttachment: _openLatestAttachment,
+      onTrackerStatusChanged: _updateTrackerStatus,
       onComment: _openComments,
     );
   }
@@ -878,7 +929,7 @@ class _MetricsStrip extends StatelessWidget {
             ),
             _MetricCard(
               width: width,
-              label: 'Resolved / closed',
+              label: 'Done',
               helper: 'Completed records',
               value: '$resolved',
               icon: Icons.task_alt_rounded,
@@ -1249,7 +1300,7 @@ class _Filters extends StatelessWidget {
 
         /*  final statusField = _FilterSelect(
           width: 175,
-          label: 'Case status',
+          label: 'Tracker Status',
           icon: Icons.flag_outlined,
           value: caseStatus,
           items: [
