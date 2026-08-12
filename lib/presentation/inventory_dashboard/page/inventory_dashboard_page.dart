@@ -18,6 +18,7 @@ import 'additional_order_analysis_page.dart';
 import 'inventory_additional_orders_page.dart';
 import 'allocation_page.dart';
 import 'availability_kpi_page.dart';
+import 'fill_rate_kpi_page.dart';
 import 'assortment_page.dart';
 import 'branch_submission_tracker_page.dart';
 import 'branch_setting_page.dart';
@@ -281,6 +282,8 @@ Widget _buildPage(InventoryState state, bool isSubmitted, String runDate) {
       return PurchaseShortagePage(runDate: runDate);
     case InventoryPageType.availabilityKpi:
       return AvailabilityKpiPage(runDate: runDate);
+    case InventoryPageType.fillRateKpi:
+      return const FillRateKpiPage();
     case InventoryPageType.branchSetting:
       return const BranchSettingPage();
   }

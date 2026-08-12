@@ -20,11 +20,13 @@ class AppBloc extends Bloc<AppEvent, AppState> {
       final event = data.event;
       final session = data.session;
 
-      if (event == AuthChangeEvent.initialSession) return;
-
-      if (session != null) {
+      // Token refreshes are part of normal session maintenance. Re-running the
+      // app bootstrap for them temporarily emits `loading`, which disposes the
+      // active role page and recreates it at its default view. Only real sign-in
+      // and sign-out transitions should change the app-level authentication UI.
+      if (event == AuthChangeEvent.signedIn && session != null) {
         add(const AppStarted());
-      } else {
+      } else if (event == AuthChangeEvent.signedOut) {
         add(const AppLoggedOut());
       }
     });

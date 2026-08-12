@@ -53,6 +53,7 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
     InventoryPageType.orderEditAnalysis,
     InventoryPageType.shortage,
     InventoryPageType.availabilityKpi,
+    InventoryPageType.fillRateKpi,
   };
 
   static const Set<InventoryPageType> _configurationPages = {
@@ -393,6 +394,14 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
                             page: InventoryPageType.availabilityKpi,
                             icon: Icons.monitor_heart_rounded,
                             title: 'Availability KPI',
+                            nested: true,
+                          ),
+                          _menuItem(
+                            context: context,
+                            state: state,
+                            page: InventoryPageType.fillRateKpi,
+                            icon: Icons.local_shipping_rounded,
+                            title: 'Fill Rate KPI',
                             nested: true,
                           ),
                         ],

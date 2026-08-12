@@ -2940,6 +2940,9 @@ class _OrdersOverlayDrawer extends StatelessWidget {
                             onTap: onOpenStockCheck,
                           ),
                           const Spacer(),
+                          const Divider(height: 28, color: AppColors.border),
+                          _DrawerLogoutButton(),
+                          const SizedBox(height: 10),
                           Container(
                             width: double.infinity,
                             padding: const EdgeInsets.all(12),
@@ -4145,7 +4148,72 @@ class _TableTitle extends StatelessWidget {
   }
 }
 
-class _LogoutIconButton extends StatelessWidget {
+class _DrawerLogoutButton extends StatelessWidget {
+  Future<bool> _confirmLogout(BuildContext context) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            backgroundColor: AppColors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            titlePadding: const EdgeInsets.fromLTRB(22, 22, 22, 8),
+            contentPadding: const EdgeInsets.fromLTRB(22, 0, 22, 8),
+            actionsPadding: const EdgeInsets.fromLTRB(22, 8, 22, 20),
+            title: const Row(
+              children: [
+                _LogoutDialogIcon(),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Log out?',
+                    style: TextStyle(
+                      color: AppColors.text,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            content: const Text(
+              'You will return to the sign-in page. Any unsaved changes on this page will be lost.',
+              style: TextStyle(
+                color: AppColors.subText,
+                height: 1.45,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFDC2626),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                icon: const Icon(Icons.logout_rounded, size: 18),
+                label: const Text(
+                  'Log out',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocConsumer<AuthBloc, AuthState>(
@@ -4170,42 +4238,97 @@ class _LogoutIconButton extends StatelessWidget {
       builder: (context, state) {
         final loading = state.isSigningOut;
 
-        return Tooltip(
-          message: loading ? 'Signing out...' : 'Logout',
-          child: Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: const Color(0xFFFEF2F2),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFFFECACA)),
-            ),
-            child: IconButton(
-              padding: EdgeInsets.zero,
-              splashRadius: 22,
-              onPressed: loading
-                  ? null
-                  : () {
-                      context.read<AuthBloc>().add(AuthLogoutRequested());
-                    },
-              icon: loading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.4,
-                        color: Color(0xFFDC2626),
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: loading
+                ? null
+                : () async {
+                    final confirmed = await _confirmLogout(context);
+                    if (!context.mounted || !confirmed) return;
+                    context.read<AuthBloc>().add(AuthLogoutRequested());
+                  },
+            child: Ink(
+              width: double.infinity,
+              height: 52,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFFECACA)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(11),
                       ),
-                    )
-                  : const Icon(
-                      Icons.logout_rounded,
-                      size: 20,
-                      color: Color(0xFFDC2626),
+                      alignment: Alignment.center,
+                      child: loading
+                          ? const SizedBox(
+                              width: 17,
+                              height: 17,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.3,
+                                color: Color(0xFFDC2626),
+                              ),
+                            )
+                          : const Icon(
+                              Icons.logout_rounded,
+                              size: 19,
+                              color: Color(0xFFDC2626),
+                            ),
                     ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        loading ? 'Signing out...' : 'Log out',
+                        style: const TextStyle(
+                          color: Color(0xFF991B1B),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    if (!loading)
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        color: Color(0xFFB91C1C),
+                      ),
+                  ],
+                ),
+              ),
             ),
           ),
         );
       },
+    );
+  }
+}
+
+class _LogoutDialogIcon extends StatelessWidget {
+  const _LogoutDialogIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: const Color(0xFFFECACA)),
+      ),
+      child: const Icon(
+        Icons.logout_rounded,
+        color: Color(0xFFDC2626),
+        size: 21,
+      ),
     );
   }
 }

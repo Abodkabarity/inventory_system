@@ -17,5 +17,6 @@ enum InventoryPageType {
   stockCheck,
   shortage,
   availabilityKpi,
+  fillRateKpi,
   branchSetting,
 }

@@ -1,4 +1,3 @@
-import 'package:daily_order/presentation/app/bloc/app_event.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -61,9 +60,7 @@ Future<void> main() async {
       ],
       child: MultiBlocProvider(
         providers: [
-          BlocProvider(
-            create: (_) => AppBloc(getMe: getMe)..add(const AppStarted()),
-          ),
+          BlocProvider(create: (_) => AppBloc(getMe: getMe)),
           BlocProvider(
             create: (_) => AuthBloc(signIn: signIn, signOut: signOut),
           ),
