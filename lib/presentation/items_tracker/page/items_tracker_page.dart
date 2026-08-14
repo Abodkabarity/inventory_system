@@ -7,6 +7,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/items_tracker_excel_exporter_stub.dart'
+    if (dart.library.html) '../../../core/utils/items_tracker_excel_exporter.dart';
 import '../../../data/datasources/remote/items_tracker_remote_ds.dart';
 import '../../../domain/entities/items_tracker_record.dart';
 import '../../../domain/repositories/items_tracker_repository.dart';
@@ -55,6 +57,7 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
   bool _myQueueOnly = false;
   bool _loading = true;
   bool _refreshing = false;
+  bool _exporting = false;
   String? _error;
 
   bool get _canEditInventory => ItemsTrackerRoles.canEditInventoryFields(_role);
@@ -382,6 +385,30 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
     );
   }
 
+  Future<void> _exportRecords() async {
+    if (_exporting) return;
+    if (_records.isEmpty) {
+      _showMessage(
+        'There are no Item Tracker records to export.',
+        isError: true,
+      );
+      return;
+    }
+
+    setState(() => _exporting = true);
+    try {
+      await ItemsTrackerExcelExporter.export(_records);
+      _showMessage('${_records.length} Item Tracker records exported.');
+    } catch (error) {
+      _showMessage(
+        'Could not export the Item Tracker report: $error',
+        isError: true,
+      );
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final pendingCount = _records
@@ -419,6 +446,8 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
                 ? () => Navigator.pop(context)
                 : null,
             onRefresh: () => _load(silent: _records.isNotEmpty),
+            exporting: _exporting,
+            onExport: _exportRecords,
             onAdd: _canEditInventory ? () => _openEditor() : null,
             onLogout: !widget.embedded && !widget.showBackButton
                 ? () => context.read<AuthBloc>().add(AuthLogoutRequested())
@@ -567,9 +596,11 @@ class _TopBar extends StatelessWidget {
   final bool embedded;
   final bool showBackButton;
   final bool refreshing;
+  final bool exporting;
   final bool canAdd;
   final VoidCallback? onBack;
   final VoidCallback onRefresh;
+  final VoidCallback onExport;
   final VoidCallback? onAdd;
   final VoidCallback? onLogout;
 
@@ -578,9 +609,11 @@ class _TopBar extends StatelessWidget {
     required this.embedded,
     required this.showBackButton,
     required this.refreshing,
+    required this.exporting,
     required this.canAdd,
     required this.onBack,
     required this.onRefresh,
+    required this.onExport,
     required this.onAdd,
     required this.onLogout,
   });
@@ -707,6 +740,41 @@ class _TopBar extends StatelessWidget {
                 loading: refreshing,
                 onPressed: refreshing ? null : onRefresh,
               ),
+              const SizedBox(width: 10),
+              if (compact)
+                _HeaderIconButton(
+                  tooltip: 'Export Excel',
+                  icon: Icons.file_download_outlined,
+                  loading: exporting,
+                  onPressed: exporting ? null : onExport,
+                )
+              else
+                FilledButton.icon(
+                  key: const ValueKey('itemsTrackerExport'),
+                  style: FilledButton.styleFrom(
+                    elevation: 0,
+                    backgroundColor: const Color(0xffe7f3f5),
+                    foregroundColor: const Color(0xff174653),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 15,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                  ),
+                  onPressed: exporting ? null : onExport,
+                  icon: exporting
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.file_download_outlined, size: 20),
+                  label: Text(
+                    exporting ? 'Exporting…' : 'Export',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
               if (canAdd) ...[
                 const SizedBox(width: 10),
                 FilledButton.icon(
