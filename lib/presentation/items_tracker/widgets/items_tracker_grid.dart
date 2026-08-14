@@ -861,14 +861,16 @@ class _StackedHeaderLabel extends StatelessWidget {
         children: [
           Icon(icon, size: 17, color: foreground),
           const SizedBox(width: 8),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: foreground,
-              fontSize: 12.8,
-              fontWeight: FontWeight.w800,
-              letterSpacing: .15,
+          SelectionArea(
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: foreground,
+                fontSize: 12.8,
+                fontWeight: FontWeight.w800,
+                letterSpacing: .15,
+              ),
             ),
           ),
         ],
@@ -894,17 +896,19 @@ class _ItemsTrackerHeader extends StatelessWidget {
       color: section.headerColor,
       alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 10),
-      child: Text(
-        title,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        textAlign: TextAlign.center,
-        style: const TextStyle(
-          color: Color(0xff213d49),
-          fontSize: 12,
-          height: 1.18,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 0,
+      child: SelectionArea(
+        child: Text(
+          title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: Color(0xff213d49),
+            fontSize: 12,
+            height: 1.18,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0,
+          ),
         ),
       ),
     );
@@ -945,7 +949,10 @@ class _SectionCellFrame extends StatelessWidget {
           ),
         ),
       ),
-      child: child,
+      // Keep each grid cell as its own selection boundary. This allows users
+      // to copy every displayed value without changing the grid's sorting,
+      // filtering, resizing, dropdown, or action behavior.
+      child: SelectionArea(child: child),
     );
   }
 }

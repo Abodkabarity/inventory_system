@@ -1584,6 +1584,13 @@ class _TimelineTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = _entryColor(entry);
+    final fromRole = ItemsTrackerRoles.normalize(entry.fromRole);
+    final toRole = ItemsTrackerRoles.normalize(entry.toRole);
+    final showRoleTransition =
+        ItemsTrackerRoles.isAllowed(fromRole) &&
+        ItemsTrackerRoles.isAllowed(toRole) &&
+        fromRole != toRole;
+
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1738,11 +1745,13 @@ class _TimelineTile extends StatelessWidget {
                         _MiniTag(
                           icon: Icons.badge_outlined,
                           text: ItemsTrackerRoles.label(entry.actorRole),
+                          emphasized: true,
                         ),
                         if (entry.actorName.trim().isNotEmpty)
                           _MiniTag(
                             icon: Icons.person_outline_rounded,
                             text: entry.actorName.trim(),
+                            emphasized: true,
                           ),
                         if (entry.actionDate != null)
                           _MiniTag(
@@ -1751,7 +1760,7 @@ class _TimelineTile extends StatelessWidget {
                               'dd MMM yyyy',
                             ).format(entry.actionDate!),
                           ),
-                        if (entry.toRole.isNotEmpty)
+                        if (showRoleTransition)
                           _MiniTag(
                             icon: Icons.redo_rounded,
                             text:
@@ -2143,28 +2152,49 @@ class _InfoPill extends StatelessWidget {
 class _MiniTag extends StatelessWidget {
   final IconData icon;
   final String text;
+  final bool emphasized;
 
-  const _MiniTag({required this.icon, required this.text});
+  const _MiniTag({
+    required this.icon,
+    required this.text,
+    this.emphasized = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xffeef3f7),
-        borderRadius: BorderRadius.circular(9),
+        color: emphasized ? const Color(0xffe8f4f7) : const Color(0xfff4f7f9),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(
+          color: emphasized ? const Color(0xffbddce3) : const Color(0xffd7e2e7),
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0a173a47),
+            blurRadius: 5,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 13, color: AppColors.subText),
-          const SizedBox(width: 5),
+          Icon(
+            icon,
+            size: 15,
+            color: emphasized ? const Color(0xff256577) : AppColors.subText,
+          ),
+          const SizedBox(width: 7),
           Text(
             text,
-            style: const TextStyle(
-              color: AppColors.subText,
-              fontSize: 9.5,
-              fontWeight: FontWeight.w700,
+            style: TextStyle(
+              color: emphasized
+                  ? const Color(0xff214d5b)
+                  : const Color(0xff526b76),
+              fontSize: 11,
+              fontWeight: emphasized ? FontWeight.w900 : FontWeight.w800,
             ),
           ),
         ],

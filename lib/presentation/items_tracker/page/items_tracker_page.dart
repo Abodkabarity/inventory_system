@@ -395,10 +395,16 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
     final resolvedCount = _records
         .where((record) => record.caseStatus == ItemsTrackerCaseStatuses.done)
         .length;
-    final totalRequiredValue = _records.fold<double>(
-      0,
-      (total, record) => total + (record.requiredValue ?? 0),
-    );
+    final totalRequiredValue = _records
+        .where(
+          (record) =>
+              record.caseStatus.trim().toLowerCase() ==
+              ItemsTrackerCaseStatuses.pending,
+        )
+        .fold<double>(
+          0,
+          (total, record) => total + (record.requiredValue ?? 0),
+        );
 
     final body = SafeArea(
       child: Column(
