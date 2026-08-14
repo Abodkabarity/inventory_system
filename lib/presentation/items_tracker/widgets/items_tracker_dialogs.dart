@@ -1739,6 +1739,11 @@ class _TimelineTile extends StatelessWidget {
                           icon: Icons.badge_outlined,
                           text: ItemsTrackerRoles.label(entry.actorRole),
                         ),
+                        if (entry.actorName.trim().isNotEmpty)
+                          _MiniTag(
+                            icon: Icons.person_outline_rounded,
+                            text: entry.actorName.trim(),
+                          ),
                         if (entry.actionDate != null)
                           _MiniTag(
                             icon: Icons.event_outlined,
@@ -1798,7 +1803,10 @@ class _CommentBubble extends StatelessWidget {
               ),
               const SizedBox(width: 7),
               Text(
-                ItemsTrackerRoles.label(entry.actorRole),
+                [
+                  ItemsTrackerRoles.label(entry.actorRole),
+                  if (entry.actorName.trim().isNotEmpty) entry.actorName.trim(),
+                ].join(' · '),
                 style: const TextStyle(
                   color: AppColors.primaryColor,
                   fontWeight: FontWeight.w900,

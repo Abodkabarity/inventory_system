@@ -105,6 +105,7 @@ class ItemsTrackerRecord {
   final DateTime? latestActivityDate;
   final DateTime? latestActivityCreatedAt;
   final String latestActivityByRole;
+  final String latestActivityByName;
   final String latestActivityAttachmentId;
   final String latestActivityAttachmentPath;
   final String latestActivityAttachmentName;
@@ -118,6 +119,7 @@ class ItemsTrackerRecord {
   final String lastFollowUpToRole;
   final String latestComment;
   final String commentByRole;
+  final String commentByName;
   final DateTime? latestCommentAt;
   final int commentCount;
   final DateTime createdAt;
@@ -146,6 +148,7 @@ class ItemsTrackerRecord {
     required this.latestActivityDate,
     required this.latestActivityCreatedAt,
     required this.latestActivityByRole,
+    required this.latestActivityByName,
     required this.latestActivityAttachmentId,
     required this.latestActivityAttachmentPath,
     required this.latestActivityAttachmentName,
@@ -159,6 +162,7 @@ class ItemsTrackerRecord {
     required this.lastFollowUpToRole,
     required this.latestComment,
     required this.commentByRole,
+    required this.commentByName,
     required this.latestCommentAt,
     required this.commentCount,
     required this.createdAt,
@@ -181,6 +185,8 @@ class ItemsTrackerRecord {
   DateTime? get displayedLastActivityDate => latestActivityDate;
 
   String get displayedLastActivityRole => latestActivityByRole.trim();
+
+  String get displayedLastActivityByName => latestActivityByName.trim();
 
   String get displayedLastActivityType =>
       latestActivityType.trim().toLowerCase();
@@ -233,6 +239,7 @@ class ItemsTrackerRecord {
         map['latest_activity_created_at'] ?? map['latest_activity_added_at'],
       ),
       latestActivityByRole: (map['latest_activity_by_role'] ?? '').toString(),
+      latestActivityByName: (map['latest_activity_by_name'] ?? '').toString(),
       latestActivityAttachmentId: (map['latest_activity_attachment_id'] ?? '')
           .toString(),
       latestActivityAttachmentPath:
@@ -258,6 +265,7 @@ class ItemsTrackerRecord {
       latestComment: (map['latest_comment'] ?? map['last_comment'] ?? '')
           .toString(),
       commentByRole: (map['comment_by_role'] ?? '').toString(),
+      commentByName: (map['comment_by_name'] ?? '').toString(),
       latestCommentAt: _asDateTime(
         map['latest_comment_at'] ?? map['last_comment_at'],
       ),
@@ -277,6 +285,7 @@ class ItemsTrackerTimelineEntry {
   final DateTime? actionDate;
   final DateTime createdAt;
   final String actorRole;
+  final String actorName;
   final String fromRole;
   final String toRole;
   final String fromStatus;
@@ -295,6 +304,7 @@ class ItemsTrackerTimelineEntry {
     required this.actionDate,
     required this.createdAt,
     required this.actorRole,
+    required this.actorName,
     required this.fromRole,
     required this.toRole,
     required this.fromStatus,
@@ -322,6 +332,7 @@ class ItemsTrackerTimelineEntry {
       actionDate: _asDateTime(map['action_date']),
       createdAt: _asDateTime(map['created_at']) ?? DateTime(1970),
       actorRole: (map['actor_role'] ?? map['created_by_role'] ?? '').toString(),
+      actorName: (map['actor_name'] ?? '').toString(),
       fromRole: (map['from_follow_up_role'] ?? '').toString(),
       toRole: (map['to_follow_up_role'] ?? '').toString(),
       fromStatus: (map['from_case_status'] ?? '').toString(),

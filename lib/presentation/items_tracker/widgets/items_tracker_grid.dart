@@ -744,7 +744,12 @@ class ItemsTrackerDataSource extends DataGridSource {
                         centered: true,
                         muted: true,
                       )
-                    : Center(child: _RoleChip(role: value, compact: true));
+                    : Center(
+                        child: _ActorIdentity(
+                          role: value,
+                          name: record.commentByName,
+                        ),
+                      );
                 break;
 
               case 'actions':
@@ -1367,6 +1372,47 @@ class _RoleChip extends StatelessWidget {
   }
 }
 
+class _ActorIdentity extends StatelessWidget {
+  final String role;
+  final String name;
+
+  const _ActorIdentity({required this.role, required this.name});
+
+  @override
+  Widget build(BuildContext context) {
+    final displayName = name.trim();
+    if (displayName.isEmpty) {
+      return _RoleChip(role: role, compact: true);
+    }
+
+    return Tooltip(
+      message: '${ItemsTrackerRoles.label(role)} · $displayName',
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 5,
+        runSpacing: 3,
+        children: [
+          _RoleChip(role: role, compact: true),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 118),
+            child: Text(
+              displayName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xff405a65),
+                fontSize: 10.8,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _CaseStatusChip extends StatelessWidget {
   final String status;
 
@@ -1896,7 +1942,10 @@ class _LastActionCellState extends State<_LastActionCell> {
                     if (activityRole.isNotEmpty) ...[
                       const SizedBox(width: 8),
                       Flexible(
-                        child: _RoleChip(role: activityRole, compact: true),
+                        child: _ActorIdentity(
+                          role: activityRole,
+                          name: widget.record.displayedLastActivityByName,
+                        ),
                       ),
                     ],
                   ],
