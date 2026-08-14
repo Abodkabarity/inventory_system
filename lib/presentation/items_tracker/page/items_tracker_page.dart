@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -394,6 +395,10 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
     final resolvedCount = _records
         .where((record) => record.caseStatus == ItemsTrackerCaseStatuses.done)
         .length;
+    final totalRequiredValue = _records.fold<double>(
+      0,
+      (total, record) => total + (record.requiredValue ?? 0),
+    );
 
     final body = SafeArea(
       child: Column(
@@ -432,6 +437,7 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
                         myQueue: myQueueCount,
                         pending: pendingCount,
                         resolved: resolvedCount,
+                        totalRequiredValue: totalRequiredValue,
                       ),
                       const SizedBox(height: 14),
                       Expanded(
@@ -879,20 +885,24 @@ class _MetricsStrip extends StatelessWidget {
   final int myQueue;
   final int pending;
   final int resolved;
+  final double totalRequiredValue;
 
   const _MetricsStrip({
     required this.tracked,
     required this.myQueue,
     required this.pending,
     required this.resolved,
+    required this.totalRequiredValue,
   });
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 1040
-            ? 4
+        final columns = constraints.maxWidth >= 1280
+            ? 5
+            : constraints.maxWidth >= 900
+            ? 3
             : constraints.maxWidth >= 600
             ? 2
             : 1;
@@ -935,6 +945,16 @@ class _MetricsStrip extends StatelessWidget {
               icon: Icons.task_alt_rounded,
               color: const Color(0xff168873),
             ),
+            _MetricCard(
+              width: width,
+              label: 'Total required value',
+              helper: 'Across all tracked items',
+              value: '',
+              numericValue: totalRequiredValue,
+              valuePrefix: 'AED ',
+              icon: Icons.account_balance_wallet_outlined,
+              color: const Color(0xff7650a3),
+            ),
           ],
         );
       },
@@ -947,6 +967,8 @@ class _MetricCard extends StatefulWidget {
   final String label;
   final String helper;
   final String value;
+  final double? numericValue;
+  final String valuePrefix;
   final IconData icon;
   final Color color;
 
@@ -955,6 +977,8 @@ class _MetricCard extends StatefulWidget {
     required this.label,
     required this.helper,
     required this.value,
+    this.numericValue,
+    this.valuePrefix = '',
     required this.icon,
     required this.color,
   });
@@ -1013,14 +1037,10 @@ class _MetricCardState extends State<_MetricCard> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    widget.value,
-                    style: const TextStyle(
-                      color: Color(0xff173247),
-                      fontSize: 27,
-                      fontWeight: FontWeight.w800,
-                      height: 1,
-                    ),
+                  _AnimatedMetricValue(
+                    value: widget.value,
+                    numericValue: widget.numericValue,
+                    prefix: widget.valuePrefix,
                   ),
                   const SizedBox(height: 5),
                   Text(
@@ -1057,6 +1077,51 @@ class _MetricCardState extends State<_MetricCard> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _AnimatedMetricValue extends StatelessWidget {
+  final String value;
+  final double? numericValue;
+  final String prefix;
+
+  const _AnimatedMetricValue({
+    required this.value,
+    required this.numericValue,
+    required this.prefix,
+  });
+
+  static final NumberFormat _currencyFormat = NumberFormat('#,##0.00');
+
+  @override
+  Widget build(BuildContext context) {
+    const style = TextStyle(
+      color: Color(0xff173247),
+      fontSize: 27,
+      fontWeight: FontWeight.w800,
+      height: 1,
+    );
+
+    if (numericValue == null) {
+      return Text(value, style: style);
+    }
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: numericValue),
+      duration: const Duration(milliseconds: 850),
+      curve: Curves.easeOutCubic,
+      builder: (context, animatedValue, child) {
+        return FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            '$prefix${_currencyFormat.format(animatedValue)}',
+            maxLines: 1,
+            style: style,
+          ),
+        );
+      },
     );
   }
 }
