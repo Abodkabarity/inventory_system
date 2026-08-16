@@ -11,9 +11,11 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/operational_date_helper.dart';
 import '../../../core/utils/uae_date_time_formatter.dart';
 import '../../../domain/entities/branch_allocation_task.dart';
+import '../../../domain/entities/daily_order_row.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
 import '../../auth/bloc/auth_state.dart';
+import '../../insurance_assistant/page/insurance_assistant_page.dart';
 import '../bloc/order_bloc/orders_bloc.dart';
 import '../bloc/order_bloc/orders_event.dart';
 import '../bloc/order_bloc/orders_state.dart';
@@ -22,6 +24,7 @@ import '../widgets/branch_allocation_dialog.dart';
 import '../widgets/branch_stock_check_page.dart';
 import '../widgets/branch_zone_cubit.dart';
 import '../widgets/items_to_order_dialog.dart';
+import '../widgets/low_demand_order_suggestions_dialog.dart';
 import '../widgets/max_allowed_dialog.dart';
 import '../widgets/orders_grid_controller.dart';
 import '../widgets/orders_table.dart';
@@ -48,11 +51,112 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
   bool _ordersDrawerOpen = false;
   bool _showAllocationPage = false;
   bool _showStockCheckPage = false;
+  bool _showInsuranceAssistantPage = false;
   bool _stockCheckLoading = false;
   String _stockCheckBranchName = '';
   _StockCheckPendingInfo _stockCheckInfo = _StockCheckPendingInfo.empty();
 
   bool get _showMaxZeroKpiCard => false;
+
+  int _rowInt(num? value) => value?.toInt() ?? 0;
+
+  int _rowOrderStep(DailyOrderRow row) {
+    final parsed = num.tryParse((row.minOrderUnit ?? '').trim());
+    if (parsed == null || parsed <= 1) return 1;
+    return parsed.round();
+  }
+
+  bool _hasBlankFinalReorder(DailyOrderRow row) {
+    final value = row.finalReorderQtyStoreStockGt0.trim().toLowerCase();
+    return value.isEmpty || value == '-' || value == 'null';
+  }
+
+  List<LowDemandOrderSuggestion> _buildLowDemandSuggestions(OrdersState state) {
+    final suggestions = <LowDemandOrderSuggestion>[];
+    final seen = <String>{};
+
+    for (final row in state.rows) {
+      if (seen.contains(row.itemCode)) continue;
+      if (!_hasBlankFinalReorder(row)) continue;
+      if (state.finalEdits.containsKey(row.itemCode)) continue;
+      if (row.demandFor30Days <= 0 || row.demandFor30Days > 6) continue;
+      if (row.branchStock >= row.demandFor30Days) continue;
+      if (_rowInt(row.storeStock) <= 0) continue;
+      if ((row.branchFormulary ?? '').trim().toUpperCase() == 'NON') continue;
+
+      final step = _rowOrderStep(row);
+      final cap = FinalReorderLimitHelper.capForThisBranch(
+        oldSafe: 0,
+        storeStock: _rowInt(row.storeStock),
+        reorderQtyNum: _rowInt(row.reorderQtyNum),
+        totalReorderToday: row.totalReorderToday ?? 0,
+        orderIncreaseLimit: state.orderIncreaseLimit,
+        orderStep: step,
+      );
+      if (cap < step) continue;
+
+      seen.add(row.itemCode);
+      suggestions.add(
+        LowDemandOrderSuggestion(
+          itemCode: row.itemCode,
+          itemName: row.itemName,
+          demand: row.demandFor30Days,
+          branchStock: row.branchStock,
+          maxQty: cap,
+          step: step,
+        ),
+      );
+    }
+
+    suggestions.sort((a, b) => a.itemName.compareTo(b.itemName));
+    return suggestions;
+  }
+
+  Future<void> _openLowDemandSuggestions(OrdersBloc bloc) async {
+    final items = _buildLowDemandSuggestions(bloc.state);
+    if (items.isEmpty || !mounted) return;
+
+    await LowDemandOrderSuggestionsDialog.show(
+      context: context,
+      items: items,
+      onAdd: (item, quantity) async {
+        try {
+          await bloc.repo.upsertFinalReorderDraft(
+            runDate: bloc.state.runDate,
+            branchName: bloc.state.branchName,
+            itemCode: item.itemCode,
+            itemName: item.itemName,
+            oldQty: 0,
+            newQty: quantity,
+            reason: 'Low Demand Review',
+            applyMaxAdj: false,
+          );
+          bloc.add(
+            OrdersApplyFinalEdit(
+              itemCode: item.itemCode,
+              oldQty: 0,
+              newQty: quantity,
+              reason: 'Low Demand Review',
+              applyMaxAdj: false,
+            ),
+          );
+          return true;
+        } catch (_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Could not add ${item.itemCode}. Please try again.',
+                ),
+                backgroundColor: Colors.red.shade700,
+              ),
+            );
+          }
+          return false;
+        }
+      },
+    );
+  }
 
   String? _lastDialogDate;
   @override
@@ -159,6 +263,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
     setState(() {
       _showAllocationPage = true;
       _showStockCheckPage = false;
+      _showInsuranceAssistantPage = false;
       _ordersDrawerOpen = false;
     });
     context.read<OrdersBloc>().add(const OrdersLoadBranchAllocationTasks());
@@ -167,6 +272,16 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
   void _openBranchStockCheckPage() {
     setState(() {
       _showStockCheckPage = true;
+      _showAllocationPage = false;
+      _showInsuranceAssistantPage = false;
+      _ordersDrawerOpen = false;
+    });
+  }
+
+  void _openInsuranceAssistantPage() {
+    setState(() {
+      _showInsuranceAssistantPage = true;
+      _showStockCheckPage = false;
       _showAllocationPage = false;
       _ordersDrawerOpen = false;
     });
@@ -177,6 +292,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
     setState(() {
       _showAllocationPage = false;
       _showStockCheckPage = false;
+      _showInsuranceAssistantPage = false;
       _ordersDrawerOpen = false;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -498,7 +614,12 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
           body: Stack(
             children: [
               SafeArea(
-                child: _showStockCheckPage
+                child: _showInsuranceAssistantPage
+                    ? InsuranceAssistantPage(
+                        branchName: s.branchName,
+                        onBack: _openOrderPage,
+                      )
+                    : _showStockCheckPage
                     ? BranchStockCheckPage(
                         branchName: s.branchName,
                         onBack: _openOrderPage,
@@ -1828,6 +1949,14 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                                                 );
                                                               }
 
+                                                              await _openLowDemandSuggestions(
+                                                                bloc,
+                                                              );
+                                                              if (!context
+                                                                  .mounted) {
+                                                                return;
+                                                              }
+
                                                               // =========================
                                                               // REVIEW CHANGES
                                                               // =========================
@@ -2158,6 +2287,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                 branchName: s.branchName,
                 showAllocationPage: _showAllocationPage,
                 showStockCheckPage: _showStockCheckPage,
+                showInsuranceAssistantPage: _showInsuranceAssistantPage,
                 hasPendingAllocation: hasAllocationNotice,
                 pendingToSend: s.pendingOutgoingAllocationCount,
                 incomingCount: s.incomingAllocationTasks.length,
@@ -2169,11 +2299,13 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                 onOpenOrders: _openOrderPage,
                 onOpenAllocation: () => _openBranchAllocationPage(context),
                 onOpenStockCheck: _openBranchStockCheckPage,
+                onOpenInsuranceAssistant: _openInsuranceAssistantPage,
               ),
               _OrdersDrawerToggleButton(
                 open: _ordersDrawerOpen,
                 showAllocationPage: _showAllocationPage,
                 showStockCheckPage: _showStockCheckPage,
+                showInsuranceAssistantPage: _showInsuranceAssistantPage,
                 hasPendingAllocation: hasAllocationNotice,
                 pendingToSend: s.pendingOutgoingAllocationCount,
                 incomingCount: s.incomingAllocationTasks.length,
@@ -2181,7 +2313,9 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                 pendingStockCheckCount: _stockCheckInfo.pendingCount,
                 overdueStockCheckCount: _stockCheckInfo.overdueCount,
                 onPressed: () {
-                  if (_showAllocationPage || _showStockCheckPage) {
+                  if (_showAllocationPage ||
+                      _showStockCheckPage ||
+                      _showInsuranceAssistantPage) {
                     _openOrderPage();
                     return;
                   }
@@ -2753,6 +2887,7 @@ class _OrdersOverlayDrawer extends StatelessWidget {
   final String branchName;
   final bool showAllocationPage;
   final bool showStockCheckPage;
+  final bool showInsuranceAssistantPage;
   final bool hasPendingAllocation;
   final int pendingToSend;
   final int incomingCount;
@@ -2764,12 +2899,14 @@ class _OrdersOverlayDrawer extends StatelessWidget {
   final VoidCallback onOpenOrders;
   final VoidCallback onOpenAllocation;
   final VoidCallback onOpenStockCheck;
+  final VoidCallback onOpenInsuranceAssistant;
 
   const _OrdersOverlayDrawer({
     required this.open,
     required this.branchName,
     required this.showAllocationPage,
     required this.showStockCheckPage,
+    required this.showInsuranceAssistantPage,
     required this.hasPendingAllocation,
     required this.pendingToSend,
     required this.incomingCount,
@@ -2781,6 +2918,7 @@ class _OrdersOverlayDrawer extends StatelessWidget {
     required this.onOpenOrders,
     required this.onOpenAllocation,
     required this.onOpenStockCheck,
+    required this.onOpenInsuranceAssistant,
   });
 
   @override
@@ -2897,7 +3035,9 @@ class _OrdersOverlayDrawer extends StatelessWidget {
                             title: 'Orders',
                             subtitle: 'Daily order workspace',
                             selected:
-                                !showAllocationPage && !showStockCheckPage,
+                                !showAllocationPage &&
+                                !showStockCheckPage &&
+                                !showInsuranceAssistantPage,
                             color: const Color(0xFF0EA5E9),
                             onTap: onOpenOrders,
                           ),
@@ -2938,6 +3078,16 @@ class _OrdersOverlayDrawer extends StatelessWidget {
                                 ? pendingStockCheckCount.toString()
                                 : null,
                             onTap: onOpenStockCheck,
+                          ),
+                          const SizedBox(height: 10),
+                          _OrdersDrawerItem(
+                            icon: Icons.auto_awesome_rounded,
+                            title: 'Insurance AI',
+                            subtitle: 'Coverage & clinical knowledge',
+                            selected: showInsuranceAssistantPage,
+                            color: const Color(0xFF6D5DFB),
+                            badge: 'AI',
+                            onTap: onOpenInsuranceAssistant,
                           ),
                           const Spacer(),
                           const Divider(height: 28, color: AppColors.border),
@@ -3090,6 +3240,7 @@ class _OrdersDrawerToggleButton extends StatefulWidget {
   final bool open;
   final bool showAllocationPage;
   final bool showStockCheckPage;
+  final bool showInsuranceAssistantPage;
   final bool hasPendingAllocation;
   final int pendingToSend;
   final int incomingCount;
@@ -3102,6 +3253,7 @@ class _OrdersDrawerToggleButton extends StatefulWidget {
     required this.open,
     required this.showAllocationPage,
     required this.showStockCheckPage,
+    required this.showInsuranceAssistantPage,
     required this.hasPendingAllocation,
     required this.pendingToSend,
     required this.incomingCount,
@@ -3140,13 +3292,16 @@ class _OrdersDrawerToggleButtonState extends State<_OrdersDrawerToggleButton>
     final total = widget.pendingToSend + widget.incomingCount;
     final hasPendingStockCheck = widget.pendingStockCheckCount > 0;
     final showBackToOrders =
-        (widget.showAllocationPage || widget.showStockCheckPage) &&
+        (widget.showAllocationPage ||
+            widget.showStockCheckPage ||
+            widget.showInsuranceAssistantPage) &&
         !widget.open;
     final showPendingLabel =
         (widget.hasPendingAllocation || hasPendingStockCheck) &&
         !widget.open &&
         !widget.showAllocationPage &&
-        !widget.showStockCheckPage;
+        !widget.showStockCheckPage &&
+        !widget.showInsuranceAssistantPage;
     final compactPendingTab = showPendingLabel;
     final showLabel = showBackToOrders;
     final label = showBackToOrders ? 'Go to Order Page' : 'Pending work';
@@ -3158,7 +3313,9 @@ class _OrdersDrawerToggleButtonState extends State<_OrdersDrawerToggleButton>
         ? const Color(0xFF991B1B)
         : const Color(0xFF92400E);
     final backgroundColor = showBackToOrders
-        ? widget.showStockCheckPage
+        ? widget.showInsuranceAssistantPage
+              ? const Color(0xFF6D5DFB)
+              : widget.showStockCheckPage
               ? const Color(0xFF2563EB)
               : const Color(0xFFF59E0B)
         : widget.showAllocationPage
