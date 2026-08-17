@@ -62,6 +62,8 @@ dependencies:
   archive: ^4.0.9
   xml: ^7.0.1
   url_launcher: ^6.3.2
+  crypto: ^3.0.6
+  http: ^1.2.2
 
 
 

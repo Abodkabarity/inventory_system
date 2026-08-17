@@ -1,0 +1,10 @@
+supabase>=2.18,<3
+pdfplumber>=0.11,<1
+pypdfium2>=4.30,<5
+python-docx>=1.2,<2
+openpyxl>=3.1,<4
+pyxlsb==1.0.10
+pytesseract>=0.3.13,<1
+Pillow>=11,<12
+sentence-transformers>=5,<6
+ftfy>=6.3,<7

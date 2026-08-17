@@ -1,7 +1,12 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../../core/config/supabase_config.dart';
 
 class InsuranceAssistantRemoteDs {
   final SupabaseClient client;
@@ -42,35 +47,79 @@ class InsuranceAssistantRemoteDs {
     required String branchName,
     String? sessionId,
   }) async {
-    final response = await client.functions.invoke(
-      'insurance-assistant',
-      body: {
-        'message': question,
-        'branch_name': branchName,
-        if (sessionId != null) 'session_id': sessionId,
-      },
-    );
-    final data = Map<String, dynamic>.from(response.data as Map);
-    if (data['error'] != null) throw Exception(data['error']);
-    return data;
+    return _invokeAssistant({
+      'message': question,
+      'branch_name': branchName,
+      if (sessionId != null) 'session_id': sessionId,
+    });
   }
 
   Future<Map<String, dynamic>> confirmClarification({
     required String clarificationId,
     required String candidateId,
     required String branchName,
-  }) async {
+  }) => _invokeAssistant({
+    'clarification_id': clarificationId,
+    'candidate_id': candidateId,
+    'branch_name': branchName,
+  });
+
+  Future<Map<String, dynamic>> _invokeAssistant(
+    Map<String, dynamic> body,
+  ) async {
+    final localUri = SupabaseConfig.localInsuranceAssistantUri;
+    if (localUri != null) return _invokeLocalAssistant(localUri, body);
     final response = await client.functions.invoke(
       'insurance-assistant',
-      body: {
-        'clarification_id': clarificationId,
-        'candidate_id': candidateId,
-        'branch_name': branchName,
-      },
+      body: body,
     );
     final data = Map<String, dynamic>.from(response.data as Map);
     if (data['error'] != null) throw Exception(data['error']);
     return data;
+  }
+
+  Future<Map<String, dynamic>> _invokeLocalAssistant(
+    Uri endpoint,
+    Map<String, dynamic> body,
+  ) async {
+    final accessToken = client.auth.currentSession?.accessToken;
+    if (accessToken == null) throw Exception('Authentication is required.');
+    try {
+      final response = await http
+          .post(
+            endpoint,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $accessToken',
+              'apikey': SupabaseConfig.anonKey,
+            },
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 45));
+      final decoded = response.body.isEmpty
+          ? <String, dynamic>{}
+          : Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception(
+          decoded['error'] ??
+              'Local assistant returned HTTP ${response.statusCode}.',
+        );
+      }
+      if (decoded['error'] != null) throw Exception(decoded['error']);
+      return decoded;
+    } on FormatException {
+      throw Exception(
+        'Local assistant returned an invalid response. Check the local Edge Function terminal.',
+      );
+    } on http.ClientException {
+      throw Exception(
+        'Cannot reach the local assistant. Start the local Edge Function and retry.',
+      );
+    } on TimeoutException {
+      throw Exception(
+        'The local assistant timed out. Verify Ollama is running and the selected model is loaded.',
+      );
+    }
   }
 
   Future<void> submitFeedback(String messageId, int rating) async {

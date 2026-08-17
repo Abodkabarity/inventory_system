@@ -5,7 +5,16 @@
 *.env.*
 !.env.example
 !.env.*.example
+local_development/flutter.local.json
+# Local Flutter/IDE caches and private test material.
+/.dart_appdata/
+/.dart_localappdata/
+/tmp/
+/Summaries of Circulars/
+/test/failures/
+*_backup.dart
 *.pyc
+insurance_ingestion/.vendor/
 *.swp
 .DS_Store
 .atom/
@@ -26,16 +35,16 @@ migrate_working_dir/
 /automation/*
 !/automation/missing_items_sync.py
 
-# Keep the deployable Purchase Status migration in source control.
+# Keep deployable Supabase schema and function source in source control.
 !/supabase/
-/supabase/*
+!/supabase/functions/
+!/supabase/functions/**
+!/supabase/migrations/
+!/supabase/migrations/**
 !/supabase/sql/
-/supabase/sql/*
-!/supabase/sql/purchase_status_module.sql
-!/supabase/sql/missing_items.sql
-!/supabase/sql/missing_items_purchase_workflow.sql
-!/supabase/sql/availability_kpi_sales_history.sql
-!/supabase/sql/availability_kpi_quick_fix.sql
+!/supabase/sql/**
+!/supabase/tests/
+!/supabase/tests/**
 
 # IntelliJ related
 *.iml
@@ -68,6 +77,3 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
-!supabase/sql/availability_kpi_last_3_completed_months.sql
-!supabase/sql/availability_kpi_sales_value.sql
-!supabase/sql/availability_kpi_missing_retail_report.sql
