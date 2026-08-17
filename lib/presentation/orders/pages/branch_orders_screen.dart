@@ -3079,7 +3079,7 @@ class _OrdersOverlayDrawer extends StatelessWidget {
                                 : null,
                             onTap: onOpenStockCheck,
                           ),
-                          const SizedBox(height: 10),
+                          /* const SizedBox(height: 10),
                           _OrdersDrawerItem(
                             icon: Icons.auto_awesome_rounded,
                             title: 'Insurance AI',
@@ -3088,7 +3088,7 @@ class _OrdersOverlayDrawer extends StatelessWidget {
                             color: const Color(0xFF6D5DFB),
                             badge: 'AI',
                             onTap: onOpenInsuranceAssistant,
-                          ),
+                          ),*/
                           const Spacer(),
                           const Divider(height: 28, color: AppColors.border),
                           _DrawerLogoutButton(),
