@@ -5,10 +5,12 @@ import 'dart:html' as html;
 
 import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
@@ -19,6 +21,9 @@ import '../../../core/utils/stock_check_excel_exporter.dart';
 import '../../../data/datasources/remote/orders_remote_ds.dart';
 import '../../../domain/entities/daily_order_row.dart';
 import '../../../domain/entities/stock_check_task.dart';
+import '../../auth/bloc/auth_bloc.dart';
+import '../../auth/bloc/auth_event.dart';
+import '../../auth/bloc/auth_state.dart';
 import '../../inventory_dashboard/page/additional_order_analysis_page.dart'
     show AdditionalAnalysisDateRangePickerDialog;
 import '../../orders/widgets/orders_grid_controller.dart';
@@ -1896,8 +1901,144 @@ class _ZoneDrawer extends StatelessWidget {
               },
             ),
           ),
+          const Divider(height: 28, color: AppColors.border),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 14),
+            child: _ZoneDrawerLogoutButton(),
+          ),
+          const SizedBox(height: 16),
         ],
       ),
+    );
+  }
+}
+
+class _ZoneDrawerLogoutButton extends StatelessWidget {
+  const _ZoneDrawerLogoutButton();
+
+  Future<bool> _confirmLogout(BuildContext context) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            backgroundColor: AppColors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: const Text(
+              'Log out?',
+              style: TextStyle(
+                color: AppColors.text,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            content: const Text(
+              'You will return to the sign-in page.',
+              style: TextStyle(
+                color: AppColors.subText,
+                height: 1.45,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFDC2626),
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                icon: const Icon(Icons.logout_rounded, size: 18),
+                label: const Text('Log out'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocConsumer<AuthBloc, AuthState>(
+      listenWhen: (previous, current) =>
+          previous.status != current.status &&
+          (previous.isSigningOut || current.status == AuthStatus.failure),
+      listener: (context, state) {
+        if (state.status == AuthStatus.failure) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(state.error ?? 'Logout failed. Please try again.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        } else if (!state.isSigningOut) {
+          context.go('/login');
+        }
+      },
+      builder: (context, state) {
+        final loading = state.isSigningOut;
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: loading
+                ? null
+                : () async {
+                    final confirmed = await _confirmLogout(context);
+                    if (!context.mounted || !confirmed) return;
+                    context.read<AuthBloc>().add(AuthLogoutRequested());
+                  },
+            child: Ink(
+              height: 52,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFFECACA)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Row(
+                  children: [
+                    loading
+                        ? const SizedBox(
+                            width: 19,
+                            height: 19,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.3,
+                              color: Color(0xFFDC2626),
+                            ),
+                          )
+                        : const Icon(
+                            Icons.logout_rounded,
+                            size: 20,
+                            color: Color(0xFFDC2626),
+                          ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        loading ? 'Signing out...' : 'Log out',
+                        style: const TextStyle(
+                          color: Color(0xFF991B1B),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    if (!loading)
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        color: Color(0xFFB91C1C),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
