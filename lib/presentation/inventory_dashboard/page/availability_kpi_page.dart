@@ -1029,7 +1029,7 @@ Future<void> _showCalculationDialog(BuildContext context) {
                   number: '3',
                   title: 'Item Coverage',
                   detail:
-                      'Current branch stock is branch_stock plus total_final_reorder_today from daily_order. This total is divided by the stock needed for 7 days. Purchase Status IDs 1, 2, 5, 7, 8 and 34 are treated as 100% covered. Otherwise, coverage cannot be more than 100%, and a difference of 0.16 units or less is ignored.',
+                      'Current branch stock is branch_stock plus total_final_reorder_today from daily_order. Products with Purchase Status IDs 1, 2, 5, 7, 8 or 34 are excluded from the KPI report. For the remaining products, stock is divided by the stock needed for 7 days, coverage cannot exceed 100%, and a difference of 0.16 units or less is ignored.',
                   formula: 'Current stock ÷ 7-day need',
                 ),
                 const _CalculationRow(

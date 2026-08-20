@@ -347,7 +347,7 @@ store_stock,decrease_demand_30_days
         await Future<void>.delayed(Duration.zero);
       }
     }
-    return items;
+    return items.where((item) => !item.isStatusCovered).toList(growable: false);
   }
 
   /// Uses the server-side aggregate and transfers only one row per branch.
@@ -449,18 +449,15 @@ availability_rate
       final status = purchaseStatuses[itemCode];
       final statusCovered =
           status != null && statusCoveredIds.contains(status.id);
-      final coverage = statusCovered
-          ? 100
-          : need > 0
-          ? math.min(stock / need, 1) * 100
-          : 100;
+      if (statusCovered) continue;
+      final coverage = need > 0 ? math.min(stock / need, 1) * 100 : 100;
       if (storeStock > 4 && coverage < 100) continue;
 
       includedItems++;
       totalCoverage += coverage;
       totalNeed += need;
       totalStock += stock;
-      coveredNeed += statusCovered ? need : math.min(stock, need);
+      coveredNeed += math.min(stock, need);
       if (coverage >= 100) fullyCovered++;
       if (row['in_pareto'] == true) paretoItems++;
       if (row['in_consistent'] == true) consistentItems++;
@@ -510,7 +507,9 @@ availability_rate
               );
             })
             .where(
-              (item) => item.storeStock <= 4 || item.availabilityRate >= 100,
+              (item) =>
+                  !item.isStatusCovered &&
+                  (item.storeStock <= 4 || item.availabilityRate >= 100),
             )
             .toList(growable: false)
           ..sort((a, b) {
@@ -1010,6 +1009,9 @@ class AvailabilityBranchSummary {
     String branchName,
     List<AvailabilityKpiItem> items,
   ) {
+    final includedItems = items
+        .where((item) => !item.isStatusCovered)
+        .toList(growable: false);
     num weeklyNeed = 0;
     num branchStock = 0;
     num coveredNeed = 0;
@@ -1018,26 +1020,24 @@ class AvailabilityBranchSummary {
     var paretoItems = 0;
     var consistentItems = 0;
 
-    for (final item in items) {
+    for (final item in includedItems) {
       weeklyNeed += item.weeklyNeed;
       branchStock += item.branchStock;
-      coveredNeed += item.isStatusCovered
-          ? item.weeklyNeed
-          : math.min(item.branchStock, item.weeklyNeed);
+      coveredNeed += math.min(item.branchStock, item.weeklyNeed);
       totalItemCoverage += item.availabilityRate;
       if (item.availabilityRate >= 100) fullyAvailable++;
       if (item.inPareto) paretoItems++;
       if (item.inConsistent) consistentItems++;
     }
 
-    final availability = items.isNotEmpty
-        ? totalItemCoverage / items.length
+    final availability = includedItems.isNotEmpty
+        ? totalItemCoverage / includedItems.length
         : 0;
     return AvailabilityBranchSummary(
       branchName: branchName,
-      masterItems: items.length,
+      masterItems: includedItems.length,
       fullyAvailableItems: fullyAvailable,
-      shortageItems: items.length - fullyAvailable,
+      shortageItems: includedItems.length - fullyAvailable,
       paretoItems: paretoItems,
       consistentItems: consistentItems,
       weeklyNeed: weeklyNeed,
