@@ -1720,7 +1720,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     required List<AllocationResultRow> allocatedRows,
   }) {
     String key(String branch, String itemCode) {
-      return '${branch.trim().toLowerCase()}|${itemCode.trim().toLowerCase()}';
+      return '${_allocationBranchKey(branch)}|${itemCode.trim().toLowerCase()}';
     }
 
     final allocatedByReceiver = <String, num>{};
@@ -1928,6 +1928,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           isAllocationLoading: true,
           allocationError: '',
           allocationResults: [],
+          allocationSourceRows: [],
           allocationLoadedRows: 0,
         ),
       );
@@ -1983,11 +1984,30 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         rows: imported,
         priorityBranches: event.priorityBranches,
       );
+      final sourceRows = imported
+          .map(
+            (row) => AllocationSourceRow(
+              branch: row.branch,
+              itemCode: row.itemCode,
+              itemName: row.itemName,
+              category: '',
+              itemPurchaseType: '1#NORMAL PURCHASE',
+              reorderQty: row.shortage,
+              finalReorderQty: 0,
+              extraQtyMoreThanMonth: row.extraQty,
+              branchStock: 0,
+              demandFor30Days: 0,
+              branchStockDays: 0,
+              stockCoverText: '',
+            ),
+          )
+          .toList();
 
       emit(
         state.copyWith(
           isAllocationLoading: false,
           allocationResults: results,
+          allocationSourceRows: sourceRows,
           allocationLoadedRows: results.length,
         ),
       );
@@ -2001,12 +2021,23 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     }
   }
 
+  int _allocationPriorityRank(String branch, Set<String> priorityBranches) {
+    return priorityBranches.contains(_allocationBranchKey(branch)) ? 0 : 1;
+  }
+
+  String _allocationBranchKey(String value) {
+    return value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
   List<AllocationResultRow> _buildImportedAllocationResults({
     required List<_AllocationImportRow> rows,
     required List<String> priorityBranches,
   }) {
     final byItem = <String, List<_AllocationImportRow>>{};
-    final prioritySet = priorityBranches.toSet();
+    final prioritySet = priorityBranches
+        .map(_allocationBranchKey)
+        .where((branch) => branch.isNotEmpty)
+        .toSet();
 
     for (final row in rows) {
       byItem.putIfAbsent(row.itemCode, () => []).add(row);
@@ -2017,8 +2048,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     for (final itemRows in byItem.values) {
       final receivers = itemRows.where((row) => row.shortage > 0).toList()
         ..sort((a, b) {
-          final pa = prioritySet.contains(a.branch) ? 0 : 1;
-          final pb = prioritySet.contains(b.branch) ? 0 : 1;
+          final pa = _allocationPriorityRank(a.branch, prioritySet);
+          final pb = _allocationPriorityRank(b.branch, prioritySet);
           if (pa != pb) return pa.compareTo(pb);
           final shortageCompare = b.shortage.compareTo(a.shortage);
           if (shortageCompare != 0) return shortageCompare;
@@ -2070,6 +2101,11 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     }
 
     results.sort((a, b) {
+      final priorityCompare = _allocationPriorityRank(
+        a.toBranch,
+        prioritySet,
+      ).compareTo(_allocationPriorityRank(b.toBranch, prioritySet));
+      if (priorityCompare != 0) return priorityCompare;
       final toCompare = a.toBranch.compareTo(b.toBranch);
       if (toCompare != 0) return toCompare;
       final codeCompare = a.itemCode.compareTo(b.itemCode);
