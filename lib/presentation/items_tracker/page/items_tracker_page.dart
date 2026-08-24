@@ -16,6 +16,7 @@ import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
 import '../widgets/items_tracker_dialogs.dart';
 import '../widgets/items_tracker_grid.dart';
+import '../widgets/items_tracker_notifications.dart';
 
 class ItemsTrackerPage extends StatefulWidget {
   final String role;
@@ -49,6 +50,7 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
 
   List<ItemsTrackerRecord> _records = const [];
   List<ItemsTrackerRecord> _visibleRecords = const [];
+  List<ItemsTrackerNotification> _notifications = const [];
   Map<String, String> _searchIndex = const {};
   List<String> _itemStatuses = const [];
 
@@ -58,6 +60,7 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
   bool _loading = true;
   bool _refreshing = false;
   bool _exporting = false;
+  bool _notificationsLoading = false;
   String? _error;
 
   bool get _canEditInventory => ItemsTrackerRoles.canEditInventoryFields(_role);
@@ -111,6 +114,12 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
           table: 'items_tracker_comments',
           callback: changed,
         )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'items_tracker_notifications',
+          callback: (_) => unawaited(_loadNotifications()),
+        )
         .subscribe();
   }
 
@@ -128,6 +137,7 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
       final result = await Future.wait([
         _repository.fetchRecords(),
         _repository.fetchItemStatuses(),
+        _repository.fetchNotifications(),
       ]).timeout(const Duration(seconds: 30));
 
       if (!mounted) return;
@@ -138,6 +148,7 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
       setState(() {
         _records = records;
         _itemStatuses = result[1] as List<String>;
+        _notifications = result[2] as List<ItemsTrackerNotification>;
         _searchIndex = {
           for (final record in records)
             record.id: [
@@ -172,6 +183,51 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
         _showMessage(_friendlyError(error), isError: true);
       }
     }
+  }
+
+  Future<void> _loadNotifications() async {
+    if (_notificationsLoading) return;
+    _notificationsLoading = true;
+    try {
+      final notifications = await _repository.fetchNotifications();
+      if (mounted) setState(() => _notifications = notifications);
+    } catch (_) {
+      // A background notification refresh must never interrupt the workspace.
+    } finally {
+      _notificationsLoading = false;
+    }
+  }
+
+  Future<void> _openNotifications() async {
+    final notification = await showItemsTrackerNotificationsSheet(
+      context: context,
+      notifications: _notifications,
+      onMarkAllRead: () async {
+        await _repository.markAllNotificationsRead();
+        await _loadNotifications();
+      },
+    );
+    if (notification == null || !mounted) return;
+
+    if (notification.isUnread) {
+      try {
+        await _repository.markNotificationRead(notification.id);
+      } catch (_) {
+        // Opening the linked record remains available even if marking it read
+        // is temporarily unavailable.
+      }
+      unawaited(_loadNotifications());
+    }
+
+    _gridController.clearFilters();
+    _searchController.text = notification.itemCode;
+    setState(() {
+      _departmentFilter = 'all';
+      _caseStatusFilter = 'all';
+      _myQueueOnly = false;
+      _applyFilters();
+    });
+    _showMessage('Showing ${notification.itemCode} · ${notification.itemName}');
   }
 
   int _compareRecords(ItemsTrackerRecord left, ItemsTrackerRecord right) {
@@ -447,7 +503,11 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
                 : null,
             onRefresh: () => _load(silent: _records.isNotEmpty),
             exporting: _exporting,
+            unreadNotifications: _notifications
+                .where((item) => item.isUnread)
+                .length,
             onExport: _exportRecords,
+            onNotifications: _openNotifications,
             onAdd: _canEditInventory ? () => _openEditor() : null,
             onLogout: !widget.embedded && !widget.showBackButton
                 ? () => context.read<AuthBloc>().add(AuthLogoutRequested())
@@ -597,10 +657,12 @@ class _TopBar extends StatelessWidget {
   final bool showBackButton;
   final bool refreshing;
   final bool exporting;
+  final int unreadNotifications;
   final bool canAdd;
   final VoidCallback? onBack;
   final VoidCallback onRefresh;
   final VoidCallback onExport;
+  final VoidCallback onNotifications;
   final VoidCallback? onAdd;
   final VoidCallback? onLogout;
 
@@ -610,10 +672,12 @@ class _TopBar extends StatelessWidget {
     required this.showBackButton,
     required this.refreshing,
     required this.exporting,
+    required this.unreadNotifications,
     required this.canAdd,
     required this.onBack,
     required this.onRefresh,
     required this.onExport,
+    required this.onNotifications,
     required this.onAdd,
     required this.onLogout,
   });
@@ -741,6 +805,11 @@ class _TopBar extends StatelessWidget {
                 onPressed: refreshing ? null : onRefresh,
               ),
               const SizedBox(width: 10),
+              _NotificationButton(
+                unreadCount: unreadNotifications,
+                onPressed: onNotifications,
+              ),
+              const SizedBox(width: 10),
               if (compact)
                 _HeaderIconButton(
                   tooltip: 'Export Excel',
@@ -858,6 +927,80 @@ class _HeaderIconButton extends StatelessWidget {
                       ),
                     )
                   : Icon(icon, color: Colors.white, size: 21),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NotificationButton extends StatelessWidget {
+  final int unreadCount;
+  final VoidCallback onPressed;
+
+  const _NotificationButton({
+    required this.unreadCount,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: unreadCount == 0
+          ? 'Notifications'
+          : '$unreadCount unread notification${unreadCount == 1 ? '' : 's'}',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: const ValueKey('itemsTrackerNotifications'),
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(13),
+          child: Ink(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(color: Colors.white.withValues(alpha: .16)),
+            ),
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
+              children: [
+                const Icon(
+                  Icons.notifications_none_rounded,
+                  color: Colors.white,
+                  size: 23,
+                ),
+                if (unreadCount > 0)
+                  Positioned(
+                    top: -5,
+                    right: -5,
+                    child: Container(
+                      constraints: const BoxConstraints(minWidth: 19),
+                      height: 19,
+                      padding: const EdgeInsets.symmetric(horizontal: 5),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: const Color(0xffffbd45),
+                        border: Border.all(
+                          color: const Color(0xff174653),
+                          width: 1.4,
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        unreadCount > 99 ? '99+' : '$unreadCount',
+                        style: const TextStyle(
+                          color: Color(0xff243c47),
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
         ),

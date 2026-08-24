@@ -10,6 +10,12 @@ abstract class ItemsTrackerRepository {
   /// Returns the distinct canonical values of item_report.item_status.
   Future<List<String>> fetchItemStatuses();
 
+  Future<List<ItemsTrackerNotification>> fetchNotifications();
+
+  Future<void> markNotificationRead(int notificationId);
+
+  Future<void> markAllNotificationsRead();
+
   Future<void> createRecord(CreateItemsTrackerRecord input);
 
   Future<void> updateInventoryFields(UpdateItemsTrackerRecord input);

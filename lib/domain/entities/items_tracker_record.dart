@@ -42,6 +42,52 @@ class ItemsTrackerCaseStatuses {
   }
 }
 
+class ItemsTrackerNotification {
+  final int id;
+  final String itemId;
+  final String activityType;
+  final String actorName;
+  final String actorRole;
+  final String itemCode;
+  final String itemName;
+  final String title;
+  final String preview;
+  final DateTime createdAt;
+  final DateTime? readAt;
+
+  const ItemsTrackerNotification({
+    required this.id,
+    required this.itemId,
+    required this.activityType,
+    required this.actorName,
+    required this.actorRole,
+    required this.itemCode,
+    required this.itemName,
+    required this.title,
+    required this.preview,
+    required this.createdAt,
+    required this.readAt,
+  });
+
+  bool get isUnread => readAt == null;
+
+  factory ItemsTrackerNotification.fromMap(Map<String, dynamic> map) {
+    return ItemsTrackerNotification(
+      id: _asInt(map['id']) ?? 0,
+      itemId: (map['item_id'] ?? '').toString(),
+      activityType: (map['activity_type'] ?? '').toString(),
+      actorName: (map['actor_name'] ?? '').toString(),
+      actorRole: (map['actor_role'] ?? '').toString(),
+      itemCode: (map['item_code'] ?? '').toString(),
+      itemName: (map['item_name'] ?? '').toString(),
+      title: (map['title'] ?? '').toString(),
+      preview: (map['preview'] ?? '').toString(),
+      createdAt: _asDateTime(map['created_at']) ?? DateTime(1970),
+      readAt: _asDateTime(map['read_at']),
+    );
+  }
+}
+
 double? calculateItemsTrackerValue(num? unitCost, num? requiredQty) {
   if (unitCost == null || requiredQty == null) return null;
   if (unitCost < 0 || requiredQty <= 0) return null;

@@ -1303,29 +1303,32 @@ class _NumberCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            value,
-            style: const TextStyle(
-              color: Color(0xff203a46),
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          if (value != '—') ...[
-            const SizedBox(width: 6),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
             Text(
-              label,
+              value,
               style: const TextStyle(
-                color: Color(0xff7f9098),
-                fontSize: 9.5,
-                fontWeight: FontWeight.w600,
+                color: Color(0xff203a46),
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
               ),
             ),
+            if (value != '—') ...[
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Color(0xff7f9098),
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

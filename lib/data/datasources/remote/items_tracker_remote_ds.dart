@@ -76,6 +76,34 @@ class ItemsTrackerRemoteDs implements ItemsTrackerRepository {
   }
 
   @override
+  Future<List<ItemsTrackerNotification>> fetchNotifications() async {
+    final response = await client.rpc(
+      'item_tracker_fetch_notifications',
+      params: {'p_limit': 60},
+    );
+    return (response as List)
+        .map(
+          (row) => ItemsTrackerNotification.fromMap(
+            Map<String, dynamic>.from(row as Map),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  @override
+  Future<void> markNotificationRead(int notificationId) {
+    return client.rpc(
+      'item_tracker_mark_notification_read',
+      params: {'p_notification_id': notificationId},
+    );
+  }
+
+  @override
+  Future<void> markAllNotificationsRead() {
+    return client.rpc('item_tracker_mark_all_notifications_read');
+  }
+
+  @override
   Future<void> createRecord(CreateItemsTrackerRecord input) async {
     await client.rpc(
       'item_tracker_create',
