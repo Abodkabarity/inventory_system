@@ -540,9 +540,9 @@ class _MethodCard extends StatelessWidget {
               ),
               SizedBox(height: 2),
               Text(
-                'Required qty uses the approved branch edit when available; zero edits are excluded. '
+                'Required qty uses the approved branch edit when available; otherwise it uses Reorder Qty. Zero or negative values are excluded. '
                 'Only Approved transfers from STORE matching the same date, branch and item are counted. '
-                'Line Fill Rate averages product fulfillment; Unit Fill Rate compares supplied units with required units.',
+                'Unit Fill Rate = total transferred quantity capped at each item\'s effective Reorder Qty ÷ total effective Reorder Qty × 100. Transfers above the effective Reorder Qty are ignored.',
                 style: TextStyle(
                   color: Color(0xff334E7D),
                   height: 1.32,
@@ -1431,11 +1431,10 @@ final List<GridColumn> _productColumns = [
   _gridColumn('code', 'Item Code', 145, alignLeft: true),
   _gridColumn('name', 'Product Name', 310, alignLeft: true),
   _gridColumn('date', 'Order Date', 130),
-  _gridColumn('required', 'Required\nQty', 125),
-  _gridColumn('transfer', 'Approved\nTransfer', 135),
-  _gridColumn('counted', 'Qty\nCounted', 120),
-  _gridColumn('fill_rate', 'Product Fill\nRate', 170),
-  _gridColumn('result', 'Fulfillment Result', 190),
+  _gridColumn('required', 'Reorder\nQty', 125),
+  _gridColumn('transfer', 'Transfer from\nStore', 155),
+  _gridColumn('fill_rate', 'Fill Rate', 150),
+  _gridColumn('result', 'Fulfillment Status', 190),
   _gridColumn('purchase', 'Purchase Status', 225),
 ];
 
@@ -1499,7 +1498,6 @@ class _ProductGridSource extends DataGridSource {
                 columnName: 'transfer',
                 value: item.transferredQty,
               ),
-              DataGridCell<num>(columnName: 'counted', value: item.suppliedQty),
               DataGridCell<num>(columnName: 'fill_rate', value: item.fillRate),
               DataGridCell<String>(
                 columnName: 'result',
@@ -1557,28 +1555,12 @@ class _ProductGridSource extends DataGridSource {
                   ),
                 );
               case 'required':
-                child = Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      _fmt(item.requiredQty),
-                      style: const TextStyle(
-                        color: Color(0xff0F172A),
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    if (item.wasEdited) ...[
-                      const SizedBox(width: 5),
-                      const Tooltip(
-                        message: 'Edited from original reorder quantity',
-                        child: Icon(
-                          Icons.edit_rounded,
-                          size: 15,
-                          color: Color(0xff7C3AED),
-                        ),
-                      ),
-                    ],
-                  ],
+                child = Text(
+                  _fmt(item.requiredQty),
+                  style: const TextStyle(
+                    color: Color(0xff0F172A),
+                    fontWeight: FontWeight.w900,
+                  ),
                 );
               case 'fill_rate':
                 final color = _rateColor(item.fillRate);

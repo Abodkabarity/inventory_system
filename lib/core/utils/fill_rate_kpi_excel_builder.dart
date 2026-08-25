@@ -11,34 +11,16 @@ class FillRateKpiExcelBuilder {
     required FillRateReport report,
     required List<FillRateItem> items,
   }) {
-    final book = xlsio.Workbook(5);
+    final book = xlsio.Workbook(2);
     _managementSheet(
-      book.worksheets[0]..name = 'Management Overview',
+      book.worksheets[0]..name = 'Fill Rate Gap Analysis',
       from: from,
       to: to,
       branch: branch,
       report: report,
     );
-    _summarySheet(
-      book.worksheets[1]..name = 'Branch Summary',
-      from: from,
-      to: to,
-      rows: report.summaries,
-    );
-    _statusSheet(
-      book.worksheets[2]..name = 'Purchase Status',
-      from: from,
-      to: to,
-      rows: report.statuses,
-    );
-    _dailySheet(
-      book.worksheets[3]..name = 'Daily Trend',
-      from: from,
-      to: to,
-      rows: report.daily,
-    );
     _detailSheet(
-      book.worksheets[4]..name = 'Item Details',
+      book.worksheets[1]..name = 'Item Details',
       from: from,
       to: to,
       rows: items,
@@ -55,276 +37,114 @@ class FillRateKpiExcelBuilder {
     required String branch,
     required FillRateReport report,
   }) {
-    final focused = FillRateFocusedMetrics.fromStatuses(report.statuses);
-    final focusedStatuses = report.statuses.where(
-      (status) => FillRateFocusedMetrics.includes(status.name),
-    );
-    final focusedReceivedProducts = focusedStatuses.fold<int>(
+    final total = report.total;
+    final totalReorderQty = total.requiredQty;
+    final transferFromStore = total.suppliedQty;
+    final unfulfilledQty = (totalReorderQty - transferFromStore).clamp(
       0,
-      (sum, status) => sum + status.suppliedItems,
+      totalReorderQty,
     );
+    final fillRate = totalReorderQty > 0
+        ? 100 * transferFromStore / totalReorderQty
+        : 0;
+    final unfulfilledGap = totalReorderQty > 0
+        ? 100 * unfulfilledQty / totalReorderQty
+        : 0;
+    final gapByStatus = report.statuses
+        .map(
+          (status) => (
+            status: status,
+            qty: (status.requiredQty - status.suppliedQty).clamp(
+              0,
+              status.requiredQty,
+            ),
+          ),
+        )
+        .where((value) => value.qty > 0)
+        .toList(growable: false);
     _title(
       sheet,
-      columns: 8,
-      title: 'REFILL SUPPLY — MANAGEMENT REPORT',
+      columns: 4,
+      title: 'FILL RATE — GAP ANALYSIS',
       subtitle:
           'Reporting period: ${_date(from)} to ${_date(to)}   |   Scope: $branch   |   Generated: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}',
     );
 
-    _section(sheet, 5, 8, '1. Fill Rate Comparison for Every Purchase Status');
-    _header(sheet, 6, const [
-      'Purchase Status',
-      'Requested Products',
-      'Products Received',
-      'Products Not Received',
-      'Requested Quantity',
-      'Quantity Received',
-      'Share of All Products %',
-      'Fill Rate — Quantity Received %',
-    ]);
-    for (var i = 0; i < report.statuses.length; i++) {
-      final status = report.statuses[i];
-      _row(
-        sheet,
-        i + 7,
-        [
-          status.name,
-          status.totalItems,
-          status.suppliedItems,
-          status.totalItems - status.suppliedItems,
-          status.requiredQty,
-          status.suppliedQty,
-          status.share,
-          status.unitFillRate,
-        ],
-        percentColumns: const {7, 8},
-      );
-      sheet.getRangeByIndex(i + 7, 1).cellStyle.bold = true;
-    }
-    final statusTableEnd = 6 + report.statuses.length;
-    _note(
+    _section(sheet, 5, 4, '1. Fill Rate and Unfulfilled Gap');
+    _metric(sheet, 6, 1, 2, 'Total Reorder Qty', totalReorderQty);
+    _metric(sheet, 6, 3, 4, 'Transfer from Store', transferFromStore);
+    _metric(sheet, 9, 1, 2, 'Fill Rate', fillRate, percentage: true);
+    _metric(
       sheet,
-      statusTableEnd + 1,
-      8,
-      'Products Received means products that received any quantity above zero. Fill Rate = Quantity Received ÷ Requested Quantity × 100.',
-      color: '#EFF6FF',
-      fontColor: '#1E3A8A',
+      9,
+      3,
+      4,
+      'Unfulfilled Gap',
+      unfulfilledGap,
+      percentage: true,
     );
 
-    final combinedSectionRow = statusTableEnd + 3;
+    const breakdownSectionRow = 13;
     _section(
       sheet,
-      combinedSectionRow,
-      8,
-      '2. Combined Result — AVAILABLE + AVAILABLE N.E + NOT ASSIGNED',
+      breakdownSectionRow,
+      4,
+      '2. Unfulfilled Gap Breakdown by Purchase Status',
     );
     _note(
       sheet,
-      combinedSectionRow + 1,
-      8,
-      'Use this result to compare the combined percentage with the individual Purchase Status percentages shown above.',
+      breakdownSectionRow + 1,
+      4,
+      'The “Of All Reorder Qty %” column adds up to the Unfulfilled Gap. For example, if Fill Rate is 30%, the rows below explain the remaining 70% by Purchase Status.',
       color: '#E8F7F2',
       fontColor: '#047857',
     );
-    _metric(
-      sheet,
-      combinedSectionRow + 3,
-      1,
-      2,
-      'Requested Products',
-      focused.includedItems,
-    );
-    _metric(
-      sheet,
-      combinedSectionRow + 3,
-      3,
-      4,
-      'Products Received',
-      focusedReceivedProducts,
-    );
-    _metric(
-      sheet,
-      combinedSectionRow + 3,
-      5,
-      6,
-      'Products Not Received',
-      focused.includedItems - focusedReceivedProducts,
-    );
-    _metric(
-      sheet,
-      combinedSectionRow + 3,
-      7,
-      8,
-      'Requested Quantity',
-      focused.requiredQty,
-    );
-    _metric(
-      sheet,
-      combinedSectionRow + 7,
-      1,
-      4,
-      'Quantity Received',
-      focused.suppliedQty,
-    );
-    _metric(
-      sheet,
-      combinedSectionRow + 7,
-      5,
-      8,
-      'COMBINED FILL RATE — QUANTITY RECEIVED',
-      focused.unitFillRate,
-      percentage: true,
-    );
+    _header(sheet, breakdownSectionRow + 2, const [
+      'Purchase Status',
+      'Unfulfilled Reorder Qty',
+      'Share of Unfulfilled Gap %',
+      'Of All Reorder Qty %',
+    ]);
+    for (var i = 0; i < gapByStatus.length; i++) {
+      final value = gapByStatus[i];
+      final shareOfGap = unfulfilledQty > 0
+          ? 100 * value.qty / unfulfilledQty
+          : 0;
+      final shareOfAllReorder = totalReorderQty > 0
+          ? 100 * value.qty / totalReorderQty
+          : 0;
+      _row(
+        sheet,
+        breakdownSectionRow + 3 + i,
+        [value.status.name, value.qty, shareOfGap, shareOfAllReorder],
+        percentColumns: const {3, 4},
+      );
+      sheet.getRangeByIndex(breakdownSectionRow + 3 + i, 1).cellStyle.bold =
+          true;
+    }
+    final breakdownTableEnd = breakdownSectionRow + 2 + gapByStatus.length;
     _note(
       sheet,
-      combinedSectionRow + 10,
-      8,
-      '${_number(focused.suppliedQty)} quantity received ÷ ${_number(focused.requiredQty)} quantity requested × 100 = ${_percent(focused.unitFillRate)}',
-      color: '#F8FAFC',
-      fontColor: '#334155',
+      breakdownTableEnd + 1,
+      4,
+      'Unfulfilled Reorder Qty = Reorder Qty − Transfer from Store. A transfer above an item\'s effective Reorder Qty is capped at that Reorder Qty. An approved order edit is the effective Reorder Qty.',
+      color: '#EFF6FF',
+      fontColor: '#1E3A8A',
     );
-    _setWidths(sheet, const [34, 22, 22, 24, 23, 23, 24, 28]);
+    if (gapByStatus.isNotEmpty) {
+      sheet.autoFilters.filterRange = sheet.getRangeByIndex(
+        breakdownSectionRow + 2,
+        1,
+        breakdownTableEnd,
+        4,
+      );
+    }
+    _setWidths(sheet, const [34, 25, 29, 24]);
     sheet.getRangeByName('A5').freezePanes();
     sheet.pageSetup
       ..orientation = xlsio.ExcelPageOrientation.landscape
       ..isFitToPage = true
       ..fitToPagesWide = 1;
-  }
-
-  static void _summarySheet(
-    xlsio.Worksheet sheet, {
-    required DateTime from,
-    required DateTime to,
-    required List<FillRateSummary> rows,
-  }) {
-    const headers = [
-      'Branch',
-      'Quantity Received %',
-      'Requested Products',
-      'Products Received',
-      'Fully Supplied',
-      'Partially Supplied',
-      'Not Supplied',
-      'Requested Quantity',
-      'Quantity Received',
-    ];
-    _tableTitle(
-      sheet,
-      columns: headers.length,
-      title: 'Refill Supply by Branch',
-      subtitle:
-          '${_date(from)} to ${_date(to)} — Products Received means products that received any quantity above zero. ALL BRANCHES is the company total.',
-    );
-    _header(sheet, 5, headers);
-    for (var i = 0; i < rows.length; i++) {
-      final value = rows[i];
-      _row(
-        sheet,
-        i + 6,
-        [
-          value.branchName,
-          value.unitFillRate,
-          value.totalItems,
-          value.suppliedItems,
-          value.fullySupplied,
-          value.partiallySupplied,
-          value.notSupplied,
-          value.requiredQty,
-          value.suppliedQty,
-        ],
-        percentColumns: const {2},
-      );
-    }
-    _finishTable(sheet, 5, headers.length, rows.length);
-    _setWidths(sheet, const [32, 20, 22, 22, 18, 20, 18, 20, 20]);
-  }
-
-  static void _statusSheet(
-    xlsio.Worksheet sheet, {
-    required DateTime from,
-    required DateTime to,
-    required List<FillRateStatus> rows,
-  }) {
-    const headers = [
-      'Purchase Status',
-      'Requested Products',
-      'Products Received',
-      'Requested Quantity',
-      'Quantity Received',
-      'Share of All Products %',
-      'Quantity Received %',
-    ];
-    _tableTitle(
-      sheet,
-      columns: headers.length,
-      title: 'Purchase Status Distribution and Supply Results',
-      subtitle:
-          '${_date(from)} to ${_date(to)} — Each Purchase Status is shown independently for direct comparison.',
-    );
-    _header(sheet, 5, headers);
-    for (var i = 0; i < rows.length; i++) {
-      final value = rows[i];
-      _row(
-        sheet,
-        i + 6,
-        [
-          value.name,
-          value.totalItems,
-          value.suppliedItems,
-          value.requiredQty,
-          value.suppliedQty,
-          value.share,
-          value.unitFillRate,
-        ],
-        percentColumns: const {6, 7},
-      );
-    }
-    _finishTable(sheet, 5, headers.length, rows.length);
-    _setWidths(sheet, const [34, 22, 22, 23, 23, 24, 28]);
-  }
-
-  static void _dailySheet(
-    xlsio.Worksheet sheet, {
-    required DateTime from,
-    required DateTime to,
-    required List<FillRateDaily> rows,
-  }) {
-    const headers = [
-      'Date',
-      'Quantity Received %',
-      'Requested Products',
-      'Products Received',
-      'Fully Supplied',
-      'Partially Supplied',
-      'Not Supplied',
-    ];
-    _tableTitle(
-      sheet,
-      columns: headers.length,
-      title: 'Daily Refill Supply Trend',
-      subtitle:
-          '${_date(from)} to ${_date(to)} — Products Received means products that received any quantity above zero.',
-    );
-    _header(sheet, 5, headers);
-    for (var i = 0; i < rows.length; i++) {
-      final value = rows[i];
-      _row(
-        sheet,
-        i + 6,
-        [
-          _date(value.date),
-          value.unitFillRate,
-          value.totalItems,
-          value.suppliedItems,
-          value.fullySupplied,
-          value.partiallySupplied,
-          value.notSupplied,
-        ],
-        percentColumns: const {2},
-      );
-    }
-    _finishTable(sheet, 5, headers.length, rows.length);
-    _setWidths(sheet, const [18, 22, 22, 22, 18, 20, 18]);
   }
 
   static void _detailSheet(
@@ -338,19 +158,16 @@ class FillRateKpiExcelBuilder {
       'Order Date',
       'Item Code',
       'Product Name',
-      'Original Reorder Qty',
-      'Effective Required Qty',
-      'Edited Order?',
-      'Approved Transfer Qty',
-      'Qty Counted',
-      'Product Supply %',
-      'Fulfillment Result',
+      'Reorder Qty',
+      'Transfer from Store',
+      'Fill Rate',
+      'Fulfillment Status',
       'Purchase Status',
     ];
     _tableTitle(
       sheet,
       columns: headers.length,
-      title: 'Product-Level Audit Details',
+      title: 'Product Details',
       subtitle:
           '${_date(from)} to ${_date(to)} — Branch is first and Purchase Status is last. Excel filters are enabled on every column.',
     );
@@ -365,20 +182,17 @@ class FillRateKpiExcelBuilder {
           _date(value.date),
           value.itemCode,
           value.itemName,
-          value.originalQty,
           value.requiredQty,
-          value.wasEdited ? 'Yes' : 'No',
           value.transferredQty,
-          value.suppliedQty,
           value.fillRate,
           value.fulfillmentStatus,
           value.purchaseStatus,
         ],
-        percentColumns: const {10},
+        percentColumns: const {8},
       );
     }
     _finishTable(sheet, 5, headers.length, rows.length);
-    _setWidths(sheet, const [32, 16, 19, 48, 21, 23, 16, 23, 17, 18, 22, 31]);
+    _setWidths(sheet, const [32, 16, 19, 48, 18, 23, 16, 22, 31]);
   }
 
   static void _title(
@@ -569,6 +383,4 @@ class FillRateKpiExcelBuilder {
   }
 
   static String _date(DateTime value) => DateFormat('yyyy-MM-dd').format(value);
-  static String _number(num value) => NumberFormat('#,##0.##').format(value);
-  static String _percent(num value) => '${value.toStringAsFixed(2)}%';
 }
