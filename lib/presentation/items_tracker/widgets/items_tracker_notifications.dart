@@ -8,6 +8,24 @@ Future<ItemsTrackerNotification?> showItemsTrackerNotificationsSheet({
   required List<ItemsTrackerNotification> notifications,
   required Future<void> Function() onMarkAllRead,
 }) {
+  final useDesktopDialog = MediaQuery.sizeOf(context).width >= 720;
+  if (useDesktopDialog) {
+    return showDialog<ItemsTrackerNotification>(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: _NotificationsSheet(
+          notifications: notifications,
+          onMarkAllRead: onMarkAllRead,
+          desktop: true,
+        ),
+      ),
+    );
+  }
+
   return showModalBottomSheet<ItemsTrackerNotification>(
     context: context,
     isScrollControlled: true,
@@ -15,6 +33,7 @@ Future<ItemsTrackerNotification?> showItemsTrackerNotificationsSheet({
     builder: (_) => _NotificationsSheet(
       notifications: notifications,
       onMarkAllRead: onMarkAllRead,
+      desktop: false,
     ),
   );
 }
@@ -22,10 +41,12 @@ Future<ItemsTrackerNotification?> showItemsTrackerNotificationsSheet({
 class _NotificationsSheet extends StatefulWidget {
   final List<ItemsTrackerNotification> notifications;
   final Future<void> Function() onMarkAllRead;
+  final bool desktop;
 
   const _NotificationsSheet({
     required this.notifications,
     required this.onMarkAllRead,
+    required this.desktop,
   });
 
   @override
@@ -38,17 +59,31 @@ class _NotificationsSheetState extends State<_NotificationsSheet> {
   @override
   Widget build(BuildContext context) {
     final unread = widget.notifications.where((item) => item.isUnread).length;
-    final maxHeight = MediaQuery.sizeOf(context).height * .78;
-    return SafeArea(
-      top: false,
-      child: Container(
-        constraints: BoxConstraints(maxHeight: maxHeight),
-        decoration: const BoxDecoration(
-          color: Color(0xfff7fafc),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        child: Column(
-          children: [
+    final maxHeight =
+        MediaQuery.sizeOf(context).height * (widget.desktop ? .76 : .78);
+    final content = Container(
+      constraints: BoxConstraints(
+        maxWidth: widget.desktop ? 760 : double.infinity,
+        maxHeight: maxHeight,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xfff7fafc),
+        borderRadius: widget.desktop
+            ? BorderRadius.circular(24)
+            : const BorderRadius.vertical(top: Radius.circular(28)),
+        boxShadow: widget.desktop
+            ? const [
+                BoxShadow(
+                  color: Color(0x440b2632),
+                  blurRadius: 36,
+                  offset: Offset(0, 18),
+                ),
+              ]
+            : null,
+      ),
+      child: Column(
+        children: [
+          if (!widget.desktop) ...[
             const SizedBox(height: 10),
             Container(
               width: 42,
@@ -58,93 +93,103 @@ class _NotificationsSheetState extends State<_NotificationsSheet> {
                 borderRadius: BorderRadius.circular(99),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(22, 18, 16, 14),
-              child: Row(
-                children: [
-                  Container(
-                    width: 42,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      color: const Color(0xffe3f2f5),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Icon(
-                      Icons.notifications_active_outlined,
-                      color: Color(0xff16758a),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Notifications',
-                          style: TextStyle(
-                            color: Color(0xff183947),
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        Text(
-                          unread == 0
-                              ? 'You are all caught up'
-                              : '$unread unread update${unread == 1 ? '' : 's'}',
-                          style: const TextStyle(
-                            color: Color(0xff718692),
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (unread > 0)
-                    TextButton(
-                      onPressed: _markingAllRead
-                          ? null
-                          : () async {
-                              final navigator = Navigator.of(context);
-                              setState(() => _markingAllRead = true);
-                              try {
-                                await widget.onMarkAllRead();
-                                if (mounted) navigator.pop();
-                              } finally {
-                                if (mounted) {
-                                  setState(() => _markingAllRead = false);
-                                }
-                              }
-                            },
-                      child: _markingAllRead
-                          ? const SizedBox.square(
-                              dimension: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('Mark all read'),
-                    ),
-                ],
-              ),
-            ),
-            const Divider(height: 1, color: Color(0xffdce6eb)),
-            Expanded(
-              child: widget.notifications.isEmpty
-                  ? const _NotificationsEmptyState()
-                  : ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(14, 14, 14, 26),
-                      itemCount: widget.notifications.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 9),
-                      itemBuilder: (context, index) => _NotificationTile(
-                        notification: widget.notifications[index],
-                        onTap: () =>
-                            Navigator.pop(context, widget.notifications[index]),
-                      ),
-                    ),
-            ),
           ],
-        ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(24, widget.desktop ? 21 : 18, 16, 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: const Color(0xffe3f2f5),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.notifications_active_outlined,
+                    color: Color(0xff16758a),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Notifications',
+                        style: TextStyle(
+                          color: Color(0xff183947),
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(
+                        unread == 0
+                            ? 'You are all caught up'
+                            : '$unread unread update${unread == 1 ? '' : 's'}',
+                        style: const TextStyle(
+                          color: Color(0xff718692),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (unread > 0)
+                  TextButton(
+                    onPressed: _markingAllRead
+                        ? null
+                        : () async {
+                            final navigator = Navigator.of(context);
+                            setState(() => _markingAllRead = true);
+                            try {
+                              await widget.onMarkAllRead();
+                              if (mounted) navigator.pop();
+                            } finally {
+                              if (mounted) {
+                                setState(() => _markingAllRead = false);
+                              }
+                            }
+                          },
+                    child: _markingAllRead
+                        ? const SizedBox.square(
+                            dimension: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Mark all read'),
+                  ),
+                if (widget.desktop)
+                  IconButton(
+                    tooltip: 'Close notifications',
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      color: Color(0xff5b7580),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xffdce6eb)),
+          Expanded(
+            child: widget.notifications.isEmpty
+                ? const _NotificationsEmptyState()
+                : ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 26),
+                    itemCount: widget.notifications.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 9),
+                    itemBuilder: (context, index) => _NotificationTile(
+                      notification: widget.notifications[index],
+                      onTap: () =>
+                          Navigator.pop(context, widget.notifications[index]),
+                    ),
+                  ),
+          ),
+        ],
       ),
     );
+    return widget.desktop ? content : SafeArea(top: false, child: content);
   }
 }
 
