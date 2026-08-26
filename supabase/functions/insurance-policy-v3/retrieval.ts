@@ -205,6 +205,28 @@ export function selectEvidence(candidates: ReturnType<typeof rerankChunks>, dime
   return { selected, missingDimensions };
 }
 
+const CITATION_DIMENSIONS = new Set([
+  'age', 'dose', 'weight', 'labs', 'time_window', 'continuation', 'refill',
+  'negation', 'documentation', 'coverage',
+]);
+
+export function evidenceForAnswer(
+  selected: ReturnType<typeof rerankChunks>,
+  usedEvidenceIds: string[],
+  dimensions: string[],
+) {
+  const used = new Map<string, typeof selected[number]>();
+  for (const id of usedEvidenceIds) {
+    const chunk = selected[Number(id.slice(1)) - 1];
+    if (chunk) used.set(chunk.chunk_id, chunk);
+  }
+  for (const dimension of dimensions.filter((value) => CITATION_DIMENSIONS.has(value))) {
+    const chunk = selected.find((candidate) => chunkAnswersDimension(candidate, dimension));
+    if (chunk) used.set(chunk.chunk_id, chunk);
+  }
+  return [...used.values()];
+}
+
 export function enforceRouteSafety(semantic: SemanticInterpretation, verifiedEntities: V3Entity[], dimensions: string[]) {
   const hasPolicyEntity = verifiedEntities.some((entity) => entity.entity_type.startsWith('medication_') || entity.entity_type === 'drug_class');
   if (semantic.route === 'policy_question' && semantic.medication && !hasPolicyEntity) {

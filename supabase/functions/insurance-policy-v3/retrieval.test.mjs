@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { enforceRouteSafety, isolateMedicationCandidates, requestedDimensions, rerankChunks, resolveVerifiedEntities, selectEvidence } from './retrieval.ts';
+import { enforceRouteSafety, evidenceForAnswer, isolateMedicationCandidates, requestedDimensions, rerankChunks, resolveVerifiedEntities, selectEvidence } from './retrieval.ts';
 
 const semantic = { route: 'catalog_discovery', medication: 'Repatha', generic: null, indication: 'HoFH', intent: [], requested_dimensions: ['age'], treatment_stage: null, facts: [], source_requested: false };
 const entities = [
@@ -81,6 +81,10 @@ const selected = selectEvidence([
 ], ['dose', 'age']);
 assert.deepEqual(new Set(selected.selected.map((item) => item.chunk_id)), new Set(['dose', 'age']));
 assert.deepEqual(selected.missingDimensions, []);
+assert.deepEqual(
+  new Set(evidenceForAnswer(selected.selected, ['E1'], ['dose', 'age']).map((item) => item.chunk_id)),
+  new Set(['dose', 'age']),
+);
 
 const temporalSelection = selectEvidence([
   { ...base, chunk_id: 'context-1', chunk_text: 'Policy context', deterministic_score: 10 },

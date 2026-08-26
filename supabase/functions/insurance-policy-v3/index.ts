@@ -1,7 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';
 import { answerFromEvidence, GROQ_MODEL, interpretQuestion } from './groq.ts';
 import {
-  chunkAnswersDimension, enforceRouteSafety, normalize, requestedDimensions,
+  chunkAnswersDimension, enforceRouteSafety, evidenceForAnswer, normalize, requestedDimensions,
   isolateMedicationCandidates, rerankChunks, resolveVerifiedEntities, selectEvidence,
   type V3Alias, type V3Chunk, type V3Entity, type V3Relation,
 } from './retrieval.ts';
@@ -91,7 +91,7 @@ Deno.serve(async (request) => {
     }
 
     const answerResult = await answerFromEvidence(question, semantic, selection.selected);
-    const used = answerResult.used_evidence_ids.map((id) => selection.selected[Number(id.slice(1)) - 1]).filter(Boolean);
+    const used = evidenceForAnswer(selection.selected, answerResult.used_evidence_ids, dimensions);
     const citations = used.map((chunk) => ({
       document_id: chunk.document_id, document_title: chunk.document_title, file_name: chunk.file_name,
       page_from: chunk.page_from, page_to: chunk.page_to, sheet_name: chunk.sheet_name,
