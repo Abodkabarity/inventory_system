@@ -9,6 +9,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/config/supabase_config.dart';
 
 class InsuranceAssistantRemoteDs {
+  static const _knowledgeBaseVersion = String.fromEnvironment(
+    'INSURANCE_KB_VERSION',
+    defaultValue: 'v2',
+  );
+
   final SupabaseClient client;
 
   InsuranceAssistantRemoteDs(this.client);
@@ -70,7 +75,9 @@ class InsuranceAssistantRemoteDs {
     final localUri = SupabaseConfig.localInsuranceAssistantUri;
     if (localUri != null) return _invokeLocalAssistant(localUri, body);
     final response = await client.functions.invoke(
-      'insurance-assistant',
+      _knowledgeBaseVersion == 'v3'
+          ? 'insurance-policy-v3'
+          : 'insurance-policy-v2',
       body: body,
     );
     final data = Map<String, dynamic>.from(response.data as Map);

@@ -34,6 +34,7 @@ jobs:
           --pwa-strategy=none
           --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }}
           --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+          --dart-define=INSURANCE_KB_VERSION=v3
 
       - uses: actions/upload-pages-artifact@v3
         with:
