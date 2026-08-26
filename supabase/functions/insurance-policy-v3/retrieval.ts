@@ -30,14 +30,14 @@ const DIMENSION_PATTERNS: Record<string, RegExp> = {
   age: /\b(age|aged|year old|years old|\d+\s*years?|adult|child|pediatric|paediatric|عمر|سنة)\b/i,
   dose: /\b(dose|dosage|mg|mcg|gram|ml|daily|weekly|monthly|جرعة)\b/i,
   weight: /\b(weight|kg|kilogram|وزن)\b/i,
-  labs: /\b(lab|laboratory|hba1c|a1c|eosinophil|ige|alt|ast|ldl|elf|vcte|mre|تحليل)\b/i,
+  labs: /\b(lab|laboratory|hba1c|a1c|eos|eosinophil|ige|alt|ast|ldl|elf|vcte|mre|تحليل)\b/i,
   time_window: /\b(within|month|months|week|weeks|day|days|hour|hours|year|years|خلال|شهر)\b/i,
   initiation: /\b(initiat\w*|start|starting|بدء|ابتداء)\b/i,
   continuation: /\b(continu\w*|maintenance|reassess\w*|switch\w*|change in therapy|استمرار|تبديل)\b/i,
   refill: /\b(refill|repeat prescription|إعادة صرف|اعادة صرف)\b/i,
   indication: /\b(indication|treatment|prevention|diagnosis|disease|تشخيص|دواعي)\b/i,
   documentation: /\b(document|report|signed|stamped|prescriber|physician|تقرير|توثيق)\b/i,
-  coverage: /\b(coverage|covered|criteria|authorization|eligible|تغطية|مغط)\b/i,
+  coverage: /\b(coverage|covered|criteria|authorization|approval|eligible|تغطية|مغط|موافقة)\b/i,
   negation: /\b(no|not|without|absent|مافي|ليس|بدون)\b/i,
 };
 
@@ -102,7 +102,23 @@ export function resolveVerifiedEntities(
     return matches;
   };
   const explicit = matchAliases([question]);
-  const semanticMatches = matchAliases([semantic.medication, semantic.generic, semantic.indication]);
+  const semanticMedicationMatches = matchAliases([semantic.medication]);
+  const semanticGenericMatches = matchAliases([semantic.generic]);
+  const semanticContextMatches = matchAliases([semantic.indication]);
+  const explicitMedicationIds = new Set([...explicit].filter((id) => {
+    const type = entityById.get(id)?.entity_type;
+    return type?.startsWith('medication_') || type === 'drug_class';
+  }));
+  const semanticMedicationIds = new Set([...semanticMedicationMatches].filter((id) => {
+    const type = entityById.get(id)?.entity_type;
+    return type?.startsWith('medication_') || type === 'drug_class';
+  }));
+  // A named medicine is an identity anchor, not a hint. If that name cannot be
+  // verified, never let an LLM-supplied generic silently replace it with a
+  // different medicine. Route safety will request clarification instead.
+  const unresolvedNamedMedication = Boolean(normalize(semantic.medication))
+    && explicitMedicationIds.size === 0
+    && semanticMedicationIds.size === 0;
   const explicitBrands = new Set([...explicit].filter((id) => entityById.get(id)?.entity_type === 'medication_brand'));
   const allowedMedicationIds = new Set([...explicit].filter((id) => entityById.get(id)?.entity_type.startsWith('medication_')));
   for (const relation of relations) {
@@ -110,10 +126,11 @@ export function resolveVerifiedEntities(
       allowedMedicationIds.add(relation.object_entity_id);
     }
   }
-  const matched = new Set(explicit);
-  for (const id of semanticMatches) {
+  const matched = new Set([...explicit, ...semanticMedicationMatches, ...semanticContextMatches]);
+  for (const id of semanticGenericMatches) {
     const entity = entityById.get(id);
     const isMedication = entity?.entity_type.startsWith('medication_') || entity?.entity_type === 'drug_class';
+    if (unresolvedNamedMedication && isMedication) continue;
     if (explicitBrands.size > 0 && isMedication && !allowedMedicationIds.has(id)) continue;
     matched.add(id);
   }
@@ -167,6 +184,7 @@ export function rerankChunks(
 ) {
   const names = new Set(verifiedEntities.map((entity) => normalize(entity.canonical_name)));
   const medicationNames = new Set(verifiedEntities.filter((entity) => entity.entity_type.startsWith('medication_')).map((entity) => normalize(entity.canonical_name)));
+  const indicationNames = new Set(verifiedEntities.filter((entity) => entity.entity_type === 'indication').map((entity) => normalize(entity.canonical_name)));
   const numbers = numericTokens(question);
   return candidates.map((chunk) => {
     const text = normalize(chunk.chunk_text);
@@ -174,28 +192,46 @@ export function rerankChunks(
     const medications = metadataStrings(chunk.metadata.medications);
     const indications = metadataStrings(chunk.metadata.indications);
     const entityMatches = [...names].filter((name) => ` ${text} `.includes(` ${name} `)).length;
+    const indicationContextMatches = [...indicationNames].filter((name) => {
+      const tokens = name.split(' ').filter((token) => token.length >= 3);
+      return tokens.length > 0 && tokens.every((token) => ` ${text} `.includes(` ${token} `));
+    }).length;
     const dimensionMatches = dimensions.filter((dimension) => chunkAnswersDimension(chunk, dimension)).length;
     const numericMatches = numbers.filter((number) => chunkNumbers.has(number)).length;
+    // Numbers are meaningful only inside the requested indication context.
+    // This prevents a threshold from another disease section in the same
+    // medication overview from winning solely because the digits overlap.
+    const numericScore = numericMatches * (indicationNames.size === 0 || indicationContextMatches > 0 ? 1.5 : 0);
     const wrongMedication = medications.length > 0 && medicationNames.size > 0 && !medications.some((name) => medicationNames.has(name));
     const mixedOverview = medications.length >= 4;
     const stageMismatch = stage && chunk.metadata.treatment_stage && normalize(chunk.metadata.treatment_stage) !== normalize(stage);
     const deterministicScore = Number(chunk.score || 0)
-      + entityMatches * 5 + dimensionMatches * 2.5 + numericMatches * 1.5
+      + entityMatches * 5 + indicationContextMatches * 4 + dimensionMatches * 2.5 + numericScore
       + (stage && normalize(chunk.metadata.treatment_stage) === normalize(stage) ? 3 : 0)
       + (indications.some((name) => names.has(name)) ? 1 : 0)
       - (wrongMedication ? 5 : 0) - (mixedOverview ? 2.5 : 0) - (stageMismatch ? 2 : 0);
-    return { ...chunk, deterministic_score: deterministicScore };
+    return { ...chunk, deterministic_score: deterministicScore, indication_context_matches: indicationContextMatches };
   }).sort((left, right) => right.deterministic_score - left.deterministic_score || left.chunk_id.localeCompare(right.chunk_id));
 }
 
 export function selectEvidence(candidates: ReturnType<typeof rerankChunks>, dimensions: string[], maximum = 6) {
   const selected: typeof candidates = [];
+  const indicationAnchored = candidates.filter((chunk) => chunk.indication_context_matches > 0);
+  // Lab thresholds and their lookback windows form one indication-specific
+  // rule. When an indication-anchored candidate exists, do not fill the answer
+  // context with numeric criteria from other indication sections.
+  const selectionPool = dimensions.includes('labs') && dimensions.includes('time_window') && indicationAnchored.length > 0
+    ? indicationAnchored
+    : candidates;
   const add = (chunk: typeof candidates[number] | undefined) => {
     if (chunk && !selected.some((item) => item.chunk_id === chunk.chunk_id) && selected.length < maximum) selected.push(chunk);
   };
-  add(candidates[0]);
-  for (const dimension of dimensions) add(candidates.find((chunk) => chunkAnswersDimension(chunk, dimension)));
-  for (const chunk of candidates) {
+  add(selectionPool[0]);
+  for (const dimension of dimensions) {
+    add(selectionPool.find((chunk) => chunkAnswersDimension(chunk, dimension))
+      ?? candidates.find((chunk) => chunkAnswersDimension(chunk, dimension)));
+  }
+  for (const chunk of selectionPool) {
     // Temporal and threshold questions often need one criterion chunk plus
     // nearby stage/context evidence; preserve four candidates when available.
     if (selected.length >= Math.min(maximum, Math.max(4, dimensions.length + 1))) break;

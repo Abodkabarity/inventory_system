@@ -1,5 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';
-import { answerFromEvidence, GROQ_MODEL, interpretQuestion } from './groq.ts';
+import { AI_MODEL, answerFromEvidence, interpretQuestion } from './ai.ts';
+import { AIProviderError, AIProvidersTemporarilyUnavailableError, type AIProviderName } from './ai_provider.ts';
+import { alignSemanticMedication, evaluateOrThresholdTimeWindows, renderDeterministicCriterionAnswer } from './criteria.ts';
 import {
   chunkAnswersDimension, enforceRouteSafety, evidenceForAnswer, normalize, requestedDimensions,
   isolateMedicationCandidates, rerankChunks, resolveVerifiedEntities, selectEvidence,
@@ -19,6 +21,35 @@ function usageTotal(usage: unknown) {
   if (!usage || typeof usage !== 'object') return 0;
   const value = (usage as Record<string, unknown>).total_tokens;
   return typeof value === 'number' ? value : 0;
+}
+
+function usagePart(usage: unknown, primary: 'prompt_tokens' | 'completion_tokens', alternate: 'input_tokens' | 'output_tokens') {
+  if (!usage || typeof usage !== 'object') return 0;
+  const record = usage as Record<string, unknown>;
+  const value = record[primary] ?? record[alternate];
+  return typeof value === 'number' ? value : 0;
+}
+
+function aiDiagnostics(
+  semantic: { usage: unknown; latency_ms: number; provider: AIProviderName; model: string },
+  answer: { usage: unknown; latency_ms: number; provider: AIProviderName; model: string } | null,
+) {
+  const provider = semantic.provider === 'groq_fallback' || answer?.provider === 'groq_fallback'
+    ? 'groq_fallback'
+    : 'together';
+  return {
+    provider,
+    model: answer?.model ?? semantic.model,
+    semantic_provider: semantic.provider,
+    answer_provider: answer?.provider ?? null,
+    semantic_input_tokens: usagePart(semantic.usage, 'prompt_tokens', 'input_tokens'),
+    semantic_output_tokens: usagePart(semantic.usage, 'completion_tokens', 'output_tokens'),
+    answer_input_tokens: usagePart(answer?.usage, 'prompt_tokens', 'input_tokens'),
+    answer_output_tokens: usagePart(answer?.usage, 'completion_tokens', 'output_tokens'),
+    total_tokens: usageTotal(semantic.usage) + usageTotal(answer?.usage),
+    semantic_latency_ms: semantic.latency_ms,
+    answer_latency_ms: answer?.latency_ms ?? 0,
+  };
 }
 
 Deno.serve(async (request) => {
@@ -44,11 +75,12 @@ Deno.serve(async (request) => {
     ]);
     if (entityError || aliasError || relationError) throw entityError ?? aliasError ?? relationError;
     const verifiedEntities = resolveVerifiedEntities(question, semanticResult.semantic, entities as V3Entity[], aliases as V3Alias[], relations as V3Relation[]);
-    const dimensions = requestedDimensions(question, semanticResult.semantic);
-    const semantic = enforceRouteSafety(semanticResult.semantic, verifiedEntities, dimensions);
+    const alignedSemantic = alignSemanticMedication(semanticResult.semantic, verifiedEntities);
+    const dimensions = requestedDimensions(question, alignedSemantic);
+    const semantic = enforceRouteSafety(alignedSemantic, verifiedEntities, dimensions);
 
     if (semantic.route === 'out_of_scope' || semantic.route === 'clarification_required') {
-      return respond({ answer: semantic.route === 'out_of_scope' ? 'This question is outside the approved insurance-policy knowledge base.' : 'Please clarify the medication or policy criterion you want to check.', citations: [], answer_status: semantic.route, insurance_v3: true, debug: body.debug === true ? { semantic_interpretation: semantic, semantic_usage: semanticResult.usage, groq: { semantic_tokens: semanticResult.usage, answer_tokens: null, total_tokens: usageTotal(semanticResult.usage) } } : undefined });
+      return respond({ answer: semantic.route === 'out_of_scope' ? 'This question is outside the approved insurance-policy knowledge base.' : 'Please clarify the medication or policy criterion you want to check.', citations: [], answer_status: semantic.route, insurance_v3: true, debug: body.debug === true ? { semantic_interpretation: semantic, semantic_usage: semanticResult.usage, ai: aiDiagnostics(semanticResult, null), groq: { semantic_tokens: semanticResult.usage, answer_tokens: null, total_tokens: usageTotal(semanticResult.usage) } } : undefined });
     }
 
     const searchParts = [question, ...verifiedEntities.map((entity) => entity.canonical_name), semantic.indication, ...dimensions, ...semantic.facts.flatMap((fact) => [fact.concept, fact.value, fact.unit, fact.temporal])].filter((value) => value !== null && value !== undefined && String(value).trim());
@@ -87,10 +119,15 @@ Deno.serve(async (request) => {
       }
     }
     if (selection.selected.length === 0) {
-      return respond({ answer: 'The approved documents do not establish the answer.', citations: [], answer_status: 'insufficient_evidence', insurance_v3: true, debug: body.debug === true ? { semantic_interpretation: semantic, verified_entities: verifiedEntities, retrieved_chunks: [], retrieval_expanded: retrievalExpanded, missing_dimensions: selection.missingDimensions, groq: { semantic_tokens: semanticResult.usage, answer_tokens: null, total_tokens: usageTotal(semanticResult.usage) }, processing_ms: Date.now() - started } : undefined });
+      return respond({ answer: 'The approved documents do not establish the answer.', citations: [], answer_status: 'insufficient_evidence', insurance_v3: true, debug: body.debug === true ? { semantic_interpretation: semantic, verified_entities: verifiedEntities, retrieved_chunks: [], retrieval_expanded: retrievalExpanded, missing_dimensions: selection.missingDimensions, ai: aiDiagnostics(semanticResult, null), groq: { semantic_tokens: semanticResult.usage, answer_tokens: null, total_tokens: usageTotal(semanticResult.usage) }, processing_ms: Date.now() - started } : undefined });
     }
 
-    const answerResult = await answerFromEvidence(question, semantic, selection.selected);
+    const deterministicEvaluations = evaluateOrThresholdTimeWindows(semantic, selection.selected);
+    const deterministicAnswer = renderDeterministicCriterionAnswer(question, semantic, deterministicEvaluations);
+    const answerResult = deterministicAnswer
+      ? { answer: deterministicAnswer, used_evidence_ids: ['E1'], usage: null, latency_ms: 0, provider: semanticResult.provider, model: semanticResult.model }
+      : await answerFromEvidence(question, semantic, selection.selected, deterministicEvaluations);
+    const answerGenerator = deterministicAnswer ? 'deterministic_criteria' : 'groq';
     const used = evidenceForAnswer(selection.selected, answerResult.used_evidence_ids, dimensions);
     const citations = used.map((chunk) => ({
       document_id: chunk.document_id, document_title: chunk.document_title, file_name: chunk.file_name,
@@ -115,16 +152,26 @@ Deno.serve(async (request) => {
     const totalTokens = usageTotal(semanticResult.usage) + usageTotal(answerResult.usage);
     return respond({
       session_id: sessionId, message_id: assistant.id, created_at: assistant.created_at,
-      answer, citations, confidence: null, answer_status: 'grounded', answer_generator: 'groq', evidence_checked: true, insurance_v3: true,
+      answer, citations, confidence: null, answer_status: 'grounded', answer_generator: answerGenerator, evidence_checked: true, insurance_v3: true,
       debug: body.debug === true ? {
         semantic_interpretation: semantic, verified_entities: verifiedEntities,
+        deterministic_criteria_evaluations: deterministicEvaluations,
         retrieved_chunks: selection.selected.map((chunk) => ({ chunk_id: chunk.chunk_id, document: chunk.document_title, page_from: chunk.page_from, page_to: chunk.page_to, score: chunk.deterministic_score, dimensions: dimensions.filter((dimension) => chunkAnswersDimension(chunk, dimension)), text: chunk.chunk_text })),
         retrieval_expanded: retrievalExpanded, missing_dimensions: selection.missingDimensions,
-        groq: { model: GROQ_MODEL, semantic_tokens: semanticResult.usage, answer_tokens: answerResult.usage, total_tokens: totalTokens, semantic_latency_ms: semanticResult.latency_ms, answer_latency_ms: answerResult.latency_ms },
+        ai: aiDiagnostics(semanticResult, deterministicAnswer ? null : answerResult),
+        groq: { model: AI_MODEL, semantic_tokens: semanticResult.usage, answer_tokens: answerResult.usage, total_tokens: totalTokens, semantic_latency_ms: semanticResult.latency_ms, answer_latency_ms: answerResult.latency_ms },
         processing_ms: Date.now() - started,
       } : undefined,
     });
   } catch (error) {
+    if (error instanceof AIProvidersTemporarilyUnavailableError) {
+      console.error('insurance_v3_ai_temporarily_unavailable');
+      return respond({ answer: 'The AI service is temporarily unavailable. Please try again shortly.', citations: [], answer_status: 'temporarily_unavailable', insurance_v3: true }, 503);
+    }
+    if (error instanceof AIProviderError) {
+      console.error('insurance_v3_ai_provider_error', { provider: error.provider, status: error.status, code: error.providerCode });
+      return respond({ error: 'Unable to contact the AI service.', insurance_v3: true }, 502);
+    }
     console.error('insurance_v3_error', { message: error instanceof Error ? error.message : String(error) });
     return respond({ error: error instanceof Error ? error.message : 'Unable to answer the V3 policy question.', insurance_v3: true }, 400);
   }

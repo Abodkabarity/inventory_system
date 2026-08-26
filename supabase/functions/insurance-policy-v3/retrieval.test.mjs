@@ -28,6 +28,23 @@ const conflictResolved = resolveVerifiedEntities(
   relations,
 );
 assert.deepEqual(new Set(conflictResolved.map((item) => item.id)), new Set(['brand', 'generic', 'hofh']));
+
+const unknownBrandResolved = resolveVerifiedEntities(
+  'UnknownBrand asthma eos 200?',
+  { ...semantic, medication: 'UnknownBrand', generic: 'Other Generic', indication: 'HoFH' },
+  conflictingEntities,
+  conflictingAliases,
+  relations,
+);
+assert.deepEqual(new Set(unknownBrandResolved.map((item) => item.id)), new Set(['hofh']));
+assert.equal(
+  enforceRouteSafety(
+    { ...semantic, route: 'policy_question', medication: 'UnknownBrand', generic: 'Other Generic' },
+    unknownBrandResolved,
+    ['labs'],
+  ).route,
+  'clarification_required',
+);
 const dimensions = requestedDimensions('Repatha HoFH age9?', semantic);
 assert.ok(dimensions.includes('age'));
 assert.equal(enforceRouteSafety(semantic, resolved, dimensions).route, 'policy_question');
@@ -54,6 +71,17 @@ const timeWindowSemantic = {
 };
 const timeDimensions = requestedDimensions('For GLP-1 initiation, must HbA1c be from the last 3 months?', timeWindowSemantic);
 assert.deepEqual(new Set(timeDimensions), new Set(['labs', 'time_window', 'initiation']));
+
+const eosDimensions = requestedDimensions(
+  'Brand asthma eos was 150 seven months ago, latest 290 from 2 months ago. ينفع للموافقة؟',
+  { ...semantic, requested_dimensions: [], intent: ['approval'], facts: [
+    { concept: 'eosinophil count', value: '150', unit: 'cells/uL', polarity: 'past', temporal: '7 months ago' },
+    { concept: 'eosinophil count', value: '290', unit: 'cells/uL', polarity: 'current', temporal: '2 months ago' },
+  ] },
+);
+assert.ok(eosDimensions.includes('labs'));
+assert.ok(eosDimensions.includes('time_window'));
+assert.ok(eosDimensions.includes('coverage'));
 
 const classOnly = [{ id: 'class', canonical_name: 'GLP-1 receptor agonists', normalized_name: 'glp 1 receptor agonists', entity_type: 'drug_class' }];
 const classChunk = {
@@ -101,4 +129,15 @@ const numericBoundary = rerankChunks([
 ], [], ['time_window'], 'continuation', 'switch after 6 months');
 assert.equal(numericBoundary[0].chunk_id, 'duration');
 assert.equal(numericBoundary.find((chunk) => chunk.chunk_id === 'decimal').deterministic_score, 1);
+
+const indicationScopedNumeric = rerankChunks([
+  { ...base, chunk_id: 'right-indication', chunk_text: 'Severe eosinophilic asthma: eosinophils at least 150 within 6 months or at least 300 within 12 months', metadata: { medications: ['Generic A'], topics: ['labs', 'time_window'] }, score: 5 },
+  { ...base, chunk_id: 'wrong-indication', chunk_text: 'COPD: eosinophils at least 150; reassess after 2 months', metadata: { medications: ['Generic A'], topics: ['labs', 'time_window'] }, score: 8 },
+], [
+  { id: 'generic-a', canonical_name: 'Generic A', normalized_name: 'generic a', entity_type: 'medication_generic' },
+  { id: 'severe-asthma', canonical_name: 'Severe asthma', normalized_name: 'severe asthma', entity_type: 'indication' },
+], ['labs', 'time_window'], null, 'Generic A severe asthma eos 150 two months ago');
+assert.equal(indicationScopedNumeric[0].chunk_id, 'right-indication');
+const indicationScopedSelection = selectEvidence(indicationScopedNumeric, ['labs', 'time_window']);
+assert.deepEqual(indicationScopedSelection.selected.map((chunk) => chunk.chunk_id), ['right-indication']);
 console.log('insurance-policy-v3 retrieval tests passed');
