@@ -11,7 +11,7 @@ import '../../../core/config/supabase_config.dart';
 class InsuranceAssistantRemoteDs {
   static const _knowledgeBaseVersion = String.fromEnvironment(
     'INSURANCE_KB_VERSION',
-    defaultValue: 'v2',
+    defaultValue: 'v3',
   );
 
   final SupabaseClient client;
