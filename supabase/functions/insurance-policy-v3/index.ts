@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';
-import { AI_MODEL, answerFromEvidence, answerIncompleteRecovery, createQuestionContract, inspectEvidenceAgainstContract, interpretQuestion, planRecoverySearch, rerankAndJudgeEvidence, verifyAnswerAgainstContract, type EvidenceJudgment, type EvidenceLedger, type EvidenceSufficiency, type QuestionContract, type RecoveryPlan } from './ai.ts';
+import { AI_MODEL, answerFromEvidence, answerIncompleteRecovery, createQuestionContract, generateSemanticSearchHypotheses, inspectEvidenceAgainstContract, interpretQuestion, planRecoverySearch, rerankAndJudgeEvidence, searchStrategyChanged, verifyAnswerAgainstContract, type EvidenceJudgment, type EvidenceLedger, type EvidenceSufficiency, type QuestionContract, type RecoveryPlan, type SemanticHypothesisSandbox } from './ai.ts';
 import { AIProviderError, AIProvidersTemporarilyUnavailableError, type AIProviderName } from './ai_provider.ts';
 import { groundedExtractiveAnswer, hasStrongVerifiedEvidence } from './fallback.ts';
 import { newRequestTrace, persistRequestTrace, type RequestTrace } from './diagnostics.ts';
@@ -486,7 +486,6 @@ Deno.serve(async (request) => {
     const questionContract = contractResult.contract;
     trace.question_contract = questionContract as unknown as Record<string, unknown>;
     trace.latency.question_contract_ms = Date.now() - contractStarted;
-
     if (!pipelineContext.forceRecovery && semantic.route !== 'out_of_scope' && verifiedEntities.length > 0) {
       const cacheStarted = Date.now();
       const signature = await semanticCacheSignature(semantic, verifiedEntities);
@@ -548,6 +547,28 @@ Deno.serve(async (request) => {
       return respond({ ...saved, answer, citations: [], answer_status: semantic.route, insurance_v3: true, debug: debugRequested ? { request_id: trace.request_id, semantic_interpretation: semantic, verified_entities: verifiedEntities, ai: trace.providers } : undefined });
     }
 
+    // The semantic sandbox belongs to retrieval planning. Run it only after
+    // cache and route short-circuits so the validated cache retains its AI-call
+    // savings and a search-planning provider failure cannot invalidate a cache hit.
+    const hypothesisStarted = Date.now();
+    const initialHypothesisResult = await generateSemanticSearchHypotheses(question, semantic, questionContract, verifiedEntities);
+    const initialSemanticSandbox = initialHypothesisResult.sandbox;
+    trace.latency.semantic_hypothesis_ms = Date.now() - hypothesisStarted;
+    trace.providers.semantic_hypothesis_sandbox = {
+      semantic_hypothesis_expansion_triggered: true,
+      semantic_hypotheses_generated: initialSemanticSandbox.hypotheses,
+      literal_vs_canonical_hypotheses: {
+        literal: initialSemanticSandbox.hypotheses.filter((item) => item.kind === 'literal').length,
+        canonical_or_expanded: initialSemanticSandbox.hypotheses.filter((item) => item.kind !== 'literal').length,
+      },
+      evidence_discovered_terminology: [],
+      relation_direction_original: initialSemanticSandbox.relation_direction_original,
+      relation_direction_reconsidered: initialSemanticSandbox.relation_direction_reconsidered,
+      semantic_reinterpretation_on_incorrect: false,
+      recovery_search_changed: null,
+      insufficient_evidence_after_semantic_expansion: false,
+    };
+
     let memoryHint: SemanticMemoryHint | null = null;
     let memoryInvalidations: Array<{ id: string; reason: string }> = [];
     if (!pipelineContext.forceRecovery && memoryDb && semantic.route !== 'out_of_scope') {
@@ -564,14 +585,14 @@ Deno.serve(async (request) => {
     }
     const rememberedQueries = memoryHint?.hypotheses.map((hypothesis) => hypothesis.query) ?? [];
     const rememberedConcepts = memoryHint?.expansion_concepts ?? [];
-    const contractQueries = questionContract.initial_search_hypotheses.map((hypothesis) => hypothesis.query);
-    const contractConcepts = questionContract.initial_search_hypotheses.flatMap((hypothesis) => hypothesis.concepts);
+    const contractQueries = [...questionContract.initial_search_hypotheses.map((hypothesis) => hypothesis.query), ...initialSemanticSandbox.hypotheses.map((hypothesis) => hypothesis.query)];
+    const contractConcepts = [...questionContract.initial_search_hypotheses.flatMap((hypothesis) => hypothesis.concepts), ...initialSemanticSandbox.hypotheses.flatMap((hypothesis) => hypothesis.concepts)];
     let plan: ReturnType<typeof buildRetrievalPlan> & Record<string, unknown> = buildRetrievalPlan(question, semantic, verifiedEntities, dimensions, {
       retrieval_queries: [...contractQueries, ...(semantic.retrieval_queries ?? []), ...rememberedQueries].slice(0, 10),
       search_concepts: [...contractConcepts, ...(semantic.search_concepts ?? []), ...rememberedConcepts].slice(0, 28),
       search_phrases: [...(semantic.search_phrases ?? []), ...contractQueries, ...rememberedQueries].slice(0, 14),
     });
-    plan = { ...plan, question_contract_facets: questionContract.required_answer_facets, search_hypotheses: questionContract.initial_search_hypotheses };
+    plan = { ...plan, question_contract_facets: questionContract.required_answer_facets, search_hypotheses: initialSemanticSandbox.hypotheses, contract_search_hypotheses: questionContract.initial_search_hypotheses };
     trace.retrieval_plan = plan;
     let units: HybridSearchUnit[] = [];
     let selection: ReturnType<typeof selectEvidence> = { selected: [], missingDimensions: dimensions, missingSignals: [], requestedCoverage: 0, sufficient: false };
@@ -584,7 +605,9 @@ Deno.serve(async (request) => {
     let expandIds: string[] = [];
     let strongEvidence = false;
     let successfulRecoveryPlan: RecoveryPlan | null = null;
-    const aiCalls: AIMetadata[] = [contractResult];
+    let recoverySemanticSandbox: SemanticHypothesisSandbox | null = null;
+    let recoverySearchChanged: boolean | null = null;
+    const aiCalls: AIMetadata[] = [contractResult, initialHypothesisResult];
     const embeddingRuns: Awaited<ReturnType<typeof embedRetrievalQuery>>[] = [];
     const retrievalStarted = Date.now();
 
@@ -605,9 +628,10 @@ Deno.serve(async (request) => {
           verifiedEntities, allEntities,
         );
         embeddingRuns.push(retrieved.embedding); units = retrieved.units;
-        const focusedHypothesis = questionContract.initial_search_hypotheses.find((hypothesis) => hypothesis.mode !== 'all')
-          ?? questionContract.initial_search_hypotheses.find((hypothesis) => hypothesis.relationship_direction === 'reverse' || hypothesis.relationship_direction === 'aggregation');
-        if (focusedHypothesis) {
+        const focusedHypotheses = initialSemanticSandbox.hypotheses.filter((hypothesis) => hypothesis.kind !== 'literal')
+          .sort((left, right) => Number(['reverse_relation', 'evidence_discovered'].includes(right.kind)) - Number(['reverse_relation', 'evidence_discovered'].includes(left.kind)))
+          .slice(0, 2);
+        for (const focusedHypothesis of focusedHypotheses) {
           try {
             const focused = await retrieveHybrid(db, focusedHypothesis.query, focusedHypothesis.query, verifiedEntities, allEntities);
             embeddingRuns.push(focused.embedding);
@@ -659,6 +683,24 @@ Deno.serve(async (request) => {
       // evidence. Deep Review must therefore diagnose and execute its bounded
       // recovery plan instead of silently reusing the same path.
       if (semanticRequestedRecovery || pipelineContext.forceRecovery) strongEvidence = false;
+      const previousSemanticSearches = [...new Set([question, ...contractQueries, ...(semantic.retrieval_queries ?? [])].map((value) => String(value).trim()).filter(Boolean))];
+      const recoveryHypothesisResult = await generateSemanticSearchHypotheses(question, semantic, questionContract, verifiedEntities, {
+        first_pass_evidence: selection.selected.slice(0, 10).map((chunk) => ({ heading: chunk.section_title, document: chunk.document_title, page: chunk.page_from, text: chunk.chunk_text.slice(0, 800) })),
+        previous_searches: previousSemanticSearches,
+        feedback_reason: pipelineContext.feedbackReason,
+      });
+      aiCalls.push(recoveryHypothesisResult);
+      recoverySemanticSandbox = recoveryHypothesisResult.sandbox;
+      recoverySearchChanged = searchStrategyChanged(previousSemanticSearches, recoverySemanticSandbox.hypotheses);
+      trace.providers.semantic_hypothesis_sandbox = {
+        ...(trace.providers.semantic_hypothesis_sandbox as Record<string, unknown>),
+        semantic_hypotheses_generated: recoverySemanticSandbox.hypotheses,
+        evidence_discovered_terminology: recoverySemanticSandbox.evidence_discovered_terminology,
+        relation_direction_original: recoverySemanticSandbox.relation_direction_original,
+        relation_direction_reconsidered: recoverySemanticSandbox.relation_direction_reconsidered,
+        semantic_reinterpretation_on_incorrect: pipelineContext.feedbackReason === 'incorrect',
+        recovery_search_changed: recoverySearchChanged,
+      };
       const maximumRecoveryIterations = pipelineContext.forceRecovery ? 2 : 1;
       for (let iteration = 1; iteration <= maximumRecoveryIterations && !strongEvidence; iteration++) {
         let recoveryPlan: Awaited<ReturnType<typeof planRecoverySearch>>;
@@ -676,6 +718,7 @@ Deno.serve(async (request) => {
             feedback_reason: pipelineContext.feedbackReason,
             original_answer: pipelineContext.originalAnswer,
             original_evidence: pipelineContext.originalEvidence,
+            semantic_hypothesis_sandbox: recoverySemanticSandbox,
           });
           aiCalls.push(recoveryPlan);
         } catch (error) {
@@ -688,18 +731,26 @@ Deno.serve(async (request) => {
         }
         const materialAmbiguities = questionContract.ambiguities.filter((ambiguity) => ambiguity.materially_distinct);
         const materialInterpretations = [...new Set(materialAmbiguities.flatMap((ambiguity) => ambiguity.interpretations))];
+        const plannerChangedSearch = searchStrategyChanged(previousSemanticSearches, recoveryPlan.searches);
+        if (recoveryPlan.decision === 'search' && !plannerChangedSearch) {
+          recoveryPlan.searches = recoverySemanticSandbox.hypotheses.map((hypothesis, index) => ({
+            label: `semantic-sandbox-${index + 1}-${hypothesis.kind}`, query: hypothesis.query,
+            mode: hypothesis.mode, concepts: hypothesis.concepts, relationship_direction: hypothesis.relationship_direction,
+          }));
+          recoveryPlan.relationship_direction = recoverySemanticSandbox.relation_direction_reconsidered;
+          recoveryPlan.diagnosis = `${recoveryPlan.diagnosis} Literal-equivalent recovery was rejected; independent semantic sandbox strategy substituted.`.trim();
+        }
         if (pipelineContext.forceRecovery && recoveryPlan.decision !== 'search'
           && !(recoveryPlan.decision === 'clarification' && materialInterpretations.length >= 2)) {
-          const independentQueries = [...new Set([
-            question, semantic.information_need, semantic.requested_information, semantic.search_query,
-            ...questionContract.initial_search_hypotheses.map((hypothesis) => hypothesis.query),
-            ...(semantic.retrieval_queries ?? []),
-          ].map((value) => String(value ?? '').trim()).filter(Boolean))].slice(0, 3);
+          const independentHypotheses = recoverySemanticSandbox.hypotheses
+            .filter((hypothesis) => hypothesis.kind !== 'literal')
+            .slice(0, 5);
           recoveryPlan.decision = 'search';
-          recoveryPlan.searches = independentQueries.map((query, index) => ({
-            label: `independent-${index + 1}`, query, mode: index === 1 ? 'tables' : index === 2 ? 'headings' : 'all',
-            concepts: [], relationship_direction: 'unknown',
+          recoveryPlan.searches = independentHypotheses.map((hypothesis, index) => ({
+            label: `independent-${index + 1}-${hypothesis.kind}`, query: hypothesis.query, mode: hypothesis.mode,
+            concepts: hypothesis.concepts, relationship_direction: hypothesis.relationship_direction,
           }));
+          recoveryPlan.relationship_direction = recoverySemanticSandbox.relation_direction_reconsidered;
           recoveryPlan.diagnosis = `${recoveryPlan.diagnosis} Independent verification required after negative feedback.`.trim();
         }
         if (recoveryPlan.decision === 'clarification' && materialInterpretations.length < 2) {
@@ -806,6 +857,15 @@ Deno.serve(async (request) => {
     trace.rejected = units.filter((unit) => !selectedUnits.some((selected) => selected.search_unit_id === unit.search_unit_id)).slice(0, 20);
     const supportedLedgerEvidence = Boolean(evidenceLedger?.facets.some((facet) => facet.status === 'supported' && facet.evidence_ids.length > 0) && answerEvidence.length > 0);
     if ((!strongEvidence && !supportedLedgerEvidence) || answerEvidence.length === 0) {
+      const alternateSemanticExpansionAttempted = initialSemanticSandbox.hypotheses.some((hypothesis) => hypothesis.kind !== 'literal')
+        && (!trace.recovery.activated || Boolean(recoverySemanticSandbox && recoverySearchChanged));
+      if (!alternateSemanticExpansionAttempted) {
+        throw new AIProviderError(initialHypothesisResult.provider, 200, false, 'semantic_expansion_required_before_insufficient_evidence');
+      }
+      trace.providers.semantic_hypothesis_sandbox = {
+        ...(trace.providers.semantic_hypothesis_sandbox as Record<string, unknown>),
+        insufficient_evidence_after_semantic_expansion: true,
+      };
       const materialAmbiguities = questionContract.ambiguities.filter((ambiguity) => ambiguity.materially_distinct);
       const materialInterpretations = [...new Set(materialAmbiguities.flatMap((ambiguity) => ambiguity.interpretations))];
       if (materialInterpretations.length >= 2) {

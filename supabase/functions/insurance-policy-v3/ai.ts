@@ -402,6 +402,131 @@ export type EvidenceSufficiency = {
 
 export type RecoverySearchMode = 'all' | 'semantic' | 'tables' | 'headings' | 'documents' | 'entities';
 export type RecoveryRelationshipDirection = 'forward' | 'reverse' | 'bidirectional' | 'aggregation' | 'unknown';
+export type SemanticHypothesisKind = 'literal' | 'canonical' | 'acronym_or_professional' | 'reverse_relation' | 'evidence_discovered';
+export type SemanticSearchHypothesis = {
+  kind: SemanticHypothesisKind;
+  query: string;
+  concepts: string[];
+  mode: RecoverySearchMode;
+  relationship_direction: RecoveryRelationshipDirection;
+  basis: 'user_literal' | 'general_knowledge_search_only' | 'retrieved_evidence';
+};
+export type SemanticHypothesisSandbox = {
+  terminology_mismatch_plausible: boolean;
+  relation_direction_original: RecoveryRelationshipDirection;
+  relation_direction_reconsidered: RecoveryRelationshipDirection;
+  evidence_discovered_terminology: string[];
+  hypotheses: SemanticSearchHypothesis[];
+};
+
+const strategyTokens = (value: string) => [...new Set(value.normalize('NFKC').toLocaleLowerCase()
+  .replace(/[^\p{L}\p{N}]+/gu, ' ').split(' ').filter((token) => token.length >= 2))];
+const strategySimilarity = (left: string, right: string) => {
+  const a = strategyTokens(left); const b = strategyTokens(right); const union = new Set([...a, ...b]);
+  return union.size === 0 ? 1 : a.filter((token) => b.includes(token)).length / union.size;
+};
+export function searchStrategyChanged(previous: string[], next: Array<{ query: string; concepts?: string[] }>) {
+  if (next.length === 0) return false;
+  return next.some((hypothesis) => previous.every((prior) =>
+    strategySimilarity(prior, `${hypothesis.query} ${(hypothesis.concepts ?? []).join(' ')}`) < 0.68
+  ));
+}
+
+function independentStrategyCount(previous: string[], next: Array<{ query: string; concepts?: string[] }>) {
+  return next.filter((hypothesis) => previous.every((prior) =>
+    strategySimilarity(prior, `${hypothesis.query} ${(hypothesis.concepts ?? []).join(' ')}`) < 0.68
+  )).length;
+}
+
+const semanticHypothesisResponseFormat = {
+  type: 'json_schema', json_schema: {
+    name: 'insurance_semantic_search_hypotheses', schema: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        terminology_mismatch_plausible: { type: 'boolean' },
+        relation_direction_original: { type: 'string', enum: ['forward', 'reverse', 'bidirectional', 'aggregation', 'unknown'] },
+        relation_direction_reconsidered: { type: 'string', enum: ['forward', 'reverse', 'bidirectional', 'aggregation', 'unknown'] },
+        evidence_discovered_terminology: { type: 'array', maxItems: 12, items: { type: 'string' } },
+        hypotheses: { type: 'array', minItems: 3, maxItems: 5, items: {
+          type: 'object', additionalProperties: false,
+          properties: {
+            kind: { type: 'string', enum: ['literal', 'canonical', 'acronym_or_professional', 'reverse_relation', 'evidence_discovered'] },
+            query: { type: 'string' }, concepts: { type: 'array', maxItems: 12, items: { type: 'string' } },
+            mode: { type: 'string', enum: ['all', 'semantic', 'tables', 'headings', 'documents', 'entities'] },
+            relationship_direction: { type: 'string', enum: ['forward', 'reverse', 'bidirectional', 'aggregation', 'unknown'] },
+            basis: { type: 'string', enum: ['user_literal', 'general_knowledge_search_only', 'retrieved_evidence'] },
+          }, required: ['kind', 'query', 'concepts', 'mode', 'relationship_direction', 'basis'],
+        } },
+      }, required: ['terminology_mismatch_plausible', 'relation_direction_original', 'relation_direction_reconsidered', 'evidence_discovered_terminology', 'hypotheses'],
+    },
+  },
+};
+
+export async function generateSemanticSearchHypotheses(
+  question: string,
+  semantic: SemanticInterpretation,
+  contract: QuestionContract,
+  verifiedEntities: V3Entity[],
+  context: { first_pass_evidence?: Array<Record<string, unknown>>; previous_searches?: string[]; feedback_reason?: string | null } = {},
+): Promise<{ sandbox: SemanticHypothesisSandbox } & AIResultMetadata> {
+  const started = Date.now();
+  const previousSearches = (context.previous_searches ?? []).map((value) => String(value).trim()).filter(Boolean);
+  const evidenceText = (context.first_pass_evidence ?? []).map((item) => `${item.heading ?? ''} ${item.text ?? ''}`).join(' ');
+  const allowedNumbers = new Set(`${question} ${evidenceText}`.normalize('NFKC').match(/\d+(?:[.,]\d+)?/g) ?? []);
+  const numbersGrounded = (value: string) => (value.normalize('NFKC').match(/\d+(?:[.,]\d+)?/g) ?? []).every((number) => allowedNumbers.has(number));
+  const { completion, raw } = await callStructuredAI({
+    maxOutputTokens: 1150, response_format: { type: 'json_object' }, together_response_format: semanticHypothesisResponseFormat,
+    messages: [
+      { role: 'system', content: `Generate a bounded semantic SEARCH hypothesis sandbox for an evidence-grounded insurance assistant. You may use general linguistic, medical, and professional knowledge ONLY to propose terminology and retrieval strategies. You must not state policy facts, eligibility, doses, thresholds, answers, or conclusions. Approved evidence remains the only authority for the final answer. The Question Contract is immutable: expand HOW to search without changing WHAT must be answered. Produce 3–5 meaningfully independent hypotheses, normally spanning literal wording, canonical/formal terminology, acronym or professional-title expansion, evidence-relative reverse relationship, and terminology explicitly discovered in supplied first-pass evidence. Do not merely paraphrase the same words. A reverse relationship is determined relative to document structure: if documents store policy/treatment → eligible specialty while the user asks specialty → policies/treatments, search for the user's concept as the stored object and return the owning subject. Preserve verified medication identity and never substitute a same-class medication. General-knowledge hypotheses are unverified search probes; mark their basis accordingly and discard them unless approved evidence confirms them. For Incorrect feedback, every non-literal hypothesis must materially differ from previous_searches and independently reconsider relationship direction. Evidence-discovered terminology must come only from supplied evidence snippets. Never generate SQL, document IDs, policy facts, numeric facts absent from the question/evidence, or chain-of-thought. Return structured JSON only.` },
+      { role: 'user', content: JSON.stringify({ original_question: question, semantic_interpretation: semantic, question_contract: contract, verified_entities: verifiedEntities.map(({ id, canonical_name, entity_type }) => ({ id, canonical_name, entity_type })), first_pass_evidence: context.first_pass_evidence ?? [], previous_searches: previousSearches, feedback_reason: context.feedback_reason ?? null }) },
+    ],
+  }, context.feedback_reason ? 'recovery' : 'semantic', (value) => {
+    if (!Array.isArray(value.hypotheses) || value.hypotheses.length < 3 || value.hypotheses.length > 5) return false;
+    const rows = value.hypotheses.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object');
+    const kinds = new Set(rows.map((item) => String(item.kind)));
+    const queries = rows.map((item) => String(item.query ?? '').trim()).filter(Boolean);
+    if (rows.length !== value.hypotheses.length || kinds.size < 3 || new Set(queries.map((query) => query.toLocaleLowerCase())).size !== queries.length) return false;
+    const probes = rows.map((item) => ({ query: String(item.query ?? ''), concepts: Array.isArray(item.concepts) ? item.concepts.map(String) : [] }));
+    return independentStrategyCount(previousSearches.length === 0 ? [question] : previousSearches, probes) >= 2;
+  });
+  const modes = new Set<RecoverySearchMode>(['all', 'semantic', 'tables', 'headings', 'documents', 'entities']);
+  const directions = new Set<RecoveryRelationshipDirection>(['forward', 'reverse', 'bidirectional', 'aggregation', 'unknown']);
+  const kinds = new Set<SemanticHypothesisKind>(['literal', 'canonical', 'acronym_or_professional', 'reverse_relation', 'evidence_discovered']);
+  const bases = new Set<SemanticSearchHypothesis['basis']>(['user_literal', 'general_knowledge_search_only', 'retrieved_evidence']);
+  const hypotheses = (Array.isArray(raw.hypotheses) ? raw.hypotheses : []).flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const row = item as Record<string, unknown>; const query = String(row.query ?? '').trim();
+    const concepts = Array.isArray(row.concepts) ? row.concepts.map(String).map((value) => value.trim()).filter(Boolean).slice(0, 12) : [];
+    if (!query || !numbersGrounded(`${query} ${concepts.join(' ')}`)) return [];
+    return [{
+      kind: kinds.has(row.kind as SemanticHypothesisKind) ? row.kind as SemanticHypothesisKind : 'canonical',
+      query: query.slice(0, 500), concepts,
+      mode: modes.has(row.mode as RecoverySearchMode) ? row.mode as RecoverySearchMode : 'all',
+      relationship_direction: directions.has(row.relationship_direction as RecoveryRelationshipDirection) ? row.relationship_direction as RecoveryRelationshipDirection : 'unknown',
+      basis: bases.has(row.basis as SemanticSearchHypothesis['basis']) ? row.basis as SemanticSearchHypothesis['basis'] : 'general_knowledge_search_only',
+    }];
+  }).slice(0, 5);
+  if (hypotheses.length < 3 || independentStrategyCount(previousSearches.length ? previousSearches : [question], hypotheses) < 2) {
+    throw new AIProviderError(completion.provider, 200, false, 'semantic_hypothesis_expansion_not_distinct');
+  }
+  const normalizedEvidence = evidenceText.normalize('NFKC').toLocaleLowerCase();
+  const evidenceDiscoveredTerminology = Array.isArray(raw.evidence_discovered_terminology)
+    ? raw.evidence_discovered_terminology.map(String).map((value) => value.trim()).filter((value) =>
+      value.length > 0 && normalizedEvidence.includes(value.normalize('NFKC').toLocaleLowerCase())
+    ).slice(0, 12)
+    : [];
+  const directionsRaw = new Set<RecoveryRelationshipDirection>(['forward', 'reverse', 'bidirectional', 'aggregation', 'unknown']);
+  return {
+    sandbox: {
+      terminology_mismatch_plausible: raw.terminology_mismatch_plausible === true,
+      relation_direction_original: directionsRaw.has(raw.relation_direction_original as RecoveryRelationshipDirection) ? raw.relation_direction_original as RecoveryRelationshipDirection : 'unknown',
+      relation_direction_reconsidered: directionsRaw.has(raw.relation_direction_reconsidered as RecoveryRelationshipDirection) ? raw.relation_direction_reconsidered as RecoveryRelationshipDirection : 'unknown',
+      evidence_discovered_terminology: evidenceDiscoveredTerminology,
+      hypotheses,
+    }, usage: completionUsage(completion.payload), latency_ms: Date.now() - started, provider: completion.provider, model: completion.model,
+  };
+}
+
 export type RecoveryPlan = {
   decision: 'use_existing' | 'search' | 'clarification' | 'not_found';
   diagnosis: string;
@@ -453,7 +578,7 @@ export async function planRecoverySearch(
   const { completion, raw } = await callStructuredAI({
     maxOutputTokens: 1050, response_format: { type: 'json_object' }, together_response_format: recoveryResponseFormat,
     messages: [
-      { role: 'system', content: `Plan one bounded semantic recovery over approved insurance documents. Never answer the policy question and never invent policy facts. The supplied Question Contract is binding: diagnose why its facets were not covered and never change the requested relationship into a nearby easier question. Diagnose operationally whether the failure is terminology/abbreviation/synonym/language mismatch, reversed relation, wrong entity focus, wrong requested dimension, intent drift, incomplete aggregation, evidence ranking error, ignored first-pass evidence, cross-document need, genuine ambiguity, or genuine missing evidence. These are reasoning categories, never phrase triggers. First independently reinterpret what the user means. Dynamically expand only terminology suggested by the request or first-pass clues: professional or medical shorthand, colloquial/formal wording, brand/generic relationships, specialty/practitioner wording, singular/plural, Arabic/English/mixed wording, plausible misspellings, aliases, reverse relationships, and indirect/opposite relationship direction. Do not use a fixed vocabulary or memorize examples. Treat first-pass candidates and evidence as useful clues. Generate 3–6 genuinely distinct bounded hypotheses when search is needed; each hypothesis must name its concepts, safe retrieval mode, and relationship direction. Searches may target semantic text, tables, headings, documents, or verified entities and may aggregate across documents while preserving provenance. Preserve every verified explicit entity as authoritative and never substitute a same-class medication. Current verified evidence overrides remembered hints. For INCORRECT, re-evaluate independently. For INCOMPLETE, target missing contract facets while retaining supported evidence. For MISUNDERSTOOD, reconstruct meaning and relationship direction. Clarification is permitted only when at least two materially different interpretations remain after evidence search; retrieval difficulty is not ambiguity. Choose not_found only after direct search and semantic recovery lack answer-bearing evidence. Never generate SQL, filters, document IDs, policy facts, or chain-of-thought. Return compact structured JSON only.` },
+      { role: 'system', content: `Plan one bounded semantic recovery over approved insurance documents. Never answer the policy question and never invent policy facts. The supplied Question Contract is binding: diagnose why its facets were not covered and never change the requested relationship into a nearby easier question. The supplied semantic_hypothesis_sandbox is binding search-planning context. General linguistic, medical, and professional knowledge is allowed ONLY to propose unverified search terminology; it is never policy evidence and must be discarded unless approved evidence confirms it. Diagnose operationally whether the failure is terminology/abbreviation/synonym/language mismatch, reversed relation, wrong entity focus, wrong requested dimension, intent drift, incomplete aggregation, evidence ranking error, ignored first-pass evidence, cross-document need, genuine ambiguity, or genuine missing evidence. These are reasoning categories, never phrase triggers. First independently reinterpret what the user means. Dynamically expand terminology from the request, general search-only knowledge, and terminology explicitly discovered in first-pass evidence: professional or medical shorthand, colloquial/formal wording, brand/generic relationships, specialty/practitioner wording, singular/plural, Arabic/English/mixed wording, plausible misspellings, conceptual synonyms, parent/child terms, and reverse relationships. Do not use a fixed vocabulary or memorize examples. Treat first-pass candidates and evidence as useful clues. Determine relationship direction relative to how evidence stores subject and object, not merely the user's sentence grammar. For example, when evidence stores owner → attribute but the request asks attribute → owners, search for the attribute as object and return the owning subjects. Generate 3–6 genuinely distinct bounded hypotheses when search is needed; each hypothesis must name its concepts, safe retrieval mode, and relationship direction. Searches may target semantic text, tables, headings, documents, or verified entities and may aggregate across documents while preserving provenance. Preserve every verified explicit entity as authoritative and never substitute a same-class medication. Current verified evidence overrides remembered hints. For INCORRECT, independently reinterpret and materially change the failed search strategy; literal-equivalent rewrites are invalid. For INCOMPLETE, target missing contract facets while retaining supported evidence. For MISUNDERSTOOD, reconstruct meaning and relationship direction. Clarification is permitted only when at least two materially different interpretations remain after evidence search; retrieval difficulty is not ambiguity. Choose not_found only after direct search and canonical semantic recovery lack answer-bearing evidence. Never generate SQL, filters, document IDs, policy facts, or chain-of-thought. Return compact structured JSON only.` },
       { role: 'user', content: JSON.stringify({ original_question: question, semantic_interpretation: semantic, verified_entities: verifiedEntities.map(({ id, canonical_name, entity_type }) => ({ id, canonical_name, entity_type })), ...context }) },
     ],
   }, 'recovery', (value) => {
