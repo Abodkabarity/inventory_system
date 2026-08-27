@@ -7,6 +7,7 @@ import { alignSemanticMedication, evaluateOrThresholdTimeWindows, renderDetermin
 import { embedRetrievalQuery } from './embedding.ts';
 import { incompleteExtractiveFallback } from './incomplete_recovery.ts';
 import { preferredAnswerShouldReplace, relationSnapshot, semanticCachePayload, semanticCacheSignature, validatePreferredAnswerSources } from './validated_cache.ts';
+import { findVerifiedSemanticMemory, recordSemanticMemoryFeedback, storeVerifiedSemanticRecovery, type RecoveryHypothesis, type SemanticMemoryHint } from './semantic_recovery_memory.ts';
 import {
   buildRetrievalPlan, chunkAnswersDimension, enforceRouteSafety, evidenceForAnswer, groundEntityOnlySemantic, isolateMedicationCandidates, normalize,
   isolateSearchUnitCandidates, requestedDimensions, rerankChunks, resolveVerifiedEntities, selectEvidence, strictRetrievalEntityIds,
@@ -37,6 +38,7 @@ function aiDiagnostics(semantic: AIMetadata, reranks: AIMetadata[], answer: AIMe
     answer_input_tokens: usagePart(answer?.usage, 'prompt_tokens', 'input_tokens'), answer_output_tokens: usagePart(answer?.usage, 'completion_tokens', 'output_tokens'),
     total_tokens: calls.reduce((s, x) => s + usageTotal(x.usage), 0), semantic_latency_ms: semantic.latency_ms,
     rerank_latency_ms: reranks.reduce((s, x) => s + x.latency_ms, 0), answer_latency_ms: answer?.latency_ms ?? 0,
+    ai_calls: calls.length,
   };
 }
 function mergeUnits(left: HybridSearchUnit[], right: HybridSearchUnit[]) {
@@ -318,10 +320,21 @@ async function recordPositiveFeedback(db: DBClient, userId: string, messageId: s
   return { recorded: true, cache_updated: true, preferred_source: preferredSource };
 }
 
+async function applySemanticMemoryFeedback(db: DBClient, memoryDb: DBClient | null, messageId: string, positive: boolean) {
+  if (!memoryDb) return;
+  const { data: audit } = await db.from('insurance_answer_audits').select('provider_diagnostics')
+    .eq('message_id', messageId).order('created_at', { ascending: false }).limit(1).maybeSingle();
+  const diagnostics = audit?.provider_diagnostics as Record<string, unknown> | undefined;
+  const memory = diagnostics?.semantic_recovery_memory as Record<string, unknown> | undefined;
+  const memoryId = typeof memory?.memory_id === 'string' ? memory.memory_id : null;
+  if (memoryId) await recordSemanticMemoryFeedback(memoryDb, memoryId, positive);
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: cors });
   const started = Date.now();
   let db: DBClient | null = null;
+  let memoryDb: DBClient | null = null;
   let trace: RequestTrace | null = null;
   let debugRequested = false;
   try {
@@ -330,6 +343,8 @@ Deno.serve(async (request) => {
     db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: authorization } }, auth: { persistSession: false } });
     const { data: auth, error: authError } = await db.auth.getUser(authorization.slice(7));
     if (authError || !auth.user) return respond({ error: 'Authentication required.' }, 401);
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (serviceRoleKey) memoryDb = createClient(Deno.env.get('SUPABASE_URL')!, serviceRoleKey, { auth: { persistSession: false } });
     let body: Record<string, unknown>;
     try { body = await request.json() as Record<string, unknown>; }
     catch { return respond({ error: 'A valid JSON request body is required.' }, 400); }
@@ -341,6 +356,7 @@ Deno.serve(async (request) => {
     if (typeof body.positive_feedback_message_id === 'string') {
       const result = await recordPositiveFeedback(db, auth.user.id, body.positive_feedback_message_id);
       if (result.invalid) return respond({ error: 'The feedback message is invalid.' }, 400);
+      await applySemanticMemoryFeedback(db, memoryDb, body.positive_feedback_message_id, true);
       return respond({ feedback_recorded: true, validated_cache_updated: result.cache_updated === true, preferred_source: result.preferred_source ?? null, insurance_v3: true });
     }
 
@@ -351,6 +367,7 @@ Deno.serve(async (request) => {
       const { data: assistant, error } = await db.from('insurance_chat_messages').select('id,session_id,message,citations,parsed_data,created_at').eq('id', feedbackMessageId).eq('role', 'assistant').single();
       if (error || !assistant) return respond({ error: 'The feedback message is invalid.' }, 400);
       const { data: priorAudit } = await db.from('insurance_answer_audits').select('id,raw_question,structured_query,verified_evidence,final_citations,recovery_attempt').eq('message_id', feedbackMessageId).order('created_at', { ascending: false }).limit(1).maybeSingle();
+      await applySemanticMemoryFeedback(db, memoryDb, feedbackMessageId, false);
       if (Number(priorAudit?.recovery_attempt ?? assistant.parsed_data?.recovery_depth ?? 0) >= 1) {
         await db.from('insurance_feedback').upsert({ message_id: feedbackMessageId, user_id: auth.user.id, rating: -1, second_rating: -1, reason: String(body.feedback_reason ?? 'other'), updated_at: new Date().toISOString() }, { onConflict: 'message_id,user_id' });
         return respond({ feedback_recorded: true, recovery_exhausted: true, insurance_v3: true });
@@ -471,7 +488,27 @@ Deno.serve(async (request) => {
       return respond({ ...saved, answer, citations: [], answer_status: semantic.route, insurance_v3: true, debug: debugRequested ? { request_id: trace.request_id, semantic_interpretation: semantic, verified_entities: verifiedEntities, ai: trace.providers } : undefined });
     }
 
-    let plan = buildRetrievalPlan(question, semantic, verifiedEntities, dimensions);
+    let memoryHint: SemanticMemoryHint | null = null;
+    let memoryInvalidations: Array<{ id: string; reason: string }> = [];
+    if (!pipelineContext.forceRecovery && memoryDb && semantic.route !== 'out_of_scope') {
+      const memoryStarted = Date.now();
+      const memoryResult = await findVerifiedSemanticMemory(memoryDb, semantic, verifiedEntities);
+      memoryHint = memoryResult.hint; memoryInvalidations = memoryResult.invalidated;
+      trace.latency.semantic_memory_ms = Date.now() - memoryStarted;
+      trace.providers.semantic_recovery_memory = {
+        lookup: true, hit: Boolean(memoryHint), memory_id: memoryHint?.id ?? null,
+        match_score: memoryHint?.score ?? null, confidence: memoryHint?.confidence ?? null,
+        relationship_direction: memoryHint?.relationship_direction ?? null,
+        invalidated: memoryInvalidations,
+      };
+    }
+    const rememberedQueries = memoryHint?.hypotheses.map((hypothesis) => hypothesis.query) ?? [];
+    const rememberedConcepts = memoryHint?.expansion_concepts ?? [];
+    let plan = buildRetrievalPlan(question, semantic, verifiedEntities, dimensions, memoryHint ? {
+      retrieval_queries: [...(semantic.retrieval_queries ?? []), ...rememberedQueries].slice(0, 8),
+      search_concepts: [...(semantic.search_concepts ?? []), ...rememberedConcepts].slice(0, 24),
+      search_phrases: [...(semantic.search_phrases ?? []), ...rememberedQueries].slice(0, 12),
+    } : undefined);
     trace.retrieval_plan = plan;
     let units: HybridSearchUnit[] = [];
     let selection: ReturnType<typeof selectEvidence> = { selected: [], missingDimensions: dimensions, missingSignals: [], requestedCoverage: 0, sufficient: false };
@@ -482,6 +519,7 @@ Deno.serve(async (request) => {
     let selectedUnits: HybridSearchUnit[] = [];
     let expandIds: string[] = [];
     let strongEvidence = false;
+    let successfulRecoveryPlan: RecoveryPlan | null = null;
     const aiCalls: AIMetadata[] = [];
     const embeddingRuns: Awaited<ReturnType<typeof embedRetrievalQuery>>[] = [];
     const retrievalStarted = Date.now();
@@ -492,7 +530,12 @@ Deno.serve(async (request) => {
         answerEvidence = selection.selected.slice(0, 4);
         strongEvidence = selection.selected.length > 0 && selection.sufficient && selection.missingDimensions.length === 0;
       } else {
-        const retrieved = await retrieveHybrid(db, lexicalInformationQuery(question, semantic, verifiedEntities), vectorInformationQuery(semantic, verifiedEntities, plan.query), verifiedEntities, allEntities);
+        const retrieved = await retrieveHybrid(
+          db,
+          lexicalInformationQuery(question, semantic, verifiedEntities, [...rememberedConcepts, ...rememberedQueries].slice(0, 12)),
+          vectorInformationQuery(semantic, verifiedEntities, plan.query, [...rememberedQueries, ...rememberedConcepts].slice(0, 12)),
+          verifiedEntities, allEntities,
+        );
         embeddingRuns.push(retrieved.embedding); units = retrieved.units;
         try {
           const rerank = await rerankAndJudgeEvidence(question, semantic, verifiedEntities, units.slice(0, 18));
@@ -525,7 +568,8 @@ Deno.serve(async (request) => {
       const recoveryStarted = Date.now();
       const normalStrongEvidence = strongEvidence;
       if (semanticRequestedRecovery) strongEvidence = false;
-      for (let iteration = 1; iteration <= 2 && !strongEvidence; iteration++) {
+      const maximumRecoveryIterations = pipelineContext.forceRecovery ? 2 : 1;
+      for (let iteration = 1; iteration <= maximumRecoveryIterations && !strongEvidence; iteration++) {
         let recoveryPlan: Awaited<ReturnType<typeof planRecoverySearch>>;
         try {
           recoveryPlan = await planRecoverySearch(question, semantic, verifiedEntities, {
@@ -541,7 +585,11 @@ Deno.serve(async (request) => {
           aiCalls.push(recoveryPlan);
         } catch (error) {
           trace.providers.recovery_planner_error = error instanceof Error ? error.name : 'unknown';
-          break;
+          // Without a completed semantic recovery check, absence of evidence is
+          // not proof that the approved corpus lacks the answer. Let the
+          // controlled outer handler return a temporary/safe response instead
+          // of incorrectly recording "not established".
+          throw error;
         }
         if (pipelineContext.forceRecovery && (
           recoveryPlan.decision === 'use_existing'
@@ -553,11 +601,20 @@ Deno.serve(async (request) => {
           ].map((value) => String(value ?? '').trim()).filter(Boolean))].slice(0, 3);
           recoveryPlan.decision = 'search';
           recoveryPlan.searches = independentQueries.map((query, index) => ({
-            query, mode: index === 1 ? 'tables' : index === 2 ? 'headings' : 'all',
+            label: `independent-${index + 1}`, query, mode: index === 1 ? 'tables' : index === 2 ? 'headings' : 'all',
+            concepts: [], relationship_direction: 'unknown',
           }));
           recoveryPlan.diagnosis = `${recoveryPlan.diagnosis} Independent verification required after negative feedback.`.trim();
         }
-        const iterationTrace: Record<string, unknown> = { iteration, decision: recoveryPlan.decision, diagnosis: recoveryPlan.diagnosis, information_need: recoveryPlan.information_need, searches: recoveryPlan.searches, candidate_count_before: units.length };
+        const iterationTrace: Record<string, unknown> = {
+          iteration, decision: recoveryPlan.decision, diagnosis: recoveryPlan.diagnosis,
+          information_need: recoveryPlan.information_need,
+          independent_interpretation: recoveryPlan.independent_interpretation,
+          concept_expansions: recoveryPlan.concept_expansions,
+          relationship_direction: recoveryPlan.relationship_direction,
+          first_pass_clues_reused: units.length > 0 || selection.selected.length > 0,
+          searches: recoveryPlan.searches, candidate_count_before: units.length,
+        };
         const unresolvedSemanticAmbiguity = semanticRequestedRecovery
           && verifiedEntities.length === 0
           && !(recoveryPlan.decision === 'use_existing' && normalStrongEvidence && answerEvidence.length > 0);
@@ -591,7 +648,7 @@ Deno.serve(async (request) => {
           break;
         }
         let newUnits: HybridSearchUnit[] = [];
-        for (const search of recoveryPlan.searches.slice(0, 3)) {
+        for (const search of recoveryPlan.searches.slice(0, 6)) {
           try {
             const anchoredEntities = verifiedEntities.some((entity) => entity.entity_type.startsWith('medication_')) ? verifiedEntities : [];
             const retrieved = await retrieveHybrid(db, search.query, search.query, anchoredEntities, allEntities);
@@ -626,6 +683,7 @@ Deno.serve(async (request) => {
           }
         }
         trace.recovery.iterations.push({ ...iterationTrace, new_candidate_count: newUnits.length, selected_evidence_count: selection.selected.length, outcome: strongEvidence ? 'answer_bearing_evidence' : 'insufficient' });
+        if (strongEvidence) successfulRecoveryPlan = recoveryPlan;
       }
       trace.latency.recovery_ms = Date.now() - recoveryStarted;
     }
@@ -683,7 +741,7 @@ Deno.serve(async (request) => {
     const sourceDocumentIds = [...new Set(safeUsed.map((chunk) => chunk.document_id))];
     const { data: sourceDocuments, error: sourceDocumentsError } = await db
       .from('insurance_v3_documents')
-      .select('id,storage_bucket,storage_path')
+      .select('id,document_hash,version,updated_at,is_active,storage_bucket,storage_path')
       .in('id', sourceDocumentIds);
     if (sourceDocumentsError) {
       console.error('insurance_v3_citation_storage_lookup_error', {
@@ -707,7 +765,61 @@ Deno.serve(async (request) => {
     const saved = await saveConversation(db, body, question, answer, citations, semantic, verifiedEntities, status, pipelineContext.forceRecovery ? 1 : 0);
     trace.session_id = saved.session_id; trace.message_id = saved.message_id; trace.final_status = status; trace.final_answer = answer; trace.citations = citations; trace.final_reason = 'verified_answer_bearing_evidence'; trace.answer_generator = answerGenerator; trace.latency.answer_ms = answerResult.latency_ms; trace.latency.total_ms = Date.now() - started;
     trace.providers = { ...trace.providers, ...aiDiagnostics(semanticResult, aiCalls, (deterministicAnswer && pipelineContext.feedbackReason !== 'incomplete') || answerGenerator.includes('fallback') ? null : answerResult) }; trace.token_usage = trace.providers;
+    trace.providers.semantic_recovery = {
+      semantic_recovery_triggered: trace.recovery.activated,
+      semantic_recovery_reason: trace.recovery.reason,
+      generated_concept_expansions: successfulRecoveryPlan?.concept_expansions ?? [],
+      relationship_direction_detected: successfulRecoveryPlan?.relationship_direction ?? memoryHint?.relationship_direction ?? 'unknown',
+      first_pass_evidence_reused: trace.recovery.iterations.some((iteration) => iteration.first_pass_clues_reused === true),
+      recovery_queries: successfulRecoveryPlan?.searches.map((search) => search.query) ?? [],
+      recovery_memory_created: false,
+      recovery_memory_hit: Boolean(memoryHint),
+      recovery_memory_confidence: memoryHint?.confidence ?? null,
+      recovery_memory_invalidated: memoryInvalidations.length > 0,
+      recovery_memory_invalidation_reason: memoryInvalidations.map((item) => item.reason),
+      normal_retrieval_saved_by_memory: Boolean(memoryHint && !trace.recovery.activated),
+      deep_review_avoided: Boolean(memoryHint && !trace.recovery.activated),
+      ai_calls: (trace.providers.ai_calls as number | undefined) ?? 0,
+      latency_ms: Number(trace.latency.recovery_ms ?? 0) + Number(trace.latency.semantic_memory_ms ?? 0),
+    };
     const auditId = await persistRequestTrace(db, trace);
+    if (memoryDb && auditId && memoryHint) {
+      const { data: usedMemory } = await memoryDb.from('insurance_semantic_recovery_memories').select('successful_uses').eq('id', memoryHint.id).maybeSingle();
+      if (usedMemory) await memoryDb.from('insurance_semantic_recovery_memories').update({
+        successful_uses: Number(usedMemory.successful_uses) + 1,
+        last_verified_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      }).eq('id', memoryHint.id);
+    }
+    const canLearnSemanticRepair = Boolean(
+      memoryDb && auditId && successfulRecoveryPlan && strongEvidence && safeUsed.length > 0
+      && !answerGenerator.includes('fallback') && (sufficiency?.status === 'complete' || selection.sufficient),
+    );
+    if (canLearnSemanticRepair && memoryDb && auditId && successfulRecoveryPlan) {
+      const hypotheses: RecoveryHypothesis[] = successfulRecoveryPlan.searches.map((search) => ({
+        label: search.label, query: search.query, mode: search.mode, concepts: search.concepts,
+        relationship_direction: search.relationship_direction,
+      }));
+      const learnedMemoryId = await storeVerifiedSemanticRecovery(memoryDb, {
+        semantic, entities: verifiedEntities, relations: relations as V3Relation[],
+        expansionConcepts: successfulRecoveryPlan.concept_expansions.map((item) => item.concept),
+        hypotheses, relationshipDirection: successfulRecoveryPlan.relationship_direction,
+        evidenceIds: safeUsed.map((chunk) => chunk.chunk_id),
+        documents: (sourceDocuments ?? []) as Array<Record<string, unknown>>, auditId,
+      });
+      if (learnedMemoryId) {
+        const memoryDiagnostics = {
+          ...((trace.providers.semantic_recovery_memory as Record<string, unknown> | undefined) ?? {}),
+          learned: true, memory_id: learnedMemoryId, automatic: true,
+          evidence_count: safeUsed.length, source_count: sourceDocumentIds.length,
+        };
+        trace.providers.semantic_recovery_memory = memoryDiagnostics;
+        trace.providers.semantic_recovery = {
+          ...(trace.providers.semantic_recovery as Record<string, unknown>),
+          recovery_memory_created: true,
+        };
+        await memoryDb.from('insurance_answer_audits').update({ provider_diagnostics: trace.providers, token_usage: trace.providers }).eq('id', auditId);
+      }
+    }
     if (pipelineContext.forceRecovery && auditId) await db.from('insurance_learning_queue').insert({ audit_id: auditId, reason: 'negative_feedback', priority: 3, proposed_change: { request_id: trace.request_id, feedback_reason: pipelineContext.feedbackReason, recovery_answer_status: status, recovery_searches: trace.recovery.iterations } });
     return respond({ ...saved, answer, citations, confidence: null, answer_status: status, answer_generator: answerGenerator, evidence_checked: true, insurance_v3: true, recovery_used: trace.recovery.activated,
       debug: debugRequested ? { request_id: trace.request_id, semantic_interpretation: semantic, verified_entities: verifiedEntities, retrieval_mode: retrievalMode, retrieval_plan: plan, retrieval_channels: units.slice(0, 24), selected_units: selectedUnits, evidence_judgments: evidenceJudgments, expansion_unit_ids: expandIds, evidence_sufficiency: sufficiency, recovery: trace.recovery, deterministic_criteria_evaluations: deterministicEvaluations, final_evidence_ids: answerEvidence.map((chunk) => chunk.chunk_id), retrieved_chunks: selection.selected, embedding: embeddingRuns, fallback_used: trace.fallback_used, ai: trace.providers, model: AI_MODEL, processing_ms: Date.now() - started } : undefined });

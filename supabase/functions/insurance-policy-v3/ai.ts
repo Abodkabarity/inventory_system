@@ -269,12 +269,16 @@ export type EvidenceSufficiency = {
 };
 
 export type RecoverySearchMode = 'all' | 'semantic' | 'tables' | 'headings' | 'documents' | 'entities';
+export type RecoveryRelationshipDirection = 'forward' | 'reverse' | 'bidirectional' | 'aggregation' | 'unknown';
 export type RecoveryPlan = {
   decision: 'use_existing' | 'search' | 'clarification' | 'not_found';
   diagnosis: string;
   information_need: string;
+  independent_interpretation: string;
+  concept_expansions: Array<{ concept: string; category: string }>;
+  relationship_direction: RecoveryRelationshipDirection;
   clarification_question: string | null;
-  searches: Array<{ query: string; mode: RecoverySearchMode }>;
+  searches: Array<{ label: string; query: string; mode: RecoverySearchMode; concepts: string[]; relationship_direction: RecoveryRelationshipDirection }>;
 };
 
 const recoveryResponseFormat = {
@@ -284,15 +288,25 @@ const recoveryResponseFormat = {
       properties: {
         decision: { type: 'string', enum: ['use_existing', 'search', 'clarification', 'not_found'] },
         diagnosis: { type: 'string' }, information_need: { type: 'string' },
+        independent_interpretation: { type: 'string' },
+        concept_expansions: { type: 'array', maxItems: 18, items: {
+          type: 'object', additionalProperties: false,
+          properties: { concept: { type: 'string' }, category: { type: 'string' } },
+          required: ['concept', 'category'],
+        } },
+        relationship_direction: { type: 'string', enum: ['forward', 'reverse', 'bidirectional', 'aggregation', 'unknown'] },
         clarification_question: nullableString,
-        searches: { type: 'array', maxItems: 4, items: {
+        searches: { type: 'array', maxItems: 6, items: {
           type: 'object', additionalProperties: false,
           properties: {
+            label: { type: 'string' },
             query: { type: 'string' },
             mode: { type: 'string', enum: ['all', 'semantic', 'tables', 'headings', 'documents', 'entities'] },
-          }, required: ['query', 'mode'],
+            concepts: { type: 'array', maxItems: 12, items: { type: 'string' } },
+            relationship_direction: { type: 'string', enum: ['forward', 'reverse', 'bidirectional', 'aggregation', 'unknown'] },
+          }, required: ['label', 'query', 'mode', 'concepts', 'relationship_direction'],
         } },
-      }, required: ['decision', 'diagnosis', 'information_need', 'clarification_question', 'searches'],
+      }, required: ['decision', 'diagnosis', 'information_need', 'independent_interpretation', 'concept_expansions', 'relationship_direction', 'clarification_question', 'searches'],
     },
   },
 };
@@ -305,24 +319,44 @@ export async function planRecoverySearch(
 ): Promise<RecoveryPlan & AIResultMetadata> {
   const started = Date.now();
   const { completion, raw } = await callStructuredAI({
-    maxOutputTokens: 650, response_format: { type: 'json_object' }, together_response_format: recoveryResponseFormat,
+    maxOutputTokens: 1050, response_format: { type: 'json_object' }, together_response_format: recoveryResponseFormat,
     messages: [
-      { role: 'system', content: `Plan a bounded recovery search over approved insurance documents. Never answer the policy question and never invent facts. Diagnose why the first search failed, then express at most four read-only document searches using open vocabulary. Searches may target all text, semantic content, tables, headings, documents, or verified entities. Support reverse relationships and cross-document aggregation without assuming medication-first intent. Preserve every verified explicit entity as authoritative and never substitute a same-class medication. If selected evidence already directly answers a clear information need, choose use_existing; this is especially important when the first semantic route was merely uncertain. If the request is genuinely ambiguous and lacks enough resolvable context, choose clarification and ask one concise question in the user's language. Choose not_found only when the supplied search history already demonstrates that the information need was searched broadly and no relevant approved evidence exists. Never generate SQL, filters, document IDs, or policy facts. Return compact JSON only.` },
+      { role: 'system', content: `Plan one bounded semantic recovery over approved insurance documents. Never answer the policy question and never invent policy facts. First independently reinterpret the user's actual information need. Dynamically expand only terminology suggested by the request or first-pass clues: abbreviations, acronyms, professional or medical shorthand, colloquial/formal wording, brand/generic relationships, specialty/practitioner wording, singular/plural, Arabic/English/mixed wording, plausible misspellings, aliases, reverse relationships, and indirect/opposite relationship direction. Do not use a fixed vocabulary or memorize examples. Treat first-pass candidates and evidence as useful clues, not as authoritative conclusions and not as material to discard. Generate 3–6 genuinely distinct bounded hypotheses when search is needed; each hypothesis must name its concepts and relationship direction. Searches may target all text, semantic content, tables, headings, documents, or verified entities and may aggregate across documents while preserving provenance. Preserve every verified explicit entity as authoritative and never substitute a same-class medication. Current verified evidence always overrides remembered hints. If selected evidence directly answers a clear information need, choose use_existing. If genuinely ambiguous without resolvable entity/context, choose clarification in the user's language. Choose not_found only after the supplied history demonstrates both the direct interpretation and one semantic recovery were searched without answer-bearing evidence. Never generate SQL, filters, document IDs, or policy facts. Return compact JSON only.` },
       { role: 'user', content: JSON.stringify({ original_question: question, semantic_interpretation: semantic, verified_entities: verifiedEntities.map(({ id, canonical_name, entity_type }) => ({ id, canonical_name, entity_type })), ...context }) },
     ],
-  }, 'recovery', (value) => ['use_existing', 'search', 'clarification', 'not_found'].includes(String(value.decision)) && Array.isArray(value.searches));
+  }, 'recovery', (value) => {
+    if (!['use_existing', 'search', 'clarification', 'not_found'].includes(String(value.decision)) || !Array.isArray(value.searches)) return false;
+    if (value.decision !== 'search') return value.searches.length <= 6;
+    const distinct = new Set(value.searches.map((item) => {
+      const row = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+      return `${String(row.mode ?? '')}|${String(row.query ?? '').trim().toLocaleLowerCase()}`;
+    }));
+    return value.searches.length >= 3 && value.searches.length <= 6 && distinct.size === value.searches.length;
+  });
   const modes = new Set<RecoverySearchMode>(['all', 'semantic', 'tables', 'headings', 'documents', 'entities']);
+  const directions = new Set<RecoveryRelationshipDirection>(['forward', 'reverse', 'bidirectional', 'aggregation', 'unknown']);
   const searches = Array.isArray(raw.searches) ? raw.searches.flatMap((item) => {
     if (!item || typeof item !== 'object') return [];
     const row = item as Record<string, unknown>;
     const query = typeof row.query === 'string' ? row.query.trim().slice(0, 500) : '';
     const mode = modes.has(row.mode as RecoverySearchMode) ? row.mode as RecoverySearchMode : 'all';
-    return query ? [{ query, mode }] : [];
-  }).slice(0, 4) : [];
+    const direction = directions.has(row.relationship_direction as RecoveryRelationshipDirection) ? row.relationship_direction as RecoveryRelationshipDirection : 'unknown';
+    const concepts = Array.isArray(row.concepts) ? [...new Set(row.concepts.map((value) => String(value).trim()).filter(Boolean))].slice(0, 12) : [];
+    return query ? [{ label: typeof row.label === 'string' ? row.label.slice(0, 160) : '', query, mode, concepts, relationship_direction: direction }] : [];
+  }).slice(0, 6) : [];
+  const conceptExpansions = Array.isArray(raw.concept_expansions) ? raw.concept_expansions.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const row = item as Record<string, unknown>;
+    const concept = typeof row.concept === 'string' ? row.concept.trim().slice(0, 160) : '';
+    return concept ? [{ concept, category: typeof row.category === 'string' ? row.category.trim().slice(0, 100) : 'semantic' }] : [];
+  }).slice(0, 18) : [];
   return {
     decision: raw.decision as RecoveryPlan['decision'],
     diagnosis: typeof raw.diagnosis === 'string' ? raw.diagnosis.slice(0, 500) : '',
     information_need: typeof raw.information_need === 'string' ? raw.information_need.slice(0, 700) : '',
+    independent_interpretation: typeof raw.independent_interpretation === 'string' ? raw.independent_interpretation.slice(0, 700) : '',
+    concept_expansions: conceptExpansions,
+    relationship_direction: directions.has(raw.relationship_direction as RecoveryRelationshipDirection) ? raw.relationship_direction as RecoveryRelationshipDirection : 'unknown',
     clarification_question: typeof raw.clarification_question === 'string' && raw.clarification_question.trim() ? raw.clarification_question.trim().slice(0, 500) : null,
     searches, usage: completionUsage(completion.payload), latency_ms: Date.now() - started,
     provider: completion.provider, model: completion.model,
