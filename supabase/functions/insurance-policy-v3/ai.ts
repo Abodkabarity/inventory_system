@@ -823,6 +823,13 @@ export type SharedAnswerObjectiveContext = {
   original_answer?: string | null;
   original_evidence?: unknown;
 };
+export type AnswerVerifierResult = {
+  answer_usable: boolean;
+  answer_rejected_before_display: boolean;
+  final_answer_verified?: boolean;
+  draft_answer_usable?: boolean;
+  reason: string;
+};
 
 export async function answerFromEvidence(
   question: string, semantic: SemanticInterpretation, evidence: V3Chunk[],
@@ -831,7 +838,7 @@ export async function answerFromEvidence(
   questionContract?: QuestionContract | null,
   evidenceLedger?: EvidenceLedger | null,
   objectiveContext?: SharedAnswerObjectiveContext | null,
-): Promise<{ answer: string; used_evidence_ids: string[]; verifier: { answer_usable: boolean; answer_rejected_before_display: boolean; reason: string } } & AIResultMetadata> {
+): Promise<{ answer: string; used_evidence_ids: string[]; verifier: AnswerVerifierResult } & AIResultMetadata> {
   const started = Date.now();
   const supplied = evidence.slice(0, 6).map((chunk, index) => ({
     id: `E${index + 1}`,
@@ -880,7 +887,12 @@ export async function answerFromEvidence(
   if (!validatedAnswer || validatedUsed.length === 0) throw new Error('ai_malformed_response');
   return {
     answer: validatedAnswer, used_evidence_ids: validatedUsed,
-    verifier: { answer_usable: validation.raw.answer_usable === true, answer_rejected_before_display: validation.raw.answer_usable !== true, reason: String(validation.raw.reason ?? '').slice(0, 700) },
+    verifier: {
+      answer_usable: true, final_answer_verified: true,
+      draft_answer_usable: validation.raw.answer_usable === true,
+      answer_rejected_before_display: validation.raw.answer_usable !== true,
+      reason: String(validation.raw.reason ?? '').slice(0, 700),
+    },
     usage: combinedUsage(completionUsage(completion.payload), completionUsage(validation.completion.payload)), latency_ms: Date.now() - started,
     provider: completion.provider === 'groq_fallback' || validation.completion.provider === 'groq_fallback' ? 'groq_fallback' : 'together', model: validation.completion.model,
   };
@@ -889,7 +901,7 @@ export async function answerFromEvidence(
 export async function verifyAnswerAgainstContract(
   question: string, semantic: SemanticInterpretation, contract: QuestionContract, ledger: EvidenceLedger,
   evidence: V3Chunk[], draftAnswer: string, draftEvidenceIds: string[],
-): Promise<{ answer: string; used_evidence_ids: string[]; verifier: { answer_usable: boolean; answer_rejected_before_display: boolean; reason: string } } & AIResultMetadata> {
+): Promise<{ answer: string; used_evidence_ids: string[]; verifier: AnswerVerifierResult } & AIResultMetadata> {
   const started = Date.now();
   const supplied = evidence.slice(0, 8).map((chunk, index) => ({
     id: `E${index + 1}`, text: chunk.chunk_text.slice(0, 1800), structural_context: structuralContext(chunk),
@@ -907,7 +919,12 @@ export async function verifyAnswerAgainstContract(
   const used = Array.isArray(raw.used_evidence_ids) ? [...new Set(raw.used_evidence_ids.filter((item): item is string => typeof item === 'string' && allowed.has(item)))] : [];
   return {
     answer: String(raw.corrected_answer ?? '').trim(), used_evidence_ids: used,
-    verifier: { answer_usable: raw.answer_usable === true, answer_rejected_before_display: raw.answer_usable !== true, reason: String(raw.reason ?? '').slice(0, 700) },
+    verifier: {
+      answer_usable: true, final_answer_verified: true,
+      draft_answer_usable: raw.answer_usable === true,
+      answer_rejected_before_display: raw.answer_usable !== true,
+      reason: String(raw.reason ?? '').slice(0, 700),
+    },
     usage: completionUsage(completion.payload), latency_ms: Date.now() - started, provider: completion.provider, model: completion.model,
   };
 }

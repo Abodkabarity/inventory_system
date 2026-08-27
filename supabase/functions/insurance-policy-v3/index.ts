@@ -8,6 +8,7 @@ import { embedRetrievalQuery } from './embedding.ts';
 import { contractRelevantEvidence, deterministicGroundedSynthesis, feedbackObjective, guardUserOutput, looksLikeRawStructuredOutput, mergeCanonicalTerms, REASONING_ENGINE_VERSION, recoveryPlanFromSandbox, requiresAggregateCollection } from './reasoning_engine.ts';
 import { preferredAnswerShouldReplace, relationSnapshot, semanticCachePayload, semanticCacheSignature, validatePreferredAnswerSources } from './validated_cache.ts';
 import { findVerifiedSemanticMemory, recordSemanticMemoryFeedback, storeVerifiedSemanticRecovery, type RecoveryHypothesis, type SemanticMemoryHint } from './semantic_recovery_memory.ts';
+import { extractVerifiedSearchStrategy, validatedLearningGate } from './validated_learning.ts';
 import {
   buildRetrievalPlan, enforceRouteSafety, evidenceForAnswer, groundEntityOnlySemantic, isolateMedicationCandidates, normalize,
   isolateSearchUnitCandidates, requestedDimensions, rerankChunks, resolveVerifiedEntities, selectEvidence, strictRetrievalEntityIds,
@@ -246,6 +247,7 @@ type PipelineContext = {
   originalEvidence: unknown;
   originalCitations: unknown;
   originalSemantic: unknown;
+  validatedCacheInvalidated: boolean;
 };
 
 const citationFor = (
@@ -303,7 +305,7 @@ const jsonRows = (value: unknown) => Array.isArray(value)
   ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
   : [];
 
-async function recordPositiveFeedback(db: DBClient, userId: string, messageId: string) {
+async function recordPositiveFeedback(db: DBClient, memoryDb: DBClient | null, userId: string, messageId: string) {
   const { data: assistant, error: messageError } = await db.from('insurance_chat_messages')
     .select('id,message,citations,parsed_data').eq('id', messageId).eq('role', 'assistant').single();
   if (messageError || !assistant) return { invalid: true };
@@ -313,15 +315,28 @@ async function recordPositiveFeedback(db: DBClient, userId: string, messageId: s
   if (feedbackError) throw feedbackError;
 
   const { data: audit } = await db.from('insurance_answer_audits').select(
-    'id,raw_question,structured_query,verified_entities,verified_evidence,answer_status,final_answer,final_citations,recovery_attempt,provider_diagnostics,latency_ms',
+    'id,raw_question,structured_query,retrieval_plan,verified_entities,verified_evidence,answer_status,final_answer,final_citations,recovery_attempt,provider_diagnostics,completeness,fallback_used,answer_generator,latency_ms',
   ).eq('message_id', messageId).order('created_at', { ascending: false }).limit(1).maybeSingle();
-  const cacheableStatuses = new Set(['grounded', 'grounded_fallback', 'recovery_grounded', 'recovery_fallback', 'validated_cache_hit']);
   const citations = jsonRows(audit?.final_citations).length ? jsonRows(audit.final_citations) : jsonRows(assistant.citations);
   const semantic = audit?.structured_query as SemanticInterpretation | undefined;
   const verifiedEntities = jsonRows(audit?.verified_entities) as V3Entity[];
   const answer = String(audit?.final_answer ?? assistant.message ?? '').trim();
-  if (!audit || !semantic || !cacheableStatuses.has(String(audit.answer_status)) || !answer || citations.length === 0 || verifiedEntities.length === 0) {
-    return { recorded: true, cache_updated: false, reason: 'answer_not_safely_cacheable' };
+  const learningGate = validatedLearningGate(audit as Record<string, unknown> | null, citations, answer);
+  if (!audit || !semantic || !learningGate.eligible) {
+    if (memoryDb && audit?.id) {
+      await memoryDb.from('insurance_answer_audits').update({
+        provider_diagnostics: {
+          ...((audit.provider_diagnostics as Record<string, unknown> | null) ?? {}),
+          useful_learning: {
+            gate_passed: false,
+            validated_cache_updated: false,
+            semantic_memory_updated: false,
+            reasons: learningGate.reasons.length ? learningGate.reasons : ['answer_not_safely_cacheable'],
+          },
+        },
+      }).eq('id', audit.id);
+    }
+    return { recorded: true, cache_updated: false, semantic_memory_updated: false, reason: learningGate.reasons.join(',') || 'answer_not_safely_cacheable' };
   }
 
   const documentIds = [...new Set(citations.map((citation) => String(citation.document_id ?? '')).filter(Boolean))];
@@ -363,7 +378,29 @@ async function recordPositiveFeedback(db: DBClient, userId: string, messageId: s
     positive_feedback_at: now, active: true, invalidated_at: null, invalidation_reason: null, updated_at: now,
   }, { onConflict: 'user_id,semantic_signature' });
   if (cacheError) throw cacheError;
-  return { recorded: true, cache_updated: true, preferred_source: preferredSource };
+  let semanticMemoryId: string | null = null;
+  if (memoryDb) {
+    const strategy = extractVerifiedSearchStrategy(audit.provider_diagnostics);
+    const retrievalPlan = audit.retrieval_plan && typeof audit.retrieval_plan === 'object' ? audit.retrieval_plan as Record<string, unknown> : {};
+    const questionContract = retrievalPlan.question_contract && typeof retrievalPlan.question_contract === 'object'
+      ? retrievalPlan.question_contract as QuestionContract
+      : strategy.questionContract;
+    semanticMemoryId = await storeVerifiedSemanticRecovery(memoryDb, {
+      semantic, entities: verifiedEntities, relations: relations as V3Relation[], contract: questionContract,
+      expansionConcepts: strategy.expansionConcepts, hypotheses: strategy.hypotheses,
+      relationshipDirection: strategy.relationshipDirection, evidenceIds,
+      documents: (documents ?? []) as Array<Record<string, unknown>>, auditId: String(audit.id),
+    });
+    const usefulLearning = {
+      gate_passed: true, validated_cache_updated: true,
+      semantic_memory_updated: Boolean(semanticMemoryId), semantic_memory_id: semanticMemoryId,
+      strategy_hypothesis_count: strategy.hypotheses.length,
+    };
+    await memoryDb.from('insurance_answer_audits').update({
+      provider_diagnostics: { ...(audit.provider_diagnostics as Record<string, unknown> ?? {}), useful_learning: usefulLearning },
+    }).eq('id', audit.id);
+  }
+  return { recorded: true, cache_updated: true, semantic_memory_updated: Boolean(semanticMemoryId), preferred_source: preferredSource };
 }
 
 async function applySemanticMemoryFeedback(db: DBClient, memoryDb: DBClient | null, messageId: string, positive: boolean) {
@@ -374,6 +411,24 @@ async function applySemanticMemoryFeedback(db: DBClient, memoryDb: DBClient | nu
   const memory = diagnostics?.semantic_recovery_memory as Record<string, unknown> | undefined;
   const memoryId = typeof memory?.memory_id === 'string' ? memory.memory_id : null;
   if (memoryId) await recordSemanticMemoryFeedback(memoryDb, memoryId, positive);
+}
+
+async function invalidateValidatedAnswerAfterNegativeFeedback(
+  db: DBClient, userId: string, audit: Record<string, unknown> | null,
+) {
+  if (!audit?.structured_query || typeof audit.structured_query !== 'object') return false;
+  const semantic = audit.structured_query as SemanticInterpretation;
+  const entities = jsonRows(audit.verified_entities) as V3Entity[];
+  const signature = await semanticCacheSignature(semantic, entities);
+  const { data, error } = await db.from('insurance_validated_answers').update({
+    active: false, invalidated_at: new Date().toISOString(),
+    invalidation_reason: 'negative_feedback_requires_reverification', updated_at: new Date().toISOString(),
+  }).eq('user_id', userId).eq('semantic_signature', signature).eq('active', true).select('id');
+  if (error) {
+    console.error('insurance_v3_negative_feedback_cache_invalidation_error', { code: error.code });
+    return false;
+  }
+  return (data ?? []).length > 0;
 }
 
 Deno.serve(async (request) => {
@@ -400,23 +455,24 @@ Deno.serve(async (request) => {
     }
 
     if (typeof body.positive_feedback_message_id === 'string') {
-      const result = await recordPositiveFeedback(db, auth.user.id, body.positive_feedback_message_id);
+      const result = await recordPositiveFeedback(db, memoryDb, auth.user.id, body.positive_feedback_message_id);
       if (result.invalid) return respond({ error: 'The feedback message is invalid.' }, 400);
       await applySemanticMemoryFeedback(db, memoryDb, body.positive_feedback_message_id, true);
-      return respond({ feedback_recorded: true, validated_cache_updated: result.cache_updated === true, preferred_source: result.preferred_source ?? null, insurance_v3: true });
+      return respond({ feedback_recorded: true, validated_cache_updated: result.cache_updated === true, semantic_memory_updated: result.semantic_memory_updated === true, preferred_source: result.preferred_source ?? null, insurance_v3: true });
     }
 
-    let pipelineContext: PipelineContext = { forceRecovery: false, feedbackReason: null, originalAuditId: null, originalAnswer: null, originalEvidence: null, originalCitations: null, originalSemantic: null };
+    let pipelineContext: PipelineContext = { forceRecovery: false, feedbackReason: null, originalAuditId: null, originalAnswer: null, originalEvidence: null, originalCitations: null, originalSemantic: null, validatedCacheInvalidated: false };
     let question = String(body.message ?? '').trim();
     if (typeof body.feedback_message_id === 'string') {
       const feedbackMessageId = body.feedback_message_id;
       const { data: assistant, error } = await db.from('insurance_chat_messages').select('id,session_id,message,citations,parsed_data,created_at').eq('id', feedbackMessageId).eq('role', 'assistant').single();
       if (error || !assistant) return respond({ error: 'The feedback message is invalid.' }, 400);
-      const { data: priorAudit } = await db.from('insurance_answer_audits').select('id,raw_question,structured_query,verified_evidence,final_citations,recovery_attempt').eq('message_id', feedbackMessageId).order('created_at', { ascending: false }).limit(1).maybeSingle();
+      const { data: priorAudit } = await db.from('insurance_answer_audits').select('id,raw_question,structured_query,verified_entities,verified_evidence,final_citations,recovery_attempt').eq('message_id', feedbackMessageId).order('created_at', { ascending: false }).limit(1).maybeSingle();
       await applySemanticMemoryFeedback(db, memoryDb, feedbackMessageId, false);
+      const validatedCacheInvalidated = await invalidateValidatedAnswerAfterNegativeFeedback(db, auth.user.id, priorAudit as Record<string, unknown> | null);
       if (Number(priorAudit?.recovery_attempt ?? assistant.parsed_data?.recovery_depth ?? 0) >= 1) {
         await db.from('insurance_feedback').upsert({ message_id: feedbackMessageId, user_id: auth.user.id, rating: -1, second_rating: -1, reason: String(body.feedback_reason ?? 'other'), updated_at: new Date().toISOString() }, { onConflict: 'message_id,user_id' });
-        return respond({ feedback_recorded: true, recovery_exhausted: true, insurance_v3: true });
+        return respond({ feedback_recorded: true, recovery_exhausted: true, validated_cache_invalidated: validatedCacheInvalidated, insurance_v3: true });
       }
       if (priorAudit?.raw_question) question = String(priorAudit.raw_question);
       else {
@@ -430,6 +486,7 @@ Deno.serve(async (request) => {
         forceRecovery: true, feedbackReason, originalAuditId: priorAudit?.id ? String(priorAudit.id) : null,
         originalAnswer: String(assistant.message ?? ''), originalEvidence: priorAudit?.verified_evidence ?? assistant.citations ?? [],
         originalCitations: priorAudit?.final_citations ?? assistant.citations ?? [], originalSemantic: priorAudit?.structured_query ?? assistant.parsed_data?.semantic ?? null,
+        validatedCacheInvalidated,
       };
       body = { ...body, session_id: assistant.session_id };
     }
@@ -451,6 +508,7 @@ Deno.serve(async (request) => {
       grounded_synthesis_fallback_used: false,
       raw_json_blocked: false, raw_evidence_dump_blocked: false,
       answer_verifier_result: null,
+      negative_feedback_cache_invalidated: pipelineContext.validatedCacheInvalidated,
     };
 
     const entityStarted = Date.now();
@@ -501,7 +559,7 @@ Deno.serve(async (request) => {
     const questionContract = contractResult.contract;
     trace.question_contract = questionContract as unknown as Record<string, unknown>;
     trace.latency.question_contract_ms = Date.now() - contractStarted;
-    if (!pipelineContext.forceRecovery && semantic.route !== 'out_of_scope' && verifiedEntities.length > 0) {
+    if (!pipelineContext.forceRecovery && semantic.route !== 'out_of_scope') {
       const cacheStarted = Date.now();
       const signature = await semanticCacheSignature(semantic, verifiedEntities);
       let { data: cached, error: cacheLookupError } = await db.from('insurance_validated_answers')
@@ -1008,7 +1066,7 @@ Deno.serve(async (request) => {
 
     const deterministicEvaluations = evaluateOrThresholdTimeWindows(semantic, answerEvidence);
     const deterministicAnswer = renderDeterministicCriterionAnswer(question, semantic, deterministicEvaluations);
-    let answerResult: { answer: string; used_evidence_ids: string[]; verifier?: { answer_usable: boolean; answer_rejected_before_display: boolean; reason: string } } & AIMetadata;
+    let answerResult: { answer: string; used_evidence_ids: string[]; verifier?: { answer_usable: boolean; answer_rejected_before_display: boolean; final_answer_verified?: boolean; draft_answer_usable?: boolean; reason: string } } & AIMetadata;
     let answerGenerator = deterministicAnswer ? 'deterministic_criteria' : 'grounded_ai';
     const sharedAnswerContext = {
       feedback_objective: objective.name,
@@ -1150,7 +1208,8 @@ Deno.serve(async (request) => {
     const semanticLearningChecks = {
       recovery_plan_present: Boolean(successfulRecoveryPlan), strong_verified_evidence: strongEvidence,
       cited_evidence_present: safeUsed.length > 0, evidence_ledger_complete: evidenceLedger?.status === 'complete',
-      answer_verifier_passed: answerResult.verifier?.answer_usable === true && answerResult.verifier?.answer_rejected_before_display !== true,
+      answer_verifier_passed: answerResult.verifier?.final_answer_verified === true
+        || (answerResult.verifier?.answer_usable === true && answerResult.verifier?.answer_rejected_before_display !== true),
       no_material_ambiguity: questionContract.ambiguities.every((ambiguity) => !ambiguity.materially_distinct),
       all_source_snapshots_resolved: (sourceDocuments ?? []).length === sourceDocumentIds.length,
       no_answer_fallback: !answerGenerator.includes('fallback'),
