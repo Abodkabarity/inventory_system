@@ -1,11 +1,11 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';
-import { AI_MODEL, answerFromEvidence, answerIncompleteRecovery, createQuestionContract, generateSemanticSearchHypotheses, inspectEvidenceAgainstContract, interpretQuestion, planRecoverySearch, rerankAndJudgeEvidence, searchStrategyChanged, verifyAnswerAgainstContract, type EvidenceJudgment, type EvidenceLedger, type EvidenceSufficiency, type QuestionContract, type RecoveryPlan, type SemanticHypothesisSandbox } from './ai.ts';
+import { AI_MODEL, answerFromEvidence, createQuestionContract, generateSemanticSearchHypotheses, inspectEvidenceAgainstContract, interpretQuestion, planRecoverySearch, rerankAndJudgeEvidence, searchStrategyChanged, verifyAnswerAgainstContract, type EvidenceJudgment, type EvidenceLedger, type EvidenceSufficiency, type QuestionContract, type RecoveryPlan, type SemanticHypothesisSandbox } from './ai.ts';
 import { AIProviderError, AIProvidersTemporarilyUnavailableError, type AIProviderName } from './ai_provider.ts';
-import { groundedExtractiveAnswer, hasStrongVerifiedEvidence } from './fallback.ts';
+import { hasStrongVerifiedEvidence } from './fallback.ts';
 import { newRequestTrace, persistRequestTrace, type RequestTrace } from './diagnostics.ts';
 import { alignSemanticMedication, evaluateOrThresholdTimeWindows, renderDeterministicCriterionAnswer } from './criteria.ts';
 import { embedRetrievalQuery } from './embedding.ts';
-import { incompleteExtractiveFallback } from './incomplete_recovery.ts';
+import { contractRelevantEvidence, deterministicGroundedSynthesis, feedbackObjective, guardUserOutput, looksLikeRawStructuredOutput, mergeCanonicalTerms, REASONING_ENGINE_VERSION, recoveryPlanFromSandbox, requiresAggregateCollection } from './reasoning_engine.ts';
 import { preferredAnswerShouldReplace, relationSnapshot, semanticCachePayload, semanticCacheSignature, validatePreferredAnswerSources } from './validated_cache.ts';
 import { findVerifiedSemanticMemory, recordSemanticMemoryFeedback, storeVerifiedSemanticRecovery, type RecoveryHypothesis, type SemanticMemoryHint } from './semantic_recovery_memory.ts';
 import {
@@ -55,6 +55,7 @@ function evidenceLedgerFallback(contract: QuestionContract, evidence: V3Chunk[],
     status: facets.every((facet) => facet.status === 'supported') ? 'complete' : facets.some((facet) => facet.status !== 'missing') ? 'partial' : 'insufficient',
     facets, missing_facets: facets.filter((facet) => facet.status !== 'supported').map((facet) => facet.facet_id),
     relation_direction_preserved: verifiedStrongEvidence, detected_relation_direction: 'unknown', cross_document_search: false,
+    aggregation_complete: contract.answer_cardinality !== 'aggregate', matched_subjects: [],
     next_searches: [], reason: verifiedStrongEvidence ? 'Deterministic evidence-preserving ledger fallback.' : 'Contract coverage not established.',
   };
 }
@@ -73,7 +74,7 @@ function fallbackQuestionContract(question: string, semantic: SemanticInterpreta
     requested_relationships: [],
     required_answer_facets: facets.slice(0, 12),
     comparison_axes: [], constraints: [], patient_facts: [], ambiguities: [],
-    expected_answer_type: 'grounded response', source_requirement: semantic.source_requested,
+    expected_answer_type: 'grounded response', answer_cardinality: 'unknown', source_requirement: semantic.source_requested,
     initial_search_hypotheses: [{
       query: question.slice(0, 500), mode: 'all',
       concepts: [...new Set([...(semantic.search_concepts ?? []), ...entities.map((entity) => entity.canonical_name)])].slice(0, 10),
@@ -437,6 +438,20 @@ Deno.serve(async (request) => {
     trace.recovery_of_audit_id = pipelineContext.originalAuditId;
     trace.recovery_attempt = pipelineContext.forceRecovery ? 1 : 0;
     trace.recovery.feedback_reason = pipelineContext.feedbackReason;
+    const objective = feedbackObjective(pipelineContext.feedbackReason);
+    trace.providers.shared_reasoning_engine = {
+      reasoning_engine_version: REASONING_ENGINE_VERSION,
+      semantic_engine_id: REASONING_ENGINE_VERSION,
+      feedback_objective: objective.name,
+      objective,
+      canonical_terms_discovered: [], canonical_terms_reused: [],
+      relation_direction: 'unknown', cross_document_search: false,
+      aggregate_search_rounds: 0, evidence_matches_by_document: {},
+      evidence_ledger_status: null, provider_failure_stage: null,
+      grounded_synthesis_fallback_used: false,
+      raw_json_blocked: false, raw_evidence_dump_blocked: false,
+      answer_verifier_result: null,
+    };
 
     const entityStarted = Date.now();
     const [{ data: entities, error: entityError }, { data: aliases, error: aliasError }, { data: relations, error: relationError }] = await Promise.all([
@@ -474,7 +489,7 @@ Deno.serve(async (request) => {
     const contractStarted = Date.now();
     let contractResult: ({ contract: QuestionContract } & AIMetadata);
     try {
-      contractResult = await createQuestionContract(question, semantic, verifiedEntities, pipelineContext.feedbackReason);
+      contractResult = await createQuestionContract(question, semantic, verifiedEntities, objective.name);
     } catch (error) {
       contractResult = {
         contract: fallbackQuestionContract(question, semantic, verifiedEntities), usage: null, latency_ms: Date.now() - contractStarted,
@@ -516,8 +531,14 @@ Deno.serve(async (request) => {
         const validity = await validatePreferredAnswerSources(db, cached as Record<string, unknown>);
         cacheDiagnostics.source_validity_check = validity.valid ? 'valid' : 'invalid';
         cacheDiagnostics.invalidation_reason = validity.reason;
+        const cachedAnswerIsStructured = validity.valid && looksLikeRawStructuredOutput(String(cached.answer_text ?? ''));
         if (!validity.valid) {
           await db.from('insurance_validated_answers').update({ active: false, invalidated_at: new Date().toISOString(), invalidation_reason: validity.reason, updated_at: new Date().toISOString() }).eq('id', cached.id);
+        } else if (cachedAnswerIsStructured) {
+          cacheDiagnostics.invalidation_reason = 'raw_structured_output_blocked_for_request';
+          trace.providers.shared_reasoning_engine = {
+            ...(trace.providers.shared_reasoning_engine as Record<string, unknown>), raw_json_blocked: true,
+          };
         } else {
           const answer = String(cached.answer_text);
           const citations = jsonRows(cached.citations);
@@ -568,6 +589,15 @@ Deno.serve(async (request) => {
       recovery_search_changed: null,
       insufficient_evidence_after_semantic_expansion: false,
     };
+    let canonicalTerms = mergeCanonicalTerms(
+      initialSemanticSandbox.hypotheses.filter((hypothesis) => hypothesis.kind !== 'literal').flatMap((hypothesis) => hypothesis.concepts),
+    );
+    trace.providers.shared_reasoning_engine = {
+      ...(trace.providers.shared_reasoning_engine as Record<string, unknown>),
+      semantic_hypotheses_generated: initialSemanticSandbox.hypotheses,
+      canonical_terms_discovered: canonicalTerms,
+      relation_direction: initialSemanticSandbox.relation_direction_reconsidered,
+    };
 
     let memoryHint: SemanticMemoryHint | null = null;
     let memoryInvalidations: Array<{ id: string; reason: string }> = [];
@@ -585,6 +615,12 @@ Deno.serve(async (request) => {
     }
     const rememberedQueries = memoryHint?.hypotheses.map((hypothesis) => hypothesis.query) ?? [];
     const rememberedConcepts = memoryHint?.expansion_concepts ?? [];
+    canonicalTerms = mergeCanonicalTerms(canonicalTerms, rememberedConcepts);
+    trace.providers.shared_reasoning_engine = {
+      ...(trace.providers.shared_reasoning_engine as Record<string, unknown>),
+      canonical_terms_reused: rememberedConcepts,
+      canonical_terms_discovered: canonicalTerms,
+    };
     const contractQueries = [...questionContract.initial_search_hypotheses.map((hypothesis) => hypothesis.query), ...initialSemanticSandbox.hypotheses.map((hypothesis) => hypothesis.query)];
     const contractConcepts = [...questionContract.initial_search_hypotheses.flatMap((hypothesis) => hypothesis.concepts), ...initialSemanticSandbox.hypotheses.flatMap((hypothesis) => hypothesis.concepts)];
     let plan: ReturnType<typeof buildRetrievalPlan> & Record<string, unknown> = buildRetrievalPlan(question, semantic, verifiedEntities, dimensions, {
@@ -655,12 +691,12 @@ Deno.serve(async (request) => {
           try {
             const inspected = await inspectEvidenceAgainstContract(question, semantic, questionContract, verifiedEntities, selection.selected, contractQueries);
             aiCalls.push(inspected); evidenceLedger = inspected.ledger;
-            const supportedIds = new Set(evidenceLedger.facets.flatMap((facet) => facet.evidence_ids));
-            const ledgerEvidence = selection.selected.filter((chunk) => supportedIds.has(chunk.chunk_id));
-            answerEvidence = [...new Map([...ledgerEvidence, ...answerEvidence].map((chunk) => [chunk.chunk_id, chunk])).values()].slice(0, 12);
+            const ledgerEvidence = contractRelevantEvidence(selection.selected, evidenceLedger);
+            if (ledgerEvidence.length > 0) answerEvidence = ledgerEvidence.slice(0, 12);
             sufficiency = { status: evidenceLedger.status, answered_information: evidenceLedger.facets.filter((facet) => facet.status === 'supported').map((facet) => facet.facet_id), missing_information: evidenceLedger.missing_facets, reason: evidenceLedger.reason };
             const directionRequired = requiresExplicitDirectionProof(questionContract);
-            strongEvidence = evidenceLedger.status === 'complete' && answerEvidence.length > 0 && (!directionRequired || evidenceLedger.relation_direction_preserved);
+            const aggregateReady = !requiresAggregateCollection(questionContract);
+            strongEvidence = evidenceLedger.status === 'complete' && aggregateReady && answerEvidence.length > 0 && (!directionRequired || evidenceLedger.relation_direction_preserved);
           } catch (error) {
             evidenceLedger = evidenceLedgerFallback(questionContract, answerEvidence, preInspectionStrongEvidence);
             sufficiency = { status: evidenceLedger.status, answered_information: evidenceLedger.facets.filter((facet) => facet.status === 'supported').map((facet) => facet.facet_id), missing_information: evidenceLedger.missing_facets, reason: evidenceLedger.reason };
@@ -684,14 +720,31 @@ Deno.serve(async (request) => {
       // recovery plan instead of silently reusing the same path.
       if (semanticRequestedRecovery || pipelineContext.forceRecovery) strongEvidence = false;
       const previousSemanticSearches = [...new Set([question, ...contractQueries, ...(semantic.retrieval_queries ?? [])].map((value) => String(value).trim()).filter(Boolean))];
-      const recoveryHypothesisResult = await generateSemanticSearchHypotheses(question, semantic, questionContract, verifiedEntities, {
-        first_pass_evidence: selection.selected.slice(0, 10).map((chunk) => ({ heading: chunk.section_title, document: chunk.document_title, page: chunk.page_from, text: chunk.chunk_text.slice(0, 800) })),
-        previous_searches: previousSemanticSearches,
-        feedback_reason: pipelineContext.feedbackReason,
-      });
-      aiCalls.push(recoveryHypothesisResult);
-      recoverySemanticSandbox = recoveryHypothesisResult.sandbox;
+      try {
+        const recoveryHypothesisResult = await generateSemanticSearchHypotheses(question, semantic, questionContract, verifiedEntities, {
+          first_pass_evidence: selection.selected.slice(0, 10).map((chunk) => ({ heading: chunk.section_title, document: chunk.document_title, page: chunk.page_from, text: chunk.chunk_text.slice(0, 800) })),
+          previous_searches: previousSemanticSearches,
+          feedback_reason: objective.name,
+        });
+        aiCalls.push(recoveryHypothesisResult);
+        recoverySemanticSandbox = recoveryHypothesisResult.sandbox;
+      } catch (error) {
+        // The first-pass sandbox is request-scoped and already verified as a
+        // distinct search plan. Reuse it as a clue set when a later provider
+        // call fails instead of discarding evidence already discovered.
+        recoverySemanticSandbox = initialSemanticSandbox;
+        trace.providers.recovery_hypothesis_error = error instanceof Error ? error.name : 'unknown';
+        trace.providers.shared_reasoning_engine = {
+          ...(trace.providers.shared_reasoning_engine as Record<string, unknown>),
+          provider_failure_stage: 'recovery_semantic_hypothesis',
+        };
+      }
       recoverySearchChanged = searchStrategyChanged(previousSemanticSearches, recoverySemanticSandbox.hypotheses);
+      canonicalTerms = mergeCanonicalTerms(
+        canonicalTerms,
+        recoverySemanticSandbox.evidence_discovered_terminology,
+        recoverySemanticSandbox.hypotheses.flatMap((hypothesis) => hypothesis.concepts),
+      );
       trace.providers.semantic_hypothesis_sandbox = {
         ...(trace.providers.semantic_hypothesis_sandbox as Record<string, unknown>),
         semantic_hypotheses_generated: recoverySemanticSandbox.hypotheses,
@@ -701,12 +754,23 @@ Deno.serve(async (request) => {
         semantic_reinterpretation_on_incorrect: pipelineContext.feedbackReason === 'incorrect',
         recovery_search_changed: recoverySearchChanged,
       };
-      const maximumRecoveryIterations = pipelineContext.forceRecovery ? 2 : 1;
+      trace.providers.shared_reasoning_engine = {
+        ...(trace.providers.shared_reasoning_engine as Record<string, unknown>),
+        semantic_hypotheses_generated: recoverySemanticSandbox.hypotheses,
+        canonical_terms_discovered: canonicalTerms,
+        canonical_terms_reused: recoverySemanticSandbox.evidence_discovered_terminology,
+        relation_direction: recoverySemanticSandbox.relation_direction_reconsidered,
+      };
+      const aggregateRequested = requiresAggregateCollection(questionContract);
+      const maximumRecoveryIterations = aggregateRequested ? 3 : pipelineContext.forceRecovery ? 2 : 1;
       for (let iteration = 1; iteration <= maximumRecoveryIterations && !strongEvidence; iteration++) {
-        let recoveryPlan: Awaited<ReturnType<typeof planRecoverySearch>>;
+        const candidateIdsBefore = new Set(units.map((unit) => unit.search_unit_id));
+        let recoveryPlan: RecoveryPlan;
         try {
-          recoveryPlan = await planRecoverySearch(question, semantic, verifiedEntities, {
+          const planned = await planRecoverySearch(question, semantic, verifiedEntities, {
             normal_failure_reason: trace.recovery.reason,
+            reasoning_engine_version: REASONING_ENGINE_VERSION,
+            feedback_objective: objective,
             question_contract: questionContract,
             evidence_ledger: evidenceLedger,
             missing_facets: evidenceLedger?.missing_facets ?? [],
@@ -719,19 +783,29 @@ Deno.serve(async (request) => {
             original_answer: pipelineContext.originalAnswer,
             original_evidence: pipelineContext.originalEvidence,
             semantic_hypothesis_sandbox: recoverySemanticSandbox,
+            canonical_terms_discovered: canonicalTerms,
           });
-          aiCalls.push(recoveryPlan);
+          aiCalls.push(planned);
+          recoveryPlan = planned;
         } catch (error) {
           trace.providers.recovery_planner_error = error instanceof Error ? error.name : 'unknown';
-          // Without a completed semantic recovery check, absence of evidence is
-          // not proof that the approved corpus lacks the answer. Let the
-          // controlled outer handler return a temporary/safe response instead
-          // of incorrectly recording "not established".
-          throw error;
+          recoveryPlan = recoveryPlanFromSandbox(recoverySemanticSandbox, objective, canonicalTerms);
+          trace.providers.shared_reasoning_engine = {
+            ...(trace.providers.shared_reasoning_engine as Record<string, unknown>),
+            provider_failure_stage: 'recovery_search_planner',
+          };
         }
         const materialAmbiguities = questionContract.ambiguities.filter((ambiguity) => ambiguity.materially_distinct);
         const materialInterpretations = [...new Set(materialAmbiguities.flatMap((ambiguity) => ambiguity.interpretations))];
-        const plannerChangedSearch = searchStrategyChanged(previousSemanticSearches, recoveryPlan.searches);
+        canonicalTerms = mergeCanonicalTerms(
+          canonicalTerms,
+          recoveryPlan.concept_expansions.map((item) => item.concept),
+          recoveryPlan.searches.flatMap((search) => search.concepts),
+        );
+        const priorRoundSearches = trace.recovery.iterations.flatMap((entry) => Array.isArray(entry.searches)
+          ? (entry.searches as Array<Record<string, unknown>>).map((search) => String(search.query ?? ''))
+          : []);
+        const plannerChangedSearch = searchStrategyChanged([...previousSemanticSearches, ...priorRoundSearches], recoveryPlan.searches);
         if (recoveryPlan.decision === 'search' && !plannerChangedSearch) {
           recoveryPlan.searches = recoverySemanticSandbox.hypotheses.map((hypothesis, index) => ({
             label: `semantic-sandbox-${index + 1}-${hypothesis.kind}`, query: hypothesis.query,
@@ -775,7 +849,7 @@ Deno.serve(async (request) => {
           first_pass_clues_reused: units.length > 0 || selection.selected.length > 0,
           searches: recoveryPlan.searches, candidate_count_before: units.length,
         };
-        if (recoveryPlan.decision === 'use_existing' && normalStrongEvidence && answerEvidence.length > 0) {
+        if (recoveryPlan.decision === 'use_existing' && normalStrongEvidence && answerEvidence.length > 0 && !aggregateRequested) {
           strongEvidence = true;
           trace.recovery.iterations.push({ ...iterationTrace, outcome: 'verified_existing_evidence' });
           break;
@@ -828,15 +902,19 @@ Deno.serve(async (request) => {
             try {
               const inspected = await inspectEvidenceAgainstContract(
                 question, semantic, questionContract, verifiedEntities, selection.selected,
-                trace.recovery.iterations.flatMap((entry) => Array.isArray(entry.searches) ? (entry.searches as Array<Record<string, unknown>>).map((search) => String(search.query ?? '')) : []),
+                [
+                  ...trace.recovery.iterations.flatMap((entry) => Array.isArray(entry.searches) ? (entry.searches as Array<Record<string, unknown>>).map((search) => String(search.query ?? '')) : []),
+                  ...recoveryPlan.searches.map((search) => search.query),
+                ],
               );
               aiCalls.push(inspected); evidenceLedger = inspected.ledger;
-              const supportedIds = new Set(evidenceLedger.facets.flatMap((facet) => facet.evidence_ids));
-              const ledgerEvidence = selection.selected.filter((chunk) => supportedIds.has(chunk.chunk_id));
-              answerEvidence = [...new Map([...ledgerEvidence, ...answerEvidence].map((chunk) => [chunk.chunk_id, chunk])).values()].slice(0, 12);
+              const ledgerEvidence = contractRelevantEvidence(selection.selected, evidenceLedger);
+              if (ledgerEvidence.length > 0) answerEvidence = ledgerEvidence.slice(0, 12);
               sufficiency = { status: evidenceLedger.status, answered_information: evidenceLedger.facets.filter((facet) => facet.status === 'supported').map((facet) => facet.facet_id), missing_information: evidenceLedger.missing_facets, reason: evidenceLedger.reason };
               const directionRequired = requiresExplicitDirectionProof(questionContract);
-              strongEvidence = evidenceLedger.status === 'complete' && answerEvidence.length > 0 && (!directionRequired || evidenceLedger.relation_direction_preserved);
+              const materiallyNewCandidates = newUnits.filter((unit) => !candidateIdsBefore.has(unit.search_unit_id)).length;
+              const aggregateReady = !aggregateRequested || (Boolean(evidenceLedger.aggregation_complete) && (iteration > 1 || materiallyNewCandidates === 0));
+              strongEvidence = evidenceLedger.status === 'complete' && aggregateReady && answerEvidence.length > 0 && (!directionRequired || evidenceLedger.relation_direction_preserved);
             } catch (error) {
               evidenceLedger = evidenceLedgerFallback(questionContract, answerEvidence, preInspectionStrongEvidence);
               sufficiency = { status: evidenceLedger.status, answered_information: evidenceLedger.facets.filter((facet) => facet.status === 'supported').map((facet) => facet.facet_id), missing_information: evidenceLedger.missing_facets, reason: evidenceLedger.reason };
@@ -845,8 +923,14 @@ Deno.serve(async (request) => {
             }
           }
         }
-        trace.recovery.iterations.push({ ...iterationTrace, new_candidate_count: newUnits.length, selected_evidence_count: selection.selected.length, outcome: strongEvidence ? 'answer_bearing_evidence' : 'insufficient' });
+        const materiallyNewCandidates = newUnits.filter((unit) => !candidateIdsBefore.has(unit.search_unit_id)).length;
+        trace.recovery.iterations.push({ ...iterationTrace, new_candidate_count: newUnits.length, materially_new_candidate_count: materiallyNewCandidates, selected_evidence_count: selection.selected.length, canonical_terms_reused: canonicalTerms, outcome: strongEvidence ? 'answer_bearing_evidence' : 'insufficient' });
         if (strongEvidence) successfulRecoveryPlan = recoveryPlan;
+        if (aggregateRequested && materiallyNewCandidates === 0 && evidenceLedger?.aggregation_complete) {
+          strongEvidence = evidenceLedger.status === 'complete' && answerEvidence.length > 0;
+          if (strongEvidence) successfulRecoveryPlan = recoveryPlan;
+          break;
+        }
       }
       trace.latency.recovery_ms = Date.now() - recoveryStarted;
     }
@@ -855,8 +939,26 @@ Deno.serve(async (request) => {
     trace.candidates = units; trace.reranked = evidenceJudgments; trace.evidence = selection.selected; trace.sufficiency = sufficiency as unknown as Record<string, unknown> | null;
     trace.evidence_ledger = evidenceLedger as unknown as Record<string, unknown> | null;
     trace.rejected = units.filter((unit) => !selectedUnits.some((selected) => selected.search_unit_id === unit.search_unit_id)).slice(0, 20);
+    const evidenceMatchesByDocument = selection.selected.reduce<Record<string, number>>((counts, chunk) => {
+      counts[chunk.document_title] = (counts[chunk.document_title] ?? 0) + 1;
+      return counts;
+    }, {});
+    trace.providers.shared_reasoning_engine = {
+      ...(trace.providers.shared_reasoning_engine as Record<string, unknown>),
+      canonical_terms_discovered: canonicalTerms,
+      canonical_terms_reused: trace.recovery.iterations.flatMap((iteration) => Array.isArray(iteration.canonical_terms_reused) ? iteration.canonical_terms_reused : []),
+      relation_direction: evidenceLedger.detected_relation_direction,
+      cross_document_search: evidenceLedger.cross_document_search || requiresAggregateCollection(questionContract),
+      aggregate_search_rounds: requiresAggregateCollection(questionContract) ? trace.recovery.iterations.length : 0,
+      evidence_matches_by_document: evidenceMatchesByDocument,
+      evidence_ledger_status: evidenceLedger.status,
+    };
     const supportedLedgerEvidence = Boolean(evidenceLedger?.facets.some((facet) => facet.status === 'supported' && facet.evidence_ids.length > 0) && answerEvidence.length > 0);
     if ((!strongEvidence && !supportedLedgerEvidence) || answerEvidence.length === 0) {
+      const sharedDiagnostics = trace.providers.shared_reasoning_engine as Record<string, unknown>;
+      if (answerEvidence.length === 0 && sharedDiagnostics.provider_failure_stage) {
+        throw new AIProvidersTemporarilyUnavailableError();
+      }
       const alternateSemanticExpansionAttempted = initialSemanticSandbox.hypotheses.some((hypothesis) => hypothesis.kind !== 'literal')
         && (!trace.recovery.activated || Boolean(recoverySemanticSandbox && recoverySearchChanged));
       if (!alternateSemanticExpansionAttempted) {
@@ -908,37 +1010,32 @@ Deno.serve(async (request) => {
     const deterministicAnswer = renderDeterministicCriterionAnswer(question, semantic, deterministicEvaluations);
     let answerResult: { answer: string; used_evidence_ids: string[]; verifier?: { answer_usable: boolean; answer_rejected_before_display: boolean; reason: string } } & AIMetadata;
     let answerGenerator = deterministicAnswer ? 'deterministic_criteria' : 'grounded_ai';
-    if (pipelineContext.feedbackReason === 'incomplete') {
-      answerGenerator = 'incomplete_grounded_ai';
-      try {
-        answerResult = await answerIncompleteRecovery(
-          question, semantic, answerEvidence,
-          {
-            original_question: question, original_semantic: pipelineContext.originalSemantic,
-            original_answer: pipelineContext.originalAnswer ?? '', original_citations: pipelineContext.originalCitations,
-            original_evidence: pipelineContext.originalEvidence,
-          },
-          deterministicEvaluations,
-          sufficiency ?? { status: 'complete', answered_information: [], missing_information: [], reason: 'verified answer-bearing evidence' },
-          questionContract,
-          evidenceLedger,
-        );
-      } catch (error) {
-        answerResult = {
-          answer: incompleteExtractiveFallback(pipelineContext.originalAnswer ?? '', pipelineContext.originalEvidence, answerEvidence),
-          used_evidence_ids: answerEvidence.slice(0, 3).map((_, index) => `E${index + 1}`),
-          usage: null, latency_ms: 0, provider: semanticResult.provider, model: semanticResult.model,
-        };
-        answerGenerator = 'incomplete_extractive_guard_fallback'; trace.fallback_used = 'incomplete_grounded_extractive_answer';
-        trace.providers.incomplete_answer_error = error instanceof Error ? error.name : 'unknown';
-      }
-    } else if (deterministicAnswer) answerResult = { answer: deterministicAnswer, used_evidence_ids: ['E1'], usage: null, latency_ms: 0, provider: semanticResult.provider, model: semanticResult.model };
+    const sharedAnswerContext = {
+      feedback_objective: objective.name,
+      preserve_supported_previous_facts: objective.preserve_supported_previous_facts,
+      do_not_preserve_previous_claims: objective.do_not_preserve_previous_claims,
+      target_missing_contract_facets: objective.target_missing_contract_facets,
+      original_answer: pipelineContext.originalAnswer,
+      original_evidence: pipelineContext.originalEvidence,
+    };
+    const synthesisLedger = evidenceLedger ?? evidenceLedgerFallback(questionContract, answerEvidence, true);
+    if (deterministicAnswer && objective.name !== 'incomplete') answerResult = { answer: deterministicAnswer, used_evidence_ids: ['E1'], usage: null, latency_ms: 0, provider: semanticResult.provider, model: semanticResult.model };
     else {
-      try { answerResult = await answerFromEvidence(question, semantic, answerEvidence, deterministicEvaluations, sufficiency ?? { status: 'complete', answered_information: [], missing_information: [], reason: 'verified answer-bearing evidence' }, questionContract, evidenceLedger); }
+      try {
+        answerResult = await answerFromEvidence(
+          question, semantic, answerEvidence, deterministicEvaluations,
+          sufficiency ?? { status: 'complete', answered_information: [], missing_information: [], reason: 'verified answer-bearing evidence' },
+          questionContract, evidenceLedger, sharedAnswerContext,
+        );
+      }
       catch (error) {
-        const fallback = groundedExtractiveAnswer(question, semantic, answerEvidence);
+        const fallback = deterministicGroundedSynthesis(question, questionContract, synthesisLedger, answerEvidence);
         answerResult = { ...fallback, usage: null, latency_ms: 0, provider: semanticResult.provider, model: semanticResult.model };
-        answerGenerator = 'grounded_extractive_fallback'; trace.fallback_used = 'grounded_extractive_answer'; trace.providers.answer_error = error instanceof Error ? error.name : 'unknown';
+        answerGenerator = 'shared_grounded_synthesis_fallback'; trace.fallback_used = 'deterministic_grounded_synthesis'; trace.providers.answer_error = error instanceof Error ? error.name : 'unknown';
+        trace.providers.shared_reasoning_engine = {
+          ...(trace.providers.shared_reasoning_engine as Record<string, unknown>),
+          provider_failure_stage: 'answer_generation', grounded_synthesis_fallback_used: true,
+        };
       }
     }
     if (!answerResult.verifier) {
@@ -952,16 +1049,34 @@ Deno.serve(async (request) => {
           provider: answerResult.provider === 'groq_fallback' || verified.provider === 'groq_fallback' ? 'groq_fallback' : 'together',
         };
       } catch (error) {
-        const fallback = groundedExtractiveAnswer(question, semantic, answerEvidence);
+        const fallback = deterministicGroundedSynthesis(question, questionContract, synthesisLedger, answerEvidence);
         answerResult = {
           ...fallback, usage: answerResult.usage, latency_ms: answerResult.latency_ms,
           provider: answerResult.provider, model: answerResult.model,
-          verifier: { answer_usable: false, answer_rejected_before_display: true, reason: 'verifier_unavailable_grounded_fallback_used' },
+          verifier: { answer_usable: false, answer_rejected_before_display: true, reason: 'verifier_unavailable_deterministic_synthesis_used' },
         };
-        answerGenerator = 'contract_verified_extractive_fallback'; trace.fallback_used = 'answer_verifier_grounded_fallback';
+        answerGenerator = 'shared_verified_synthesis_fallback'; trace.fallback_used = 'answer_verifier_deterministic_synthesis';
         trace.providers.answer_verifier_error = error instanceof Error ? error.name : 'unknown';
+        trace.providers.shared_reasoning_engine = {
+          ...(trace.providers.shared_reasoning_engine as Record<string, unknown>),
+          provider_failure_stage: 'answer_verifier', grounded_synthesis_fallback_used: true,
+        };
       }
     }
+    const guarded = guardUserOutput(answerResult.answer, question, questionContract, synthesisLedger, answerEvidence, answerGenerator.includes('extractive'));
+    if (guarded.used_evidence_ids) answerResult.used_evidence_ids = guarded.used_evidence_ids;
+    answerResult.answer = guarded.answer;
+    if (guarded.raw_json_blocked || guarded.raw_evidence_dump_blocked) {
+      answerGenerator = 'shared_output_guard_synthesis_fallback';
+      trace.fallback_used = 'user_output_sanitizer';
+    }
+    trace.providers.shared_reasoning_engine = {
+      ...(trace.providers.shared_reasoning_engine as Record<string, unknown>),
+      grounded_synthesis_fallback_used: answerGenerator.includes('synthesis_fallback'),
+      raw_json_blocked: guarded.raw_json_blocked,
+      raw_evidence_dump_blocked: guarded.raw_evidence_dump_blocked,
+      answer_verifier_result: answerResult.verifier ?? null,
+    };
     trace.answer_verifier = answerResult.verifier as unknown as Record<string, unknown>;
     const used = evidenceForAnswer(answerEvidence, answerResult.used_evidence_ids, dimensions);
     const safeUsed = used.length ? used : answerEvidence.slice(0, 2);
@@ -1089,6 +1204,12 @@ Deno.serve(async (request) => {
     const answer = temporary ? 'The insurance AI service is temporarily unavailable. Please try again shortly.' : 'The insurance service could not safely complete this request right now. Please try again.';
     console.error('insurance_v3_controlled_failure', { request_id: trace?.request_id, type: error instanceof Error ? error.name : 'unknown', temporary });
     if (trace && db) {
+      trace.providers.shared_reasoning_engine = {
+        ...((trace.providers.shared_reasoning_engine as Record<string, unknown> | undefined) ?? {}),
+        provider_failure_stage: temporary
+          ? ((trace.providers.shared_reasoning_engine as Record<string, unknown> | undefined)?.provider_failure_stage ?? 'pre_evidence_pipeline')
+          : ((trace.providers.shared_reasoning_engine as Record<string, unknown> | undefined)?.provider_failure_stage ?? null),
+      };
       trace.final_status = temporary ? 'temporarily_unavailable' : 'internal_error'; trace.final_answer = answer; trace.final_reason = error instanceof Error ? error.name : 'unknown'; trace.http_status = 200; trace.latency.total_ms = Date.now() - started;
       await persistRequestTrace(db, trace);
     }

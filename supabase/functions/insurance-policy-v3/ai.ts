@@ -230,6 +230,7 @@ export type QuestionContract = {
   patient_facts: string[];
   ambiguities: Array<{ description: string; interpretations: string[]; materially_distinct: boolean }>;
   expected_answer_type: string;
+  answer_cardinality?: 'singular' | 'aggregate' | 'unknown';
   source_requirement: boolean;
   initial_search_hypotheses: Array<{ query: string; mode: RecoverySearchMode; concepts: string[]; relationship_direction: RecoveryRelationshipDirection }>;
 };
@@ -265,7 +266,9 @@ const questionContractResponseFormat = {
           },
           required: ['description', 'interpretations', 'materially_distinct'],
         } },
-        expected_answer_type: { type: 'string' }, source_requirement: { type: 'boolean' },
+        expected_answer_type: { type: 'string' },
+        answer_cardinality: { type: 'string', enum: ['singular', 'aggregate', 'unknown'] },
+        source_requirement: { type: 'boolean' },
         initial_search_hypotheses: { type: 'array', minItems: 1, maxItems: 3, items: {
           type: 'object', additionalProperties: false,
           properties: {
@@ -274,7 +277,7 @@ const questionContractResponseFormat = {
             relationship_direction: { type: 'string', enum: ['forward', 'reverse', 'bidirectional', 'aggregation', 'unknown'] },
           }, required: ['query', 'mode', 'concepts', 'relationship_direction'],
         } },
-      }, required: ['primary_subject', 'secondary_subjects', 'requested_relationships', 'required_answer_facets', 'comparison_axes', 'constraints', 'patient_facts', 'ambiguities', 'expected_answer_type', 'source_requirement', 'initial_search_hypotheses'],
+      }, required: ['primary_subject', 'secondary_subjects', 'requested_relationships', 'required_answer_facets', 'comparison_axes', 'constraints', 'patient_facts', 'ambiguities', 'expected_answer_type', 'answer_cardinality', 'source_requirement', 'initial_search_hypotheses'],
     },
   },
 };
@@ -286,7 +289,7 @@ export async function createQuestionContract(
   const { completion, raw } = await callStructuredAI({
     maxOutputTokens: 1300, response_format: { type: 'json_object' }, together_response_format: questionContractResponseFormat,
     messages: [
-      { role: 'system', content: `Create an operational Question Contract for an evidence-grounded insurance assistant. Preserve the entire original request and define exactly what the final answer must address without answering it or inventing policy facts. Use open vocabulary, not a closed intent taxonomy. Capture primary and secondary subjects, requested relationship and its direction, comparisons, every required answer facet, user-supplied constraints and patient facts, negations/exclusions/temporal or numeric meaning, ambiguity, expected answer shape, and source requirement. Facets must be atomic, non-overlapping, and cover every explicit part of the request. Do not silently replace a requested relationship with a nearby easier property. verified_entities are authoritative identity anchors; AI interpretation cannot conflict with them. Generate 1–3 safe initial document-search hypotheses based only on the request, using distinct semantic angles when useful. Hypotheses may use dynamic terminology expansion, cross-language equivalents, reverse relationships, and cross-document concepts, but must not contain candidate policy answers or numbers absent from the user request. Retrieval difficulty is not ambiguity. For each ambiguity, enumerate 2–4 concrete interpretations of the user's meaning; these are interpretations, never candidate policy answers. Mark materially_distinct true only when at least two genuinely different interpretations remain and evidence search cannot safely choose between them. For INCOMPLETE feedback, facets include the original request and missing coverage; for INCORRECT or MISUNDERSTOOD, reconstruct independently rather than preserving prior claims. Return structured JSON only; never include chain-of-thought.` },
+      { role: 'system', content: `Create an operational Question Contract for an evidence-grounded insurance assistant. Preserve the entire original request and define exactly what the final answer must address without answering it or inventing policy facts. Use open vocabulary, not a closed intent taxonomy. Capture primary and secondary subjects, requested relationship and its direction, comparisons, every required answer facet, user-supplied constraints and patient facts, negations/exclusions/temporal or numeric meaning, ambiguity, expected answer shape, answer cardinality, and source requirement. Set answer_cardinality=aggregate when the request asks for a collection, category lookup, reverse lookup with potentially multiple owners, or exhaustive comparison; singular for one requested item; otherwise unknown. Facets must be atomic, non-overlapping, and cover every explicit part of the request. Do not silently replace a requested relationship with a nearby easier property. verified_entities are authoritative identity anchors; AI interpretation cannot conflict with them. Generate 1–3 safe initial document-search hypotheses based only on the request, using distinct semantic angles when useful. Hypotheses may use dynamic terminology expansion, cross-language equivalents, reverse relationships, and cross-document concepts, but must not contain candidate policy answers or numbers absent from the user request. Retrieval difficulty is not ambiguity. For each ambiguity, enumerate 2–4 concrete interpretations of the user's meaning; these are interpretations, never candidate policy answers. Mark materially_distinct true only when at least two genuinely different interpretations remain and evidence search cannot safely choose between them. The supplied recovery objective changes what to reconsider or preserve, never the shared reasoning implementation. Return structured JSON only; never include chain-of-thought.` },
       { role: 'user', content: JSON.stringify({ original_question: question, verified_semantic_interpretation: semantic, verified_entities: verifiedEntities.map(({ id, canonical_name, entity_type }) => ({ id, canonical_name, entity_type })), recovery_objective: feedbackReason }) },
     ],
   }, 'semantic', (value) => Array.isArray(value.required_answer_facets) && value.required_answer_facets.length > 0
@@ -336,7 +339,9 @@ export async function createQuestionContract(
         ? [{ description: description.slice(0, 500), interpretations, materially_distinct: row.materially_distinct === true }]
         : [];
     }).slice(0, 6),
-    expected_answer_type: String(raw.expected_answer_type ?? 'grounded response').trim().slice(0, 240), source_requirement: raw.source_requirement === true || semantic.source_requested,
+    expected_answer_type: String(raw.expected_answer_type ?? 'grounded response').trim().slice(0, 240),
+    answer_cardinality: ['singular', 'aggregate', 'unknown'].includes(String(raw.answer_cardinality)) ? raw.answer_cardinality as QuestionContract['answer_cardinality'] : 'unknown',
+    source_requirement: raw.source_requirement === true || semantic.source_requested,
     initial_search_hypotheses: hypotheses,
   }, usage: completionUsage(completion.payload), latency_ms: Date.now() - started, provider: completion.provider, model: completion.model };
 }
@@ -719,6 +724,8 @@ export type EvidenceLedger = {
   relation_direction_preserved: boolean;
   detected_relation_direction: RecoveryRelationshipDirection;
   cross_document_search: boolean;
+  aggregation_complete?: boolean;
+  matched_subjects?: string[];
   next_searches: Array<{ query: string; mode: RecoverySearchMode; concepts: string[]; relationship_direction: RecoveryRelationshipDirection }>;
   reason: string;
 };
@@ -742,6 +749,8 @@ const evidenceLedgerResponseFormat = (facetIds: string[], evidenceIds: string[])
         relation_direction_preserved: { type: 'boolean' },
         detected_relation_direction: { type: 'string', enum: ['forward', 'reverse', 'bidirectional', 'aggregation', 'unknown'] },
         cross_document_search: { type: 'boolean' },
+        aggregation_complete: { type: 'boolean' },
+        matched_subjects: { type: 'array', maxItems: 30, items: { type: 'string' } },
         next_searches: { type: 'array', maxItems: 3, items: {
           type: 'object', additionalProperties: false,
           properties: {
@@ -751,7 +760,7 @@ const evidenceLedgerResponseFormat = (facetIds: string[], evidenceIds: string[])
           }, required: ['query', 'mode', 'concepts', 'relationship_direction'],
         } },
         reason: { type: 'string' },
-      }, required: ['status', 'facets', 'missing_facets', 'relation_direction_preserved', 'detected_relation_direction', 'cross_document_search', 'next_searches', 'reason'],
+      }, required: ['status', 'facets', 'missing_facets', 'relation_direction_preserved', 'detected_relation_direction', 'cross_document_search', 'aggregation_complete', 'matched_subjects', 'next_searches', 'reason'],
     },
   },
 });
@@ -771,7 +780,7 @@ export async function inspectEvidenceAgainstContract(
   const { completion, raw } = await callStructuredAI({
     maxOutputTokens: 1300, response_format: { type: 'json_object' }, together_response_format: evidenceLedgerResponseFormat(facetIds, evidenceIds),
     messages: [
-      { role: 'system', content: `Inspect approved insurance evidence against the complete Question Contract. This is an operational evidence audit, not an answer. For every required facet, record supported, partial, or missing and cite only supplied evidence IDs. A facet is supported only when the evidence answers that exact requested relationship/direction, not a nearby topic. Preserve verified entity identity, comparison direction, negation, exclusions, units, temporal meaning, treatment stage, AND/OR structure, table headers/rows/footnotes, and multi-part scope. Evidence from several active documents may jointly support a facet; retain provenance and deduplicate meaning. If a facet is missing or partial, propose at most three genuinely targeted safe document searches using terminology learned from the evidence, alternate/cross-language concepts, structural context, reverse relationship direction, or cross-document aggregation. Never invent a candidate policy answer and never output SQL. Retrieval difficulty alone is not user ambiguity. status is complete only when every required facet is supported. Return structured JSON only and no chain-of-thought.` },
+      { role: 'system', content: `Inspect approved insurance evidence against the complete Question Contract. This is an operational evidence audit, not an answer. For every required facet, record supported, partial, or missing and cite only supplied evidence IDs. A facet is supported only when the evidence answers that exact requested relationship/direction, not a nearby topic. Preserve verified entity identity, comparison direction, negation, exclusions, units, temporal meaning, treatment stage, AND/OR structure, table headers/rows/footnotes, and multi-part scope. Evidence from several active documents may jointly support a facet; retain provenance and deduplicate meaning. For answer_cardinality=aggregate, one matching record never proves completeness: set aggregation_complete=true only after bounded searches across plausible documents produced no materially new verified subjects, and list the distinct matched subjects. Exclude irrelevant neighboring table rows from facet evidence IDs. If a facet is missing, partial, or aggregate collection remains incomplete, propose at most three genuinely targeted safe document searches using terminology learned from the evidence, alternate/cross-language concepts, structural context, reverse relationship direction, or cross-document aggregation. Never invent a candidate policy answer and never output SQL. Retrieval difficulty alone is not user ambiguity. status is complete only when every required facet is supported and aggregate collection (when requested) is complete. Return structured JSON only and no chain-of-thought.` },
       { role: 'user', content: JSON.stringify({ original_question: question, question_contract: contract, verified_semantic_interpretation: semantic, verified_entities: verifiedEntities.map(({ id, canonical_name, entity_type }) => ({ id, canonical_name, entity_type })), prior_searches: priorSearches.slice(0, 12), approved_evidence: supplied }) },
     ],
   }, 'rerank', (value) => Array.isArray(value.facets) && value.facets.length > 0 && ['complete', 'partial', 'insufficient'].includes(String(value.status)));
@@ -793,15 +802,27 @@ export async function inspectEvidenceAgainstContract(
     return query ? [{ query: query.slice(0, 500), mode: modes.has(row.mode as RecoverySearchMode) ? row.mode as RecoverySearchMode : 'all', concepts: strings(row.concepts, 10), relationship_direction: directions.has(row.relationship_direction as RecoveryRelationshipDirection) ? row.relationship_direction as RecoveryRelationshipDirection : 'unknown' }] : [];
   }).slice(0, 3);
   const missing = completeFacets.filter((facet) => facet.status !== 'supported').map((facet) => facet.facet_id);
-  const status: EvidenceLedger['status'] = missing.length === 0 ? 'complete' : completeFacets.some((facet) => facet.status !== 'missing') ? 'partial' : 'insufficient';
+  const aggregateRequested = contract.answer_cardinality === 'aggregate';
+  const aggregationComplete = !aggregateRequested || raw.aggregation_complete === true;
+  const status: EvidenceLedger['status'] = missing.length === 0 && aggregationComplete ? 'complete' : completeFacets.some((facet) => facet.status !== 'missing') ? 'partial' : 'insufficient';
   return { ledger: {
     status, facets: completeFacets, missing_facets: missing,
     relation_direction_preserved: raw.relation_direction_preserved === true,
     detected_relation_direction: directions.has(raw.detected_relation_direction as RecoveryRelationshipDirection) ? raw.detected_relation_direction as RecoveryRelationshipDirection : 'unknown',
-    cross_document_search: raw.cross_document_search === true, next_searches: nextSearches,
+    cross_document_search: raw.cross_document_search === true, aggregation_complete: aggregationComplete,
+    matched_subjects: strings(raw.matched_subjects, 30), next_searches: nextSearches,
     reason: String(raw.reason ?? '').slice(0, 700),
   }, usage: completionUsage(completion.payload), latency_ms: Date.now() - started, provider: completion.provider, model: completion.model };
 }
+
+export type SharedAnswerObjectiveContext = {
+  feedback_objective: 'normal' | 'incorrect' | 'incomplete' | 'misunderstood';
+  preserve_supported_previous_facts: boolean;
+  do_not_preserve_previous_claims: boolean;
+  target_missing_contract_facets: boolean;
+  original_answer?: string | null;
+  original_evidence?: unknown;
+};
 
 export async function answerFromEvidence(
   question: string, semantic: SemanticInterpretation, evidence: V3Chunk[],
@@ -809,6 +830,7 @@ export async function answerFromEvidence(
   evidenceSufficiency?: EvidenceSufficiency | null,
   questionContract?: QuestionContract | null,
   evidenceLedger?: EvidenceLedger | null,
+  objectiveContext?: SharedAnswerObjectiveContext | null,
 ): Promise<{ answer: string; used_evidence_ids: string[]; verifier: { answer_usable: boolean; answer_rejected_before_display: boolean; reason: string } } & AIResultMetadata> {
   const started = Date.now();
   const supplied = evidence.slice(0, 6).map((chunk, index) => ({
@@ -832,8 +854,8 @@ export async function answerFromEvidence(
     response_format: { type: 'json_object' },
     together_response_format: answerResponseFormat,
     messages: [
-      { role: 'system', content: `Answer insurance-policy questions using ONLY the supplied approved evidence. The Question Contract is binding: address every supported required facet and never substitute a nearby relationship or easier property. For a missing facet, state exactly that the requested part is not established while still answering supported facets. Follow the evidence ledger and cite every evidence ID used. Never use external medical knowledge or invent missing facts. Never add customary insurance processes, prior authorization, documentation, cost, network, approval, or administrative requirements unless the supplied evidence explicitly states them. Preserve comparisons and their direction, thresholds, units, time windows, negation, exclusions, AND/OR logic, and initiation versus continuation. deterministic_or_structures is a server-parsed representation of explicit OR threshold/time-window clauses; when a facet asks for that criterion, include every branch exactly. When verified_semantic_interpretation.treatment_stage is present, use only rules explicitly applicable to that stage. The server may supply binding deterministic_criteria_evaluations. Each patient observation is evaluated independently against EVERY OR branch. A numeric criterion-group evaluation never establishes full policy eligibility unless it explicitly says so. Use only medication/generic names in verified_semantic_interpretation. Address every patient fact or requested facet that affects the conclusion. If evidence conflicts, state the conflict. Be concise and answer in the user's language. Do not write source/page citations; the server adds them. Return JSON only with answer and used_evidence_ids.` },
-      { role: 'user', content: JSON.stringify({ question, question_contract: questionContract, evidence_ledger: evidenceLedger, verified_semantic_interpretation: semantic, verified_clinical_terms: verifiedClinicalTerms, evidence_sufficiency: evidenceSufficiency, deterministic_or_structures: deterministicOrStructures, deterministic_criteria_evaluations: deterministicEvaluations, approved_evidence: supplied }) },
+      { role: 'system', content: `Answer insurance-policy questions using ONLY the supplied approved evidence. This is the single shared synthesis implementation for normal and feedback paths; feedback_objective changes what to preserve or reconsider, never the grounding rules. The Question Contract is binding: address every supported required facet and never substitute a nearby relationship or easier property. For INCOMPLETE, preserve supported previous facts, add supported missing facets from recovered evidence, and remove old absence statements contradicted by the ledger. For INCORRECT or MISUNDERSTOOD, do not preserve previous claims merely because they appeared before. For a missing facet, state exactly that the requested part is not established while still answering supported facets. For aggregate contracts, include every distinct ledger-supported match and exclude unrelated neighboring rows. Follow the evidence ledger and cite every evidence ID used. Never use external medical knowledge or invent missing facts. Never add customary insurance processes, prior authorization, documentation, cost, network, approval, or administrative requirements unless the supplied evidence explicitly states them. Preserve comparisons and their direction, thresholds, units, time windows, negation, exclusions, AND/OR logic, and initiation versus continuation. deterministic_or_structures is a server-parsed representation of explicit OR threshold/time-window clauses; when a facet asks for that criterion, include every branch exactly. When verified_semantic_interpretation.treatment_stage is present, use only rules explicitly applicable to that stage. The server may supply binding deterministic_criteria_evaluations. Each patient observation is evaluated independently against EVERY OR branch. A numeric criterion-group evaluation never establishes full policy eligibility unless it explicitly says so. Use only medication/generic names in verified_semantic_interpretation. Address every patient fact or requested facet that affects the conclusion. If evidence conflicts, state the conflict. The answer field must contain natural human-readable prose, never serialized JSON, schema objects, or raw evidence dumps. Be concise and answer in the user's language. Do not write source/page citations; the server adds them. Return JSON only with answer and used_evidence_ids.` },
+      { role: 'user', content: JSON.stringify({ question, question_contract: questionContract, evidence_ledger: evidenceLedger, feedback_objective: objectiveContext ?? { feedback_objective: 'normal' }, verified_semantic_interpretation: semantic, verified_clinical_terms: verifiedClinicalTerms, evidence_sufficiency: evidenceSufficiency, deterministic_or_structures: deterministicOrStructures, deterministic_criteria_evaluations: deterministicEvaluations, approved_evidence: supplied }) },
     ],
   }, 'final-answer', (value) => typeof value.answer === 'string' && value.answer.trim().length > 0
     && Array.isArray(value.used_evidence_ids)
@@ -845,8 +867,8 @@ export async function answerFromEvidence(
     response_format: { type: 'json_object' },
     together_response_format: answerValidationResponseFormat,
     messages: [
-      { role: 'system', content: `Validate a drafted insurance-policy answer against ONLY the supplied evidence, the complete Question Contract, and the evidence ledger. Check every required facet, requested relationship and its direction, comparison axis, condition, conjunct, alternative, exception, negation, exclusion, threshold, unit, time window, identity, and treatment stage. Reject intent drift: an answer about related property Y is unusable when the contract asks relationship X. Reject unsupported additions and incorrect absence claims when the ledger contains support. A supported facet must be answered; a missing facet must be identified precisely without erasing supported facets. Preserve every deterministic OR branch. If fully correct, copy unchanged. Otherwise set answer_usable=false and rebuild corrected_answer from approved evidence and ledger only. Return only evidence IDs supporting the corrected answer. Do not add Source/Page text. Return compact JSON only; no chain-of-thought.` },
-      { role: 'user', content: JSON.stringify({ question, question_contract: questionContract, evidence_ledger: evidenceLedger, information_need: semantic.information_need ?? semantic.requested_information ?? semantic.semantic_intent, evidence_sufficiency: evidenceSufficiency, deterministic_or_structures: deterministicOrStructures, verified_medication: semantic.medication, verified_generic: semantic.generic, verified_indication: semantic.indication, verified_treatment_stage: semantic.treatment_stage, drafted_answer: raw.answer, drafted_evidence_ids: used, approved_evidence: supplied }) },
+      { role: 'system', content: `Validate a drafted insurance-policy answer against ONLY the supplied evidence, the complete Question Contract, and the evidence ledger. Check every required facet, requested relationship and its direction, comparison axis, condition, conjunct, alternative, exception, negation, exclusion, threshold, unit, time window, identity, and treatment stage. For aggregate contracts, reject a single-match answer when the ledger contains multiple supported matches or says aggregation is incomplete. Reject irrelevant neighboring table rows, wrong relation direction, changed user subject, raw JSON/object serialization, raw evidence dumps, unsupported additions, intent drift, and incorrect absence claims when the ledger contains support. Provider failure is never evidence absence. A supported facet must be answered; a missing facet must be identified precisely without erasing supported facets. Preserve every deterministic OR branch. If fully correct, copy unchanged. Otherwise set answer_usable=false and rebuild corrected_answer from approved evidence and ledger only. Return natural prose and only evidence IDs supporting it. Do not add Source/Page text. Return compact JSON only; no chain-of-thought.` },
+      { role: 'user', content: JSON.stringify({ question, question_contract: questionContract, evidence_ledger: evidenceLedger, feedback_objective: objectiveContext ?? { feedback_objective: 'normal' }, information_need: semantic.information_need ?? semantic.requested_information ?? semantic.semantic_intent, evidence_sufficiency: evidenceSufficiency, deterministic_or_structures: deterministicOrStructures, verified_medication: semantic.medication, verified_generic: semantic.generic, verified_indication: semantic.indication, verified_treatment_stage: semantic.treatment_stage, drafted_answer: raw.answer, drafted_evidence_ids: used, approved_evidence: supplied }) },
     ],
   }, 'final-answer', (value) => typeof value.corrected_answer === 'string' && value.corrected_answer.trim().length > 0
     && Array.isArray(value.used_evidence_ids)
@@ -877,7 +899,7 @@ export async function verifyAnswerAgainstContract(
   const { completion, raw } = await callStructuredAI({
     maxOutputTokens: 950, response_format: { type: 'json_object' }, together_response_format: answerValidationResponseFormat,
     messages: [
-      { role: 'system', content: `Perform the final completeness and grounding verification for an insurance answer. The original Question Contract is binding. Verify every required facet, requested relationship and direction, comparison, exclusion, negation, numeric/unit/temporal constraint, AND/OR structure, patient fact, and treatment stage. Use only approved evidence and the evidence ledger. Reject intent drift, unsupported deductions, wrong-entity facts, missing supported facets, or an absence claim contradicted by support. When a facet is genuinely missing, the answer must identify exactly that missing part while retaining all supported parts. If the draft is usable, copy it unchanged. Otherwise set answer_usable=false and provide a corrected grounded answer. Return only supplied evidence IDs. Do not output citations or chain-of-thought.` },
+      { role: 'system', content: `Perform the final completeness and grounding verification for an insurance answer. The original Question Contract is binding. Verify every required facet, requested relationship and direction, comparison, exclusion, negation, numeric/unit/temporal constraint, AND/OR structure, patient fact, and treatment stage. Use only approved evidence and the evidence ledger. For aggregate contracts, require every distinct ledger-supported match and reject premature single-match completion. Reject irrelevant neighboring table rows, changed user subject, raw JSON/object serialization, raw evidence dumps, intent drift, unsupported deductions, wrong-entity facts, missing supported facets, or an absence claim contradicted by support. Provider failure is never evidence absence. When a facet is genuinely missing, the answer must identify exactly that missing part while retaining all supported parts. If the draft is usable, copy it unchanged. Otherwise set answer_usable=false and provide a corrected grounded natural-language answer. Return only supplied evidence IDs. Do not output citations or chain-of-thought.` },
       { role: 'user', content: JSON.stringify({ original_question: question, question_contract: contract, evidence_ledger: ledger, verified_semantic_interpretation: semantic, drafted_answer: draftAnswer, drafted_evidence_ids: draftEvidenceIds, approved_evidence: supplied }) },
     ],
   }, 'final-answer', (value) => typeof value.corrected_answer === 'string' && value.corrected_answer.trim().length > 0

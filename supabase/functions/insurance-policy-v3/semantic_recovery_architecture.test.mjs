@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 const ai = readFileSync(new URL('./ai.ts', import.meta.url), 'utf8');
 const pipeline = readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
 const provider = readFileSync(new URL('./ai_provider.ts', import.meta.url), 'utf8');
+const engine = readFileSync(new URL('./reasoning_engine.ts', import.meta.url), 'utf8');
 
 test('recovery performs one independent dynamic semantic expansion with 3-6 hypotheses', () => {
   assert.match(ai, /independently reinterpret/i);
@@ -42,9 +43,11 @@ test('temperature remains deterministic and provider fallback remains present', 
 });
 
 test('Incorrect and Incomplete feedback contracts remain available', () => {
-  assert.match(pipeline, /feedbackReason === 'incomplete'/);
+  assert.match(pipeline, /const objective = feedbackObjective\(pipelineContext\.feedbackReason\)/);
+  assert.match(pipeline, /preserve_supported_previous_facts: objective\.preserve_supported_previous_facts/);
+  assert.match(engine, /require_alternative_semantic_hypotheses/);
   assert.match(pipeline, /feedback_reason: pipelineContext\.feedbackReason/);
-  assert.match(pipeline, /maximumRecoveryIterations = pipelineContext\.forceRecovery \? 2 : 1/);
+  assert.match(pipeline, /maximumRecoveryIterations = aggregateRequested \? 3 : pipelineContext\.forceRecovery \? 2 : 1/);
   assert.match(pipeline, /semanticRequestedRecovery \|\| pipelineContext\.forceRecovery/);
   assert.match(pipeline, /pipelineContext\.forceRecovery && recoveryPlan\.decision !== 'search'/);
 });
@@ -54,12 +57,12 @@ test('Question Contract remains attached through planning, evidence inspection, 
   assert.match(ai, /original_question: question/);
   assert.match(pipeline, /question_contract: questionContract/);
   assert.match(pipeline, /inspectEvidenceAgainstContract\(question, semantic, questionContract/);
-  assert.match(pipeline, /answerFromEvidence\(question, semantic, answerEvidence[\s\S]*questionContract, evidenceLedger/);
+  assert.match(pipeline, /answerFromEvidence\([\s\S]*question, semantic, answerEvidence[\s\S]*questionContract, evidenceLedger, sharedAnswerContext/);
 });
 
 test('facet ledger and final verifier reject nearby relationship answers before display', () => {
   assert.match(ai, /A facet is supported only when the evidence answers that exact requested relationship\/direction/);
-  assert.match(ai, /Reject intent drift/);
+  assert.match(ai, /intent drift/i);
   assert.match(ai, /answer_rejected_before_display/);
   assert.match(pipeline, /trace\.answer_verifier = answerResult\.verifier/);
   assert.match(pipeline, /\['reverse', 'bidirectional', 'comparison'\]\.includes/);
