@@ -1,6 +1,7 @@
 import type { HybridSearchUnit, SemanticInterpretation, V3Chunk, V3Entity } from './retrieval.ts';
 import { extractOrThresholdTimeRuleGroups, type OrThresholdTimeEvaluation } from './criteria.ts';
 import { AI_MODEL, AIProviderError, callAI, callGroqAfterMalformedTogether, type AICallType, type AIProviderName, type AIRequest, type AIUsage } from './ai_provider.ts';
+import { additionalRecoveryEvidence, hasMeaningfulAdditionalEvidence, substantiallyEquivalentAnswer } from './incomplete_recovery.ts';
 
 export { AI_MODEL };
 
@@ -468,5 +469,86 @@ export async function answerFromEvidence(
     answer: validatedAnswer, used_evidence_ids: validatedUsed,
     usage: combinedUsage(completionUsage(completion.payload), completionUsage(validation.completion.payload)), latency_ms: Date.now() - started,
     provider: completion.provider === 'groq_fallback' || validation.completion.provider === 'groq_fallback' ? 'groq_fallback' : 'together', model: validation.completion.model,
+  };
+}
+
+export type IncompleteRecoveryContext = {
+  original_question: string;
+  original_semantic: unknown;
+  original_answer: string;
+  original_citations: unknown;
+  original_evidence: unknown;
+};
+
+export async function answerIncompleteRecovery(
+  question: string, semantic: SemanticInterpretation, evidence: V3Chunk[],
+  context: IncompleteRecoveryContext,
+  deterministicEvaluations: OrThresholdTimeEvaluation[] = [],
+  evidenceSufficiency?: EvidenceSufficiency | null,
+): Promise<{ answer: string; used_evidence_ids: string[] } & AIResultMetadata> {
+  const started = Date.now();
+  const supplied = evidence.slice(0, 6).map((chunk, index) => ({
+    id: `E${index + 1}`, chunk_id: chunk.chunk_id, text: chunk.chunk_text.slice(0, 1800),
+    source_id: { document: chunk.document_title, file: chunk.file_name, page_from: chunk.page_from, page_to: chunk.page_to, sheet: chunk.sheet_name, row_from: chunk.row_from, row_to: chunk.row_to },
+  }));
+  const allowed = new Set(supplied.map((item) => item.id));
+  const additionalIds = new Set(additionalRecoveryEvidence(context.original_evidence, evidence).map((chunk) => chunk.chunk_id));
+  const additionalEvidenceIds = supplied.filter((item) => additionalIds.has(item.chunk_id)).map((item) => item.id);
+  const meaningfulAdditional = hasMeaningfulAdditionalEvidence(context.original_evidence, evidence);
+  const sharedPayload = {
+    feedback_reason: 'incomplete', original_user_question: context.original_question,
+    original_semantic_interpretation: context.original_semantic,
+    verified_semantic_interpretation: semantic, original_answer: context.original_answer,
+    original_citations: context.original_citations, original_verified_evidence: context.original_evidence,
+    newly_selected_approved_evidence: supplied, additional_evidence_ids: additionalEvidenceIds,
+    evidence_sufficiency: evidenceSufficiency, deterministic_criteria_evaluations: deterministicEvaluations,
+  };
+  const draft = await callStructuredAI({
+    maxOutputTokens: 1000, response_format: { type: 'json_object' }, together_response_format: answerResponseFormat,
+    messages: [
+      { role: 'system', content: `Revise an insurance-policy answer after the user marked it INCOMPLETE. This is an additive recovery task, not an incorrect-answer rewrite. Use ONLY the supplied approved evidence. Preserve every fact in original_answer that remains supported. Identify relevant facts in the newly selected evidence that were absent from original_answer and add them. Remove or correct an absence/negative statement when the recovered evidence directly establishes the supposedly missing information. Do not invent facts, broaden scope, or import external knowledge. Respect verified entity identity, indication, treatment stage, numeric/temporal logic, and AND/OR structure. When meaningful additional evidence exists, the result must be materially more informative than original_answer, not a cosmetic paraphrase. Do not write Source/Page lines; the server adds them. Return JSON only: {"answer":"...","used_evidence_ids":["E1"]}.` },
+      { role: 'user', content: JSON.stringify(sharedPayload) },
+    ],
+  }, 'final-answer', (value) => typeof value.answer === 'string' && value.answer.trim().length > 0
+    && Array.isArray(value.used_evidence_ids) && value.used_evidence_ids.some((id) => typeof id === 'string' && allowed.has(id)));
+  let answer = String(draft.raw.answer ?? '').trim();
+  let used = Array.isArray(draft.raw.used_evidence_ids)
+    ? [...new Set(draft.raw.used_evidence_ids.filter((id): id is string => typeof id === 'string' && allowed.has(id)))] : [];
+
+  const validation = await callStructuredAI({
+    maxOutputTokens: 1000, response_format: { type: 'json_object' }, together_response_format: answerValidationResponseFormat,
+    messages: [
+      { role: 'system', content: `Validate an INCOMPLETE-feedback revision using ONLY approved_evidence. It must preserve supported original facts, add relevant newly recovered facts absent from the original, remove unsupported absence claims contradicted by recovered evidence, and remain fully grounded. A cosmetic paraphrase is not acceptable when meaningful additional evidence exists. Correct the draft when necessary. Do not add Source/Page lines. Return compact JSON only with corrected_answer and used_evidence_ids.` },
+      { role: 'user', content: JSON.stringify({ ...sharedPayload, meaningful_additional_evidence: meaningfulAdditional, drafted_answer: answer, drafted_evidence_ids: used, approved_evidence: supplied }) },
+    ],
+  }, 'final-answer', (value) => typeof value.corrected_answer === 'string' && value.corrected_answer.trim().length > 0
+    && Array.isArray(value.used_evidence_ids) && value.used_evidence_ids.some((id) => typeof id === 'string' && allowed.has(id)));
+  answer = String(validation.raw.corrected_answer ?? '').trim();
+  used = Array.isArray(validation.raw.used_evidence_ids)
+    ? [...new Set(validation.raw.used_evidence_ids.filter((id): id is string => typeof id === 'string' && allowed.has(id)))] : [];
+
+  let repairUsage: AIUsage = null;
+  if (meaningfulAdditional && substantiallyEquivalentAnswer(context.original_answer, answer)) {
+    const repair = await callStructuredAI({
+      maxOutputTokens: 1100, response_format: { type: 'json_object' }, together_response_format: answerResponseFormat,
+      messages: [
+        { role: 'system', content: `The proposed INCOMPLETE recovery was rejected because it was substantially equivalent to the original answer despite meaningful additional verified evidence. Rebuild it now. Preserve supported original facts and explicitly incorporate the missing facts supported by additional_evidence_ids. Remove any contradicted absence statement. Use only supplied evidence. Return JSON only with answer and used_evidence_ids.` },
+        { role: 'user', content: JSON.stringify({ ...sharedPayload, rejected_equivalent_answer: answer }) },
+      ],
+    }, 'final-answer', (value) => typeof value.answer === 'string' && value.answer.trim().length > 0
+      && Array.isArray(value.used_evidence_ids) && value.used_evidence_ids.some((id) => typeof id === 'string' && allowed.has(id)));
+    const repairedAnswer = String(repair.raw.answer ?? '').trim();
+    const repairedUsed = Array.isArray(repair.raw.used_evidence_ids)
+      ? [...new Set(repair.raw.used_evidence_ids.filter((id): id is string => typeof id === 'string' && allowed.has(id)))] : [];
+    if (substantiallyEquivalentAnswer(context.original_answer, repairedAnswer)) throw new Error('incomplete_recovery_duplicate_answer');
+    answer = repairedAnswer; used = repairedUsed; repairUsage = completionUsage(repair.completion.payload);
+  }
+  if (!answer || used.length === 0) throw new Error('ai_malformed_response');
+  return {
+    answer, used_evidence_ids: used,
+    usage: combinedUsage(completionUsage(draft.completion.payload), completionUsage(validation.completion.payload), repairUsage),
+    latency_ms: Date.now() - started,
+    provider: draft.completion.provider === 'groq_fallback' || validation.completion.provider === 'groq_fallback' ? 'groq_fallback' : 'together',
+    model: validation.completion.model,
   };
 }
