@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   additionalRecoveryEvidence,
+  answerIncorporatesMissingEvidenceFacts,
   hasMeaningfulAdditionalEvidence,
   incompleteExtractiveFallback,
+  recoveryEvidenceWithMissingFacts,
+  removeBroadAbsenceClaimsAfterRecovery,
   substantiallyEquivalentAnswer,
 } from "./incomplete_recovery.ts";
 
@@ -59,7 +62,51 @@ test("identifies only meaningful newly recovered evidence", () => {
     ["new"],
   );
   assert.equal(
-    hasMeaningfulAdditionalEvidence([{ id: "old" }], recovered),
+    hasMeaningfulAdditionalEvidence(
+      "Existing summary.",
+      [{ id: "old" }],
+      recovered,
+    ),
+    true,
+  );
+});
+
+test("same evidence ID is meaningful when its supported facts were omitted", () => {
+  const completeRow = chunk(
+    "same",
+    "Medicine: Example\nIndications: Condition A; Condition B\nInitial Dose: 2.5 mg once weekly for 4 weeks\nMaximum Quantity: 1 box monthly",
+  );
+  const originalEvidence = [{ id: "same", text: completeRow.chunk_text }];
+  const originalAnswer =
+    "Example is indicated for Condition A and Condition B.";
+  assert.deepEqual(
+    recoveryEvidenceWithMissingFacts(
+      originalAnswer,
+      originalEvidence,
+      [completeRow],
+    ).map((item) => item.chunk_id),
+    ["same"],
+  );
+  assert.equal(
+    hasMeaningfulAdditionalEvidence(originalAnswer, originalEvidence, [
+      completeRow,
+    ]),
+    true,
+  );
+  assert.equal(
+    answerIncorporatesMissingEvidenceFacts(
+      originalAnswer,
+      `${originalAnswer} No broader information is available in the evidence.`,
+      [completeRow],
+    ),
+    false,
+  );
+  assert.equal(
+    answerIncorporatesMissingEvidenceFacts(
+      originalAnswer,
+      `${originalAnswer} Initial dose is 2.5 mg once weekly for 4 weeks.`,
+      [completeRow],
+    ),
     true,
   );
 });
@@ -73,4 +120,13 @@ test("extractive guard preserves original and appends new grounded facts", () =>
   assert.match(answer, /Existing supported fact/);
   assert.match(answer, /New approved evidence fact/);
   assert.doesNotMatch(answer, /Source: Old/);
+});
+
+test("removes broad absence claims after missing facts were recovered", () => {
+  assert.equal(
+    removeBroadAbsenceClaimsAfterRecovery(
+      "The verified dose is 5 mg weekly. No additional policy details are available in the supplied evidence.",
+    ),
+    "The verified dose is 5 mg weekly.",
+  );
 });
