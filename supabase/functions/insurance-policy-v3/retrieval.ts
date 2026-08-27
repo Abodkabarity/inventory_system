@@ -2,10 +2,20 @@ export type SemanticInterpretation = {
   route: 'policy_question' | 'catalog_discovery' | 'source_request' | 'clarification_required' | 'out_of_scope';
   medication: string | null;
   generic: string | null;
+  drug_class: string | null;
   indication: string | null;
   intent: string[];
   requested_dimensions: string[];
   treatment_stage: string | null;
+  semantic_intent: string | null;
+  requested_information: string | null;
+  information_need: string | null;
+  retrieval_queries: string[];
+  search_concepts: string[];
+  search_phrases: string[];
+  search_query: string | null;
+  negation: string[];
+  temporal_context: string | null;
   facts: Array<{ concept: string; value: string | number | boolean | null; unit: string | null; polarity: string; temporal: string | null }>;
   source_requested: boolean;
 };
@@ -16,8 +26,21 @@ export type V3Relation = { subject_entity_id: string; relation_type: string; obj
 export type V3Chunk = {
   chunk_id: string; document_id: string; document_title: string; file_name: string;
   page_from: number; page_to: number; sheet_name: string | null; row_from: number | null; row_to: number | null;
+  chunk_index?: number;
   section_title: string | null; chunk_text: string; metadata: Record<string, unknown>; score: number;
   fts_rank: number; trigram_score: number; matched_entity_count: number; matched_dimensions: string[];
+  matched_phrases?: string[]; heading_score?: number; table_score?: number;
+};
+
+export type HybridSearchUnit = {
+  search_unit_id: string; document_id: string; document_title: string; file_name: string;
+  unit_type: 'text_chunk' | 'table_row' | 'table' | 'section' | 'page';
+  page_from: number; page_to: number; sheet_name: string | null; row_from: number | null; row_to: number | null;
+  section_title: string | null; table_title: string | null; parent_unit_id: string | null; sibling_order: number;
+  retrieval_text: string; source_chunk_ids: string[]; metadata: Record<string, unknown>;
+  vector_rank: number | null; fts_rank: number | null; trigram_rank: number | null;
+  heading_rank: number | null; entity_rank: number | null; vector_similarity: number | null;
+  fts_score: number | null; trigram_score: number | null; entity_match_count: number; hybrid_rrf_score: number;
 };
 
 export function normalize(value: unknown) {
@@ -36,7 +59,7 @@ const DIMENSION_PATTERNS: Record<string, RegExp> = {
   continuation: /\b(continu\w*|maintenance|reassess\w*|switch\w*|change in therapy|استمرار|تبديل)\b/i,
   refill: /\b(refill|repeat prescription|إعادة صرف|اعادة صرف)\b/i,
   indication: /\b(indication|treatment|prevention|diagnosis|disease|تشخيص|دواعي)\b/i,
-  documentation: /\b(document|report|signed|stamped|prescriber|physician|تقرير|توثيق)\b/i,
+  documentation: /\b(document\w*|report\w*|signed|stamped|prescriber|physician|تقرير|توثيق)\b/i,
   coverage: /\b(coverage|covered|criteria|authorization|approval|eligible|تغطية|مغط|موافقة)\b/i,
   negation: /\b(no|not|without|absent|مافي|ليس|بدون)\b/i,
 };
@@ -67,6 +90,81 @@ export function requestedDimensions(question: string, semantic: SemanticInterpre
   return [...values];
 }
 
+const STOP_WORDS = new Set(['the', 'and', 'for', 'with', 'from', 'that', 'this', 'what', 'when', 'does', 'policy', 'criteria', 'information', 'هل', 'في', 'من', 'على', 'عن', 'ما', 'هو', 'هي']);
+
+function meaningfulTokens(value: unknown) {
+  return [...new Set(normalize(value).split(' ').filter((token) => token.length >= 3 && !STOP_WORDS.has(token)))];
+}
+
+export function semanticSearchSignals(semantic: SemanticInterpretation) {
+  const values = [
+    semantic.semantic_intent, semantic.requested_information, semantic.information_need, semantic.search_query,
+    ...(semantic.retrieval_queries ?? []),
+    ...(semantic.search_concepts ?? []), ...(semantic.search_phrases ?? []),
+    ...(semantic.intent ?? []), ...(semantic.requested_dimensions ?? []),
+    semantic.indication, semantic.drug_class, semantic.treatment_stage, semantic.temporal_context,
+    ...(semantic.negation ?? []),
+    ...semantic.facts.flatMap((fact) => [fact.concept, fact.value, fact.unit, fact.temporal]),
+  ];
+  return [...new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean))].slice(0, 40);
+}
+
+export function buildRetrievalPlan(
+  question: string,
+  semantic: SemanticInterpretation,
+  verifiedEntities: V3Entity[],
+  dimensions: string[],
+  override?: { search_query?: string; retrieval_queries?: string[]; search_concepts?: string[]; search_phrases?: string[] },
+) {
+  const concepts = [...new Set([...(override?.search_concepts ?? semantic.search_concepts ?? []), ...semantic.intent, ...semantic.requested_dimensions, ...dimensions].map(String).filter(Boolean))];
+  const phrases = [...new Set([...(override?.search_phrases ?? semantic.search_phrases ?? []), semantic.requested_information].map((value) => String(value ?? '').trim()).filter(Boolean))];
+  const queryParts = [override?.search_query ?? semantic.search_query, ...(override?.retrieval_queries ?? semantic.retrieval_queries ?? []),
+    question, semantic.semantic_intent, semantic.requested_information, semantic.information_need,
+    ...verifiedEntities.map((entity) => entity.canonical_name), semantic.indication, semantic.drug_class,
+    ...concepts, ...phrases, ...semantic.facts.flatMap((fact) => [fact.concept, fact.value, fact.unit, fact.temporal])];
+  return {
+    query: [...new Set(queryParts.map((value) => String(value ?? '').trim()).filter(Boolean))].join(' '),
+    concepts: concepts.slice(0, 20), phrases: phrases.slice(0, 12), hints: [...new Set([...dimensions, ...concepts])].slice(0, 24),
+  };
+}
+
+export function isolateSearchUnitCandidates(candidates: HybridSearchUnit[], verifiedEntities: V3Entity[], knownEntities: V3Entity[] = verifiedEntities) {
+  const medicationNames = new Set(verifiedEntities
+    .filter((entity) => entity.entity_type.startsWith('medication_'))
+    .map((entity) => normalize(entity.canonical_name)));
+  if (medicationNames.size === 0) return candidates;
+  const knownMedicationNames = [...new Set(knownEntities
+    .filter((entity) => entity.entity_type.startsWith('medication_'))
+    .map((entity) => normalize(entity.canonical_name)).filter(Boolean))];
+  return candidates.filter((unit) => {
+    const medications = metadataStrings(unit.metadata.medications);
+    if (medications.length === 0) {
+      const text = normalize(`${unit.document_title} ${unit.section_title ?? ''} ${unit.table_title ?? ''} ${unit.retrieval_text}`);
+      const mentioned = knownMedicationNames.filter((name) => ` ${text} `.includes(` ${name} `));
+      if (mentioned.length > 0) return mentioned.some((name) => medicationNames.has(name));
+      return unit.metadata.entity_specific !== true;
+    }
+    return medications.some((name) => medicationNames.has(name));
+  });
+}
+
+function chunkSemanticText(chunk: V3Chunk) {
+  const table = chunk.metadata.table_title ?? chunk.metadata.table_name ?? chunk.metadata.section_path ?? '';
+  const fields = chunk.metadata.fields && typeof chunk.metadata.fields === 'object'
+    ? Object.keys(chunk.metadata.fields as Record<string, unknown>).join(' ') : '';
+  return normalize(`${chunk.document_title} ${chunk.section_title ?? ''} ${table} ${fields} ${chunk.chunk_text}`);
+}
+
+function signalCoverage(chunk: V3Chunk, signal: string) {
+  const text = chunkSemanticText(chunk);
+  const normalizedSignal = normalize(signal);
+  if (!normalizedSignal) return 0;
+  if (` ${text} `.includes(` ${normalizedSignal} `) || text.includes(normalizedSignal)) return 1;
+  const tokens = meaningfulTokens(normalizedSignal);
+  if (tokens.length === 0) return 0;
+  return tokens.filter((token) => ` ${text} `.includes(` ${token} `)).length / tokens.length;
+}
+
 function editDistance(left: string, right: string, maximum = 1) {
   if (Math.abs(left.length - right.length) > maximum) return maximum + 1;
   const row = Array.from({ length: right.length + 1 }, (_, index) => index);
@@ -91,13 +189,29 @@ export function resolveVerifiedEntities(
   const matchAliases = (values: unknown[]) => {
     const haystacks = values.map(normalize).filter(Boolean);
     const matches = new Set<string>();
+    const tokenEquivalent = (left: string, right: string) => left === right
+      || (left.length >= 5 && right.length >= 5 && left.replace(/s$/i, '') === right.replace(/s$/i, ''))
+      || (left.length >= 6 && right.length >= 6 && editDistance(left, right) <= 1);
+    const phraseEquivalent = (haystack: string, needle: string) => {
+      const source = haystack.split(' '); const target = needle.split(' ');
+      if (target.length === 0 || target.length > source.length) return false;
+      return source.some((_, start) => start + target.length <= source.length
+        && target.every((token, offset) => tokenEquivalent(source[start + offset], token)));
+    };
     for (const alias of aliases) {
       if (!alias.verified) continue;
       const needle = normalize(alias.normalized_alias || alias.alias);
       if (!needle) continue;
       const exact = haystacks.some((value) => ` ${value} `.includes(` ${needle} `) || value === needle);
-      const fuzzy = needle.length >= 6 && haystacks.some((value) => value.split(' ').some((token) => editDistance(token, needle) <= 1));
+      const fuzzy = needle.length >= 6 && haystacks.some((value) => phraseEquivalent(value, needle));
       if (exact || fuzzy) matches.add(alias.entity_id);
+    }
+    for (const entity of entities) {
+      const needle = normalize(entity.normalized_name || entity.canonical_name);
+      if (!needle) continue;
+      const exact = haystacks.some((value) => ` ${value} `.includes(` ${needle} `) || value === needle);
+      const fuzzy = needle.length >= 6 && haystacks.some((value) => phraseEquivalent(value, needle));
+      if (exact || fuzzy) matches.add(entity.id);
     }
     return matches;
   };
@@ -145,14 +259,22 @@ function metadataStrings(value: unknown) {
   return Array.isArray(value) ? value.map(normalize).filter(Boolean) : [];
 }
 
-export function isolateMedicationCandidates(candidates: V3Chunk[], verifiedEntities: V3Entity[]) {
+export function isolateMedicationCandidates(candidates: V3Chunk[], verifiedEntities: V3Entity[], knownEntities: V3Entity[] = verifiedEntities) {
   const medicationNames = new Set(verifiedEntities
     .filter((entity) => entity.entity_type.startsWith('medication_'))
     .map((entity) => normalize(entity.canonical_name)));
   if (medicationNames.size === 0) return candidates;
+  const knownMedicationNames = [...new Set(knownEntities
+    .filter((entity) => entity.entity_type.startsWith('medication_'))
+    .map((entity) => normalize(entity.canonical_name)).filter(Boolean))];
   return candidates.filter((chunk) => {
     const chunkMedications = metadataStrings(chunk.metadata.medications);
-    if (chunkMedications.length === 0) return chunk.metadata.entity_specific !== true;
+    if (chunkMedications.length === 0) {
+      const text = normalize(`${chunk.document_title} ${chunk.section_title ?? ''} ${chunk.chunk_text}`);
+      const mentioned = knownMedicationNames.filter((name) => ` ${text} `.includes(` ${name} `));
+      if (mentioned.length > 0) return mentioned.some((name) => medicationNames.has(name));
+      return chunk.metadata.entity_specific !== true;
+    }
     return chunkMedications.some((name) => medicationNames.has(name));
   });
 }
@@ -181,11 +303,14 @@ export function rerankChunks(
   dimensions: string[],
   stage: string | null,
   question: string,
+  semantic?: SemanticInterpretation,
 ) {
   const names = new Set(verifiedEntities.map((entity) => normalize(entity.canonical_name)));
   const medicationNames = new Set(verifiedEntities.filter((entity) => entity.entity_type.startsWith('medication_')).map((entity) => normalize(entity.canonical_name)));
   const indicationNames = new Set(verifiedEntities.filter((entity) => entity.entity_type === 'indication').map((entity) => normalize(entity.canonical_name)));
   const numbers = numericTokens(question);
+  const semanticSignals = semantic ? semanticSearchSignals(semantic) : [];
+  const exactPhrases = semantic?.search_phrases ?? [];
   return candidates.map((chunk) => {
     const text = normalize(chunk.chunk_text);
     const chunkNumbers = new Set(numericTokens(chunk.chunk_text));
@@ -198,6 +323,11 @@ export function rerankChunks(
     }).length;
     const dimensionMatches = dimensions.filter((dimension) => chunkAnswersDimension(chunk, dimension)).length;
     const numericMatches = numbers.filter((number) => chunkNumbers.has(number)).length;
+    const semanticCoverage = semanticSignals.reduce((sum, signal) => sum + signalCoverage(chunk, signal), 0);
+    const phraseMatches = exactPhrases.filter((phrase) => signalCoverage(chunk, phrase) >= 0.75).length;
+    const headingText = normalize(`${chunk.document_title} ${chunk.section_title ?? ''} ${chunk.metadata.table_title ?? ''} ${chunk.metadata.section_path ?? ''}`);
+    const headingMatches = [...new Set(semanticSignals.flatMap(meaningfulTokens))].filter((token) => ` ${headingText} `.includes(` ${token} `)).length;
+    const tableAware = chunk.metadata.semantic_table_record === true || chunk.row_from !== null || chunk.metadata.fields !== undefined;
     // Numbers are meaningful only inside the requested indication context.
     // This prevents a threshold from another disease section in the same
     // medication overview from winning solely because the digits overlap.
@@ -207,38 +337,64 @@ export function rerankChunks(
     const stageMismatch = stage && chunk.metadata.treatment_stage && normalize(chunk.metadata.treatment_stage) !== normalize(stage);
     const deterministicScore = Number(chunk.score || 0)
       + entityMatches * 5 + indicationContextMatches * 4 + dimensionMatches * 2.5 + numericScore
+      + semanticCoverage * 1.35 + phraseMatches * 2.25 + headingMatches * 0.8
+      + (tableAware && semanticSignals.some((signal) => signalCoverage(chunk, signal) >= 0.6) ? 1.25 : 0)
       + (stage && normalize(chunk.metadata.treatment_stage) === normalize(stage) ? 3 : 0)
       + (indications.some((name) => names.has(name)) ? 1 : 0)
       - (wrongMedication ? 5 : 0) - (mixedOverview ? 2.5 : 0) - (stageMismatch ? 2 : 0);
-    return { ...chunk, deterministic_score: deterministicScore, indication_context_matches: indicationContextMatches };
+    return { ...chunk, deterministic_score: deterministicScore, indication_context_matches: indicationContextMatches, semantic_coverage: semanticCoverage, phrase_matches: phraseMatches };
   }).sort((left, right) => right.deterministic_score - left.deterministic_score || left.chunk_id.localeCompare(right.chunk_id));
 }
 
-export function selectEvidence(candidates: ReturnType<typeof rerankChunks>, dimensions: string[], maximum = 6) {
+export function selectEvidence(candidates: ReturnType<typeof rerankChunks>, dimensions: string[], maximum = 6, semantic?: SemanticInterpretation) {
   const selected: typeof candidates = [];
   const indicationAnchored = candidates.filter((chunk) => chunk.indication_context_matches > 0);
-  // Lab thresholds and their lookback windows form one indication-specific
-  // rule. When an indication-anchored candidate exists, do not fill the answer
-  // context with numeric criteria from other indication sections.
-  const selectionPool = dimensions.includes('labs') && dimensions.includes('time_window') && indicationAnchored.length > 0
-    ? indicationAnchored
+  // Once an indication has been semantically identified and matching evidence
+  // exists, every selected fact must stay inside that indication. Adjacent
+  // sections from the same medicine must not lend their dose, age, lab, or
+  // continuation rules to the requested indication.
+  const indicationIsolationActive = indicationAnchored.length > 0 && (
+    Boolean(normalize(semantic?.indication))
+    || (dimensions.includes('labs') && dimensions.includes('time_window'))
+  );
+  const anchoredScopes = new Set(indicationAnchored.map((chunk) => `${chunk.document_id}|${normalize(chunk.section_title)}`));
+  const generalStructuralContext = candidates.filter((chunk) => {
+    const entitySpecific = chunk.metadata.entity_specific === true || chunk.metadata.entity_specific === 'true';
+    return Boolean(normalize(semantic?.indication)) && !entitySpecific
+      && anchoredScopes.has(`${chunk.document_id}|${normalize(chunk.section_title)}`);
+  });
+  const selectionPool = indicationIsolationActive
+    ? [...new Map([...indicationAnchored, ...generalStructuralContext].map((chunk) => [chunk.chunk_id, chunk])).values()]
     : candidates;
   const add = (chunk: typeof candidates[number] | undefined) => {
     if (chunk && !selected.some((item) => item.chunk_id === chunk.chunk_id) && selected.length < maximum) selected.push(chunk);
   };
   add(selectionPool[0]);
   for (const dimension of dimensions) {
-    add(selectionPool.find((chunk) => chunkAnswersDimension(chunk, dimension))
-      ?? candidates.find((chunk) => chunkAnswersDimension(chunk, dimension)));
+    add(selectionPool.find((chunk) => chunkAnswersDimension(chunk, dimension)));
   }
+  const openSignals = semantic ? [...new Set([
+    ...(semantic.search_concepts ?? []), ...(semantic.search_phrases ?? []),
+    semantic.requested_information ?? '', semantic.semantic_intent ?? '',
+  ].filter(Boolean))] : [];
+  for (const signal of openSignals) add(selectionPool.find((chunk) => signalCoverage(chunk, signal) >= 0.55));
+  const needsCompoundContext = dimensions.includes('time_window')
+    && dimensions.some((dimension) => ['labs', 'continuation', 'initiation', 'refill'].includes(dimension));
+  const targetEvidenceCount = Math.min(maximum, needsCompoundContext ? Math.max(4, dimensions.length + 1) : 2);
   for (const chunk of selectionPool) {
-    // Temporal and threshold questions often need one criterion chunk plus
-    // nearby stage/context evidence; preserve four candidates when available.
-    if (selected.length >= Math.min(maximum, Math.max(4, dimensions.length + 1))) break;
+    // Temporal threshold rules need extra branches; simple questions should
+    // not be padded with adjacent, unrelated policy clauses.
+    if (selected.length >= targetEvidenceCount) break;
     add(chunk);
   }
   const missingDimensions = dimensions.filter((dimension) => !selected.some((chunk) => chunkAnswersDimension(chunk, dimension)));
-  return { selected, missingDimensions };
+  const missingSignals = openSignals.filter((signal) => !selected.some((chunk) => signalCoverage(chunk, signal) >= 0.55));
+  const requestedTokens = meaningfulTokens(semantic?.requested_information ?? semantic?.semantic_intent ?? '');
+  const combinedEvidence = normalize(selected.map(chunkSemanticText).join(' '));
+  const requestedCoverage = requestedTokens.length === 0 ? (selected.length > 0 ? 1 : 0)
+    : requestedTokens.filter((token) => ` ${combinedEvidence} `.includes(` ${token} `)).length / requestedTokens.length;
+  const sufficient = selected.length > 0 && (openSignals.length === 0 || requestedCoverage >= 0.5 || missingSignals.length <= Math.floor(openSignals.length / 2));
+  return { selected, missingDimensions, missingSignals, requestedCoverage, sufficient };
 }
 
 const CITATION_DIMENSIONS = new Set([
@@ -265,10 +421,19 @@ export function evidenceForAnswer(
 
 export function enforceRouteSafety(semantic: SemanticInterpretation, verifiedEntities: V3Entity[], dimensions: string[]) {
   const hasPolicyEntity = verifiedEntities.some((entity) => entity.entity_type.startsWith('medication_') || entity.entity_type === 'drug_class');
+  const hasUnverifiedNamedMedication = Boolean(normalize(semantic.medication)) && !hasPolicyEntity;
+  const hasRequestedInformation = dimensions.length > 0 || Boolean(
+    normalize(semantic.semantic_intent) || normalize(semantic.requested_information)
+    || semantic.search_concepts?.length || semantic.search_phrases?.length,
+  );
   if (semantic.route === 'policy_question' && semantic.medication && !hasPolicyEntity) {
     return { ...semantic, route: 'clarification_required' as const };
   }
-  if ((semantic.route === 'catalog_discovery' || semantic.route === 'clarification_required') && hasPolicyEntity && dimensions.length > 0) {
+  // Administrative, documentation, clinical-requirement, and policy-process
+  // questions can be fully answerable without naming a medicine. A verified
+  // policy entity helps but is not a prerequisite; only an unverified named
+  // medication remains an identity-safety blocker.
+  if ((semantic.route === 'catalog_discovery' || semantic.route === 'clarification_required') && hasRequestedInformation && !hasUnverifiedNamedMedication) {
     return { ...semantic, route: 'policy_question' as const };
   }
   return semantic;

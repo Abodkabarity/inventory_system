@@ -7,7 +7,7 @@ const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 const TOGETHER_REASONING_TOKEN_RESERVE = 1024;
 
 export type AIProviderName = 'together' | 'groq_fallback';
-export type AICallType = 'semantic' | 'final-answer';
+export type AICallType = 'semantic' | 'rerank' | 'final-answer';
 export type AIUsage = {
   prompt_tokens?: number;
   completion_tokens?: number;
@@ -219,5 +219,23 @@ export async function callAI(request: AIRequest, callType: AICallType): Promise<
       }
       throw fallbackError;
     }
+  }
+}
+
+export async function callGroqAfterMalformedTogether(
+  request: AIRequest,
+  callType: AICallType,
+): Promise<AICompletion> {
+  console.warn('ai_provider_fallback', {
+    from: 'together', to: 'groq_fallback', model: AI_MODEL, call_type: callType,
+    status: 200, code: `malformed_structured_output_${callType}`,
+  });
+  try {
+    return await callProvider(GROQ_FALLBACK, request, callType);
+  } catch (error) {
+    if (error instanceof AIProviderError && error.temporary) {
+      throw new AIProvidersTemporarilyUnavailableError();
+    }
+    throw error;
   }
 }

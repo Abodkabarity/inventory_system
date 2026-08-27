@@ -97,6 +97,14 @@ function extractOrBranches(text: string): ThresholdTimeBranch[][] {
   return groups;
 }
 
+export function extractOrThresholdTimeRuleGroups(evidence: V3Chunk[]) {
+  return evidence.flatMap((chunk, evidenceIndex) => extractOrBranches(chunk.chunk_text).map((branches) => ({
+    evidence_id: `E${evidenceIndex + 1}`,
+    logic: 'OR' as const,
+    branches,
+  })));
+}
+
 export function evaluateOrThresholdTimeWindows(
   semantic: SemanticInterpretation,
   evidence: V3Chunk[],
