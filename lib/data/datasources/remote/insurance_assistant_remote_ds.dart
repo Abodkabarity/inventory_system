@@ -83,6 +83,10 @@ class InsuranceAssistantRemoteDs {
   }
 
   Future<void> submitFeedback(String messageId, int rating) async {
+    if (rating > 0 && _knowledgeBaseVersion == 'v3') {
+      await _invokeAssistant({'positive_feedback_message_id': messageId});
+      return;
+    }
     final userId = client.auth.currentUser?.id;
     if (userId == null) throw Exception('Authentication required.');
     await client.from('insurance_feedback').upsert({
@@ -102,8 +106,31 @@ class InsuranceAssistantRemoteDs {
     'branch_name': branchName,
   });
 
-  Future<String> createSourceUrl(String bucket, String path) =>
-      client.storage.from(bucket).createSignedUrl(path, 300);
+  Future<String> createSourceUrl(
+    String bucket,
+    String path, {
+    String? documentId,
+  }) async {
+    var resolvedBucket = bucket.trim();
+    var resolvedPath = path.trim();
+    if (resolvedPath.isEmpty && documentId?.trim().isNotEmpty == true) {
+      final document = await client
+          .from('insurance_v3_documents')
+          .select('storage_bucket,storage_path')
+          .eq('id', documentId!)
+          .maybeSingle();
+      resolvedBucket = (document?['storage_bucket'] ?? resolvedBucket)
+          .toString()
+          .trim();
+      resolvedPath = (document?['storage_path'] ?? '').toString().trim();
+    }
+    if (resolvedBucket.isEmpty || resolvedPath.isEmpty) {
+      throw Exception('The approved source file is not available to open.');
+    }
+    return client.storage
+        .from(resolvedBucket)
+        .createSignedUrl(resolvedPath, 300);
+  }
 
   Future<List<Map<String, dynamic>>> fetchDocuments() async =>
       List<Map<String, dynamic>>.from(

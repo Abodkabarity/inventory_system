@@ -1,10 +1,12 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';
-import { AI_MODEL, answerFromEvidence, interpretQuestion, judgeHydratedEvidenceSufficiency, planRecoverySearch, rerankAndJudgeEvidence, type EvidenceJudgment, type EvidenceSufficiency, type RecoveryPlan } from './ai.ts';
+import { AI_MODEL, answerFromEvidence, answerIncompleteRecovery, interpretQuestion, judgeHydratedEvidenceSufficiency, planRecoverySearch, rerankAndJudgeEvidence, type EvidenceJudgment, type EvidenceSufficiency, type RecoveryPlan } from './ai.ts';
 import { AIProviderError, AIProvidersTemporarilyUnavailableError, type AIProviderName } from './ai_provider.ts';
 import { groundedExtractiveAnswer, hasStrongVerifiedEvidence } from './fallback.ts';
 import { newRequestTrace, persistRequestTrace, type RequestTrace } from './diagnostics.ts';
 import { alignSemanticMedication, evaluateOrThresholdTimeWindows, renderDeterministicCriterionAnswer } from './criteria.ts';
 import { embedRetrievalQuery } from './embedding.ts';
+import { incompleteExtractiveFallback } from './incomplete_recovery.ts';
+import { preferredAnswerShouldReplace, relationSnapshot, semanticCachePayload, semanticCacheSignature, validatePreferredAnswerSources } from './validated_cache.ts';
 import {
   buildRetrievalPlan, chunkAnswersDimension, enforceRouteSafety, evidenceForAnswer, groundEntityOnlySemantic, isolateMedicationCandidates, normalize,
   isolateSearchUnitCandidates, requestedDimensions, rerankChunks, resolveVerifiedEntities, selectEvidence, strictRetrievalEntityIds,
@@ -197,10 +199,16 @@ type PipelineContext = {
   originalAuditId: string | null;
   originalAnswer: string | null;
   originalEvidence: unknown;
+  originalCitations: unknown;
+  originalSemantic: unknown;
 };
 
-const citationFor = (chunk: V3Chunk) => ({
+const citationFor = (
+  chunk: V3Chunk,
+  storage: { bucket: string; path: string } | undefined,
+) => ({
   document_id: chunk.document_id, document_title: chunk.document_title, file_name: chunk.file_name,
+  storage_bucket: storage?.bucket ?? null, storage_path: storage?.path ?? null,
   page_from: chunk.page_from, page_to: chunk.page_to, sheet_name: chunk.sheet_name,
   row_from: chunk.row_from, row_to: chunk.row_to,
   chunk_id: typeof chunk.metadata.source_chunk_id === 'string' ? chunk.metadata.source_chunk_id : chunk.chunk_id,
@@ -243,6 +251,73 @@ function unitModeFilter(units: HybridSearchUnit[], mode: RecoveryPlan['searches'
   return units;
 }
 
+const jsonRows = (value: unknown) => Array.isArray(value)
+  ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+  : [];
+
+async function recordPositiveFeedback(db: DBClient, userId: string, messageId: string) {
+  const { data: assistant, error: messageError } = await db.from('insurance_chat_messages')
+    .select('id,message,citations,parsed_data').eq('id', messageId).eq('role', 'assistant').single();
+  if (messageError || !assistant) return { invalid: true };
+  const { error: feedbackError } = await db.from('insurance_feedback').upsert({
+    message_id: messageId, user_id: userId, rating: 1, updated_at: new Date().toISOString(),
+  }, { onConflict: 'message_id,user_id' });
+  if (feedbackError) throw feedbackError;
+
+  const { data: audit } = await db.from('insurance_answer_audits').select(
+    'id,raw_question,structured_query,verified_entities,verified_evidence,answer_status,final_answer,final_citations,recovery_attempt,provider_diagnostics,latency_ms',
+  ).eq('message_id', messageId).order('created_at', { ascending: false }).limit(1).maybeSingle();
+  const cacheableStatuses = new Set(['grounded', 'grounded_fallback', 'recovery_grounded', 'recovery_fallback', 'validated_cache_hit']);
+  const citations = jsonRows(audit?.final_citations).length ? jsonRows(audit.final_citations) : jsonRows(assistant.citations);
+  const semantic = audit?.structured_query as SemanticInterpretation | undefined;
+  const verifiedEntities = jsonRows(audit?.verified_entities) as V3Entity[];
+  const answer = String(audit?.final_answer ?? assistant.message ?? '').trim();
+  if (!audit || !semantic || !cacheableStatuses.has(String(audit.answer_status)) || !answer || citations.length === 0 || verifiedEntities.length === 0) {
+    return { recorded: true, cache_updated: false, reason: 'answer_not_safely_cacheable' };
+  }
+
+  const documentIds = [...new Set(citations.map((citation) => String(citation.document_id ?? '')).filter(Boolean))];
+  const evidenceIds = [...new Set([
+    ...citations.map((citation) => String(citation.chunk_id ?? '')),
+    ...jsonRows(audit.verified_evidence).map((evidence) => String(evidence.id ?? evidence.chunk_id ?? '')),
+  ].filter((id) => /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(id)))];
+  const { data: documents, error: documentError } = await db.from('insurance_v3_documents')
+    .select('id,document_hash,version,updated_at,is_active,storage_bucket,storage_path').in('id', documentIds);
+  if (documentError || (documents ?? []).length !== documentIds.length || evidenceIds.length === 0
+    || (documents ?? []).some((document: Record<string, unknown>) => document.is_active !== true || !String(document.storage_path ?? '').trim())) {
+    return { recorded: true, cache_updated: false, reason: 'source_snapshot_unavailable' };
+  }
+  const { data: relations, error: relationError } = await db.from('insurance_v3_entity_relations')
+    .select('subject_entity_id,relation_type,object_entity_id,verified').eq('verified', true);
+  if (relationError) return { recorded: true, cache_updated: false, reason: 'relation_snapshot_unavailable' };
+  const signature = await semanticCacheSignature(semantic, verifiedEntities);
+  const now = new Date().toISOString();
+  const entityIds = verifiedEntities.map((entity) => entity.id);
+  const preferredSource = Number(audit.recovery_attempt ?? assistant.parsed_data?.recovery_depth ?? 0) > 0 ? 'deep_review' : 'normal';
+  const { data: existingPreferred } = await db.from('insurance_validated_answers')
+    .select('id,preferred_source').eq('user_id', userId).eq('semantic_signature', signature).maybeSingle();
+  if (!preferredAnswerShouldReplace(existingPreferred?.preferred_source, preferredSource)) {
+    return { recorded: true, cache_updated: false, reason: 'deep_review_remains_preferred', preferred_source: 'deep_review' };
+  }
+  if (preferredSource === 'deep_review') {
+    await db.from('insurance_validated_answers').update({
+      active: false, invalidated_at: now, invalidation_reason: 'replaced_by_accepted_deep_review', updated_at: now,
+    }).eq('user_id', userId).eq('normalized_question', normalize(audit.raw_question)).neq('semantic_signature', signature).eq('active', true);
+  }
+  const { error: cacheError } = await db.from('insurance_validated_answers').upsert({
+    user_id: userId, semantic_signature: signature, normalized_question: normalize(audit.raw_question),
+    original_question: audit.raw_question, semantic_interpretation: semantic,
+    verified_entity_ids: entityIds, intent_signature: semanticCachePayload(semantic, verifiedEntities),
+    answer_text: answer, citations, evidence_ids: evidenceIds,
+    document_snapshots: documents, relation_snapshot: relationSnapshot(relations as V3Relation[], entityIds),
+    preferred_source: preferredSource, source_message_id: messageId, source_audit_id: audit.id,
+    provider_metadata: audit.provider_diagnostics ?? {}, source_latency_ms: audit.latency_ms,
+    positive_feedback_at: now, active: true, invalidated_at: null, invalidation_reason: null, updated_at: now,
+  }, { onConflict: 'user_id,semantic_signature' });
+  if (cacheError) throw cacheError;
+  return { recorded: true, cache_updated: true, preferred_source: preferredSource };
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: cors });
   const started = Date.now();
@@ -263,13 +338,19 @@ Deno.serve(async (request) => {
       debugRequested = !debugAuthError && canDebug === true;
     }
 
-    let pipelineContext: PipelineContext = { forceRecovery: false, feedbackReason: null, originalAuditId: null, originalAnswer: null, originalEvidence: null };
+    if (typeof body.positive_feedback_message_id === 'string') {
+      const result = await recordPositiveFeedback(db, auth.user.id, body.positive_feedback_message_id);
+      if (result.invalid) return respond({ error: 'The feedback message is invalid.' }, 400);
+      return respond({ feedback_recorded: true, validated_cache_updated: result.cache_updated === true, preferred_source: result.preferred_source ?? null, insurance_v3: true });
+    }
+
+    let pipelineContext: PipelineContext = { forceRecovery: false, feedbackReason: null, originalAuditId: null, originalAnswer: null, originalEvidence: null, originalCitations: null, originalSemantic: null };
     let question = String(body.message ?? '').trim();
     if (typeof body.feedback_message_id === 'string') {
       const feedbackMessageId = body.feedback_message_id;
       const { data: assistant, error } = await db.from('insurance_chat_messages').select('id,session_id,message,citations,parsed_data,created_at').eq('id', feedbackMessageId).eq('role', 'assistant').single();
       if (error || !assistant) return respond({ error: 'The feedback message is invalid.' }, 400);
-      const { data: priorAudit } = await db.from('insurance_answer_audits').select('id,raw_question,structured_query,verified_evidence,recovery_attempt').eq('message_id', feedbackMessageId).order('created_at', { ascending: false }).limit(1).maybeSingle();
+      const { data: priorAudit } = await db.from('insurance_answer_audits').select('id,raw_question,structured_query,verified_evidence,final_citations,recovery_attempt').eq('message_id', feedbackMessageId).order('created_at', { ascending: false }).limit(1).maybeSingle();
       if (Number(priorAudit?.recovery_attempt ?? assistant.parsed_data?.recovery_depth ?? 0) >= 1) {
         await db.from('insurance_feedback').upsert({ message_id: feedbackMessageId, user_id: auth.user.id, rating: -1, second_rating: -1, reason: String(body.feedback_reason ?? 'other'), updated_at: new Date().toISOString() }, { onConflict: 'message_id,user_id' });
         return respond({ feedback_recorded: true, recovery_exhausted: true, insurance_v3: true });
@@ -282,7 +363,11 @@ Deno.serve(async (request) => {
       if (!question) return respond({ error: 'The original question could not be resolved.' }, 400);
       const feedbackReason = ['incorrect', 'incomplete', 'misunderstood', 'wrong_source', 'other'].includes(String(body.feedback_reason)) ? String(body.feedback_reason) : 'other';
       await db.from('insurance_feedback').upsert({ message_id: feedbackMessageId, user_id: auth.user.id, rating: -1, reason: feedbackReason, updated_at: new Date().toISOString() }, { onConflict: 'message_id,user_id' });
-      pipelineContext = { forceRecovery: true, feedbackReason, originalAuditId: priorAudit?.id ? String(priorAudit.id) : null, originalAnswer: String(assistant.message ?? ''), originalEvidence: priorAudit?.verified_evidence ?? assistant.citations ?? [] };
+      pipelineContext = {
+        forceRecovery: true, feedbackReason, originalAuditId: priorAudit?.id ? String(priorAudit.id) : null,
+        originalAnswer: String(assistant.message ?? ''), originalEvidence: priorAudit?.verified_evidence ?? assistant.citations ?? [],
+        originalCitations: priorAudit?.final_citations ?? assistant.citations ?? [], originalSemantic: priorAudit?.structured_query ?? assistant.parsed_data?.semantic ?? null,
+      };
       body = { ...body, session_id: assistant.session_id };
     }
     if (!question || question.length > 1200) return respond({ error: 'A question of at most 1200 characters is required.' }, 400);
@@ -324,6 +409,58 @@ Deno.serve(async (request) => {
     const dimensions = requestedDimensions(question, grounded);
     const semantic = enforceRouteSafety(grounded, verifiedEntities, dimensions);
     trace.semantic = semantic; trace.verified_entities = verifiedEntities;
+
+    if (!pipelineContext.forceRecovery && semantic.route !== 'out_of_scope' && verifiedEntities.length > 0) {
+      const cacheStarted = Date.now();
+      const signature = await semanticCacheSignature(semantic, verifiedEntities);
+      let { data: cached, error: cacheLookupError } = await db.from('insurance_validated_answers')
+        .select('*').eq('user_id', auth.user.id).eq('semantic_signature', signature).eq('active', true).maybeSingle();
+      let matchKind = 'semantic_signature';
+      if (!cached && !cacheLookupError) {
+        const exact = await db.from('insurance_validated_answers').select('*')
+          .eq('user_id', auth.user.id).eq('normalized_question', normalize(question)).eq('active', true)
+          .order('positive_feedback_at', { ascending: false }).limit(5);
+        cacheLookupError = exact.error;
+        const currentIds = verifiedEntities.map((entity) => entity.id).sort();
+        cached = (exact.data ?? []).find((row: Record<string, unknown>) => {
+          const cachedIds = Array.isArray(row.verified_entity_ids) ? row.verified_entity_ids.map(String).sort() : [];
+          return JSON.stringify(cachedIds) === JSON.stringify(currentIds);
+        }) ?? null;
+        matchKind = 'exact_normalized_question';
+      }
+      const cacheDiagnostics: Record<string, unknown> = {
+        validated_cache_lookup: true, cache_hit: false, cache_miss: true,
+        invalidation_reason: null, preferred_answer_source: cached?.preferred_source ?? null,
+        source_validity_check: cached ? 'pending' : 'not_applicable', semantic_match_confidence: cached ? (matchKind === 'exact_normalized_question' || normalize(question) === cached.normalized_question ? 1 : 0.96) : null,
+        match_kind: cached ? matchKind : null,
+        latency_saved_ms: 0, ai_calls_avoided: 0,
+      };
+      if (cacheLookupError) cacheDiagnostics.invalidation_reason = 'cache_lookup_error';
+      if (cached) {
+        const validity = await validatePreferredAnswerSources(db, cached as Record<string, unknown>);
+        cacheDiagnostics.source_validity_check = validity.valid ? 'valid' : 'invalid';
+        cacheDiagnostics.invalidation_reason = validity.reason;
+        if (!validity.valid) {
+          await db.from('insurance_validated_answers').update({ active: false, invalidated_at: new Date().toISOString(), invalidation_reason: validity.reason, updated_at: new Date().toISOString() }).eq('id', cached.id);
+        } else {
+          const answer = String(cached.answer_text);
+          const citations = jsonRows(cached.citations);
+          const saved = await saveConversation(db, body, question, answer, citations, semantic, verifiedEntities, 'validated_cache_hit', 0);
+          cacheDiagnostics.cache_hit = true; cacheDiagnostics.cache_miss = false;
+          cacheDiagnostics.ai_calls_avoided = 2;
+          cacheDiagnostics.latency_saved_ms = Math.max(0, Number(cached.source_latency_ms ?? 0) - (Date.now() - started));
+          trace.session_id = saved.session_id; trace.message_id = saved.message_id; trace.final_status = 'validated_cache_hit';
+          trace.final_answer = answer; trace.citations = citations; trace.final_reason = 'valid_preferred_grounded_answer'; trace.answer_generator = 'validated_cache';
+          trace.latency.cache_ms = Date.now() - cacheStarted; trace.latency.total_ms = Date.now() - started;
+          trace.providers = { ...aiDiagnostics(semanticResult, [], null), validated_cache: cacheDiagnostics }; trace.token_usage = trace.providers;
+          await persistRequestTrace(db, trace);
+          return respond({ ...saved, answer, citations, answer_status: 'validated_cache_hit', answer_generator: 'validated_cache', evidence_checked: true, validated_cache: true, insurance_v3: true,
+            debug: debugRequested ? { request_id: trace.request_id, semantic_interpretation: semantic, verified_entities: verifiedEntities, validated_cache: cacheDiagnostics, ai: trace.providers } : undefined });
+        }
+      }
+      trace.providers.validated_cache = cacheDiagnostics;
+      trace.latency.cache_ms = Date.now() - cacheStarted;
+    }
     if (!pipelineContext.forceRecovery && semantic.route === 'out_of_scope') {
       const answer = 'This question is outside the approved insurance-policy knowledge base.';
       trace.final_status = semantic.route; trace.final_answer = answer; trace.final_reason = 'semantic_route'; trace.latency.total_ms = Date.now() - started;
@@ -510,7 +647,29 @@ Deno.serve(async (request) => {
     const deterministicAnswer = renderDeterministicCriterionAnswer(question, semantic, deterministicEvaluations);
     let answerResult: { answer: string; used_evidence_ids: string[] } & AIMetadata;
     let answerGenerator = deterministicAnswer ? 'deterministic_criteria' : 'grounded_ai';
-    if (deterministicAnswer) answerResult = { answer: deterministicAnswer, used_evidence_ids: ['E1'], usage: null, latency_ms: 0, provider: semanticResult.provider, model: semanticResult.model };
+    if (pipelineContext.feedbackReason === 'incomplete') {
+      answerGenerator = 'incomplete_grounded_ai';
+      try {
+        answerResult = await answerIncompleteRecovery(
+          question, semantic, answerEvidence,
+          {
+            original_question: question, original_semantic: pipelineContext.originalSemantic,
+            original_answer: pipelineContext.originalAnswer ?? '', original_citations: pipelineContext.originalCitations,
+            original_evidence: pipelineContext.originalEvidence,
+          },
+          deterministicEvaluations,
+          sufficiency ?? { status: 'complete', answered_information: [], missing_information: [], reason: 'verified answer-bearing evidence' },
+        );
+      } catch (error) {
+        answerResult = {
+          answer: incompleteExtractiveFallback(pipelineContext.originalAnswer ?? '', pipelineContext.originalEvidence, answerEvidence),
+          used_evidence_ids: answerEvidence.slice(0, 3).map((_, index) => `E${index + 1}`),
+          usage: null, latency_ms: 0, provider: semanticResult.provider, model: semanticResult.model,
+        };
+        answerGenerator = 'incomplete_extractive_guard_fallback'; trace.fallback_used = 'incomplete_grounded_extractive_answer';
+        trace.providers.incomplete_answer_error = error instanceof Error ? error.name : 'unknown';
+      }
+    } else if (deterministicAnswer) answerResult = { answer: deterministicAnswer, used_evidence_ids: ['E1'], usage: null, latency_ms: 0, provider: semanticResult.provider, model: semanticResult.model };
     else {
       try { answerResult = await answerFromEvidence(question, semantic, answerEvidence, deterministicEvaluations, sufficiency ?? { status: 'complete', answered_information: [], missing_information: [], reason: 'verified answer-bearing evidence' }); }
       catch (error) {
@@ -521,12 +680,33 @@ Deno.serve(async (request) => {
     }
     const used = evidenceForAnswer(answerEvidence, answerResult.used_evidence_ids, dimensions);
     const safeUsed = used.length ? used : answerEvidence.slice(0, 2);
-    const citations = safeUsed.map(citationFor);
+    const sourceDocumentIds = [...new Set(safeUsed.map((chunk) => chunk.document_id))];
+    const { data: sourceDocuments, error: sourceDocumentsError } = await db
+      .from('insurance_v3_documents')
+      .select('id,storage_bucket,storage_path')
+      .in('id', sourceDocumentIds);
+    if (sourceDocumentsError) {
+      console.error('insurance_v3_citation_storage_lookup_error', {
+        message: sourceDocumentsError.message,
+      });
+    }
+    const storageByDocumentId = new Map<string, { bucket: string; path: string }>(
+      ((sourceDocuments ?? []) as Array<Record<string, unknown>>).map((document) => [
+        String(document.id),
+        {
+          bucket: String(document.storage_bucket ?? 'insurance-documents'),
+          path: String(document.storage_path ?? ''),
+        },
+      ]),
+    );
+    const citations = safeUsed.map((chunk) =>
+      citationFor(chunk, storageByDocumentId.get(chunk.document_id)),
+    );
     const answer = sourceGroundedText(answerResult.answer, safeUsed);
-    const status = trace.recovery.activated ? (answerGenerator === 'grounded_extractive_fallback' ? 'recovery_fallback' : 'recovery_grounded') : (answerGenerator === 'grounded_extractive_fallback' ? 'grounded_fallback' : 'grounded');
+    const status = trace.recovery.activated ? (answerGenerator.includes('fallback') ? 'recovery_fallback' : 'recovery_grounded') : (answerGenerator === 'grounded_extractive_fallback' ? 'grounded_fallback' : 'grounded');
     const saved = await saveConversation(db, body, question, answer, citations, semantic, verifiedEntities, status, pipelineContext.forceRecovery ? 1 : 0);
     trace.session_id = saved.session_id; trace.message_id = saved.message_id; trace.final_status = status; trace.final_answer = answer; trace.citations = citations; trace.final_reason = 'verified_answer_bearing_evidence'; trace.answer_generator = answerGenerator; trace.latency.answer_ms = answerResult.latency_ms; trace.latency.total_ms = Date.now() - started;
-    trace.providers = { ...trace.providers, ...aiDiagnostics(semanticResult, aiCalls, deterministicAnswer || answerGenerator === 'grounded_extractive_fallback' ? null : answerResult) }; trace.token_usage = trace.providers;
+    trace.providers = { ...trace.providers, ...aiDiagnostics(semanticResult, aiCalls, (deterministicAnswer && pipelineContext.feedbackReason !== 'incomplete') || answerGenerator.includes('fallback') ? null : answerResult) }; trace.token_usage = trace.providers;
     const auditId = await persistRequestTrace(db, trace);
     if (pipelineContext.forceRecovery && auditId) await db.from('insurance_learning_queue').insert({ audit_id: auditId, reason: 'negative_feedback', priority: 3, proposed_change: { request_id: trace.request_id, feedback_reason: pipelineContext.feedbackReason, recovery_answer_status: status, recovery_searches: trace.recovery.iterations } });
     return respond({ ...saved, answer, citations, confidence: null, answer_status: status, answer_generator: answerGenerator, evidence_checked: true, insurance_v3: true, recovery_used: trace.recovery.activated,
