@@ -7,7 +7,7 @@ const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 const TOGETHER_REASONING_TOKEN_RESERVE = 1024;
 
 export type AIProviderName = 'together' | 'groq_fallback';
-export type AICallType = 'semantic' | 'rerank' | 'final-answer';
+export type AICallType = 'semantic' | 'rerank' | 'recovery' | 'final-answer';
 export type AIUsage = {
   prompt_tokens?: number;
   completion_tokens?: number;

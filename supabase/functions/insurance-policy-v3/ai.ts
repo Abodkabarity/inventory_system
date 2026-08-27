@@ -157,7 +157,7 @@ export async function interpretQuestion(question: string, verifiedEntityCatalog:
     // The expanded retrieval plan has substantially more JSON fields than the
     // previous semantic contract. Together counts hidden reasoning inside the
     // request budget, so leave enough visible-output room to close the JSON.
-    maxOutputTokens: 2200,
+    maxOutputTokens: 1200,
     response_format: { type: 'json_object' },
     together_response_format: semanticResponseFormat,
     messages: [
@@ -267,6 +267,67 @@ export type EvidenceSufficiency = {
   reason: string;
 };
 
+export type RecoverySearchMode = 'all' | 'semantic' | 'tables' | 'headings' | 'documents' | 'entities';
+export type RecoveryPlan = {
+  decision: 'use_existing' | 'search' | 'clarification' | 'not_found';
+  diagnosis: string;
+  information_need: string;
+  clarification_question: string | null;
+  searches: Array<{ query: string; mode: RecoverySearchMode }>;
+};
+
+const recoveryResponseFormat = {
+  type: 'json_schema', json_schema: {
+    name: 'insurance_recovery_search_plan', schema: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        decision: { type: 'string', enum: ['use_existing', 'search', 'clarification', 'not_found'] },
+        diagnosis: { type: 'string' }, information_need: { type: 'string' },
+        clarification_question: nullableString,
+        searches: { type: 'array', maxItems: 4, items: {
+          type: 'object', additionalProperties: false,
+          properties: {
+            query: { type: 'string' },
+            mode: { type: 'string', enum: ['all', 'semantic', 'tables', 'headings', 'documents', 'entities'] },
+          }, required: ['query', 'mode'],
+        } },
+      }, required: ['decision', 'diagnosis', 'information_need', 'clarification_question', 'searches'],
+    },
+  },
+};
+
+export async function planRecoverySearch(
+  question: string,
+  semantic: SemanticInterpretation,
+  verifiedEntities: V3Entity[],
+  context: Record<string, unknown>,
+): Promise<RecoveryPlan & AIResultMetadata> {
+  const started = Date.now();
+  const { completion, raw } = await callStructuredAI({
+    maxOutputTokens: 650, response_format: { type: 'json_object' }, together_response_format: recoveryResponseFormat,
+    messages: [
+      { role: 'system', content: `Plan a bounded recovery search over approved insurance documents. Never answer the policy question and never invent facts. Diagnose why the first search failed, then express at most four read-only document searches using open vocabulary. Searches may target all text, semantic content, tables, headings, documents, or verified entities. Support reverse relationships and cross-document aggregation without assuming medication-first intent. Preserve every verified explicit entity as authoritative and never substitute a same-class medication. If selected evidence already directly answers a clear information need, choose use_existing; this is especially important when the first semantic route was merely uncertain. If the request is genuinely ambiguous and lacks enough resolvable context, choose clarification and ask one concise question in the user's language. Choose not_found only when the supplied search history already demonstrates that the information need was searched broadly and no relevant approved evidence exists. Never generate SQL, filters, document IDs, or policy facts. Return compact JSON only.` },
+      { role: 'user', content: JSON.stringify({ original_question: question, semantic_interpretation: semantic, verified_entities: verifiedEntities.map(({ id, canonical_name, entity_type }) => ({ id, canonical_name, entity_type })), ...context }) },
+    ],
+  }, 'recovery', (value) => ['use_existing', 'search', 'clarification', 'not_found'].includes(String(value.decision)) && Array.isArray(value.searches));
+  const modes = new Set<RecoverySearchMode>(['all', 'semantic', 'tables', 'headings', 'documents', 'entities']);
+  const searches = Array.isArray(raw.searches) ? raw.searches.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const row = item as Record<string, unknown>;
+    const query = typeof row.query === 'string' ? row.query.trim().slice(0, 500) : '';
+    const mode = modes.has(row.mode as RecoverySearchMode) ? row.mode as RecoverySearchMode : 'all';
+    return query ? [{ query, mode }] : [];
+  }).slice(0, 4) : [];
+  return {
+    decision: raw.decision as RecoveryPlan['decision'],
+    diagnosis: typeof raw.diagnosis === 'string' ? raw.diagnosis.slice(0, 500) : '',
+    information_need: typeof raw.information_need === 'string' ? raw.information_need.slice(0, 700) : '',
+    clarification_question: typeof raw.clarification_question === 'string' && raw.clarification_question.trim() ? raw.clarification_question.trim().slice(0, 500) : null,
+    searches, usage: completionUsage(completion.payload), latency_ms: Date.now() - started,
+    provider: completion.provider, model: completion.model,
+  };
+}
+
 const rerankResponseFormat = (candidateCount: number) => ({
   type: 'json_schema', json_schema: {
     name: 'insurance_evidence_rerank', schema: {
@@ -296,15 +357,15 @@ export async function rerankAndJudgeEvidence(
   candidates: HybridSearchUnit[],
 ): Promise<{ judgments: EvidenceJudgment[]; sufficiency: EvidenceSufficiency } & AIResultMetadata> {
   const started = Date.now();
-  const supplied = candidates.slice(0, 12).map((candidate) => ({
+  const supplied = candidates.slice(0, 10).map((candidate) => ({
     candidate_id: candidate.search_unit_id, unit_type: candidate.unit_type,
     document: candidate.document_title, section: candidate.section_title, table: candidate.table_title,
     page_from: candidate.page_from, page_to: candidate.page_to, rrf_score: candidate.hybrid_rrf_score,
-    text: candidate.retrieval_text.slice(0, 700),
+    text: candidate.retrieval_text.slice(0, 450),
   }));
   const allowed = new Set(supplied.map((item) => item.candidate_id));
   const { completion, raw } = await callStructuredAI({
-    maxOutputTokens: 2200, response_format: { type: 'json_object' }, together_response_format: rerankResponseFormat(supplied.length),
+    maxOutputTokens: 1000, response_format: { type: 'json_object' }, together_response_format: rerankResponseFormat(supplied.length),
     messages: [
       { role: 'system', content: `You are an evidence selector, not a policy answerer. Judge approved candidates for whether they directly answer the semantic information need. Never add facts. Return judgments for as many supplied candidate IDs as possible, prioritizing answer-bearing candidates; omitted IDs remain eligible for downstream recall protection. Verified medication identity is authoritative: drug-specific criteria for a different medicine are irrelevant even when medicines share a class or indication. Prefer direct table rows or clauses over broad context. Mark expansion_needed when table, section, parent, or adjacent context is needed. Judge sufficiency only against information_need. Keep reasons compact. Return JSON only.` },
       { role: 'user', content: JSON.stringify({ question, information_need: semantic.information_need ?? semantic.requested_information ?? semantic.semantic_intent, semantic_interpretation: semantic, verified_entities: verifiedEntities.map(({ id, canonical_name, entity_type }) => ({ id, canonical_name, entity_type })), candidates: supplied }) },
@@ -345,7 +406,7 @@ export async function judgeHydratedEvidenceSufficiency(
     maxOutputTokens: 700, response_format: { type: 'json_object' }, together_response_format: sufficiencyResponseFormat,
     messages: [
       { role: 'system', content: `Judge only whether the selected approved source chunks contain the answer to the explicit information_need. Never answer the policy question or add facts. information_need is the sole requested scope; do not infer extra fields from generic words such as schedule, eligibility, policy, or criteria. A request for one threshold, criterion group, dose, administrative requirement, or documentation rule is complete once that requested information is fully present; do not require unrelated full-eligibility criteria. Preserve verified medicine and indication isolation. complete means every part of information_need is in the chunks, partial means an explicit part is missing, insufficient means no applicable rule. Return compact JSON only.` },
-      { role: 'user', content: JSON.stringify({ question, information_need: semantic.information_need ?? semantic.requested_information ?? semantic.semantic_intent, verified_entities: verifiedEntities.map(({ canonical_name, entity_type }) => ({ canonical_name, entity_type })), evidence: evidence.slice(0, 12).map((chunk, index) => ({ id: `E${index + 1}`, document: chunk.document_title, section: chunk.section_title, page_from: chunk.page_from, text: chunk.chunk_text.slice(0, 1400) })) }) },
+      { role: 'user', content: JSON.stringify({ question, information_need: semantic.information_need ?? semantic.requested_information ?? semantic.semantic_intent, verified_entities: verifiedEntities.map(({ canonical_name, entity_type }) => ({ canonical_name, entity_type })), evidence: evidence.slice(0, 8).map((chunk, index) => ({ id: `E${index + 1}`, document: chunk.document_title, section: chunk.section_title, page_from: chunk.page_from, text: chunk.chunk_text.slice(0, 700) })) }) },
     ],
   }, 'rerank');
   const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string').slice(0, 12) : [];
@@ -359,9 +420,9 @@ export async function answerFromEvidence(
   evidenceSufficiency?: EvidenceSufficiency | null,
 ): Promise<{ answer: string; used_evidence_ids: string[] } & AIResultMetadata> {
   const started = Date.now();
-  const supplied = evidence.map((chunk, index) => ({
+  const supplied = evidence.slice(0, 6).map((chunk, index) => ({
     id: `E${index + 1}`,
-    text: chunk.chunk_text,
+    text: chunk.chunk_text.slice(0, 1800),
     source_id: { document: chunk.document_title, file: chunk.file_name, page_from: chunk.page_from, page_to: chunk.page_to, sheet: chunk.sheet_name, row_from: chunk.row_from, row_to: chunk.row_to },
   }));
   const verifiedClinicalTerms = {

@@ -23,6 +23,7 @@ class InsuranceAssistantRepositoryImpl implements InsuranceAssistantRepository {
     rowFrom: (map['row_from'] as num?)?.toInt(),
     rowTo: (map['row_to'] as num?)?.toInt(),
     score: (map['score'] as num?)?.toDouble() ?? 0,
+    supportLevel: (map['support_level'] ?? 'supporting_evidence').toString(),
   );
 
   InsuranceChatMessage _message(Map<String, dynamic> map) {
@@ -73,6 +74,8 @@ class InsuranceAssistantRepositoryImpl implements InsuranceAssistantRepository {
           map['conversational'] == true ||
           parsedData['conversational'] == true ||
           conversationalIntents.contains(savedIntent),
+      aiGenerated:
+          map['answer_generator'] == 'groq' || parsedData['groq'] != null,
       clarification: clarificationMap == null
           ? null
           : InsuranceClarification(
@@ -91,6 +94,12 @@ class InsuranceAssistantRepositoryImpl implements InsuranceAssistantRepository {
                   )
                   .toList(),
             ),
+      debugTrace: map['debug'] is Map
+          ? Map<String, dynamic>.from(map['debug'] as Map)
+          : null,
+      recoveryDepth:
+          (parsedData['recovery_depth'] as num?)?.toInt() ??
+          (map['recovery_used'] == true ? 1 : 0),
     );
   }
 
@@ -108,6 +117,10 @@ class InsuranceAssistantRepositoryImpl implements InsuranceAssistantRepository {
             ),
           )
           .toList();
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchKnowledgeReadiness() =>
+      remote.fetchKnowledgeReadiness();
 
   @override
   Future<List<InsuranceChatMessage>> fetchMessages(String sessionId) async {
@@ -128,11 +141,13 @@ class InsuranceAssistantRepositoryImpl implements InsuranceAssistantRepository {
     required String question,
     required String branchName,
     String? sessionId,
+    bool debug = false,
   }) async {
     final result = await remote.ask(
       question: question,
       branchName: branchName,
       sessionId: sessionId,
+      debug: debug,
     );
     return (
       sessionId: result['session_id'].toString(),
@@ -161,6 +176,23 @@ class InsuranceAssistantRepositoryImpl implements InsuranceAssistantRepository {
   @override
   Future<void> submitFeedback(String messageId, int rating) =>
       remote.submitFeedback(messageId, rating);
+
+  @override
+  Future<InsuranceChatMessage?> recoverFromFeedback({
+    required String messageId,
+    required String reason,
+    required String branchName,
+  }) async {
+    final result = await remote.recoverFromFeedback(
+      messageId: messageId,
+      reason: reason,
+      branchName: branchName,
+    );
+    if (result['recovery_exhausted'] == true || result['answer'] == null) {
+      return null;
+    }
+    return _message(result);
+  }
 
   @override
   Future<String> createSourceUrl(InsuranceCitation citation) =>

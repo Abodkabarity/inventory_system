@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -174,6 +175,7 @@ class _InsuranceAssistantPageState extends State<InsuranceAssistantPage> {
         question: question,
         branchName: widget.branchName,
         sessionId: _sessionId,
+        debug: _canManage,
       );
       if (!mounted) return;
       setState(() {
@@ -243,6 +245,84 @@ class _InsuranceAssistantPageState extends State<InsuranceAssistantPage> {
     } catch (_) {}
   }
 
+  Future<void> _handleFeedback(InsuranceChatMessage message, int rating) async {
+    if (rating > 0) {
+      await _repository.submitFeedback(message.id, 1);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Thank you for the feedback.')),
+        );
+      }
+      return;
+    }
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('What needs improvement?'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, 'incorrect'),
+            child: const Text('Incorrect'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, 'incomplete'),
+            child: const Text('Incomplete'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, 'misunderstood'),
+            child: const Text('Misunderstood my question'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, 'wrong_source'),
+            child: const Text('Wrong source'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, 'other'),
+            child: const Text('Other'),
+          ),
+        ],
+      ),
+    );
+    if (reason == null || !mounted) return;
+    setState(() {
+      _sending = true;
+      _error = null;
+    });
+    try {
+      final recovered = await _repository.recoverFromFeedback(
+        messageId: message.id,
+        reason: reason,
+        branchName: widget.branchName,
+      );
+      if (!mounted) return;
+      setState(() {
+        _sending = false;
+        if (recovered != null) {
+          _messages = [..._messages, recovered];
+          if (recovered.citations.isNotEmpty) {
+            _selectedCitation = recovered.citations.first;
+          }
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            recovered == null
+                ? 'The case was recorded for review; no further automatic retry will run.'
+                : 'A deeper source verification was completed.',
+          ),
+        ),
+      );
+      _scrollToBottom();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _sending = false;
+        _error = _friendlyError(error);
+      });
+    }
+  }
+
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
@@ -257,10 +337,14 @@ class _InsuranceAssistantPageState extends State<InsuranceAssistantPage> {
 
   String _friendlyError(Object error) {
     final value = error.toString().replaceFirst('Exception: ', '');
+    if (value.contains('[object Object]')) {
+      return 'The request could not be completed. Please retry.';
+    }
     if (value.contains('insurance_documents') ||
         value.contains('is_insurance_knowledge') ||
-        value.contains('insurance-assistant')) {
-      return 'Insurance Knowledge backend is not deployed yet. Apply the migration and deploy the insurance-assistant function, then retry.';
+        value.contains('insurance-assistant') ||
+        value.contains('insurance-policy-v2')) {
+      return 'Insurance Knowledge backend is not deployed yet. Apply the policy migration and deploy the Insurance Policy V2 function, then retry.';
     }
     return value;
   }
@@ -444,10 +528,8 @@ class _InsuranceAssistantPageState extends State<InsuranceAssistantPage> {
                           },
                           onFeedback: message.isUser
                               ? null
-                              : (rating) => _repository.submitFeedback(
-                                  message.id,
-                                  rating,
-                                ),
+                              : (rating) =>
+                                    unawaited(_handleFeedback(message, rating)),
                           clarificationEnabled:
                               message.clarification != null &&
                               !_confirmedClarifications.contains(
@@ -462,6 +544,7 @@ class _InsuranceAssistantPageState extends State<InsuranceAssistantPage> {
                               );
                             }
                           },
+                          showDeveloperDebug: _canManage,
                         );
                       },
                     ),
@@ -888,6 +971,7 @@ class _MessageBubble extends StatelessWidget {
   final ValueChanged<int>? onFeedback;
   final bool clarificationEnabled;
   final ValueChanged<InsuranceClarificationCandidate> onClarificationSelected;
+  final bool showDeveloperDebug;
 
   const _MessageBubble({
     required this.message,
@@ -896,7 +980,11 @@ class _MessageBubble extends StatelessWidget {
     required this.onFeedback,
     required this.clarificationEnabled,
     required this.onClarificationSelected,
+    required this.showDeveloperDebug,
   });
+
+  String _debugText() =>
+      const JsonEncoder.withIndent('  ').convert(message.debugTrace);
 
   List<InlineSpan> _answerSpans(String value, TextStyle style) {
     final spans = <InlineSpan>[];
@@ -918,6 +1006,19 @@ class _MessageBubble extends StatelessWidget {
       spans.add(TextSpan(text: value.substring(cursor)));
     }
     return spans;
+  }
+
+  String _supportLabel(InsuranceCitation citation) {
+    switch (citation.supportLevel) {
+      case 'strongest_direct_support':
+        return 'Strongest direct support';
+      case 'corroborating_evidence':
+        return 'Corroborating evidence';
+      case 'additional_supporting_source':
+        return 'Additional supporting source';
+      default:
+        return 'Supporting evidence';
+    }
   }
 
   ({String answer, String? source}) _separateAnswerAndSource() {
@@ -1041,6 +1142,10 @@ class _MessageBubble extends StatelessWidget {
                               ],
                             ),
                           ),
+                          if (message.aiGenerated) ...[
+                            const SizedBox(width: 7),
+                            const _AiBadge(),
+                          ],
                           const Spacer(),
                           if (evidenceBacked) const _EvidenceBadge(),
                         ],
@@ -1188,14 +1293,33 @@ class _MessageBubble extends StatelessWidget {
                                       ),
                                       const SizedBox(width: 8),
                                       Expanded(
-                                        child: Text(
-                                          '${citation.documentTitle} • ${citation.locationLabel}',
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontSize: 12.5,
-                                            color: Color(0xFF334155),
-                                            fontWeight: FontWeight.w700,
-                                          ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              '${citation.documentTitle} • ${citation.locationLabel}',
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 12.5,
+                                                color: Color(0xFF334155),
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 3),
+                                            Text(
+                                              _supportLabel(citation),
+                                              style: TextStyle(
+                                                fontSize: 10.5,
+                                                color:
+                                                    citation.supportLevel ==
+                                                        'strongest_direct_support'
+                                                    ? const Color(0xFF059669)
+                                                    : const Color(0xFF64748B),
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                       const Icon(
@@ -1209,6 +1333,64 @@ class _MessageBubble extends StatelessWidget {
                               ),
                             ),
                           ),
+                    ],
+                    if (!user &&
+                        showDeveloperDebug &&
+                        message.debugTrace != null) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFCBD5E1)),
+                        ),
+                        child: ExpansionTile(
+                          leading: const Icon(
+                            Icons.rule_folder_outlined,
+                            color: Color(0xFF475569),
+                          ),
+                          title: const Text(
+                            'Developer evidence trace',
+                            style: TextStyle(
+                              color: Color(0xFF334155),
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          subtitle: const Text(
+                            'Why candidates were accepted or rejected',
+                            style: TextStyle(
+                              color: Color(0xFF64748B),
+                              fontSize: 10.5,
+                            ),
+                          ),
+                          childrenPadding: const EdgeInsets.fromLTRB(
+                            14,
+                            0,
+                            14,
+                            14,
+                          ),
+                          children: [
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F172A),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                _debugText(),
+                                style: const TextStyle(
+                                  color: Color(0xFFE2E8F0),
+                                  fontFamily: 'monospace',
+                                  fontSize: 10.5,
+                                  height: 1.45,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                     if (!user &&
                         !message.conversational &&
@@ -1311,6 +1493,35 @@ class _InlineSource extends StatelessWidget {
       ),
     );
   }
+}
+
+class _AiBadge extends StatelessWidget {
+  const _AiBadge();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+    decoration: BoxDecoration(
+      color: const Color(0xFF7C3AED),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: const Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.auto_awesome_rounded, size: 14, color: Colors.white),
+        SizedBox(width: 4),
+        Text(
+          'AI',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 11,
+            letterSpacing: .7,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _EvidenceBadge extends StatelessWidget {
@@ -1768,6 +1979,7 @@ class _DocumentCenterDialog extends StatefulWidget {
 
 class _DocumentCenterDialogState extends State<_DocumentCenterDialog> {
   List<InsuranceDocumentSummary> _documents = const [];
+  List<Map<String, dynamic>> _readiness = const [];
   bool _loading = true;
   bool _uploading = false;
   String? _error;
@@ -1781,9 +1993,16 @@ class _DocumentCenterDialogState extends State<_DocumentCenterDialog> {
   Future<void> _load() async {
     try {
       final documents = await widget.repository.fetchDocuments();
+      List<Map<String, dynamic>> readiness = const [];
+      try {
+        readiness = await widget.repository.fetchKnowledgeReadiness();
+      } catch (_) {
+        // The legacy health list remains usable during a staged migration.
+      }
       if (mounted)
         setState(() {
           _documents = documents;
+          _readiness = readiness;
           _loading = false;
           _error = null;
         });
@@ -1799,7 +2018,7 @@ class _DocumentCenterDialogState extends State<_DocumentCenterDialog> {
   Future<void> _upload() async {
     final picked = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: const ['pdf', 'docx', 'xlsx'],
+      allowedExtensions: const ['pdf', 'docx', 'xlsx', 'xls', 'xlsb', 'csv'],
       withData: true,
     );
     if (picked == null ||
@@ -2119,6 +2338,8 @@ class _DocumentCenterDialogState extends State<_DocumentCenterDialog> {
                   style: const TextStyle(color: Color(0xFFB91C1C)),
                 ),
               ),
+            if (_readiness.isNotEmpty)
+              _KnowledgeReadinessSummary(rows: _readiness),
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
@@ -2154,8 +2375,16 @@ class _DocumentCenterDialogState extends State<_DocumentCenterDialog> {
                       separatorBuilder: (_, __) => const SizedBox(height: 9),
                       itemBuilder: (_, index) {
                         final document = _documents[index];
+                        final readiness = _readiness
+                            .where(
+                              (row) =>
+                                  row['source_document_id']?.toString() ==
+                                  document.id,
+                            )
+                            .firstOrNull;
                         return _DocumentTile(
                           document: document,
+                          readiness: readiness,
                           onInspect: () => _openSourceInspector(document),
                         );
                       },
@@ -2168,10 +2397,86 @@ class _DocumentCenterDialogState extends State<_DocumentCenterDialog> {
   }
 }
 
+class _KnowledgeReadinessSummary extends StatelessWidget {
+  final List<Map<String, dynamic>> rows;
+  const _KnowledgeReadinessSummary({required this.rows});
+
+  @override
+  Widget build(BuildContext context) {
+    final ready = rows.where((row) => row['runtime_ready'] == true).length;
+    final pending = rows.fold<int>(
+      0,
+      (total, row) =>
+          total + ((row['pending_review_count'] as num?)?.toInt() ?? 0),
+    );
+    final conflicts = rows.fold<int>(
+      0,
+      (total, row) =>
+          total + ((row['open_conflict_count'] as num?)?.toInt() ?? 0),
+    );
+
+    Widget metric(String label, String value, Color color, IconData icon) =>
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: .08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withValues(alpha: .22)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 17, color: color),
+              const SizedBox(width: 7),
+              Text(
+                '$label  $value',
+                style: TextStyle(color: color, fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+        );
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
+      color: const Color(0xFFF8FAFC),
+      child: Wrap(
+        spacing: 9,
+        runSpacing: 8,
+        children: [
+          metric(
+            'Runtime ready',
+            '$ready/${rows.length}',
+            const Color(0xFF047857),
+            Icons.verified_outlined,
+          ),
+          metric(
+            'Pending review',
+            '$pending',
+            const Color(0xFFB45309),
+            Icons.rate_review_outlined,
+          ),
+          metric(
+            'Open conflicts',
+            '$conflicts',
+            const Color(0xFFB91C1C),
+            Icons.warning_amber_rounded,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _DocumentTile extends StatelessWidget {
   final InsuranceDocumentSummary document;
+  final Map<String, dynamic>? readiness;
   final VoidCallback onInspect;
-  const _DocumentTile({required this.document, required this.onInspect});
+  const _DocumentTile({
+    required this.document,
+    required this.readiness,
+    required this.onInspect,
+  });
   @override
   Widget build(BuildContext context) {
     final colors = switch (document.status) {
@@ -2226,6 +2531,29 @@ class _DocumentTile extends StatelessWidget {
                     color: Color(0xFF64748B),
                   ),
                 ),
+                if (readiness != null) ...[
+                  const SizedBox(height: 7),
+                  Wrap(
+                    spacing: 7,
+                    runSpacing: 5,
+                    children: [
+                      _MiniStatus(
+                        label: readiness!['runtime_ready'] == true
+                            ? 'POLICY READY'
+                            : 'NEEDS REVIEW',
+                        good: readiness!['runtime_ready'] == true,
+                      ),
+                      Text(
+                        '${readiness!['active_rule_count']} rules • ${readiness!['evidence_count']} evidence • ${readiness!['pending_review_count']} pending',
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          color: Color(0xFF64748B),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 4),
                 Text(
                   '${document.chunkCount} chunks • ${document.embeddedCount} embedded • ${document.entityCount} entities • ${document.validationStatus}',
@@ -2272,4 +2600,28 @@ class _DocumentTile extends StatelessWidget {
       ),
     );
   }
+}
+
+class _MiniStatus extends StatelessWidget {
+  final String label;
+  final bool good;
+  const _MiniStatus({required this.label, required this.good});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(
+      color: good ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(
+        color: good ? const Color(0xFF166534) : const Color(0xFF92400E),
+        fontSize: 9,
+        fontWeight: FontWeight.w900,
+        letterSpacing: .3,
+      ),
+    ),
+  );
 }

@@ -1,11 +1,13 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';
-import { AI_MODEL, answerFromEvidence, interpretQuestion, judgeHydratedEvidenceSufficiency, reformulateRetrievalPlan, rerankAndJudgeEvidence } from './ai.ts';
+import { AI_MODEL, answerFromEvidence, interpretQuestion, judgeHydratedEvidenceSufficiency, planRecoverySearch, rerankAndJudgeEvidence, type EvidenceJudgment, type EvidenceSufficiency, type RecoveryPlan } from './ai.ts';
 import { AIProviderError, AIProvidersTemporarilyUnavailableError, type AIProviderName } from './ai_provider.ts';
+import { groundedExtractiveAnswer, hasStrongVerifiedEvidence } from './fallback.ts';
+import { newRequestTrace, persistRequestTrace, type RequestTrace } from './diagnostics.ts';
 import { alignSemanticMedication, evaluateOrThresholdTimeWindows, renderDeterministicCriterionAnswer } from './criteria.ts';
 import { embedRetrievalQuery } from './embedding.ts';
 import {
-  buildRetrievalPlan, chunkAnswersDimension, enforceRouteSafety, evidenceForAnswer, groundEntityOnlySemantic, isolateMedicationCandidates,
-  isolateSearchUnitCandidates, requestedDimensions, rerankChunks, resolveVerifiedEntities, selectEvidence,
+  buildRetrievalPlan, chunkAnswersDimension, enforceRouteSafety, evidenceForAnswer, groundEntityOnlySemantic, isolateMedicationCandidates, normalize,
+  isolateSearchUnitCandidates, requestedDimensions, rerankChunks, resolveVerifiedEntities, selectEvidence, strictRetrievalEntityIds,
   type HybridSearchUnit, type SemanticInterpretation, type V3Alias, type V3Chunk, type V3Entity, type V3Relation,
 } from './retrieval.ts';
 
@@ -75,7 +77,13 @@ function judgedUnits(units: HybridSearchUnit[], judgments: RerankResult['judgmen
 type DBClient = any;
 async function retrieveHybrid(db: DBClient, lexicalQuery: string, vectorQuery: string, entities: V3Entity[], knownEntities: V3Entity[]) {
   const embedding = await embedRetrievalQuery(vectorQuery);
-  const { data, error } = await db.rpc('insurance_v3_hybrid_search', { p_query: lexicalQuery, p_query_embedding: embedding.embedding, p_entity_ids: entities.map((e) => e.id), p_limit: 60 });
+  // The SQL entity filter is a strict identity boundary, not a general topic
+  // filter. Only explicit verified medication identity may narrow the corpus at
+  // this stage. Indication, class, specialty, documentation, and other open
+  // dimensions remain retrieval/reranking signals so reverse and cross-policy
+  // questions cannot be reduced to an empty result by incomplete entity links.
+  const medicationEntityIds = strictRetrievalEntityIds(entities);
+  const { data, error } = await db.rpc('insurance_v3_hybrid_search', { p_query: lexicalQuery, p_query_embedding: embedding.embedding, p_entity_ids: medicationEntityIds, p_limit: 60 });
   if (error) throw error;
   const units = isolateSearchUnitCandidates((data ?? []) as HybridSearchUnit[], entities, knownEntities);
   return { embedding, units };
@@ -174,7 +182,7 @@ async function hydrateEvidence(db: DBClient, units: HybridSearchUnit[], judgment
     ? [...judgedAnswerEvidence, ...recallTableRows]
     : [selection.selected[0], ...recallTableRows];
   const answerEvidence = [...new Map(answerEvidenceSeeds.filter(Boolean).map((chunk) => [chunk.chunk_id, chunk])).values()].slice(0, 6);
-  return { selection, answerEvidence: answerEvidence.length ? answerEvidence : selection.selected.slice(0, 3), selectedUnits, expandIds, expandedUnits };
+  return { selection, answerEvidence: answerEvidence.length ? answerEvidence : selection.selected.slice(0, 3), selectedUnits, expandIds, expandedUnits, answerBearingSourceIds };
 }
 async function legacyEvidence(db: DBClient, query: string, phrases: string[], hints: string[], entities: V3Entity[], knownEntities: V3Entity[], dimensions: string[], question: string, semantic: SemanticInterpretation) {
   const { data, error } = await db.rpc('insurance_v3_search_semantic_v2', { p_query: query, p_search_phrases: phrases, p_entity_ids: entities.map((e) => e.id), p_hints: hints, p_stage: semantic.treatment_stage, p_document_ids: [], p_limit: 50 });
@@ -183,135 +191,354 @@ async function legacyEvidence(db: DBClient, query: string, phrases: string[], hi
   return selectEvidence(ranked, dimensions, 10, semantic);
 }
 
+type PipelineContext = {
+  forceRecovery: boolean;
+  feedbackReason: string | null;
+  originalAuditId: string | null;
+  originalAnswer: string | null;
+  originalEvidence: unknown;
+};
+
+const citationFor = (chunk: V3Chunk) => ({
+  document_id: chunk.document_id, document_title: chunk.document_title, file_name: chunk.file_name,
+  page_from: chunk.page_from, page_to: chunk.page_to, sheet_name: chunk.sheet_name,
+  row_from: chunk.row_from, row_to: chunk.row_to,
+  chunk_id: typeof chunk.metadata.source_chunk_id === 'string' ? chunk.metadata.source_chunk_id : chunk.chunk_id,
+});
+
+function sourceGroundedText(text: string, used: V3Chunk[]) {
+  const sourceLines = [...new Set(used.map((chunk) => chunk.sheet_name
+    ? `Source: ${chunk.document_title} — Sheet ${chunk.sheet_name}, rows ${chunk.row_from ?? '?'}-${chunk.row_to ?? '?'}`
+    : `Source: ${chunk.document_title} — Page ${chunk.page_from}${chunk.page_to !== chunk.page_from ? `-${chunk.page_to}` : ''}`))];
+  return `${text.replace(/\n*Source:\s*[\s\S]*$/i, '').trim()}\n\n${sourceLines.join('\n')}`;
+}
+
+async function saveConversation(
+  db: DBClient, body: Record<string, unknown>, question: string, answer: string,
+  citations: Array<Record<string, unknown>>, semantic: SemanticInterpretation,
+  verifiedEntities: V3Entity[], status: string, recoveryDepth: number,
+) {
+  try {
+    let sessionId = typeof body.session_id === 'string' ? body.session_id : null;
+    if (!sessionId) {
+      const { data, error } = await db.from('insurance_chat_sessions').insert({ branch_name: String(body.branch_name ?? ''), title: question.slice(0, 80) }).select('id').single();
+      if (error) throw error;
+      sessionId = String(data.id);
+    }
+    const parsed = { insurance_v3: true, semantic, verified_entity_ids: verifiedEntities.map((entity) => entity.id), recovery_depth: recoveryDepth };
+    const { error: userError } = await db.from('insurance_chat_messages').insert({ session_id: sessionId, role: 'user', message: question, parsed_data: parsed });
+    if (userError) throw userError;
+    const { data, error } = await db.from('insurance_chat_messages').insert({ session_id: sessionId, role: 'assistant', message: answer, citations, parsed_data: { ...parsed, answer_status: status } }).select('id,created_at').single();
+    if (error) throw error;
+    return { session_id: sessionId, message_id: String(data.id), created_at: data.created_at };
+  } catch (error) {
+    console.error('insurance_v3_conversation_persistence_error', { message: error instanceof Error ? error.message : 'unknown' });
+    return { session_id: typeof body.session_id === 'string' ? body.session_id : null, message_id: crypto.randomUUID(), created_at: new Date().toISOString() };
+  }
+}
+
+function unitModeFilter(units: HybridSearchUnit[], mode: RecoveryPlan['searches'][number]['mode']) {
+  if (mode === 'tables') return units.filter((unit) => unit.unit_type === 'table' || unit.unit_type === 'table_row');
+  if (mode === 'headings') return units.filter((unit) => unit.unit_type === 'section' || unit.unit_type === 'page' || unit.unit_type === 'table');
+  return units;
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: cors });
   const started = Date.now();
+  let db: DBClient | null = null;
+  let trace: RequestTrace | null = null;
   let debugRequested = false;
   try {
     const authorization = request.headers.get('Authorization') ?? '';
     if (!authorization.startsWith('Bearer ')) return respond({ error: 'Authentication required.' }, 401);
-    const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: authorization } }, auth: { persistSession: false } });
+    db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: authorization } }, auth: { persistSession: false } });
     const { data: auth, error: authError } = await db.auth.getUser(authorization.slice(7));
     if (authError || !auth.user) return respond({ error: 'Authentication required.' }, 401);
-    const body = await request.json() as Record<string, unknown>;
-    debugRequested = body.debug === true;
-    const question = String(body.message ?? '').trim();
-    if (!question || question.length > 1200) return respond({ error: 'A question of at most 1200 characters is required.' }, 400);
+    let body: Record<string, unknown>;
+    try { body = await request.json() as Record<string, unknown>; }
+    catch { return respond({ error: 'A valid JSON request body is required.' }, 400); }
+    if (body.debug === true) {
+      const { data: canDebug, error: debugAuthError } = await db.rpc('is_insurance_knowledge_admin');
+      debugRequested = !debugAuthError && canDebug === true;
+    }
 
+    let pipelineContext: PipelineContext = { forceRecovery: false, feedbackReason: null, originalAuditId: null, originalAnswer: null, originalEvidence: null };
+    let question = String(body.message ?? '').trim();
+    if (typeof body.feedback_message_id === 'string') {
+      const feedbackMessageId = body.feedback_message_id;
+      const { data: assistant, error } = await db.from('insurance_chat_messages').select('id,session_id,message,citations,parsed_data,created_at').eq('id', feedbackMessageId).eq('role', 'assistant').single();
+      if (error || !assistant) return respond({ error: 'The feedback message is invalid.' }, 400);
+      const { data: priorAudit } = await db.from('insurance_answer_audits').select('id,raw_question,structured_query,verified_evidence,recovery_attempt').eq('message_id', feedbackMessageId).order('created_at', { ascending: false }).limit(1).maybeSingle();
+      if (Number(priorAudit?.recovery_attempt ?? assistant.parsed_data?.recovery_depth ?? 0) >= 1) {
+        await db.from('insurance_feedback').upsert({ message_id: feedbackMessageId, user_id: auth.user.id, rating: -1, second_rating: -1, reason: String(body.feedback_reason ?? 'other'), updated_at: new Date().toISOString() }, { onConflict: 'message_id,user_id' });
+        return respond({ feedback_recorded: true, recovery_exhausted: true, insurance_v3: true });
+      }
+      if (priorAudit?.raw_question) question = String(priorAudit.raw_question);
+      else {
+        const { data: userMessage } = await db.from('insurance_chat_messages').select('message').eq('session_id', assistant.session_id).eq('role', 'user').lte('created_at', assistant.created_at).order('created_at', { ascending: false }).limit(1).maybeSingle();
+        question = String(userMessage?.message ?? '').trim();
+      }
+      if (!question) return respond({ error: 'The original question could not be resolved.' }, 400);
+      const feedbackReason = ['incorrect', 'incomplete', 'misunderstood', 'wrong_source', 'other'].includes(String(body.feedback_reason)) ? String(body.feedback_reason) : 'other';
+      await db.from('insurance_feedback').upsert({ message_id: feedbackMessageId, user_id: auth.user.id, rating: -1, reason: feedbackReason, updated_at: new Date().toISOString() }, { onConflict: 'message_id,user_id' });
+      pipelineContext = { forceRecovery: true, feedbackReason, originalAuditId: priorAudit?.id ? String(priorAudit.id) : null, originalAnswer: String(assistant.message ?? ''), originalEvidence: priorAudit?.verified_evidence ?? assistant.citations ?? [] };
+      body = { ...body, session_id: assistant.session_id };
+    }
+    if (!question || question.length > 1200) return respond({ error: 'A question of at most 1200 characters is required.' }, 400);
+    trace = newRequestTrace(auth.user.id, question);
+    trace.recovery_of_audit_id = pipelineContext.originalAuditId;
+    trace.recovery_attempt = pipelineContext.forceRecovery ? 1 : 0;
+    trace.recovery.feedback_reason = pipelineContext.feedbackReason;
+
+    const entityStarted = Date.now();
     const [{ data: entities, error: entityError }, { data: aliases, error: aliasError }, { data: relations, error: relationError }] = await Promise.all([
       db.from('insurance_v3_entities').select('id,canonical_name,normalized_name,entity_type').eq('active', true),
       db.from('insurance_v3_aliases').select('entity_id,alias,normalized_alias,verified').eq('verified', true),
       db.from('insurance_v3_entity_relations').select('subject_entity_id,relation_type,object_entity_id,verified').eq('verified', true),
     ]);
     if (entityError || aliasError || relationError) throw entityError ?? aliasError ?? relationError;
+    trace.latency.entity_resolution_ms = Date.now() - entityStarted;
+    const allEntities = entities as V3Entity[];
+    const allAliases = aliases as V3Alias[];
     const aliasMap = new Map<string, string[]>();
-    for (const alias of aliases as V3Alias[]) aliasMap.set(alias.entity_id, [...(aliasMap.get(alias.entity_id) ?? []), alias.alias].slice(0, 8));
-    const verifiedEntityCatalog = (entities as V3Entity[])
-      .filter((entity) => entity.entity_type.startsWith('medication_') || entity.entity_type === 'drug_class' || entity.entity_type === 'indication')
-      .map((entity) => ({ canonical_name: entity.canonical_name, entity_type: entity.entity_type, aliases: aliasMap.get(entity.id) ?? [] }));
+    for (const alias of allAliases) aliasMap.set(alias.entity_id, [...(aliasMap.get(alias.entity_id) ?? []), alias.alias].slice(0, 8));
+    const normalizedQuestion = normalize(question);
+    const questionTokens = new Set(normalizedQuestion.split(' ').filter((token) => token.length >= 3));
+    const aliasesRelevantToQuestion = (entity: V3Entity) => (aliasMap.get(entity.id) ?? []).filter((alias) => {
+      const value = normalize(alias);
+      return value.length >= 3 && (` ${normalizedQuestion} `.includes(` ${value} `)
+        || value.split(' ').some((token) => token.length >= 3 && questionTokens.has(token)));
+    }).slice(0, 8);
+    // Every canonical entity remains visible to the mandatory semantic model,
+    // while verbose alias lists are attached only when they overlap the user
+    // text. This is entity-catalog compression, not intent routing.
+    const verifiedEntityCatalog = allEntities.map((entity) => ({ canonical_name: entity.canonical_name, entity_type: entity.entity_type, aliases: aliasesRelevantToQuestion(entity) }));
+
     const semanticResult = await interpretQuestion(question, verifiedEntityCatalog);
-    const verifiedEntities = resolveVerifiedEntities(question, semanticResult.semantic, entities as V3Entity[], aliases as V3Alias[], relations as V3Relation[]);
+    trace.latency.semantic_ms = semanticResult.latency_ms;
+    let verifiedEntities = resolveVerifiedEntities(question, semanticResult.semantic, allEntities, allAliases, relations as V3Relation[]);
     const aligned = alignSemanticMedication(semanticResult.semantic, verifiedEntities);
-    const grounded = groundEntityOnlySemantic(question, aligned, verifiedEntities, aliases as V3Alias[]);
+    const grounded = groundEntityOnlySemantic(question, aligned, verifiedEntities, allAliases);
+    const semanticRequestedRecovery = grounded.route === 'clarification_required';
     const dimensions = requestedDimensions(question, grounded);
     const semantic = enforceRouteSafety(grounded, verifiedEntities, dimensions);
-    if (semantic.route === 'out_of_scope' || semantic.route === 'clarification_required') {
-      return respond({ answer: semantic.route === 'out_of_scope' ? 'This question is outside the approved insurance-policy knowledge base.' : 'Please clarify the medication or policy criterion you want to check.', citations: [], answer_status: semantic.route, insurance_v3: true, debug: body.debug === true ? { semantic_interpretation: semantic, ai: aiDiagnostics(semanticResult, [], null) } : undefined });
+    trace.semantic = semantic; trace.verified_entities = verifiedEntities;
+    if (!pipelineContext.forceRecovery && semantic.route === 'out_of_scope') {
+      const answer = 'This question is outside the approved insurance-policy knowledge base.';
+      trace.final_status = semantic.route; trace.final_answer = answer; trace.final_reason = 'semantic_route'; trace.latency.total_ms = Date.now() - started;
+      trace.providers = aiDiagnostics(semanticResult, [], null); trace.token_usage = trace.providers;
+      const saved = await saveConversation(db, body, question, answer, [], semantic, verifiedEntities, semantic.route, 0);
+      trace.session_id = saved.session_id; trace.message_id = saved.message_id;
+      await persistRequestTrace(db, trace);
+      return respond({ ...saved, answer, citations: [], answer_status: semantic.route, insurance_v3: true, debug: debugRequested ? { request_id: trace.request_id, semantic_interpretation: semantic, verified_entities: verifiedEntities, ai: trace.providers } : undefined });
     }
 
     let plan = buildRetrievalPlan(question, semantic, verifiedEntities, dimensions);
-    let selection: ReturnType<typeof selectEvidence>;
+    trace.retrieval_plan = plan;
+    let units: HybridSearchUnit[] = [];
+    let selection: ReturnType<typeof selectEvidence> = { selected: [], missingDimensions: dimensions, missingSignals: [], requestedCoverage: 0, sufficient: false };
     let answerEvidence: ReturnType<typeof rerankChunks> = [];
-    let units: HybridSearchUnit[] = [], selectedUnits: HybridSearchUnit[] = [], expandIds: string[] = [];
-    let sufficiency: RerankResult['sufficiency'] | null = null;
-    let evidenceJudgments: RerankResult['judgments'] = [];
-    let reformulation: Awaited<ReturnType<typeof reformulateRetrievalPlan>> | null = null;
-    let sufficiencyConfirmationUsed = false;
-    const rerankCalls: AIMetadata[] = [];
+    let evidenceJudgments: EvidenceJudgment[] = [];
+    let sufficiency: EvidenceSufficiency | null = null;
+    let answerBearingSourceIds = new Set<string>();
+    let selectedUnits: HybridSearchUnit[] = [];
+    let expandIds: string[] = [];
+    let strongEvidence = false;
+    const aiCalls: AIMetadata[] = [];
     const embeddingRuns: Awaited<ReturnType<typeof embedRetrievalQuery>>[] = [];
+    const retrievalStarted = Date.now();
 
-    if (retrievalMode === 'lexical') {
-      selection = await legacyEvidence(db, plan.query, plan.phrases, plan.hints, verifiedEntities, entities as V3Entity[], dimensions, question, semantic);
-      answerEvidence = selection.selected.slice(0, 3);
-      if (!selection.sufficient) {
-        reformulation = await reformulateRetrievalPlan(question, semantic, [...selection.missingSignals, ...selection.missingDimensions], selection.selected.map((c) => `${c.document_title}: ${c.section_title ?? ''}`));
-        plan = buildRetrievalPlan(question, semantic, verifiedEntities, dimensions, reformulation);
-        selection = await legacyEvidence(db, plan.query, plan.phrases, plan.hints, verifiedEntities, entities as V3Entity[], dimensions, question, semantic);
-        answerEvidence = selection.selected.slice(0, 3);
-      }
-    } else {
-      let retrieved = await retrieveHybrid(db, lexicalInformationQuery(question, semantic, verifiedEntities), vectorInformationQuery(semantic, verifiedEntities, plan.query), verifiedEntities, entities as V3Entity[]);
-      let rerank = await rerankAndJudgeEvidence(question, semantic, verifiedEntities, retrieved.units.slice(0, 18));
-      embeddingRuns.push(retrieved.embedding); rerankCalls.push(rerank); units = rerankUnits(retrieved.units, rerank.judgments); sufficiency = rerank.sufficiency; evidenceJudgments = rerank.judgments;
-      let hydrated = await hydrateEvidence(db, units, evidenceJudgments, verifiedEntities, entities as V3Entity[], dimensions, question, semantic);
-      selection = hydrated.selection; selectedUnits = hydrated.selectedUnits; expandIds = hydrated.expandIds;
-      units = [...new Map([...hydrated.expandedUnits, ...units].map((unit) => [unit.search_unit_id, unit])).values()];
-      answerEvidence = hydrated.answerEvidence;
-      let hydratedSufficiency = await judgeHydratedEvidenceSufficiency(question, semantic, verifiedEntities, selection.selected);
-      rerankCalls.push(hydratedSufficiency); sufficiency = hydratedSufficiency.sufficiency;
-      if (sufficiency.status !== 'complete' || selection.selected.length === 0) {
-        reformulation = await reformulateRetrievalPlan(question, semantic, [...sufficiency.missing_information, ...selection.missingSignals, ...selection.missingDimensions], units.slice(0, 12).map((u) => `${u.document_title}: ${u.section_title ?? u.table_title ?? ''}`));
-        plan = buildRetrievalPlan(question, semantic, verifiedEntities, dimensions, reformulation);
-        retrieved = await retrieveHybrid(db, lexicalInformationQuery(question, semantic, verifiedEntities, [reformulation.search_query, ...reformulation.search_phrases]), vectorInformationQuery(semantic, verifiedEntities, plan.query, [reformulation.search_query, ...reformulation.retrieval_queries]), verifiedEntities, entities as V3Entity[]);
-        embeddingRuns.push(retrieved.embedding); units = mergeUnits(units, retrieved.units);
-        rerank = await rerankAndJudgeEvidence(question, semantic, verifiedEntities, units.slice(0, 18));
-        rerankCalls.push(rerank); units = rerankUnits(units, rerank.judgments); sufficiency = rerank.sufficiency; evidenceJudgments = rerank.judgments;
-        hydrated = await hydrateEvidence(db, units, evidenceJudgments, verifiedEntities, entities as V3Entity[], dimensions, question, semantic);
-        selection = hydrated.selection; selectedUnits = hydrated.selectedUnits; expandIds = hydrated.expandIds;
-        units = [...new Map([...hydrated.expandedUnits, ...units].map((unit) => [unit.search_unit_id, unit])).values()];
-        answerEvidence = hydrated.answerEvidence;
-        hydratedSufficiency = await judgeHydratedEvidenceSufficiency(question, semantic, verifiedEntities, selection.selected);
-        rerankCalls.push(hydratedSufficiency); sufficiency = hydratedSufficiency.sufficiency;
-      }
-      // A single stochastic false-negative must not suppress evidence that survived
-      // hybrid retrieval, isolation, reranking, structural hydration, and one retry.
-      // Confirm only negative outcomes; either independent judge may establish
-      // completeness, while two negative judgments are required to reject evidence.
-      if (selection.selected.length > 0 && sufficiency.status !== 'complete') {
-        const confirmation = await judgeHydratedEvidenceSufficiency(question, semantic, verifiedEntities, selection.selected);
-        rerankCalls.push(confirmation); sufficiencyConfirmationUsed = true;
-        if (confirmation.sufficiency.status === 'complete') sufficiency = confirmation.sufficiency;
+    if (!pipelineContext.forceRecovery) {
+      if (retrievalMode === 'lexical') {
+        selection = await legacyEvidence(db, plan.query, plan.phrases, plan.hints, verifiedEntities, allEntities, dimensions, question, semantic);
+        answerEvidence = selection.selected.slice(0, 4);
+        strongEvidence = selection.selected.length > 0 && selection.sufficient && selection.missingDimensions.length === 0;
+      } else {
+        const retrieved = await retrieveHybrid(db, lexicalInformationQuery(question, semantic, verifiedEntities), vectorInformationQuery(semantic, verifiedEntities, plan.query), verifiedEntities, allEntities);
+        embeddingRuns.push(retrieved.embedding); units = retrieved.units;
+        try {
+          const rerank = await rerankAndJudgeEvidence(question, semantic, verifiedEntities, units.slice(0, 18));
+          aiCalls.push(rerank); evidenceJudgments = rerank.judgments; sufficiency = rerank.sufficiency; units = rerankUnits(units, evidenceJudgments);
+        } catch (error) {
+          trace.fallback_used = 'deterministic_rerank';
+          trace.providers.reranker_error = error instanceof Error ? error.name : 'unknown';
+        }
+        const hydrated = await hydrateEvidence(db, units, evidenceJudgments, verifiedEntities, allEntities, dimensions, question, semantic);
+        selection = hydrated.selection; answerEvidence = hydrated.answerEvidence; selectedUnits = hydrated.selectedUnits; expandIds = hydrated.expandIds; answerBearingSourceIds = hydrated.answerBearingSourceIds;
+        units = mergeUnits(hydrated.expandedUnits, units);
+        strongEvidence = hasStrongVerifiedEvidence(selection, answerEvidence, answerBearingSourceIds);
+        if (!strongEvidence && selection.selected.length > 0) {
+          try {
+            const judged = await judgeHydratedEvidenceSufficiency(question, semantic, verifiedEntities, selection.selected);
+            aiCalls.push(judged); sufficiency = judged.sufficiency;
+            strongEvidence = sufficiency.status === 'complete';
+          } catch (error) {
+            trace.fallback_used = trace.fallback_used ?? 'deterministic_sufficiency';
+            trace.providers.sufficiency_error = error instanceof Error ? error.name : 'unknown';
+          }
+        }
       }
     }
+    trace.latency.retrieval_ms = Date.now() - retrievalStarted;
 
-    const evidenceInsufficient = retrievalMode === 'hybrid'
-      ? selection.selected.length === 0 || sufficiency?.status !== 'complete'
-      : selection.selected.length === 0 || !selection.sufficient;
-    if (evidenceInsufficient) {
-      return respond({ answer: 'The approved documents do not establish the requested information.', citations: [], answer_status: 'insufficient_evidence', insurance_v3: true, debug: body.debug === true ? { semantic_interpretation: semantic, verified_entities: verifiedEntities, retrieval_mode: retrievalMode, retrieval_plan: plan, hybrid_candidates: units, selected_units: selectedUnits, evidence_judgments: evidenceJudgments, expansion_unit_ids: expandIds, evidence_sufficiency: sufficiency, sufficiency_confirmation_used: sufficiencyConfirmationUsed, retrieved_chunks: selection.selected, retrieval_retry: Boolean(reformulation), embedding: embeddingRuns, ai: aiDiagnostics(semanticResult, rerankCalls, null), processing_ms: Date.now() - started } : undefined });
+    if (pipelineContext.forceRecovery || semanticRequestedRecovery || !strongEvidence) {
+      trace.recovery.activated = true;
+      trace.recovery.reason = pipelineContext.forceRecovery ? 'negative_feedback' : semanticRequestedRecovery ? 'semantic_ambiguity_or_unexpected_structure' : selection.selected.length ? 'normal_partial_or_rejected' : 'normal_no_evidence';
+      const recoveryStarted = Date.now();
+      const normalStrongEvidence = strongEvidence;
+      if (semanticRequestedRecovery) strongEvidence = false;
+      for (let iteration = 1; iteration <= 2 && !strongEvidence; iteration++) {
+        let recoveryPlan: Awaited<ReturnType<typeof planRecoverySearch>>;
+        try {
+          recoveryPlan = await planRecoverySearch(question, semantic, verifiedEntities, {
+            normal_failure_reason: trace.recovery.reason,
+            first_retrieval_queries: plan,
+            retrieved_candidates: units.slice(0, 18).map((unit) => ({ id: unit.search_unit_id, document: unit.document_title, type: unit.unit_type, heading: unit.section_title ?? unit.table_title, page: unit.page_from, text: unit.retrieval_text.slice(0, 500) })),
+            selected_evidence: selection.selected.slice(0, 10).map((chunk) => ({ document: chunk.document_title, page: chunk.page_from, text: chunk.chunk_text.slice(0, 700) })),
+            prior_recovery_iterations: trace.recovery.iterations,
+            feedback_reason: pipelineContext.feedbackReason,
+            original_answer: pipelineContext.originalAnswer,
+            original_evidence: pipelineContext.originalEvidence,
+          });
+          aiCalls.push(recoveryPlan);
+        } catch (error) {
+          trace.providers.recovery_planner_error = error instanceof Error ? error.name : 'unknown';
+          break;
+        }
+        if (pipelineContext.forceRecovery && (
+          recoveryPlan.decision === 'use_existing'
+          || (recoveryPlan.decision === 'clarification' && !(semanticRequestedRecovery && verifiedEntities.length === 0))
+        )) {
+          const independentQueries = [...new Set([
+            ...(semantic.retrieval_queries ?? []), semantic.search_query,
+            semantic.information_need, semantic.requested_information,
+          ].map((value) => String(value ?? '').trim()).filter(Boolean))].slice(0, 3);
+          recoveryPlan.decision = 'search';
+          recoveryPlan.searches = independentQueries.map((query, index) => ({
+            query, mode: index === 1 ? 'tables' : index === 2 ? 'headings' : 'all',
+          }));
+          recoveryPlan.diagnosis = `${recoveryPlan.diagnosis} Independent verification required after negative feedback.`.trim();
+        }
+        const iterationTrace: Record<string, unknown> = { iteration, decision: recoveryPlan.decision, diagnosis: recoveryPlan.diagnosis, information_need: recoveryPlan.information_need, searches: recoveryPlan.searches, candidate_count_before: units.length };
+        const unresolvedSemanticAmbiguity = semanticRequestedRecovery
+          && verifiedEntities.length === 0
+          && !(recoveryPlan.decision === 'use_existing' && normalStrongEvidence && answerEvidence.length > 0);
+        if (unresolvedSemanticAmbiguity) {
+          const answer = recoveryPlan.clarification_question ?? 'Please clarify the medicine, policy, or relationship you want to check.';
+          trace.recovery.iterations.push({ ...iterationTrace, outcome: 'clarification', safety_rule: 'ai_semantic_ambiguity_without_verified_identity_or_direct_evidence' });
+          trace.final_status = 'clarification_required'; trace.final_answer = answer; trace.final_reason = 'recovery_ambiguity'; trace.latency.recovery_ms = Date.now() - recoveryStarted; trace.latency.total_ms = Date.now() - started;
+          trace.candidates = units; trace.evidence = selection.selected; trace.sufficiency = sufficiency as unknown as Record<string, unknown> | null; trace.providers = { ...trace.providers, ...aiDiagnostics(semanticResult, aiCalls, null) }; trace.token_usage = trace.providers;
+          const saved = await saveConversation(db, body, question, answer, [], semantic, verifiedEntities, 'clarification_required', pipelineContext.forceRecovery ? 1 : 0);
+          trace.session_id = saved.session_id; trace.message_id = saved.message_id;
+          await persistRequestTrace(db, trace);
+          return respond({ ...saved, answer, citations: [], answer_status: 'clarification_required', insurance_v3: true, recovery_used: true, debug: debugRequested ? { request_id: trace.request_id, semantic_interpretation: semantic, verified_entities: verifiedEntities, retrieval_plan: plan, candidates: units.slice(0, 24), selected_evidence: selection.selected, recovery: trace.recovery, ai: trace.providers } : undefined });
+        }
+        if (recoveryPlan.decision === 'use_existing' && normalStrongEvidence && answerEvidence.length > 0) {
+          strongEvidence = true;
+          trace.recovery.iterations.push({ ...iterationTrace, outcome: 'verified_existing_evidence' });
+          break;
+        }
+        if (recoveryPlan.decision === 'clarification') {
+          trace.recovery.iterations.push({ ...iterationTrace, outcome: 'clarification' });
+          const answer = recoveryPlan.clarification_question ?? 'Please clarify the entity or relationship you want to check.';
+          trace.final_status = 'clarification_required'; trace.final_answer = answer; trace.final_reason = 'recovery_ambiguity'; trace.latency.recovery_ms = Date.now() - recoveryStarted; trace.latency.total_ms = Date.now() - started;
+          trace.candidates = units; trace.evidence = selection.selected; trace.sufficiency = sufficiency as unknown as Record<string, unknown> | null; trace.providers = { ...trace.providers, ...aiDiagnostics(semanticResult, aiCalls, null) }; trace.token_usage = trace.providers;
+          const saved = await saveConversation(db, body, question, answer, [], semantic, verifiedEntities, 'clarification_required', pipelineContext.forceRecovery ? 1 : 0);
+          trace.session_id = saved.session_id; trace.message_id = saved.message_id;
+          await persistRequestTrace(db, trace);
+          return respond({ ...saved, answer, citations: [], answer_status: 'clarification_required', insurance_v3: true, recovery_used: true, debug: debugRequested ? { request_id: trace.request_id, semantic_interpretation: semantic, recovery: trace.recovery, ai: trace.providers } : undefined });
+        }
+        if (recoveryPlan.decision === 'not_found' || recoveryPlan.searches.length === 0) {
+          trace.recovery.iterations.push({ ...iterationTrace, outcome: 'no_search' });
+          break;
+        }
+        let newUnits: HybridSearchUnit[] = [];
+        for (const search of recoveryPlan.searches.slice(0, 3)) {
+          try {
+            const anchoredEntities = verifiedEntities.some((entity) => entity.entity_type.startsWith('medication_')) ? verifiedEntities : [];
+            const retrieved = await retrieveHybrid(db, search.query, search.query, anchoredEntities, allEntities);
+            embeddingRuns.push(retrieved.embedding);
+            newUnits = mergeUnits(newUnits, unitModeFilter(retrieved.units, search.mode));
+          } catch (error) {
+            const searchErrors = Array.isArray(iterationTrace.search_errors) ? iterationTrace.search_errors as unknown[] : [];
+            searchErrors.push(error instanceof Error ? error.name : 'unknown');
+            iterationTrace.search_errors = searchErrors;
+          }
+        }
+        units = mergeUnits(units, newUnits);
+        let recoveryJudgments: EvidenceJudgment[] = [];
+        try {
+          const rerank = await rerankAndJudgeEvidence(question, semantic, verifiedEntities, units.slice(0, 18));
+          aiCalls.push(rerank); recoveryJudgments = rerank.judgments; sufficiency = rerank.sufficiency; units = rerankUnits(units, recoveryJudgments);
+        } catch (error) {
+          trace.fallback_used = trace.fallback_used ?? 'deterministic_recovery_rerank';
+          trace.providers.recovery_reranker_error = error instanceof Error ? error.name : 'unknown';
+        }
+        evidenceJudgments = recoveryJudgments.length ? recoveryJudgments : evidenceJudgments;
+        if (units.length > 0) {
+          const hydrated = await hydrateEvidence(db, units, evidenceJudgments, verifiedEntities, allEntities, dimensions, question, semantic);
+          selection = hydrated.selection; answerEvidence = hydrated.answerEvidence; selectedUnits = hydrated.selectedUnits; expandIds = hydrated.expandIds; answerBearingSourceIds = hydrated.answerBearingSourceIds;
+          units = mergeUnits(hydrated.expandedUnits, units);
+          strongEvidence = hasStrongVerifiedEvidence(selection, answerEvidence, answerBearingSourceIds) || sufficiency?.status === 'complete';
+          if (!strongEvidence && selection.selected.length > 0) {
+            try {
+              const judged = await judgeHydratedEvidenceSufficiency(question, semantic, verifiedEntities, selection.selected);
+              aiCalls.push(judged); sufficiency = judged.sufficiency; strongEvidence = sufficiency.status === 'complete';
+            } catch (error) { trace.providers.recovery_sufficiency_error = error instanceof Error ? error.name : 'unknown'; }
+          }
+        }
+        trace.recovery.iterations.push({ ...iterationTrace, new_candidate_count: newUnits.length, selected_evidence_count: selection.selected.length, outcome: strongEvidence ? 'answer_bearing_evidence' : 'insufficient' });
+      }
+      trace.latency.recovery_ms = Date.now() - recoveryStarted;
+    }
+
+    trace.candidates = units; trace.reranked = evidenceJudgments; trace.evidence = selection.selected; trace.sufficiency = sufficiency as unknown as Record<string, unknown> | null;
+    trace.rejected = units.filter((unit) => !selectedUnits.some((selected) => selected.search_unit_id === unit.search_unit_id)).slice(0, 20);
+    if (!strongEvidence || answerEvidence.length === 0) {
+      const answer = 'The approved documents do not establish the requested information.';
+      trace.final_status = 'insufficient_evidence'; trace.final_answer = answer; trace.final_reason = 'normal_and_bounded_recovery_exhausted'; trace.latency.total_ms = Date.now() - started;
+      trace.providers = { ...trace.providers, ...aiDiagnostics(semanticResult, aiCalls, null) }; trace.token_usage = trace.providers;
+      const saved = await saveConversation(db, body, question, answer, [], semantic, verifiedEntities, 'insufficient_evidence', pipelineContext.forceRecovery ? 1 : 0);
+      trace.session_id = saved.session_id; trace.message_id = saved.message_id;
+      const auditId = await persistRequestTrace(db, trace);
+      if (pipelineContext.forceRecovery && auditId) await db.from('insurance_learning_queue').insert({ audit_id: auditId, reason: 'negative_feedback', priority: 3, proposed_change: { request_id: trace.request_id, feedback_reason: pipelineContext.feedbackReason, recovery_exhausted: true } });
+      return respond({ ...saved, answer, citations: [], answer_status: 'insufficient_evidence', insurance_v3: true, recovery_used: trace.recovery.activated, debug: debugRequested ? { request_id: trace.request_id, semantic_interpretation: semantic, verified_entities: verifiedEntities, retrieval_plan: plan, candidates: units.slice(0, 24), selected_evidence: selection.selected, sufficiency, recovery: trace.recovery, ai: trace.providers, processing_ms: Date.now() - started } : undefined });
     }
 
     const deterministicEvaluations = evaluateOrThresholdTimeWindows(semantic, answerEvidence);
     const deterministicAnswer = renderDeterministicCriterionAnswer(question, semantic, deterministicEvaluations);
-    const answerResult = deterministicAnswer ? { answer: deterministicAnswer, used_evidence_ids: ['E1'], usage: null, latency_ms: 0, provider: semanticResult.provider, model: semanticResult.model } : await answerFromEvidence(question, semantic, answerEvidence, deterministicEvaluations, sufficiency);
+    let answerResult: { answer: string; used_evidence_ids: string[] } & AIMetadata;
+    let answerGenerator = deterministicAnswer ? 'deterministic_criteria' : 'grounded_ai';
+    if (deterministicAnswer) answerResult = { answer: deterministicAnswer, used_evidence_ids: ['E1'], usage: null, latency_ms: 0, provider: semanticResult.provider, model: semanticResult.model };
+    else {
+      try { answerResult = await answerFromEvidence(question, semantic, answerEvidence, deterministicEvaluations, sufficiency ?? { status: 'complete', answered_information: [], missing_information: [], reason: 'verified answer-bearing evidence' }); }
+      catch (error) {
+        const fallback = groundedExtractiveAnswer(question, semantic, answerEvidence);
+        answerResult = { ...fallback, usage: null, latency_ms: 0, provider: semanticResult.provider, model: semanticResult.model };
+        answerGenerator = 'grounded_extractive_fallback'; trace.fallback_used = 'grounded_extractive_answer'; trace.providers.answer_error = error instanceof Error ? error.name : 'unknown';
+      }
+    }
     const used = evidenceForAnswer(answerEvidence, answerResult.used_evidence_ids, dimensions);
-    const citations = used.map((c) => ({ document_id: c.document_id, document_title: c.document_title, file_name: c.file_name, page_from: c.page_from, page_to: c.page_to, sheet_name: c.sheet_name, row_from: c.row_from, row_to: c.row_to, chunk_id: typeof c.metadata.source_chunk_id === 'string' ? c.metadata.source_chunk_id : c.chunk_id }));
-    const sourceLines = [...new Set(used.map((c) => c.sheet_name ? `Source: ${c.document_title} — Sheet ${c.sheet_name}, rows ${c.row_from ?? '?'}-${c.row_to ?? '?'}` : `Source: ${c.document_title} — Page ${c.page_from}${c.page_to !== c.page_from ? `-${c.page_to}` : ''}`))];
-    const answer = `${answerResult.answer.replace(/\n*Source:\s*[\s\S]*$/i, '').trim()}\n\n${sourceLines.join('\n')}`;
-
-    let sessionId = typeof body.session_id === 'string' ? body.session_id : null;
-    if (!sessionId) {
-      const { data: session, error } = await db.from('insurance_chat_sessions').insert({ branch_name: String(body.branch_name ?? ''), title: question.slice(0, 80) }).select('id').single();
-      if (error) throw error; sessionId = session.id;
-    }
-    const parsed = { insurance_v3: true, semantic, verified_entity_ids: verifiedEntities.map((e) => e.id) };
-    const { error: userError } = await db.from('insurance_chat_messages').insert({ session_id: sessionId, role: 'user', message: question, parsed_data: parsed });
-    if (userError) throw userError;
-    const { data: assistant, error: assistantError } = await db.from('insurance_chat_messages').insert({ session_id: sessionId, role: 'assistant', message: answer, citations, parsed_data: { ...parsed, answer_status: 'grounded' } }).select('id,created_at').single();
-    if (assistantError) throw assistantError;
-    return respond({ session_id: sessionId, message_id: assistant.id, created_at: assistant.created_at, answer, citations, confidence: null, answer_status: 'grounded', answer_generator: deterministicAnswer ? 'deterministic_criteria' : 'grounded_ai', evidence_checked: true, insurance_v3: true,
-      debug: body.debug === true ? { semantic_interpretation: semantic, verified_entities: verifiedEntities, retrieval_mode: retrievalMode, retrieval_plan: plan,
-        retrieval_channels: units.slice(0, 24).map((u) => ({ search_unit_id: u.search_unit_id, source_chunk_ids: u.source_chunk_ids, unit_type: u.unit_type, document: u.document_title, page: u.page_from, vector_rank: u.vector_rank, fts_rank: u.fts_rank, trigram_rank: u.trigram_rank, heading_rank: u.heading_rank, entity_rank: u.entity_rank, rrf_score: u.hybrid_rrf_score, text: u.retrieval_text })),
-        selected_units: selectedUnits.map((u) => ({ search_unit_id: u.search_unit_id, source_chunk_ids: u.source_chunk_ids, unit_type: u.unit_type, document: u.document_title, page: u.page_from })), evidence_judgments: evidenceJudgments, expansion_unit_ids: expandIds, evidence_sufficiency: sufficiency, sufficiency_confirmation_used: sufficiencyConfirmationUsed, retrieval_retry: Boolean(reformulation), embedding: embeddingRuns,
-        deterministic_criteria_evaluations: deterministicEvaluations, final_evidence_ids: answerEvidence.map((c) => c.chunk_id), retrieved_chunks: selection.selected.map((c) => ({ chunk_id: c.chunk_id, document: c.document_title, page_from: c.page_from, page_to: c.page_to, score: c.deterministic_score, dimensions: dimensions.filter((d) => chunkAnswersDimension(c, d)), text: c.chunk_text })),
-        ai: aiDiagnostics(semanticResult, rerankCalls, deterministicAnswer ? null : answerResult), model: AI_MODEL, processing_ms: Date.now() - started } : undefined });
+    const safeUsed = used.length ? used : answerEvidence.slice(0, 2);
+    const citations = safeUsed.map(citationFor);
+    const answer = sourceGroundedText(answerResult.answer, safeUsed);
+    const status = trace.recovery.activated ? (answerGenerator === 'grounded_extractive_fallback' ? 'recovery_fallback' : 'recovery_grounded') : (answerGenerator === 'grounded_extractive_fallback' ? 'grounded_fallback' : 'grounded');
+    const saved = await saveConversation(db, body, question, answer, citations, semantic, verifiedEntities, status, pipelineContext.forceRecovery ? 1 : 0);
+    trace.session_id = saved.session_id; trace.message_id = saved.message_id; trace.final_status = status; trace.final_answer = answer; trace.citations = citations; trace.final_reason = 'verified_answer_bearing_evidence'; trace.answer_generator = answerGenerator; trace.latency.answer_ms = answerResult.latency_ms; trace.latency.total_ms = Date.now() - started;
+    trace.providers = { ...trace.providers, ...aiDiagnostics(semanticResult, aiCalls, deterministicAnswer || answerGenerator === 'grounded_extractive_fallback' ? null : answerResult) }; trace.token_usage = trace.providers;
+    const auditId = await persistRequestTrace(db, trace);
+    if (pipelineContext.forceRecovery && auditId) await db.from('insurance_learning_queue').insert({ audit_id: auditId, reason: 'negative_feedback', priority: 3, proposed_change: { request_id: trace.request_id, feedback_reason: pipelineContext.feedbackReason, recovery_answer_status: status, recovery_searches: trace.recovery.iterations } });
+    return respond({ ...saved, answer, citations, confidence: null, answer_status: status, answer_generator: answerGenerator, evidence_checked: true, insurance_v3: true, recovery_used: trace.recovery.activated,
+      debug: debugRequested ? { request_id: trace.request_id, semantic_interpretation: semantic, verified_entities: verifiedEntities, retrieval_mode: retrievalMode, retrieval_plan: plan, retrieval_channels: units.slice(0, 24), selected_units: selectedUnits, evidence_judgments: evidenceJudgments, expansion_unit_ids: expandIds, evidence_sufficiency: sufficiency, recovery: trace.recovery, deterministic_criteria_evaluations: deterministicEvaluations, final_evidence_ids: answerEvidence.map((chunk) => chunk.chunk_id), retrieved_chunks: selection.selected, embedding: embeddingRuns, fallback_used: trace.fallback_used, ai: trace.providers, model: AI_MODEL, processing_ms: Date.now() - started } : undefined });
   } catch (error) {
-    if (error instanceof AIProvidersTemporarilyUnavailableError) return respond({ answer: 'The AI service is temporarily unavailable. Please try again shortly.', citations: [], answer_status: 'temporarily_unavailable', insurance_v3: true }, 503);
-    if (error instanceof AIProviderError) {
-      console.error('insurance_v3_ai_provider_error', { provider: error.provider, status: error.status, code: error.providerCode });
-      return respond({ error: 'Unable to contact the AI service.', insurance_v3: true, debug: debugRequested ? { provider: error.provider, status: error.status, diagnostic_code: error.providerCode } : undefined }, 502);
+    const temporary = error instanceof AIProvidersTemporarilyUnavailableError || error instanceof AIProviderError;
+    const answer = temporary ? 'The insurance AI service is temporarily unavailable. Please try again shortly.' : 'The insurance service could not safely complete this request right now. Please try again.';
+    console.error('insurance_v3_controlled_failure', { request_id: trace?.request_id, type: error instanceof Error ? error.name : 'unknown', temporary });
+    if (trace && db) {
+      trace.final_status = temporary ? 'temporarily_unavailable' : 'internal_error'; trace.final_answer = answer; trace.final_reason = error instanceof Error ? error.name : 'unknown'; trace.http_status = 200; trace.latency.total_ms = Date.now() - started;
+      await persistRequestTrace(db, trace);
     }
-    console.error('insurance_v3_error', { message: error instanceof Error ? error.message : String(error) });
-    return respond({ error: error instanceof Error ? error.message : 'Unable to answer the V3 policy question.', insurance_v3: true }, 400);
+    return respond({ answer, citations: [], answer_status: temporary ? 'temporarily_unavailable' : 'internal_error', insurance_v3: true, debug: debugRequested ? { request_id: trace?.request_id, diagnostic_code: error instanceof Error ? error.name : 'unknown' } : undefined });
   }
 });

@@ -14,6 +14,7 @@ class InsuranceCitation extends Equatable {
   final int? rowFrom;
   final int? rowTo;
   final double score;
+  final String supportLevel;
 
   const InsuranceCitation({
     required this.chunkId,
@@ -29,6 +30,7 @@ class InsuranceCitation extends Equatable {
     this.rowFrom,
     this.rowTo,
     this.score = 0,
+    this.supportLevel = 'supporting_evidence',
   });
 
   String get locationLabel {
@@ -91,7 +93,10 @@ class InsuranceChatMessage extends Equatable {
   final double? confidence;
   final List<InsuranceCitation> citations;
   final bool conversational;
+  final bool aiGenerated;
   final InsuranceClarification? clarification;
+  final Map<String, dynamic>? debugTrace;
+  final int recoveryDepth;
 
   const InsuranceChatMessage({
     required this.id,
@@ -101,7 +106,10 @@ class InsuranceChatMessage extends Equatable {
     this.confidence,
     this.citations = const [],
     this.conversational = false,
+    this.aiGenerated = false,
     this.clarification,
+    this.debugTrace,
+    this.recoveryDepth = 0,
   });
 
   bool get isUser => role == 'user';
@@ -114,7 +122,10 @@ class InsuranceChatMessage extends Equatable {
     createdAt,
     citations,
     conversational,
+    aiGenerated,
     clarification,
+    debugTrace,
+    recoveryDepth,
   ];
 }
 
