@@ -1,7 +1,7 @@
 import type { HybridSearchUnit, SemanticInterpretation, V3Chunk, V3Entity } from './retrieval.ts';
 import { extractOrThresholdTimeRuleGroups, type OrThresholdTimeEvaluation } from './criteria.ts';
 import { AI_MODEL, AIProviderError, callAI, callGroqAfterMalformedTogether, type AICallType, type AIProviderName, type AIRequest, type AIUsage } from './ai_provider.ts';
-import { additionalRecoveryEvidence, hasMeaningfulAdditionalEvidence, substantiallyEquivalentAnswer } from './incomplete_recovery.ts';
+import { answerIncorporatesMissingEvidenceFacts, hasMeaningfulAdditionalEvidence, recoveryEvidenceWithMissingFacts, removeBroadAbsenceClaimsAfterRecovery, substantiallyEquivalentAnswer } from './incomplete_recovery.ts';
 
 export { AI_MODEL };
 
@@ -492,9 +492,9 @@ export async function answerIncompleteRecovery(
     source_id: { document: chunk.document_title, file: chunk.file_name, page_from: chunk.page_from, page_to: chunk.page_to, sheet: chunk.sheet_name, row_from: chunk.row_from, row_to: chunk.row_to },
   }));
   const allowed = new Set(supplied.map((item) => item.id));
-  const additionalIds = new Set(additionalRecoveryEvidence(context.original_evidence, evidence).map((chunk) => chunk.chunk_id));
+  const additionalIds = new Set(recoveryEvidenceWithMissingFacts(context.original_answer, context.original_evidence, evidence).map((chunk) => chunk.chunk_id));
   const additionalEvidenceIds = supplied.filter((item) => additionalIds.has(item.chunk_id)).map((item) => item.id);
-  const meaningfulAdditional = hasMeaningfulAdditionalEvidence(context.original_evidence, evidence);
+  const meaningfulAdditional = hasMeaningfulAdditionalEvidence(context.original_answer, context.original_evidence, evidence);
   const sharedPayload = {
     feedback_reason: 'incomplete', original_user_question: context.original_question,
     original_semantic_interpretation: context.original_semantic,
@@ -528,7 +528,8 @@ export async function answerIncompleteRecovery(
     ? [...new Set(validation.raw.used_evidence_ids.filter((id): id is string => typeof id === 'string' && allowed.has(id)))] : [];
 
   let repairUsage: AIUsage = null;
-  if (meaningfulAdditional && substantiallyEquivalentAnswer(context.original_answer, answer)) {
+  if (meaningfulAdditional && (substantiallyEquivalentAnswer(context.original_answer, answer)
+    || !answerIncorporatesMissingEvidenceFacts(context.original_answer, answer, evidence))) {
     const repair = await callStructuredAI({
       maxOutputTokens: 1100, response_format: { type: 'json_object' }, together_response_format: answerResponseFormat,
       messages: [
@@ -540,9 +541,11 @@ export async function answerIncompleteRecovery(
     const repairedAnswer = String(repair.raw.answer ?? '').trim();
     const repairedUsed = Array.isArray(repair.raw.used_evidence_ids)
       ? [...new Set(repair.raw.used_evidence_ids.filter((id): id is string => typeof id === 'string' && allowed.has(id)))] : [];
-    if (substantiallyEquivalentAnswer(context.original_answer, repairedAnswer)) throw new Error('incomplete_recovery_duplicate_answer');
+    if (substantiallyEquivalentAnswer(context.original_answer, repairedAnswer)
+      || !answerIncorporatesMissingEvidenceFacts(context.original_answer, repairedAnswer, evidence)) throw new Error('incomplete_recovery_duplicate_answer');
     answer = repairedAnswer; used = repairedUsed; repairUsage = completionUsage(repair.completion.payload);
   }
+  if (meaningfulAdditional) answer = removeBroadAbsenceClaimsAfterRecovery(answer);
   if (!answer || used.length === 0) throw new Error('ai_malformed_response');
   return {
     answer, used_evidence_ids: used,
