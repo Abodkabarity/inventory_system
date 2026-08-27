@@ -4,7 +4,7 @@ import { AIProviderError, AIProvidersTemporarilyUnavailableError, type AIProvide
 import { alignSemanticMedication, evaluateOrThresholdTimeWindows, renderDeterministicCriterionAnswer } from './criteria.ts';
 import { embedRetrievalQuery } from './embedding.ts';
 import {
-  buildRetrievalPlan, chunkAnswersDimension, enforceRouteSafety, evidenceForAnswer, isolateMedicationCandidates,
+  buildRetrievalPlan, chunkAnswersDimension, enforceRouteSafety, evidenceForAnswer, groundEntityOnlySemantic, isolateMedicationCandidates,
   isolateSearchUnitCandidates, requestedDimensions, rerankChunks, resolveVerifiedEntities, selectEvidence,
   type HybridSearchUnit, type SemanticInterpretation, type V3Alias, type V3Chunk, type V3Entity, type V3Relation,
 } from './retrieval.ts';
@@ -212,8 +212,9 @@ Deno.serve(async (request) => {
     const semanticResult = await interpretQuestion(question, verifiedEntityCatalog);
     const verifiedEntities = resolveVerifiedEntities(question, semanticResult.semantic, entities as V3Entity[], aliases as V3Alias[], relations as V3Relation[]);
     const aligned = alignSemanticMedication(semanticResult.semantic, verifiedEntities);
-    const dimensions = requestedDimensions(question, aligned);
-    const semantic = enforceRouteSafety(aligned, verifiedEntities, dimensions);
+    const grounded = groundEntityOnlySemantic(question, aligned, verifiedEntities, aliases as V3Alias[]);
+    const dimensions = requestedDimensions(question, grounded);
+    const semantic = enforceRouteSafety(grounded, verifiedEntities, dimensions);
     if (semantic.route === 'out_of_scope' || semantic.route === 'clarification_required') {
       return respond({ answer: semantic.route === 'out_of_scope' ? 'This question is outside the approved insurance-policy knowledge base.' : 'Please clarify the medication or policy criterion you want to check.', citations: [], answer_status: semantic.route, insurance_v3: true, debug: body.debug === true ? { semantic_interpretation: semantic, ai: aiDiagnostics(semanticResult, [], null) } : undefined });
     }

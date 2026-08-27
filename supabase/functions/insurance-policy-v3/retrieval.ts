@@ -90,6 +90,46 @@ export function requestedDimensions(question: string, semantic: SemanticInterpre
   return [...values];
 }
 
+export function groundEntityOnlySemantic(
+  question: string,
+  semantic: SemanticInterpretation,
+  verifiedEntities: V3Entity[],
+  aliases: V3Alias[],
+) {
+  const normalizedQuestion = normalize(question);
+  if (!normalizedQuestion || verifiedEntities.length === 0) return semantic;
+  const verifiedIds = new Set(verifiedEntities.map((entity) => entity.id));
+  const exactAlias = aliases.find((alias) => alias.verified && verifiedIds.has(alias.entity_id)
+    && normalize(alias.alias) === normalizedQuestion);
+  const exactEntity = verifiedEntities.find((entity) => normalize(entity.canonical_name) === normalizedQuestion)
+    ?? verifiedEntities.find((entity) => entity.id === exactAlias?.entity_id);
+  if (!exactEntity) return semantic;
+
+  const medicationEntities = verifiedEntities.filter((entity) => entity.entity_type.startsWith('medication_'));
+  const brand = medicationEntities.find((entity) => entity.entity_type === 'medication_brand');
+  const generic = medicationEntities.find((entity) => entity.entity_type === 'medication_generic');
+  const label = brand && generic ? `${brand.canonical_name} (${generic.canonical_name})` : exactEntity.canonical_name;
+  const informationNeed = `approved indications and policy overview for ${label}`;
+  return {
+    ...semantic,
+    route: 'catalog_discovery' as const,
+    indication: null,
+    intent: ['overview'],
+    requested_dimensions: ['approved indications'],
+    treatment_stage: null,
+    semantic_intent: `Provide a source-grounded policy overview for ${label}.`,
+    requested_information: informationNeed,
+    information_need: informationNeed,
+    retrieval_queries: [`${label} approved indications`, `${label} policy overview`],
+    search_concepts: [...new Set([...verifiedEntities.map((entity) => entity.canonical_name), 'approved indications', 'policy overview'])],
+    search_phrases: [`${label} indications`, `${label} overview`],
+    search_query: `${label} approved indications policy overview`,
+    negation: [],
+    temporal_context: null,
+    facts: [],
+  };
+}
+
 const STOP_WORDS = new Set(['the', 'and', 'for', 'with', 'from', 'that', 'this', 'what', 'when', 'does', 'policy', 'criteria', 'information', 'هل', 'في', 'من', 'على', 'عن', 'ما', 'هو', 'هي']);
 
 function meaningfulTokens(value: unknown) {
