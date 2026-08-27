@@ -17,6 +17,9 @@ export type RequestTrace = {
   message_id: string | null;
   question: string;
   semantic: SemanticInterpretation | null;
+  question_contract: Record<string, unknown> | null;
+  evidence_ledger: Record<string, unknown> | null;
+  answer_verifier: Record<string, unknown> | null;
   verified_entities: V3Entity[];
   retrieval_plan: Record<string, unknown>;
   candidates: HybridSearchUnit[];
@@ -44,7 +47,8 @@ const compactText = (value: unknown, maximum = 800) => String(value ?? '').slice
 export function newRequestTrace(userId: string, question = ''): RequestTrace {
   return {
     request_id: crypto.randomUUID(), user_id: userId, session_id: null, message_id: null, question,
-    semantic: null, verified_entities: [], retrieval_plan: {}, candidates: [], reranked: [], evidence: [], rejected: [],
+    semantic: null, question_contract: null, evidence_ledger: null, answer_verifier: null,
+    verified_entities: [], retrieval_plan: {}, candidates: [], reranked: [], evidence: [], rejected: [],
     sufficiency: null, providers: {}, fallback_used: null, recovery: { activated: false, reason: null, iterations: [] },
     final_status: 'incomplete', final_reason: null, final_answer: null, citations: [], latency: {}, token_usage: {},
     http_status: 200, answer_generator: null, recovery_of_audit_id: null, recovery_attempt: 0,
@@ -63,11 +67,11 @@ export async function persistRequestTrace(db: DBClient, trace: RequestTrace) {
     }));
     const { data, error } = await db.from('insurance_answer_audits').insert({
       session_id: trace.session_id, message_id: trace.message_id, user_id: trace.user_id,
-      raw_question: trace.question, structured_query: trace.semantic ?? {}, retrieval_plan: trace.retrieval_plan,
+      raw_question: trace.question, structured_query: trace.semantic ?? {}, retrieval_plan: { ...trace.retrieval_plan, question_contract: trace.question_contract },
       retrieved_candidates: candidates, verified_evidence: evidence,
       rejected_candidates: trace.rejected.slice(0, 16).map((unit) => ({ id: unit.search_unit_id, document: unit.document_title, page: unit.page_from })),
       answer_status: trace.final_status, confidence: { sufficiency: trace.sufficiency }, latency_ms: Number(trace.latency.total_ms ?? 0),
-      completeness: { final_reason: trace.final_reason }, request_id: trace.request_id,
+      completeness: { final_reason: trace.final_reason, evidence_ledger: trace.evidence_ledger, answer_verifier: trace.answer_verifier }, request_id: trace.request_id,
       verified_entities: trace.verified_entities, reranked_evidence: trace.reranked,
       sufficiency_decision: trace.sufficiency ?? {}, provider_diagnostics: trace.providers,
       fallback_used: trace.fallback_used, recovery_trace: trace.recovery,

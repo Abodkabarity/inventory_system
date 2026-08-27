@@ -57,6 +57,33 @@ Deno.test('same entity with different intent does not reuse wrong recovery', () 
   assert(scoreSemanticMemory(differentIntent, stored) < 0.82);
 });
 
+Deno.test('same entity and intent with opposite requested relationship does not reuse memory', () => {
+  const entities = [entity('00000000-0000-4000-8000-000000000001', 'examplemab')];
+  const forward = semanticRecoveryPayload(semantic(), entities, { requested_relationships: [{ subject: 'therapy', relation: 'authorized professional', object: 'professional', direction: 'forward' }] });
+  const reverse = semanticRecoveryPayload(semantic(), entities, { requested_relationships: [{ subject: 'professional', relation: 'applicable therapy', object: 'therapy', direction: 'reverse' }] });
+  assertEquals(scoreSemanticMemory(reverse, forward), 0);
+});
+
+Deno.test('same verified medication and relationship paraphrase can reuse memory despite contextual entity variance', () => {
+  const entities = [entity('00000000-0000-4000-8000-000000000001', 'examplemab')];
+  const first = semanticRecoveryPayload(semantic({
+    intent: ['dose', 'dose schedule'], semantic_intent: 'onset dose and monthly maintenance dose',
+    information_need: 'onset and maintenance dosing',
+  }), entities, { requested_relationships: [
+    { subject: 'examplemab', relation: 'dose at onset', object: 'dose value', direction: 'forward' },
+    { subject: 'examplemab', relation: 'monthly maintenance dose', object: 'dose value', direction: 'forward' },
+  ], required_answer_facets: [{ description: 'dose at onset' }, { description: 'monthly maintenance dose' }] });
+  const related = semanticRecoveryPayload(semantic({
+    intent: ['dosing schedule'], semantic_intent: 'onset dosing and subsequent monthly dosing',
+    information_need: 'onset and monthly dosing schedule',
+  }), entities, { requested_relationships: [
+    { subject: 'examplemab', relation: 'onset dosing', object: 'synthetic condition', direction: 'forward' },
+    { subject: 'examplemab', relation: 'monthly dosing', object: 'synthetic condition', direction: 'forward' },
+  ], required_answer_facets: [{ description: 'initial dosing at onset' }, { description: 'subsequent monthly dosing' }] });
+  const score = scoreSemanticMemory(related, first);
+  assert(score >= 0.82, `expected paraphrase score >= 0.82, received ${score}`);
+});
+
 Deno.test('semantic signature persists across equivalent normalized requests', async () => {
   const entities = [entity('00000000-0000-4000-8000-000000000001', 'examplemab')];
   const first = await semanticRecoverySignature(semantic({ search_concepts: ['Documented Eligibility'] }), entities);
