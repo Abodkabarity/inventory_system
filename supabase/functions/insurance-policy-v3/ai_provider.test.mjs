@@ -17,6 +17,7 @@ const request = {
 };
 
 test('uses provider-specific token parameters and reserves Together reasoning capacity', () => {
+  assert.equal(AI_MODEL, 'openai/gpt-oss-120b');
   const together = providerRequestBody('together', request);
   const groq = providerRequestBody('groq_fallback', request);
   assert.equal(together.max_tokens, 1344);

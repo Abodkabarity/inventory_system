@@ -1,4 +1,4 @@
-export const AI_MODEL = 'openai/gpt-oss-20b';
+export const AI_MODEL = 'openai/gpt-oss-120b';
 
 const TOGETHER_ENDPOINT = 'https://api.together.xyz/v1/chat/completions';
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
