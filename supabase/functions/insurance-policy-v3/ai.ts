@@ -33,10 +33,20 @@ function completionUsage(payload: Record<string, unknown>): AIUsage {
   return payload.usage && typeof payload.usage === 'object' ? payload.usage as NonNullable<AIUsage> : null;
 }
 
-async function callStructuredAI(request: AIRequest, callType: AICallType) {
+type StructuredOutputValidator = (raw: Record<string, unknown>) => boolean;
+
+async function callStructuredAI(request: AIRequest, callType: AICallType, validator?: StructuredOutputValidator) {
   let completion = await callAI(request, callType);
   try {
-    return { completion, raw: parseJson(completionContent(completion.payload), completion.provider, callType, completion.payload) };
+    const raw = parseJson(completionContent(completion.payload), completion.provider, callType, completion.payload);
+    if (validator && !validator(raw)) {
+      console.error('ai_provider_malformed_structured_output', {
+        provider: completion.provider, model: AI_MODEL, call_type: callType,
+        finish_reason: 'schema_shape_invalid', usage: completionUsage(completion.payload),
+      });
+      throw new AIProviderError(completion.provider, 200, false, `malformed_structured_output_${callType}`);
+    }
+    return { completion, raw };
   } catch (error) {
     const malformedTogether = error instanceof AIProviderError
       && error.provider === 'together'
@@ -44,7 +54,11 @@ async function callStructuredAI(request: AIRequest, callType: AICallType) {
       && error.providerCode === `malformed_structured_output_${callType}`;
     if (!malformedTogether) throw error;
     completion = await callGroqAfterMalformedTogether(request, callType);
-    return { completion, raw: parseJson(completionContent(completion.payload), completion.provider, callType, completion.payload) };
+    const raw = parseJson(completionContent(completion.payload), completion.provider, callType, completion.payload);
+    if (validator && !validator(raw)) {
+      throw new AIProviderError(completion.provider, 200, false, `malformed_structured_output_${callType}`);
+    }
+    return { completion, raw };
   }
 }
 
@@ -359,6 +373,7 @@ export async function answerFromEvidence(
     fact_concepts: [...new Set(semantic.facts.map((fact) => fact.concept).filter(Boolean))],
   };
   const deterministicOrStructures = extractOrThresholdTimeRuleGroups(evidence);
+  const allowed = new Set(supplied.map((item) => item.id));
   const { completion, raw } = await callStructuredAI({
     maxOutputTokens: 900,
     response_format: { type: 'json_object' },
@@ -367,8 +382,9 @@ export async function answerFromEvidence(
       { role: 'system', content: `Answer insurance-policy questions using ONLY the supplied approved evidence. Never use external medical knowledge or invent missing facts. Never add customary insurance processes, prior authorization, documentation, cost, network, approval, or administrative requirements unless the supplied evidence explicitly states them. Preserve thresholds, units, time windows, negation, AND/OR logic, and initiation versus continuation. deterministic_or_structures is a server-parsed representation of explicit OR threshold/time-window clauses; when the information_need asks for that criterion, include every branch exactly. When verified_semantic_interpretation.treatment_stage is present, use only rules explicitly applicable to that stage. Ignore requirements explicitly labeled for another stage; in particular, never carry initiation prerequisites into continuation or refill unless the approved evidence explicitly repeats or incorporates them for that later stage. The server may supply deterministic_criteria_evaluations. These evaluations are binding calculations from the approved evidence: follow their overall_satisfied result exactly. evidence_sufficiency is also a binding upstream evidence-coverage judgment. When its status is complete, the selected evidence contains the requested answer: answer at the level of detail the evidence supports and never replace it with an absence-of-evidence response. If the evidence states a required fact or evidence category but not its exact format or implementation detail, state the supported requirement and clearly say only the finer detail is unspecified when the user explicitly requested that finer detail. Each patient observation is evaluated independently against EVERY OR branch; never pair observations and branches by array position. IMPORTANT SCOPE RULE: an evaluation whose scope is numeric_threshold_time_window_group_only establishes only that criterion group. It never establishes full policy approval or eligibility. When establishes_full_policy_eligibility is false, state whether that criterion group passes, then explicitly say full approval cannot be confirmed if other evidence criteria lack patient facts, and identify the important remaining criteria concisely. Use only medication/generic names in verified_semantic_interpretation, even if the original question or prior interpretation contained a conflicting name. When verified_clinical_terms.medication_label is present, copy that exact Brand (Generic) label the first time the medicine is named. Preserve verified indication and fact-concept terms verbatim in English when translating the surrounding answer; do not replace them with a different medical concept. Address every patient fact or requested dimension that affects the conclusion, and include every evidence ID supporting those conclusions rather than only the primary ID. If the evidence states the applicable policy criteria but the user supplies only some required patient facts, do not say that the documents fail to establish the answer: state which supplied facts satisfy or fail the criteria, identify the remaining required facts, and give a conditional conclusion. Reserve an absence-of-evidence conclusion for cases where evidence_sufficiency is not complete and the supplied evidence contains no applicable policy rule. If evidence conflicts, state the conflict. Be concise and answer in the user's language. Do not write source/page citations; the server adds them. Return JSON only: {"answer":"...","used_evidence_ids":["E1"]}. Use only supplied IDs actually relied on.` },
       { role: 'user', content: JSON.stringify({ question, verified_semantic_interpretation: semantic, verified_clinical_terms: verifiedClinicalTerms, evidence_sufficiency: evidenceSufficiency, deterministic_or_structures: deterministicOrStructures, deterministic_criteria_evaluations: deterministicEvaluations, approved_evidence: supplied }) },
     ],
-  }, 'final-answer');
-  const allowed = new Set(supplied.map((item) => item.id));
+  }, 'final-answer', (value) => typeof value.answer === 'string' && value.answer.trim().length > 0
+    && Array.isArray(value.used_evidence_ids)
+    && value.used_evidence_ids.some((item) => typeof item === 'string' && allowed.has(item)));
   const used = Array.isArray(raw.used_evidence_ids) ? [...new Set(raw.used_evidence_ids.filter((item): item is string => typeof item === 'string' && allowed.has(item)))] : [];
   if (typeof raw.answer !== 'string' || !raw.answer.trim() || used.length === 0) throw new Error('ai_malformed_response');
   const validation = await callStructuredAI({
@@ -379,7 +395,9 @@ export async function answerFromEvidence(
       { role: 'system', content: `Validate a drafted insurance-policy answer against ONLY the supplied evidence and the explicit information_need. Check every requested condition, conjunct, alternative, exception, negation, threshold, time window, identity, and treatment stage. deterministic_or_structures is a server-parsed representation of explicit OR threshold/time-window clauses. When the information_need asks for that criterion, the corrected answer MUST preserve every branch, comparator, threshold, unit, window, and OR relationship; omitting one branch is incorrect. evidence_sufficiency is a binding upstream evidence-coverage judgment. If its status is complete, the evidence contains the requested answer; neither validation nor correction may replace a supported answer with an absence-of-evidence conclusion. Answer at the granularity supported by the evidence, and distinguish an unspecified finer implementation detail only when the question explicitly requests that detail. Reject omitted decisive conditions, unsupported additions, cross-indication facts, a numeric attribute attached to the wrong label, or any initiation/continuation/refill/stop criterion outside verified_treatment_stage. When a stage is verified, delete every requirement explicitly labeled for a different stage unless the evidence explicitly repeats or incorporates it into the requested stage. Do not turn a stop rule such as failure to achieve a threshold into a positive approval requirement. Do not add follow-up monitoring, clinician, dose, or documentation rules when information_need asks only for different initial clinical evidence. If the draft is fully correct, copy it unchanged into corrected_answer. Otherwise rewrite it concisely in the user's language using only evidence and only the requested scope. Do not add Source/Page text. Return only supplied evidence IDs that support the corrected answer. Return compact JSON only.` },
       { role: 'user', content: JSON.stringify({ question, information_need: semantic.information_need ?? semantic.requested_information ?? semantic.semantic_intent, evidence_sufficiency: evidenceSufficiency, deterministic_or_structures: deterministicOrStructures, verified_medication: semantic.medication, verified_generic: semantic.generic, verified_indication: semantic.indication, verified_treatment_stage: semantic.treatment_stage, drafted_answer: raw.answer, drafted_evidence_ids: used, approved_evidence: supplied }) },
     ],
-  }, 'final-answer');
+  }, 'final-answer', (value) => typeof value.corrected_answer === 'string' && value.corrected_answer.trim().length > 0
+    && Array.isArray(value.used_evidence_ids)
+    && value.used_evidence_ids.some((item) => typeof item === 'string' && allowed.has(item)));
   const validatedAnswer = typeof validation.raw.corrected_answer === 'string' ? validation.raw.corrected_answer.trim() : '';
   const validatedUsed = Array.isArray(validation.raw.used_evidence_ids)
     ? [...new Set(validation.raw.used_evidence_ids.filter((item): item is string => typeof item === 'string' && allowed.has(item)))]
