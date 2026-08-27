@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { enforceRouteSafety, evidenceForAnswer, isolateMedicationCandidates, requestedDimensions, rerankChunks, resolveVerifiedEntities, selectEvidence } from './retrieval.ts';
+import { buildRetrievalPlan, enforceRouteSafety, evidenceForAnswer, groundEntityOnlySemantic, isolateMedicationCandidates, requestedDimensions, rerankChunks, resolveVerifiedEntities, selectEvidence, strictRetrievalEntityIds } from './retrieval.ts';
 
 const semantic = { route: 'catalog_discovery', medication: 'Repatha', generic: null, indication: 'HoFH', intent: [], requested_dimensions: ['age'], treatment_stage: null, facts: [], source_requested: false };
 const entities = [
@@ -11,6 +11,17 @@ const aliases = [{ entity_id: 'brand', alias: 'Repatha', normalized_alias: 'repa
 const relations = [{ subject_entity_id: 'brand', relation_type: 'brand_of', object_entity_id: 'generic', verified: true }];
 const resolved = resolveVerifiedEntities('Repatha HoFH age9?', semantic, entities, aliases, relations);
 assert.deepEqual(new Set(resolved.map((item) => item.id)), new Set(['brand', 'generic', 'hofh']));
+assert.deepEqual(strictRetrievalEntityIds(resolved), ['brand', 'generic']);
+assert.deepEqual(strictRetrievalEntityIds([entities[2]]), []);
+
+const classInflection = resolveVerifiedEntities(
+  'Is a double dose of a sample pump inhibitor allowed?',
+  { ...semantic, medication: 'sample pump inhibitor', generic: null, drug_class: 'sample pump inhibitor' },
+  [{ id: 'sample-class', canonical_name: 'Sample pump inhibitors', normalized_name: 'sample pump inhibitors', entity_type: 'drug_class' }],
+  [{ entity_id: 'sample-class', alias: 'Sample pump inhibitors', normalized_alias: 'sample pump inhibitors', verified: true }],
+  [],
+);
+assert.deepEqual(classInflection.map((item) => item.id), ['sample-class']);
 
 const conflictingEntities = [
   ...entities,
@@ -48,6 +59,36 @@ assert.equal(
 const dimensions = requestedDimensions('Repatha HoFH age9?', semantic);
 assert.ok(dimensions.includes('age'));
 assert.equal(enforceRouteSafety(semantic, resolved, dimensions).route, 'policy_question');
+
+const groundedBareMedication = groundEntityOnlySemantic('Mounjaro?', {
+  ...semantic,
+  route: 'policy_question',
+  medication: 'Mounjaro',
+  generic: 'Tirzepatide',
+  indication: 'Obesity',
+  intent: ['coverage'],
+  requested_dimensions: ['prior authorization'],
+  treatment_stage: 'initiation',
+  semantic_intent: 'invented scope',
+  requested_information: 'invented scope',
+  information_need: 'invented scope',
+  retrieval_queries: ['invented scope'],
+  search_concepts: ['invented scope'],
+  search_phrases: ['invented scope'],
+  search_query: 'invented scope',
+  negation: [], temporal_context: null,
+}, [
+  { id: 'mounjaro', canonical_name: 'Mounjaro', normalized_name: 'mounjaro', entity_type: 'medication_brand' },
+  { id: 'tirzepatide', canonical_name: 'Tirzepatide', normalized_name: 'tirzepatide', entity_type: 'medication_generic' },
+], [
+  { entity_id: 'mounjaro', alias: 'Mounjaro', normalized_alias: 'mounjaro', verified: true },
+]);
+assert.equal(groundedBareMedication.route, 'catalog_discovery');
+assert.equal(groundedBareMedication.indication, null);
+assert.equal(groundedBareMedication.treatment_stage, null);
+assert.deepEqual(groundedBareMedication.intent, ['overview']);
+assert.ok(groundedBareMedication.information_need.includes('Mounjaro (Tirzepatide)'));
+assert.equal(groundEntityOnlySemantic('Mounjaro dose?', groundedBareMedication, resolved, aliases), groundedBareMedication);
 
 const shortQuestionSemantic = {
   ...semantic,
@@ -140,4 +181,41 @@ const indicationScopedNumeric = rerankChunks([
 assert.equal(indicationScopedNumeric[0].chunk_id, 'right-indication');
 const indicationScopedSelection = selectEvidence(indicationScopedNumeric, ['labs', 'time_window']);
 assert.deepEqual(indicationScopedSelection.selected.map((chunk) => chunk.chunk_id), ['right-indication']);
+
+const openVocabularySemantic = {
+  ...semantic,
+  semantic_intent: 'identify which clinician specialties may prescribe the treatment',
+  requested_information: 'eligible clinician specialties and documentation responsibility',
+  search_concepts: ['prescriber specialty', 'eligible clinician', 'medical records'],
+  search_phrases: ['eligible clinician specialty', 'document in medical records'],
+  search_query: 'eligible clinician specialties prescribing documentation medical records',
+  negation: [], temporal_context: null, drug_class: null,
+};
+const openPlan = buildRetrievalPlan('Who may prescribe and what goes in the record?', openVocabularySemantic, [], []);
+assert.equal(enforceRouteSafety({ ...openVocabularySemantic, route: 'clarification_required', medication: null }, [], []).route, 'policy_question');
+assert.ok(openPlan.query.includes('eligible clinician'));
+assert.ok(openPlan.phrases.includes('eligible clinician specialty'));
+const openRanked = rerankChunks([
+  { ...base, chunk_id: 'generic-dose', chunk_text: 'Recommended dose once daily', score: 8 },
+  { ...base, chunk_id: 'specialty-table', document_title: 'Policy table', section_title: 'Eligible clinicians', chunk_text: 'Column 1: Specialty\nColumn 2: Internal Medicine\nColumn 3: Document the schedule in medical records', metadata: { semantic_table_record: true, fields: { specialty: 'Internal Medicine' } }, row_from: 8, row_to: 9, score: 2 },
+], [], [], null, 'Who may prescribe and what goes in the record?', openVocabularySemantic);
+assert.equal(openRanked[0].chunk_id, 'specialty-table');
+const openSelection = selectEvidence(openRanked, [], 6, openVocabularySemantic);
+assert.equal(openSelection.selected[0].chunk_id, 'specialty-table');
+assert.equal(openSelection.sufficient, true);
+assert.ok(openSelection.requestedCoverage > 0);
+
+const indicationIsolationSemantic = {
+  ...openVocabularySemantic,
+  indication: 'Condition Alpha',
+  requested_dimensions: ['dose'],
+  requested_information: 'dose for Condition Alpha',
+};
+const indicationIsolated = selectEvidence([
+  { ...base, chunk_id: 'alpha-rule', section_title: 'Shared criteria', chunk_text: 'Condition Alpha: maintenance dose 25 mg weekly', metadata: { entity_specific: true }, indication_context_matches: 1, deterministic_score: 12 },
+  { ...base, chunk_id: 'shared-documentation', section_title: 'Shared criteria', chunk_text: 'All requests require a signed clinical report', metadata: { entity_specific: false }, indication_context_matches: 0, deterministic_score: 11.5 },
+  { ...base, chunk_id: 'beta-loading', section_title: 'Shared criteria', chunk_text: 'Condition Beta: loading dose 100 mg', metadata: { entity_specific: true }, indication_context_matches: 0, deterministic_score: 11 },
+], ['dose'], 6, indicationIsolationSemantic);
+assert.deepEqual(indicationIsolated.selected.map((chunk) => chunk.chunk_id), ['alpha-rule', 'shared-documentation']);
+assert.ok(requestedDimensions('What documentation is required?', { ...openVocabularySemantic, requested_dimensions: [] }).includes('documentation'));
 console.log('insurance-policy-v3 retrieval tests passed');

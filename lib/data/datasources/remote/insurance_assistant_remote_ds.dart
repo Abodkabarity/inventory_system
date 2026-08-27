@@ -1,12 +1,7 @@
-import 'dart:async';
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
-import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
-
-import '../../../core/config/supabase_config.dart';
 
 class InsuranceAssistantRemoteDs {
   static const _knowledgeBaseVersion = String.fromEnvironment(
@@ -51,11 +46,13 @@ class InsuranceAssistantRemoteDs {
     required String question,
     required String branchName,
     String? sessionId,
+    bool debug = false,
   }) async {
     return _invokeAssistant({
       'message': question,
       'branch_name': branchName,
       if (sessionId != null) 'session_id': sessionId,
+      if (debug) 'debug': true,
     });
   }
 
@@ -72,9 +69,9 @@ class InsuranceAssistantRemoteDs {
   Future<Map<String, dynamic>> _invokeAssistant(
     Map<String, dynamic> body,
   ) async {
-    final localUri = SupabaseConfig.localInsuranceAssistantUri;
-    if (localUri != null) return _invokeLocalAssistant(localUri, body);
     final response = await client.functions.invoke(
+      // V2 evaluates reviewed, structured policy rules.  The legacy function
+      // remains deployed independently as a safe rollback path.
       _knowledgeBaseVersion == 'v3'
           ? 'insurance-policy-v3'
           : 'insurance-policy-v2',
@@ -83,50 +80,6 @@ class InsuranceAssistantRemoteDs {
     final data = Map<String, dynamic>.from(response.data as Map);
     if (data['error'] != null) throw Exception(data['error']);
     return data;
-  }
-
-  Future<Map<String, dynamic>> _invokeLocalAssistant(
-    Uri endpoint,
-    Map<String, dynamic> body,
-  ) async {
-    final accessToken = client.auth.currentSession?.accessToken;
-    if (accessToken == null) throw Exception('Authentication is required.');
-    try {
-      final response = await http
-          .post(
-            endpoint,
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer $accessToken',
-              'apikey': SupabaseConfig.anonKey,
-            },
-            body: jsonEncode(body),
-          )
-          .timeout(const Duration(seconds: 45));
-      final decoded = response.body.isEmpty
-          ? <String, dynamic>{}
-          : Map<String, dynamic>.from(jsonDecode(response.body) as Map);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception(
-          decoded['error'] ??
-              'Local assistant returned HTTP ${response.statusCode}.',
-        );
-      }
-      if (decoded['error'] != null) throw Exception(decoded['error']);
-      return decoded;
-    } on FormatException {
-      throw Exception(
-        'Local assistant returned an invalid response. Check the local Edge Function terminal.',
-      );
-    } on http.ClientException {
-      throw Exception(
-        'Cannot reach the local assistant. Start the local Edge Function and retry.',
-      );
-    } on TimeoutException {
-      throw Exception(
-        'The local assistant timed out. Verify Ollama is running and the selected model is loaded.',
-      );
-    }
   }
 
   Future<void> submitFeedback(String messageId, int rating) async {
@@ -139,6 +92,16 @@ class InsuranceAssistantRemoteDs {
     }, onConflict: 'message_id,user_id');
   }
 
+  Future<Map<String, dynamic>> recoverFromFeedback({
+    required String messageId,
+    required String reason,
+    required String branchName,
+  }) => _invokeAssistant({
+    'feedback_message_id': messageId,
+    'feedback_reason': reason,
+    'branch_name': branchName,
+  });
+
   Future<String> createSourceUrl(String bucket, String path) =>
       client.storage.from(bucket).createSignedUrl(path, 300);
 
@@ -146,6 +109,16 @@ class InsuranceAssistantRemoteDs {
       List<Map<String, dynamic>>.from(
         await client.rpc('insurance_document_health_v1'),
       );
+
+  Future<List<Map<String, dynamic>>>
+  fetchKnowledgeReadiness() async => List<Map<String, dynamic>>.from(
+    await client
+        .from('policy_v2_knowledge_readiness')
+        .select(
+          'document_id,source_document_id,title,policy_family,status,readiness_status,scope_count,active_rule_count,evidence_count,pending_review_count,open_conflict_count,blocking_finding_count,runtime_ready',
+        )
+        .order('title'),
+  );
 
   Future<List<Map<String, dynamic>>> inspectSearch(String query) async =>
       List<Map<String, dynamic>>.from(
@@ -175,9 +148,14 @@ class InsuranceAssistantRemoteDs {
           'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'xlsx':
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'xls': 'application/vnd.ms-excel',
+      'xlsb': 'application/vnd.ms-excel.sheet.binary.macroEnabled.12',
+      'csv': 'text/csv',
     };
     if (!mimeTypes.containsKey(extension))
-      throw Exception('Only PDF, DOCX, and XLSX files are supported.');
+      throw Exception(
+        'Only PDF, DOCX, XLSX, XLS, XLSB, and CSV files are supported.',
+      );
     final checksum = sha256.convert(bytes).toString();
     final existing = await client
         .from('insurance_documents')

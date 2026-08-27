@@ -188,6 +188,12 @@ export function isolateSearchUnitCandidates(candidates: HybridSearchUnit[], veri
   });
 }
 
+export function strictRetrievalEntityIds(verifiedEntities: V3Entity[]) {
+  return verifiedEntities
+    .filter((entity) => entity.entity_type.startsWith('medication_'))
+    .map((entity) => entity.id);
+}
+
 function chunkSemanticText(chunk: V3Chunk) {
   const table = chunk.metadata.table_title ?? chunk.metadata.table_name ?? chunk.metadata.section_path ?? '';
   const fields = chunk.metadata.fields && typeof chunk.metadata.fields === 'object'
@@ -473,7 +479,8 @@ export function enforceRouteSafety(semantic: SemanticInterpretation, verifiedEnt
   // questions can be fully answerable without naming a medicine. A verified
   // policy entity helps but is not a prerequisite; only an unverified named
   // medication remains an identity-safety blocker.
-  if ((semantic.route === 'catalog_discovery' || semantic.route === 'clarification_required') && hasRequestedInformation && !hasUnverifiedNamedMedication) {
+  if ((semantic.route === 'catalog_discovery' || semantic.route === 'clarification_required')
+    && hasRequestedInformation && !hasUnverifiedNamedMedication) {
     return { ...semantic, route: 'policy_question' as const };
   }
   return semantic;

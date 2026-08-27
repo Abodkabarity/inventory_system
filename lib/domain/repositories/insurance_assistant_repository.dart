@@ -10,6 +10,7 @@ abstract class InsuranceAssistantRepository {
     required String question,
     required String branchName,
     String? sessionId,
+    bool debug = false,
   });
   Future<({String sessionId, InsuranceChatMessage message})>
   confirmClarification({
@@ -18,8 +19,14 @@ abstract class InsuranceAssistantRepository {
     required String branchName,
   });
   Future<void> submitFeedback(String messageId, int rating);
+  Future<InsuranceChatMessage?> recoverFromFeedback({
+    required String messageId,
+    required String reason,
+    required String branchName,
+  });
   Future<String> createSourceUrl(InsuranceCitation citation);
   Future<List<InsuranceDocumentSummary>> fetchDocuments();
+  Future<List<Map<String, dynamic>>> fetchKnowledgeReadiness();
   Future<List<Map<String, dynamic>>> inspectSearch(String query);
   Future<List<Map<String, dynamic>>> inspectSource(String documentId);
   Future<void> uploadDocument({
