@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert';
 import test from 'node:test';
 import type { EvidenceBlock, ResolvedEntity, SemanticRequest } from './types.ts';
+import { buildFactManifest } from './fact_binding.ts';
 import { validateAnswer } from './validation.ts';
 
 const semantic: SemanticRequest = {
@@ -150,4 +151,76 @@ test('reverse specialty answer passes when every endpoint is an explicit result'
     entities: [], packet: reversePacket,
   });
   assert.equal(result.valid, true);
+});
+
+test('rejects a number that exists in the packet but is not bound to the requested medication', () => {
+  const mounjaroEntities: ResolvedEntity[] = [
+    { ...entities[0], entity_id: 'mounjaro', canonical_name: 'Mounjaro', matched_term: 'Mounjaro' },
+    { ...entities[0], entity_id: 'tirzepatide', canonical_name: 'Tirzepatide', entity_type: 'medication_generic', matched_term: 'Mounjaro' },
+  ];
+  const mixedPacket: EvidenceBlock[] = [
+    {
+      ...packet[0], id: 'E1', evidence_type: 'structured_table_row',
+      text: 'Content:\nDrug Name: Tirzepatide (Mounjaro)\nInitial Dose: 2.5 mg once weekly for 4 weeks\nMaximum Allowed boxes per Month: 1',
+    },
+    { ...packet[0], id: 'E2', gold: false, evidence_type: 'page', row_from: null, row_to: null, text: 'OZEMPIC 0.25 MG, and MOUNJARO 2.5 MG are initial doses. The 0.25 mg dose may sometimes be therapeutic.' },
+  ];
+  const factManifest = buildFactManifest(mixedPacket, mounjaroEntities, ['Mounjaro', 'Tirzepatide', 'Ozempic'], 'Mounjaro');
+  const result = validateAnswer({
+    answer: 'Mounjaro starts at 2.5 mg. In sensitive patients, 0.25 mg may be therapeutic.',
+    usedEvidenceIds: ['E1', 'E2'], question: 'Mounjaro', semantic, entities: mounjaroEntities,
+    packet: mixedPacket, medicationCatalog: ['Mounjaro', 'Tirzepatide', 'Ozempic'], factManifest,
+  });
+  assert.ok(result.errors.includes('unbound_entity_numbers:0.25'));
+});
+
+test('accepts numbers bound to the requested medication structured row', () => {
+  const mounjaroEntities: ResolvedEntity[] = [
+    { ...entities[0], entity_id: 'mounjaro', canonical_name: 'Mounjaro', matched_term: 'Mounjaro' },
+    { ...entities[0], entity_id: 'tirzepatide', canonical_name: 'Tirzepatide', entity_type: 'medication_generic', matched_term: 'Mounjaro' },
+  ];
+  const directPacket = [{
+    ...packet[0], evidence_type: 'structured_table_row',
+    text: 'Content:\nDrug Name: Tirzepatide (Mounjaro)\nInitial Dose: 2.5 mg once weekly for 4 weeks\nMaximum Allowed boxes per Month: 1',
+  }];
+  const factManifest = buildFactManifest(directPacket, mounjaroEntities, ['Mounjaro', 'Tirzepatide', 'Ozempic'], 'Mounjaro');
+  const result = validateAnswer({
+    answer: 'Mounjaro (Tirzepatide) starts at 2.5 mg once weekly for 4 weeks, with 1 box per month.',
+    usedEvidenceIds: ['E1'], question: 'Mounjaro', semantic, entities: mounjaroEntities,
+    packet: directPacket, medicationCatalog: ['Mounjaro', 'Tirzepatide', 'Ozempic'], factManifest,
+  });
+  assert.equal(result.valid, true);
+});
+
+test('evidence IDs are not treated as unsupported medical numbers', () => {
+  const result = validateAnswer({
+    answer: 'ExampleMed starts at 2.5 mg (E3, E4).', usedEvidenceIds: ['E1'],
+    question: 'ExampleMed', semantic, entities, packet,
+  });
+  assert.equal(result.errors.some((error) => error.startsWith('unsupported_numbers:3,4')), false);
+});
+
+test('a number suggested by the user cannot become a medication fact without entity binding', () => {
+  const mounjaroEntities: ResolvedEntity[] = [
+    { ...entities[0], entity_id: 'mounjaro', canonical_name: 'Mounjaro', matched_term: 'Mounjaro' },
+    { ...entities[0], entity_id: 'tirzepatide', canonical_name: 'Tirzepatide', entity_type: 'medication_generic', matched_term: 'Mounjaro' },
+  ];
+  const mixedPacket: EvidenceBlock[] = [
+    { ...packet[0], text: 'Content:\nDrug Name: Tirzepatide (Mounjaro)\nInitial Dose: 2.5 mg once weekly for 4 weeks' },
+    { ...packet[0], id: 'E2', gold: false, evidence_type: 'page', row_from: null, row_to: null, text: 'OZEMPIC 0.25 MG, and MOUNJARO 2.5 MG are initial doses.' },
+  ];
+  const factManifest = buildFactManifest(mixedPacket, mounjaroEntities, ['Mounjaro', 'Tirzepatide', 'Ozempic'], 'Can Mounjaro 0.25 mg be therapeutic?');
+  const affirmed = validateAnswer({
+    answer: 'Yes, Mounjaro 0.25 mg can be therapeutic.', usedEvidenceIds: ['E1', 'E2'],
+    question: 'Can Mounjaro 0.25 mg be therapeutic?', semantic, entities: mounjaroEntities,
+    packet: mixedPacket, factManifest,
+  });
+  assert.ok(affirmed.errors.includes('unbound_entity_numbers:0.25'));
+
+  const rejected = validateAnswer({
+    answer: 'No. The approved evidence does not support 0.25 mg for Mounjaro; it directly lists 2.5 mg.',
+    usedEvidenceIds: ['E1'], question: 'Can Mounjaro 0.25 mg be therapeutic?', semantic, entities: mounjaroEntities,
+    packet: mixedPacket, factManifest,
+  });
+  assert.equal(rejected.errors.includes('unbound_entity_numbers:0.25'), false);
 });

@@ -41,6 +41,43 @@ export async function resolveEntities(db: SupabaseClient, semantic: SemanticRequ
   }));
 }
 
+export async function expandVerifiedMedicationRelations(db: SupabaseClient, entities: ResolvedEntity[]) {
+  const medicationIds = [...new Set(entities
+    .filter((entity) => entity.entity_type === 'medication_brand' || entity.entity_type === 'medication_generic')
+    .map((entity) => entity.entity_id))];
+  if (!medicationIds.length) return entities;
+  const [subjects, objects] = await Promise.all([
+    db.from('insurance_v3_entity_relations').select('subject_entity_id,object_entity_id')
+      .eq('verified', true).in('subject_entity_id', medicationIds),
+    db.from('insurance_v3_entity_relations').select('subject_entity_id,object_entity_id')
+      .eq('verified', true).in('object_entity_id', medicationIds),
+  ]);
+  if (subjects.error || objects.error) return entities;
+  const relations = [...rows(subjects.data), ...rows(objects.data)];
+  const relatedIds = [...new Set(relations.flatMap((row) => [String(row.subject_entity_id), String(row.object_entity_id)]))]
+    .filter((id) => !medicationIds.includes(id));
+  if (!relatedIds.length) return entities;
+  const { data, error } = await db.from('insurance_v3_entities').select('id,canonical_name,entity_type')
+    .in('id', relatedIds).in('entity_type', ['medication_brand', 'medication_generic']).eq('active', true);
+  if (error) return entities;
+  const originalById = new Map(entities.map((entity) => [entity.entity_id, entity]));
+  const additions = rows(data).flatMap((row): ResolvedEntity[] => {
+    const id = String(row.id);
+    const relation = relations.find((item) => String(item.subject_entity_id) === id || String(item.object_entity_id) === id);
+    const anchorId = String(relation?.subject_entity_id) === id ? String(relation?.object_entity_id) : String(relation?.subject_entity_id);
+    const anchor = originalById.get(anchorId);
+    if (!anchor) return [];
+    return [{
+      entity_id: id,
+      canonical_name: String(row.canonical_name),
+      entity_type: String(row.entity_type),
+      matched_term: anchor.matched_term,
+      match_kind: 'verified_relation',
+    }];
+  });
+  return [...new Map([...entities, ...additions].map((entity) => [entity.entity_id, entity])).values()];
+}
+
 
 function entityIdsForQuery(query: string, entities: ResolvedEntity[]) {
   const normalizedQuery = query.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();

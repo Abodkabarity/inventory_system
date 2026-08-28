@@ -1,9 +1,10 @@
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.57.4';
-import { generateAnswer, repairAnswer } from './answer.ts';
+import { generateAnswer, repairAnswer, safeGroundedAnswer } from './answer.ts';
 import { evaluateExplicitNumericCriteria } from './criteria.ts';
 import { compactCandidates, persistAudit } from './diagnostics.ts';
 import { buildEvidencePacket, citationsFor } from './evidence.ts';
-import { retrieveEvidenceCandidates, resolveEntities } from './retrieval.ts';
+import { buildFactManifest } from './fact_binding.ts';
+import { expandVerifiedMedicationRelations, retrieveEvidenceCandidates, resolveEntities } from './retrieval.ts';
 import { applyPolicyEntityRouteGuard, applyVerifiedEntityAmbiguityGuard, interpretQuestion } from './semantic.ts';
 import type { Citation, EvidenceBlock, JsonMap, ProviderUsage, SemanticRequest } from './types.ts';
 import { validateAnswer } from './validation.ts';
@@ -182,7 +183,7 @@ Deno.serve(async (request) => {
     }
 
     const retrievalStarted = Date.now();
-    const entities = await resolveEntities(db, semantic, question);
+    let entities = await resolveEntities(db, semantic, question);
     semantic = applyVerifiedEntityAmbiguityGuard(semantic, entities);
     if (semantic.route === 'ambiguous') {
       const answer = semantic.ambiguity_question ?? (semantic.language === 'ar' ? 'يرجى توضيح المقصود في سؤالك.' : 'Please clarify what you mean in your question.');
@@ -200,6 +201,7 @@ Deno.serve(async (request) => {
       return respond({ ...saved, answer, citations: [], answer_status: 'clarification_required', evidence_checked: true, insurance_v4: true,
         debug: body.debug === true ? { request_id: requestId, semantic_interpretation: semantic, verified_entities: [], ai: providerUsage, processing_ms: latency.total_ms } : undefined });
     }
+    entities = await expandVerifiedMedicationRelations(db, entities);
     const retrieval = await retrieveEvidenceCandidates(db, question, semantic, entities, deepReview);
     let packet = await buildEvidencePacket(db, retrieval.candidates, semantic, entities);
     if (deepReview && feedbackReason === 'incomplete') packet = mergeIncompleteEvidence(packet, priorEvidence);
@@ -224,47 +226,33 @@ Deno.serve(async (request) => {
         debug: body.debug === true ? { request_id: requestId, semantic_interpretation: semantic, verified_entities: entities, retrieval: retrieval.diagnostics, ai: providerUsage, processing_ms: latency.total_ms } : undefined });
     }
 
-    const criteria = evaluateExplicitNumericCriteria(question, packet);
-    const answerStarted = Date.now();
-    let draft = await generateAnswer(question, semantic, entities, packet, criteria);
-    if (draft.provider) providerUsage.push(draft.provider);
     const hasExplicitMedication = entities.some((entity) => entity.entity_type === 'medication_brand' || entity.entity_type === 'medication_generic');
     const catalog = await medicationCatalog(db, hasExplicitMedication);
+    const factManifest = buildFactManifest(packet, entities, catalog, question);
+    const criteria = evaluateExplicitNumericCriteria(question, packet);
+    const answerStarted = Date.now();
+    let draft = await generateAnswer(question, semantic, entities, packet, criteria, factManifest);
+    if (draft.provider) providerUsage.push(draft.provider);
     let validation = validateAnswer({
-      answer: draft.answer, usedEvidenceIds: draft.used_evidence_ids, question, semantic, entities, packet, medicationCatalog: catalog, criteria,
+      answer: draft.answer, usedEvidenceIds: draft.used_evidence_ids, question, semantic, entities, packet, medicationCatalog: catalog, criteria, factManifest,
     });
     const validationAttempts = [{ stage: 'draft', ...validation }];
     let repaired = false;
     if (!validation.valid && !draft.extractive_fallback) {
-      draft = await repairAnswer(question, semantic, entities, packet, criteria, draft.answer, validation.errors);
+      draft = await repairAnswer(question, semantic, entities, packet, criteria, factManifest, draft.answer, validation.errors);
       repaired = true;
       if (draft.provider) providerUsage.push(draft.provider);
       validation = validateAnswer({
-        answer: draft.answer, usedEvidenceIds: draft.used_evidence_ids, question, semantic, entities, packet, medicationCatalog: catalog, criteria,
+        answer: draft.answer, usedEvidenceIds: draft.used_evidence_ids, question, semantic, entities, packet, medicationCatalog: catalog, criteria, factManifest,
       });
       validationAttempts.push({ stage: 'repair', ...validation });
     }
     if (!validation.valid) {
-      const gold = packet.filter((item) => item.gold);
-      const preferred = [...gold, ...packet.filter((item) => !item.gold)];
-      const chosen = semantic.answer_cardinality === 'single' ? preferred.slice(0, 3) : preferred.slice(0, 6);
-      if (semantic.answer_cardinality !== 'single') {
-        const represented = new Set(chosen.map((item) => item.document_id));
-        for (const item of packet) {
-          if (represented.has(item.document_id) || chosen.length >= 8) continue;
-          chosen.push(item);
-          represented.add(item.document_id);
-        }
-      }
+      const safe = safeGroundedAnswer(question, semantic, entities, packet, factManifest, criteria);
       draft = {
-        answer: `${semantic.language === 'ar' || semantic.language === 'mixed' ? 'توضح الأدلة المعتمدة المسترجعة ما يلي:' : 'The retrieved approved evidence states:'}\n\n${chosen.map((item) => `- ${item.text}`).join('\n')}`,
-        used_evidence_ids: chosen.map((item) => item.id), provider: null, extractive_fallback: true,
+        answer: safe.answer, used_evidence_ids: safe.used_evidence_ids, provider: null, extractive_fallback: true,
       };
-      validation = validateAnswer({ answer: draft.answer, usedEvidenceIds: draft.used_evidence_ids, question, semantic, entities, packet, medicationCatalog: [], criteria });
-      if (!validation.valid && semantic.answer_cardinality !== 'single') {
-        draft.used_evidence_ids = packet.map((item) => item.id);
-        validation = validateAnswer({ answer: draft.answer, usedEvidenceIds: draft.used_evidence_ids, question, semantic, entities, packet, medicationCatalog: [], criteria });
-      }
+      validation = validateAnswer({ answer: draft.answer, usedEvidenceIds: draft.used_evidence_ids, question, semantic, entities, packet, medicationCatalog: [], criteria, factManifest });
       validationAttempts.push({ stage: 'extractive', ...validation });
     }
     latency.answer_ms = Date.now() - answerStarted;
@@ -273,6 +261,7 @@ Deno.serve(async (request) => {
     const parsedData: JsonMap = {
       semantic, verified_entities: entities, insurance_v4: true, answer_status: status,
       answer_generator: draft.extractive_fallback ? 'deterministic_extractive' : providerUsage.at(-1)?.provider,
+      entity_fact_guard: factManifest.target_medications.length > 0,
       recovery_depth: deepReview ? 1 : 0,
     };
     const saved = await saveConversation(db, body, question, draft.answer, citations, parsedData, deepReview);
@@ -283,7 +272,7 @@ Deno.serve(async (request) => {
       resolved_entities: entities, generated_search_queries: retrieval.diagnostics.generated_queries,
       retrieval_channels: retrieval.diagnostics.channels, top_candidates: compactCandidates(retrieval.candidates as unknown as JsonMap[]),
       evidence_packet: packet, final_answer: draft.answer, final_citations: citations,
-      validation_checks: { ...validation, repaired, attempts: validationAttempts }, provider_usage: providerUsage, latency,
+      validation_checks: { ...validation, repaired, attempts: validationAttempts, entity_fact_binding: factManifest }, provider_usage: providerUsage, latency,
       feedback_reason: feedbackReason, deep_review: deepReview, answer_status: status,
       candidate_count: retrieval.candidates.length, evidence_count: packet.length,
       normal_reasoning_calls: 2 + (repaired ? 1 : 0),
@@ -291,7 +280,7 @@ Deno.serve(async (request) => {
     return respond({ ...saved, answer: draft.answer, citations, confidence: null, answer_status: status,
       answer_generator: parsedData.answer_generator, evidence_checked: true, insurance_v4: true, recovery_used: deepReview,
       debug: body.debug === true ? { request_id: requestId, semantic_interpretation: semantic, verified_entities: entities,
-        retrieval: retrieval.diagnostics, selected_evidence: packet, deterministic_criteria: criteria, validation,
+        retrieval: retrieval.diagnostics, selected_evidence: packet, entity_fact_binding: factManifest, deterministic_criteria: criteria, validation,
         validation_attempts: validationAttempts, ai: providerUsage, processing_ms: latency.total_ms } : undefined });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

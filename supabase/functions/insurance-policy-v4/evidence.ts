@@ -209,8 +209,10 @@ function endpointLabel(documentTitle: string) {
   return stripped.length >= 2 ? stripped : documentTitle.trim();
 }
 
-export function requiredRelationshipEndpoints(semantic: SemanticRequest, packet: EvidenceBlock[]) {
-  if (semantic.answer_cardinality === 'single' || !/^specialty_to_/iu.test(semantic.relationship_direction)) return [];
+export function requiredRelationshipEndpoints(semantic: SemanticRequest, packet: EvidenceBlock[], question = '') {
+  const endpointRequest = /\b(?:treatments?|medications?|policies|policy\s+owners?)\b|(?:العلاجات|الأدوية|السياسات)/iu
+    .test(question || semantic.user_goal);
+  if (semantic.answer_cardinality === 'single' || !/^specialty_to_/iu.test(semantic.relationship_direction) || !endpointRequest) return [];
   const endpoints = new Map<string, { name: string; document_title: string; evidence_ids: string[] }>();
   for (const block of packet) {
     const name = endpointLabel(block.document_title);

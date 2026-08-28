@@ -1,5 +1,5 @@
 import { requiredRelationshipEndpoints } from './evidence.ts';
-import type { EvidenceBlock, NumericDetermination, ResolvedEntity, SemanticRequest, ValidationResult } from './types.ts';
+import type { EvidenceBlock, FactManifest, NumericDetermination, ResolvedEntity, SemanticRequest, ValidationResult } from './types.ts';
 
 function normalize(value: string) {
   return value.toLowerCase().replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit))).replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
@@ -11,7 +11,9 @@ function numbers(value: string) {
 }
 
 function answerNumbers(value: string) {
-  return numbers(value.replace(/^\s*\d+[.)]\s+/gmu, ''));
+  return numbers(value
+    .replace(/\bE\d+\b/giu, '')
+    .replace(/^\s*\d+[.)]\s+/gmu, ''));
 }
 
 function looksRawJson(answer: string) {
@@ -32,6 +34,13 @@ function appearsAsEnumeratedResult(answer: string, endpoint: string) {
     if (!/^\s*(?:[-*•]|\d+[.)])\s+/u.test(line)) return false;
     return (` ${normalize(line)} `).includes(` ${normalizedEndpoint} `);
   });
+}
+
+function explicitlyRejectsNumber(answer: string, value: string) {
+  const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const segments = answer.split(/\r?\n|(?<=[.!?])\s+/u).filter((segment) => new RegExp(`(^|\\D)${escaped}(?!\\d)`, 'u').test(segment));
+  const rejection = /\b(?:not|no|unsupported|incorrect|wrong|does not|doesn't|is not|isn't|cannot|can't|must not)\b|(?:غير صحيح|غير مدعوم|لا تخص|لا تنطبق|لا تذكر|ليس|ليست|لا يمكن)/iu;
+  return segments.length > 0 && segments.every((segment) => rejection.test(segment));
 }
 
 function isEntityOverview(question: string, semantic: SemanticRequest, entities: ResolvedEntity[]) {
@@ -59,6 +68,7 @@ export function validateAnswer(args: {
   packet: EvidenceBlock[];
   medicationCatalog?: string[];
   criteria?: NumericDetermination[];
+  factManifest?: FactManifest;
 }): ValidationResult {
   const errors: string[] = [];
   const validIds = new Set(args.packet.map((item) => item.id));
@@ -73,12 +83,29 @@ export function validateAnswer(args: {
   const unsupportedNumbers = answerNumbers(args.answer).filter((value) => !permittedNumbers.has(value));
   if (unsupportedNumbers.length) errors.push(`unsupported_numbers:${unsupportedNumbers.join(',')}`);
 
+  const explicitMedicationEntities = args.entities
+    .filter((entity) => entity.entity_type === 'medication_brand' || entity.entity_type === 'medication_generic');
+  if (explicitMedicationEntities.length && args.factManifest?.target_medications.length) {
+    const entityPermittedNumbers = new Set<string>();
+    for (const value of args.factManifest.verified_numeric_values) entityPermittedNumbers.add(value);
+    for (const criterion of args.criteria ?? []) {
+      entityPermittedNumbers.add(String(criterion.patient_value));
+      entityPermittedNumbers.add(String(criterion.threshold));
+    }
+    const questionNumbers = new Set(numbers(args.question));
+    const unbound = answerNumbers(args.answer).filter((value) => {
+      if (entityPermittedNumbers.has(value)) return false;
+      return !(questionNumbers.has(value) && explicitlyRejectsNumber(args.answer, value));
+    });
+    if (unbound.length) errors.push(`unbound_entity_numbers:${unbound.join(',')}`);
+  }
+
   for (const criterion of args.criteria ?? []) {
     if (!used.includes(criterion.evidence_id)) errors.push(`numeric_criterion_evidence_omission:${criterion.evidence_id}`);
     if (!answerNumbers(args.answer).includes(String(criterion.threshold))) errors.push(`numeric_criterion_threshold_omission:${criterion.threshold}`);
   }
 
-  for (const endpoint of requiredRelationshipEndpoints(args.semantic, args.packet)) {
+  for (const endpoint of requiredRelationshipEndpoints(args.semantic, args.packet, args.question)) {
     if (!appearsAsEnumeratedResult(args.answer, endpoint.name)) {
       errors.push(`relationship_endpoint_not_enumerated:${endpoint.name}`);
     }

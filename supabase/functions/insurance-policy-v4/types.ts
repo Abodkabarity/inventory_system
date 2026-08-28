@@ -101,6 +101,22 @@ export type NumericDetermination = {
   explanation: string;
 };
 
+export type EntityBoundFact = {
+  subject: string;
+  subject_entity_ids: string[];
+  predicate: string;
+  value: string;
+  evidence_id: string;
+  binding: 'direct_structured_row' | 'explicit_single_entity_text';
+};
+
+export type FactManifest = {
+  target_medications: string[];
+  verified_facts: EntityBoundFact[];
+  verified_numeric_values: string[];
+  ambiguous_numeric_values: string[];
+};
+
 export type ProviderUsage = {
   provider: 'together' | 'groq_fallback';
   model: string;
