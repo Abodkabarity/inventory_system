@@ -39,7 +39,7 @@ export type RequestTrace = {
   http_status: number;
   answer_generator: string | null;
   recovery_of_audit_id: string | null;
-  recovery_attempt: 0 | 1;
+  recovery_attempt: number;
 };
 
 const compactText = (value: unknown, maximum = 800) => String(value ?? '').slice(0, maximum);

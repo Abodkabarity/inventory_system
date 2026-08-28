@@ -5,7 +5,7 @@ import { hasStrongVerifiedEvidence } from './fallback.ts';
 import { newRequestTrace, persistRequestTrace, type RequestTrace } from './diagnostics.ts';
 import { alignSemanticMedication, evaluateOrThresholdTimeWindows, renderDeterministicCriterionAnswer } from './criteria.ts';
 import { embedRetrievalQuery } from './embedding.ts';
-import { contractRelevantEvidence, deterministicGroundedSynthesis, feedbackObjective, guardUserOutput, hasPrematureAggregateClosure, initialSandboxFromContract, looksLikeRawStructuredOutput, mergeCanonicalTerms, missingSupportedRelationValues, preserveRetrievalSeeds, REASONING_ENGINE_VERSION, recoveryPlanFromSandbox, requiresAggregateCollection, semanticQuestionContract } from './reasoning_engine.ts';
+import { contractRelevantEvidence, deterministicGroundedSynthesis, feedbackObjective, guardUserOutput, hasPrematureAggregateClosure, initialSandboxFromContract, looksLikeRawStructuredOutput, mergeCanonicalTerms, missingSupportedRelationValues, nextRecoveryDepth, preserveRetrievalSeeds, REASONING_ENGINE_VERSION, recoveryPlanFromSandbox, requiresAggregateCollection, semanticQuestionContract } from './reasoning_engine.ts';
 import { preferredAnswerShouldReplace, relationSnapshot, semanticCachePayload, semanticCacheSignature, validatePreferredAnswerSources } from './validated_cache.ts';
 import { findVerifiedSemanticMemory, recordSemanticMemoryFeedback, storeVerifiedSemanticRecovery, type RecoveryHypothesis, type SemanticMemoryHint } from './semantic_recovery_memory.ts';
 import { extractVerifiedSearchStrategy, validatedLearningGate } from './validated_learning.ts';
@@ -284,6 +284,7 @@ async function legacyEvidence(db: DBClient, query: string, phrases: string[], hi
 
 type PipelineContext = {
   forceRecovery: boolean;
+  recoveryDepth: number;
   feedbackReason: string | null;
   originalAuditId: string | null;
   originalAnswer: string | null;
@@ -504,7 +505,7 @@ Deno.serve(async (request) => {
       return respond({ feedback_recorded: true, validated_cache_updated: result.cache_updated === true, semantic_memory_updated: result.semantic_memory_updated === true, preferred_source: result.preferred_source ?? null, insurance_v3: true });
     }
 
-    let pipelineContext: PipelineContext = { forceRecovery: false, feedbackReason: null, originalAuditId: null, originalAnswer: null, originalEvidence: null, originalCitations: null, originalSemantic: null, validatedCacheInvalidated: false };
+    let pipelineContext: PipelineContext = { forceRecovery: false, recoveryDepth: 0, feedbackReason: null, originalAuditId: null, originalAnswer: null, originalEvidence: null, originalCitations: null, originalSemantic: null, validatedCacheInvalidated: false };
     let question = String(body.message ?? '').trim();
     if (typeof body.feedback_message_id === 'string') {
       const feedbackMessageId = body.feedback_message_id;
@@ -516,10 +517,7 @@ Deno.serve(async (request) => {
       const { data: priorAudit } = await db.from('insurance_answer_audits').select('id,raw_question,structured_query,verified_entities,verified_evidence,final_citations,recovery_attempt').eq('message_id', feedbackMessageId).order('created_at', { ascending: false }).limit(1).maybeSingle();
       await applySemanticMemoryFeedback(db, memoryDb, feedbackMessageId, false);
       const validatedCacheInvalidated = await invalidateValidatedAnswerAfterNegativeFeedback(db, auth.user.id, priorAudit as Record<string, unknown> | null);
-      if (Number(priorAudit?.recovery_attempt ?? assistant.parsed_data?.recovery_depth ?? 0) >= 1) {
-        await db.from('insurance_feedback').upsert({ message_id: feedbackMessageId, user_id: auth.user.id, rating: -1, second_rating: -1, reason: String(body.feedback_reason ?? 'other'), updated_at: new Date().toISOString() }, { onConflict: 'message_id,user_id' });
-        return respond({ feedback_recorded: true, recovery_exhausted: true, validated_cache_invalidated: validatedCacheInvalidated, insurance_v3: true });
-      }
+      const recoveryDepth = nextRecoveryDepth(priorAudit?.recovery_attempt ?? assistant.parsed_data?.recovery_depth ?? 0);
       if (priorAudit?.raw_question) question = String(priorAudit.raw_question);
       else {
         const { data: userMessage } = await db.from('insurance_chat_messages').select('message').eq('session_id', assistant.session_id).eq('role', 'user').lte('created_at', assistant.created_at).order('created_at', { ascending: false }).limit(1).maybeSingle();
@@ -529,7 +527,7 @@ Deno.serve(async (request) => {
       const feedbackReason = ['incorrect', 'incomplete', 'misunderstood', 'wrong_source', 'other'].includes(String(body.feedback_reason)) ? String(body.feedback_reason) : 'other';
       await db.from('insurance_feedback').upsert({ message_id: feedbackMessageId, user_id: auth.user.id, rating: -1, reason: feedbackReason, updated_at: new Date().toISOString() }, { onConflict: 'message_id,user_id' });
       pipelineContext = {
-        forceRecovery: true, feedbackReason, originalAuditId: priorAudit?.id ? String(priorAudit.id) : null,
+        forceRecovery: true, recoveryDepth, feedbackReason, originalAuditId: priorAudit?.id ? String(priorAudit.id) : null,
         originalAnswer: String(assistant.message ?? ''), originalEvidence: priorAudit?.verified_evidence ?? assistant.citations ?? [],
         originalCitations: priorAudit?.final_citations ?? assistant.citations ?? [], originalSemantic: priorAudit?.structured_query ?? assistant.parsed_data?.semantic ?? null,
         validatedCacheInvalidated,
@@ -539,7 +537,7 @@ Deno.serve(async (request) => {
     if (!question || question.length > 1200) return respond({ error: 'A question of at most 1200 characters is required.' }, 400);
     trace = newRequestTrace(auth.user.id, question);
     trace.recovery_of_audit_id = pipelineContext.originalAuditId;
-    trace.recovery_attempt = pipelineContext.forceRecovery ? 1 : 0;
+    trace.recovery_attempt = pipelineContext.recoveryDepth;
     trace.recovery.feedback_reason = pipelineContext.feedbackReason;
     const objective = feedbackObjective(pipelineContext.feedbackReason);
     trace.providers.shared_reasoning_engine = {
@@ -979,7 +977,7 @@ Deno.serve(async (request) => {
           trace.candidates = units; trace.evidence = selection.selected; trace.sufficiency = sufficiency as unknown as Record<string, unknown> | null; trace.evidence_ledger = evidenceLedger as unknown as Record<string, unknown> | null; trace.providers = { ...trace.providers, ...aiDiagnostics(semanticResult, aiCalls, null) };
           trace.providers.reasoning_agent = { question_contract: questionContract, required_facets: questionContract.required_answer_facets, search_round_count: 1 + trace.recovery.iterations.length, search_hypotheses: trace.recovery.iterations.flatMap((entry) => Array.isArray(entry.searches) ? entry.searches : []), retrieved_evidence_count: selection.selected.length, evidence_coverage: evidenceLedger?.facets ?? [], missing_facets: evidenceLedger?.missing_facets ?? [], relation_direction: evidenceLedger?.detected_relation_direction ?? 'unknown', cross_document_search: evidenceLedger?.cross_document_search ?? false, semantic_expansion_used: true, semantic_memory_hit: Boolean(memoryHint), deep_review_reason: trace.recovery.reason, answer_verifier_result: null, answer_rejected_before_display: false, clarification_gate_result: currentClarificationGate, clarification_reason: recoveryPlan.diagnosis, provider_calls: (trace.providers.ai_calls as number | undefined) ?? 0, latency_ms: trace.latency.total_ms };
           trace.token_usage = trace.providers;
-          const saved = await saveConversation(db, body, question, answer, [], semantic, verifiedEntities, 'clarification_required', pipelineContext.forceRecovery ? 1 : 0);
+          const saved = await saveConversation(db, body, question, answer, [], semantic, verifiedEntities, 'clarification_required', pipelineContext.recoveryDepth);
           trace.session_id = saved.session_id; trace.message_id = saved.message_id;
           await persistRequestTrace(db, trace);
           return respond({ ...saved, answer, citations: [], answer_status: 'clarification_required', insurance_v3: true, recovery_used: true, debug: debugRequested ? { request_id: trace.request_id, semantic_interpretation: semantic, question_contract: questionContract, evidence_ledger: evidenceLedger, recovery: trace.recovery, ai: trace.providers } : undefined });
@@ -1196,7 +1194,7 @@ Deno.serve(async (request) => {
           clarification_reason: 'two_or_more_material_contract_interpretations_after_bounded_search',
           provider_calls: (trace.providers.ai_calls as number | undefined) ?? 0, latency_ms: trace.latency.total_ms,
         };
-        const saved = await saveConversation(db, body, question, answer, [], semantic, verifiedEntities, 'clarification_required', pipelineContext.forceRecovery ? 1 : 0);
+        const saved = await saveConversation(db, body, question, answer, [], semantic, verifiedEntities, 'clarification_required', pipelineContext.recoveryDepth);
         trace.session_id = saved.session_id; trace.message_id = saved.message_id;
         await persistRequestTrace(db, trace);
         return respond({ ...saved, answer, citations: [], answer_status: 'clarification_required', insurance_v3: true, recovery_used: trace.recovery.activated,
@@ -1214,7 +1212,7 @@ Deno.serve(async (request) => {
       trace.final_status = 'insufficient_evidence'; trace.final_answer = answer; trace.final_reason = 'normal_and_bounded_recovery_exhausted'; trace.latency.total_ms = Date.now() - started;
       trace.providers = { ...trace.providers, ...aiDiagnostics(semanticResult, aiCalls, null) }; trace.token_usage = trace.providers;
       trace.providers.reasoning_agent = { question_contract: questionContract, required_facets: questionContract.required_answer_facets, search_round_count: 1 + trace.recovery.iterations.length, search_hypotheses: [...questionContract.initial_search_hypotheses, ...trace.recovery.iterations.flatMap((entry) => Array.isArray(entry.searches) ? entry.searches : [])], retrieved_evidence_count: selection.selected.length, evidence_coverage: evidenceLedger?.facets ?? [], missing_facets: evidenceLedger?.missing_facets ?? questionContract.required_answer_facets.map((facet) => facet.id), relation_direction: evidenceLedger?.detected_relation_direction ?? 'unknown', cross_document_search: evidenceLedger?.cross_document_search ?? false, semantic_expansion_used: trace.recovery.activated, semantic_memory_hit: Boolean(memoryHint), deep_review_reason: trace.recovery.reason, answer_verifier_result: null, answer_rejected_before_display: false, clarification_reason: null, provider_calls: (trace.providers.ai_calls as number | undefined) ?? 0, latency_ms: trace.latency.total_ms };
-      const saved = await saveConversation(db, body, question, answer, [], semantic, verifiedEntities, 'insufficient_evidence', pipelineContext.forceRecovery ? 1 : 0);
+      const saved = await saveConversation(db, body, question, answer, [], semantic, verifiedEntities, 'insufficient_evidence', pipelineContext.recoveryDepth);
       trace.session_id = saved.session_id; trace.message_id = saved.message_id;
       const auditId = await persistRequestTrace(db, trace);
       if (pipelineContext.forceRecovery && auditId) await db.from('insurance_learning_queue').insert({ audit_id: auditId, reason: 'negative_feedback', priority: 3, proposed_change: { request_id: trace.request_id, feedback_reason: pipelineContext.feedbackReason, recovery_exhausted: true } });
@@ -1364,7 +1362,7 @@ Deno.serve(async (request) => {
     const status = partialCoverage
       ? (trace.recovery.activated ? 'recovery_partial_grounded' : 'partial_grounded')
       : trace.recovery.activated ? (answerGenerator.includes('fallback') ? 'recovery_fallback' : 'recovery_grounded') : (answerGenerator.includes('fallback') ? 'grounded_fallback' : 'grounded');
-    const saved = await saveConversation(db, body, question, answer, citations, semantic, verifiedEntities, status, pipelineContext.forceRecovery ? 1 : 0);
+    const saved = await saveConversation(db, body, question, answer, citations, semantic, verifiedEntities, status, pipelineContext.recoveryDepth);
     trace.session_id = saved.session_id; trace.message_id = saved.message_id; trace.final_status = status; trace.final_answer = answer; trace.citations = citations; trace.final_reason = 'verified_answer_bearing_evidence'; trace.answer_generator = answerGenerator; trace.latency.answer_ms = answerResult.latency_ms; trace.latency.total_ms = Date.now() - started;
     trace.providers = { ...trace.providers, ...aiDiagnostics(semanticResult, aiCalls, (deterministicAnswer && pipelineContext.feedbackReason !== 'incomplete') || answerGenerator.includes('fallback') ? null : answerResult) }; trace.token_usage = trace.providers;
     trace.providers.semantic_recovery = {

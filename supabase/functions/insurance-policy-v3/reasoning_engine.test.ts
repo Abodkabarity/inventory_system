@@ -7,6 +7,7 @@ import {
   mergeCanonicalTerms,
   hasPrematureAggregateClosure,
   missingSupportedRelationValues,
+  nextRecoveryDepth,
   preserveRetrievalSeeds,
   REASONING_ENGINE_VERSION,
   recoveryPlanFromSandbox,
@@ -59,6 +60,13 @@ const sandbox: SemanticHypothesisSandbox = {
 Deno.test('A same semantic request uses one engine identity for Normal Incorrect and Incomplete', () => {
   const ids = ['normal', 'incorrect', 'incomplete'].map(() => REASONING_ENGINE_VERSION);
   assert(new Set(ids).size === 1, 'feedback paths must share one semantic engine id');
+});
+
+Deno.test('A1 every negative-feedback click advances to a new recovery depth without a fixed retry ceiling', () => {
+  const first = nextRecoveryDepth(0);
+  const second = nextRecoveryDepth(first);
+  const third = nextRecoveryDepth(second);
+  assert(first === 1 && second === 2 && third === 3, 'recovery depth did not advance for every click');
 });
 
 Deno.test('A2 semantic output compiles a multi-part open-vocabulary contract without a second AI call', () => {
@@ -165,7 +173,7 @@ Deno.test('I feedback objectives differ while the reasoning implementation remai
   const normal = feedbackObjective(null); const incorrect = feedbackObjective('incorrect'); const incomplete = feedbackObjective('incomplete');
   assert(!normal.reconsider_interpretation && incorrect.reconsider_interpretation, 'Incorrect objective did not change');
   assert(incomplete.preserve_supported_previous_facts && !incorrect.preserve_supported_previous_facts, 'Incomplete objective did not change');
-  assert(REASONING_ENGINE_VERSION === 'insurance-v3-shared-reasoning-v171', 'shared engine signature changed unexpectedly');
+  assert(REASONING_ENGINE_VERSION === 'insurance-v3-shared-reasoning-v174', 'shared engine signature changed unexpectedly');
 });
 
 Deno.test('C2 generated aggregate answer cannot omit a verified relationship or claim premature closure', () => {
