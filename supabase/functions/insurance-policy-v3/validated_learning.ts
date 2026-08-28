@@ -29,6 +29,7 @@ export function validatedLearningGate(
   const finalAnswerVerified = verifier.final_answer_verified === true
     || (verifier.answer_usable === true && verifier.answer_rejected_before_display !== true);
   if (!finalAnswerVerified) reasons.push('answer_verifier_not_passed');
+  if (verifier.relation_paths_verified === false) reasons.push('relationship_paths_not_verified');
   if (String(audit.answer_generator ?? '').includes('fallback') || audit.fallback_used) reasons.push('fallback_answer_not_learnable');
   if (shared.raw_json_blocked === true || shared.raw_evidence_dump_blocked === true) reasons.push('unsafe_output_was_blocked');
   if (shared.provider_failure_stage) reasons.push('provider_failure_during_reasoning');

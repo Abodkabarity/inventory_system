@@ -1,7 +1,7 @@
 import type { EvidenceLedger, QuestionContract, RecoveryPlan, SemanticHypothesisSandbox } from './ai.ts';
 import type { V3Chunk } from './retrieval.ts';
 
-export const REASONING_ENGINE_VERSION = 'insurance-v3-shared-reasoning-v162';
+export const REASONING_ENGINE_VERSION = 'insurance-v3-shared-reasoning-v165';
 
 export type FeedbackObjectiveName = 'normal' | 'incorrect' | 'incomplete' | 'misunderstood';
 export type FeedbackObjective = {
@@ -158,8 +158,12 @@ export function deterministicGroundedSynthesis(
   const missingText = missing.length === 0 ? '' : arabic
     ? `\n\nلم تثبت الأدلة: ${missing.join('؛ ')}.`
     : `\n\nThe evidence does not establish: ${missing.join('; ')}.`;
+  const aggregatePartial = contract.answer_cardinality === 'aggregate' && ledger.aggregation_complete !== true;
+  const aggregateText = !aggregatePartial ? '' : arabic
+    ? '\n\nهذه هي النتائج التي ثبتت بالأدلة المتاحة؛ ولم يثبت اكتمال القائمة.'
+    : '\n\nThese are the matches established by the available evidence; completeness of the list was not established.';
   return {
-    answer: `${heading}\n${bullets.join('\n')}${missingText}`.trim(),
+    answer: `${heading}\n${bullets.join('\n')}${missingText}${aggregateText}`.trim(),
     used_evidence_ids: [...usedIndexes].sort((a, b) => a - b).map((index) => `E${index + 1}`),
   };
 }

@@ -18,7 +18,7 @@ function assert(condition: unknown, message: string) {
 const contract: QuestionContract = {
   original_question: 'Synthetic reverse collection request', primary_subject: 'Synthetic specialty', secondary_subjects: [],
   requested_relationships: [{ subject: 'Synthetic specialty', relation: 'eligible policies', object: null, direction: 'reverse' }],
-  required_answer_facets: [{ id: 'f1', description: 'eligible policy list', required: true }],
+  required_answer_facets: [{ id: 'f1', description: 'eligible policy list', requested_type: 'policy', required: true }],
   comparison_axes: [], constraints: [], patient_facts: [], ambiguities: [], expected_answer_type: 'list', answer_cardinality: 'aggregate', source_requirement: true,
   initial_search_hypotheses: [{ query: 'synthetic specialty eligible policies', mode: 'all', concepts: ['synthetic specialty'], relationship_direction: 'reverse' }],
 };
@@ -37,7 +37,7 @@ const evidence = [
 ];
 
 const ledger: EvidenceLedger = {
-  status: 'complete', facets: [{ facet_id: 'f1', status: 'supported', evidence_ids: ['e1', 'e2'], explanation: 'Two verified matches.' }],
+  status: 'complete', facets: [{ facet_id: 'f1', status: 'supported', evidence_ids: ['e1', 'e2'], relation_paths: [], explanation: 'Two verified matches.' }],
   missing_facets: [], relation_direction_preserved: true, detected_relation_direction: 'reverse', cross_document_search: true,
   aggregation_complete: true, matched_subjects: ['Policy Alpha', 'Policy Beta'], next_searches: [], reason: 'Bounded collection complete.',
 };
@@ -72,8 +72,8 @@ Deno.test('C reverse lookup retains relevant matches from multiple documents', (
 Deno.test('D aggregate request does not treat its first match as inherently complete', async () => {
   assert(requiresAggregateCollection(contract), 'aggregate cardinality was not recognized');
   const pipeline = await Deno.readTextFile(new URL('./index.ts', import.meta.url));
-  assert(pipeline.includes('const maximumRecoveryIterations = aggregateRequested ? 3'), 'bounded aggregate collection is not enabled');
-  assert(pipeline.includes('iteration > 1 || materiallyNewCandidates === 0'), 'first new match can still terminate collection');
+  assert(pipeline.includes('maximumAggregateRecoveryIterations'), 'bounded aggregate collection is not enabled');
+  assert(pipeline.includes('aggregationBudgetExhausted'), 'aggregate exhaustion is not recorded explicitly');
 });
 
 Deno.test('E provider answer failure after verified evidence yields grounded natural language', () => {
@@ -96,7 +96,7 @@ Deno.test('G irrelevant neighboring rows are excluded from final evidence', () =
 });
 
 Deno.test('H genuinely missing evidence returns a precise insufficient statement', () => {
-  const missingLedger: EvidenceLedger = { ...ledger, status: 'insufficient', facets: [{ facet_id: 'f1', status: 'missing', evidence_ids: [], explanation: 'Absent.' }], missing_facets: ['f1'], aggregation_complete: true };
+  const missingLedger: EvidenceLedger = { ...ledger, status: 'insufficient', facets: [{ facet_id: 'f1', status: 'missing', evidence_ids: [], relation_paths: [], explanation: 'Absent.' }], missing_facets: ['f1'], aggregation_complete: true };
   const result = deterministicGroundedSynthesis(contract.original_question, contract, missingLedger, []);
   assert(result.answer.includes('The evidence does not establish: eligible policy list.'), 'missing evidence was not reported safely');
 });
@@ -105,5 +105,5 @@ Deno.test('I feedback objectives differ while the reasoning implementation remai
   const normal = feedbackObjective(null); const incorrect = feedbackObjective('incorrect'); const incomplete = feedbackObjective('incomplete');
   assert(!normal.reconsider_interpretation && incorrect.reconsider_interpretation, 'Incorrect objective did not change');
   assert(incomplete.preserve_supported_previous_facts && !incorrect.preserve_supported_previous_facts, 'Incomplete objective did not change');
-  assert(REASONING_ENGINE_VERSION === 'insurance-v3-shared-reasoning-v162', 'shared engine signature changed unexpectedly');
+  assert(REASONING_ENGINE_VERSION === 'insurance-v3-shared-reasoning-v165', 'shared engine signature changed unexpectedly');
 });

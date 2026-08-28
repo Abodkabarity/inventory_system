@@ -47,7 +47,7 @@ test('Incorrect and Incomplete feedback contracts remain available', () => {
   assert.match(pipeline, /preserve_supported_previous_facts: objective\.preserve_supported_previous_facts/);
   assert.match(engine, /require_alternative_semantic_hypotheses/);
   assert.match(pipeline, /feedback_reason: pipelineContext\.feedbackReason/);
-  assert.match(pipeline, /maximumRecoveryIterations = aggregateRequested \? 3 : pipelineContext\.forceRecovery \? 2 : 1/);
+  assert.match(pipeline, /maximumRecoveryIterations = aggregateRequested \? maximumAggregateRecoveryIterations : pipelineContext\.forceRecovery \? 2 : 1/);
   assert.match(pipeline, /semanticRequestedRecovery \|\| pipelineContext\.forceRecovery/);
   assert.match(pipeline, /pipelineContext\.forceRecovery && recoveryPlan\.decision !== 'search'/);
 });
@@ -76,7 +76,8 @@ test('table evidence retains headers, rows, footnotes, and table title', () => {
 });
 
 test('clarification is blocked when retrieval is difficult but material ambiguity is absent', () => {
-  assert.match(pipeline, /materialInterpretations\.length < 2/);
+  assert.match(pipeline, /clarificationGate\(questionContract, semantic\)/);
+  assert.match(pipeline, /!currentClarificationGate\.allow_clarification/);
   assert.match(pipeline, /Retrieval difficulty is not material user ambiguity/);
 });
 
