@@ -163,7 +163,7 @@ Deno.test('I feedback objectives differ while the reasoning implementation remai
   const normal = feedbackObjective(null); const incorrect = feedbackObjective('incorrect'); const incomplete = feedbackObjective('incomplete');
   assert(!normal.reconsider_interpretation && incorrect.reconsider_interpretation, 'Incorrect objective did not change');
   assert(incomplete.preserve_supported_previous_facts && !incorrect.preserve_supported_previous_facts, 'Incomplete objective did not change');
-  assert(REASONING_ENGINE_VERSION === 'insurance-v3-shared-reasoning-v170', 'shared engine signature changed unexpectedly');
+  assert(REASONING_ENGINE_VERSION === 'insurance-v3-shared-reasoning-v171', 'shared engine signature changed unexpectedly');
 });
 
 Deno.test('J first-pass search reuses the AI question contract without a duplicate AI planning call', () => {
@@ -171,4 +171,23 @@ Deno.test('J first-pass search reuses the AI question contract without a duplica
   assert(initial.hypotheses.length === contract.initial_search_hypotheses.length, 'contract hypotheses were not preserved');
   assert(initial.hypotheses[0].relationship_direction === 'reverse', 'relationship direction was not preserved');
   assert(initial.hypotheses[0].kind === 'reverse_relation', 'reverse search was not classified for execution');
+});
+
+Deno.test('K partial AI semantics retain every relationship as a typed facet and search hypothesis', () => {
+  const semantic: SemanticInterpretation = {
+    route: 'clarification_required', medication: null, generic: null, drug_class: null, indication: null,
+    intent: [], requested_dimensions: [], semantic_facets: [],
+    semantic_relationships: [
+      { subject: 'Professional S', relation: 'may manage', object: 'treatments', direction: 'unknown' },
+      { subject: 'Professional S', relation: 'is referenced by', object: 'policies', direction: 'unknown' },
+    ],
+    answer_cardinality: 'aggregate', treatment_stage: null, semantic_intent: null,
+    requested_information: null, information_need: null, retrieval_queries: [], search_concepts: [],
+    search_phrases: [], search_query: null, negation: [], temporal_context: null, facts: [], source_requested: false,
+  };
+  const compiled = semanticQuestionContract('Synthetic relationship lookup', semantic, []);
+  assert(compiled.primary_subject === 'Professional S', 'AI relationship subject was not retained');
+  assert(compiled.required_answer_facets.length === 2, 'partial AI relationships did not become atomic facets');
+  assert(compiled.required_answer_facets.map((facet) => facet.requested_type).join(',') === 'treatments,policies', 'relationship endpoint types were lost');
+  assert(compiled.initial_search_hypotheses.length === 3, 'relationship searches were not added to literal search');
 });

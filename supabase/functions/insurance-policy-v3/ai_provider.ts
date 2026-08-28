@@ -124,6 +124,15 @@ export function providerRequestBody(provider: AIProviderName, request: AIRequest
     temperature: 0,
     reasoning_effort: 'low',
   };
+  const strictFallbackFormat = request.together_response_format?.type === 'json_schema'
+    ? {
+      ...request.together_response_format,
+      json_schema: {
+        ...(request.together_response_format.json_schema as Record<string, unknown>),
+        strict: true,
+      },
+    }
+    : request.response_format;
   return provider === 'together'
     ? {
       ...common,
@@ -135,7 +144,10 @@ export function providerRequestBody(provider: AIProviderName, request: AIRequest
     }
     : {
       ...common,
-      response_format: request.response_format,
+      // GPT-OSS 120B supports constrained JSON Schema output on Groq. Reusing
+      // the request schema prevents fallback from returning shape-valid JSON
+      // that is incomplete for the insurance pipeline.
+      response_format: strictFallbackFormat,
       messages: request.messages,
       include_reasoning: false,
       max_completion_tokens: request.maxOutputTokens,

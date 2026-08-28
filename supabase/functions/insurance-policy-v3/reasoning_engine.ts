@@ -1,7 +1,7 @@
 import type { EvidenceLedger, QuestionContract, RecoveryPlan, SemanticHypothesisSandbox } from './ai.ts';
 import type { HybridSearchUnit, SemanticInterpretation, V3Chunk, V3Entity } from './retrieval.ts';
 
-export const REASONING_ENGINE_VERSION = 'insurance-v3-shared-reasoning-v170';
+export const REASONING_ENGINE_VERSION = 'insurance-v3-shared-reasoning-v171';
 
 export function semanticQuestionContract(
   question: string,
@@ -11,33 +11,46 @@ export function semanticQuestionContract(
   const dimensions = [...new Set((semantic.requested_dimensions ?? []).map((value) => String(value).trim()).filter(Boolean))];
   const fallbackNeed = String(semantic.requested_information ?? semantic.information_need ?? semantic.semantic_intent ?? question).trim();
   const semanticFacets = semantic.semantic_facets ?? [];
+  const semanticRelationships = semantic.semantic_relationships ?? [];
   const facets = semanticFacets.length > 0
     ? semanticFacets.map((facet, index) => ({ id: `semantic_facet_${index + 1}`, description: facet.description, requested_type: facet.requested_type, required: true }))
+    : semanticRelationships.length > 0
+    ? semanticRelationships.map((relationship, index) => ({
+      id: `semantic_relation_facet_${index + 1}`,
+      description: [relationship.subject, relationship.relation, relationship.object].filter(Boolean).join(' '),
+      requested_type: String(relationship.object ?? relationship.relation), required: true,
+    }))
     : dimensions.length > 0
     ? dimensions.map((description, index) => ({ id: `semantic_facet_${index + 1}`, description, requested_type: description, required: true }))
     : [{ id: 'semantic_information_need', description: fallbackNeed, requested_type: fallbackNeed, required: true }];
   const primarySubject = entities[0]?.canonical_name
     ?? semantic.medication ?? semantic.generic ?? semantic.drug_class ?? semantic.indication
-    ?? semantic.search_concepts?.[0] ?? semantic.intent?.[0] ?? fallbackNeed;
+    ?? semanticRelationships[0]?.subject ?? semantic.search_concepts?.[0] ?? semantic.intent?.[0] ?? fallbackNeed;
   const intents = (semantic.intent ?? []).map((value) => String(value).trim()).filter(Boolean);
-  const relationships = (semantic.semantic_relationships?.length ? semantic.semantic_relationships : intents.map((intent, index) => ({
+  const relationships = (semanticRelationships.length ? semanticRelationships : intents.map((intent, index) => ({
     subject: String(primarySubject).slice(0, 240), relation: intent.slice(0, 240),
     object: dimensions[index] ?? dimensions[0] ?? null, direction: 'unknown' as const,
   }))).slice(0, 8);
+  const relationshipHypotheses = relationships.map((relationship) => ({
+    query: [relationship.subject, relationship.relation, relationship.object].filter(Boolean).join(' ').slice(0, 500),
+    mode: 'all' as const,
+    concepts: [relationship.subject, relationship.relation, relationship.object].filter((value): value is string => Boolean(value)).slice(0, 10),
+    relationship_direction: relationship.direction === 'comparison' ? 'bidirectional' as const : relationship.direction,
+  })).filter((hypothesis) => hypothesis.query.length > 0);
   return {
     original_question: question, primary_subject: String(primarySubject).slice(0, 500),
     secondary_subjects: entities.slice(1, 9).map((entity) => entity.canonical_name),
     requested_relationships: relationships, required_answer_facets: facets.slice(0, 12),
     comparison_axes: [], constraints: [],
     patient_facts: (semantic.facts ?? []).map((fact) => [fact.concept, fact.value, fact.unit, fact.temporal].filter((value) => value != null).join(' ')).slice(0, 12),
-    ambiguities: [], expected_answer_type: intents.length > 1 ? 'multi-part grounded response' : 'grounded response',
-    answer_cardinality: semantic.answer_cardinality ?? (intents.length > 1 && entities.length === 0 ? 'aggregate' : 'unknown'),
+    ambiguities: [], expected_answer_type: Math.max(intents.length, relationships.length) > 1 ? 'multi-part grounded response' : 'grounded response',
+    answer_cardinality: semantic.answer_cardinality ?? (Math.max(intents.length, relationships.length) > 1 && entities.length === 0 ? 'aggregate' : 'unknown'),
     source_requirement: semantic.source_requested,
     initial_search_hypotheses: [{
-      query: question.slice(0, 500), mode: 'all',
+      query: question.slice(0, 500), mode: 'all' as const,
       concepts: [...new Set([...(semantic.search_concepts ?? []), ...entities.map((entity) => entity.canonical_name)])].slice(0, 10),
-      relationship_direction: 'unknown',
-    }],
+      relationship_direction: 'unknown' as const,
+    }, ...relationshipHypotheses].slice(0, 3),
   };
 }
 

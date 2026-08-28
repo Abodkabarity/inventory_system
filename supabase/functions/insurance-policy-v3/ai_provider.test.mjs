@@ -29,7 +29,8 @@ test('uses provider-specific token parameters and reserves Together reasoning ca
   assert.equal(together.reasoning_effort, 'low');
   assert.equal(groq.reasoning_effort, 'low');
   assert.equal(together.response_format.type, 'json_schema');
-  assert.equal(groq.response_format.type, 'json_object');
+  assert.equal(groq.response_format.type, 'json_schema');
+  assert.equal(groq.response_format.json_schema.strict, true);
 });
 
 test('captures the exact Groq diagnostic headers without authorization data', () => {
