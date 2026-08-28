@@ -1,3 +1,4 @@
+import { requiredRelationshipEndpoints } from './evidence.ts';
 import type { EvidenceBlock, NumericDetermination, ResolvedEntity, SemanticRequest, ValidationResult } from './types.ts';
 
 function normalize(value: string) {
@@ -7,6 +8,10 @@ function normalize(value: string) {
 function numbers(value: string) {
   const normalizedDigits = value.replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)));
   return [...new Set(normalizedDigits.match(/\d+(?:\.\d+)?/g) ?? [])];
+}
+
+function answerNumbers(value: string) {
+  return numbers(value.replace(/^\s*\d+[.)]\s+/gmu, ''));
 }
 
 function looksRawJson(answer: string) {
@@ -19,6 +24,14 @@ function mentionsPhrase(answer: string, phrase: string) {
   const normalizedPhrase = normalize(phrase);
   if (normalizedPhrase.length < 3) return false;
   return (` ${normalize(answer)} `).includes(` ${normalizedPhrase} `);
+}
+
+function appearsAsEnumeratedResult(answer: string, endpoint: string) {
+  const normalizedEndpoint = normalize(endpoint);
+  return answer.split(/\r?\n/).some((line) => {
+    if (!/^\s*(?:[-*•]|\d+[.)])\s+/u.test(line)) return false;
+    return (` ${normalize(line)} `).includes(` ${normalizedEndpoint} `);
+  });
 }
 
 function isEntityOverview(question: string, semantic: SemanticRequest, entities: ResolvedEntity[]) {
@@ -57,12 +70,18 @@ export function validateAnswer(args: {
 
   const citedText = args.packet.filter((item) => used.includes(item.id)).map((item) => item.text).join(' ');
   const permittedNumbers = new Set(numbers(`${args.question} ${citedText}`));
-  const unsupportedNumbers = numbers(args.answer).filter((value) => !permittedNumbers.has(value));
+  const unsupportedNumbers = answerNumbers(args.answer).filter((value) => !permittedNumbers.has(value));
   if (unsupportedNumbers.length) errors.push(`unsupported_numbers:${unsupportedNumbers.join(',')}`);
 
   for (const criterion of args.criteria ?? []) {
     if (!used.includes(criterion.evidence_id)) errors.push(`numeric_criterion_evidence_omission:${criterion.evidence_id}`);
-    if (!numbers(args.answer).includes(String(criterion.threshold))) errors.push(`numeric_criterion_threshold_omission:${criterion.threshold}`);
+    if (!answerNumbers(args.answer).includes(String(criterion.threshold))) errors.push(`numeric_criterion_threshold_omission:${criterion.threshold}`);
+  }
+
+  for (const endpoint of requiredRelationshipEndpoints(args.semantic, args.packet)) {
+    if (!appearsAsEnumeratedResult(args.answer, endpoint.name)) {
+      errors.push(`relationship_endpoint_not_enumerated:${endpoint.name}`);
+    }
   }
 
   const hasGold = args.packet.some((item) => item.gold);
@@ -102,7 +121,7 @@ export function validateAnswer(args: {
       const parts = item.text.split(/\n(?:Content|Rows):\s*\n/i);
       return parts.at(-1) ?? item.text;
     }).join('\n');
-    const missingGoldNumbers = numbers(goldText).filter((value) => !numbers(args.answer).includes(value));
+    const missingGoldNumbers = numbers(goldText).filter((value) => !answerNumbers(args.answer).includes(value));
     if (missingGoldNumbers.length) errors.push(`gold_numeric_omission:${[...new Set(missingGoldNumbers)].join(',')}`);
 
     const indications = structuredField(goldText, 'Indications').split(';').map((value) => value.trim()).filter(Boolean);

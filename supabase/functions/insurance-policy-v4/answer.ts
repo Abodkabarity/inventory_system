@@ -1,5 +1,5 @@
 import { callReasoningJson, ProvidersUnavailableError } from './ai_provider.ts';
-import { evidencePacketText } from './evidence.ts';
+import { evidencePacketText, requiredRelationshipEndpoints } from './evidence.ts';
 import type { EvidenceBlock, JsonMap, NumericDetermination, ProviderUsage, ResolvedEntity, SemanticRequest } from './types.ts';
 
 const ANSWER_SYSTEM = `You answer questions about institutional insurance policies using ONLY the approved evidence packet supplied in this request.
@@ -13,7 +13,8 @@ Rules:
 6. Preserve medication identity, numbers, units, AND/OR, initiation/continuation/refill, negation, and time windows exactly.
 7. If approved evidence conflicts, state the conflict. If only part is supported, answer it and identify only the unsupported part.
 8. For multiple or aggregate results, cover every materially relevant owning document in the packet. If completeness is not proven exhaustive, say the retrieved approved evidence supports the listed matches; never claim they are the only matches.
-9. Do not mention evidence IDs inside the answer prose and do not output raw JSON as prose.
+9. When MANDATORY RELATIONSHIP ENDPOINTS are supplied, every endpoint must appear as its own bullet or numbered result. A document mention in surrounding prose does not satisfy this requirement.
+10. Do not mention evidence IDs inside the answer prose and do not output raw JSON as prose.
 
 Return JSON only with:
 {"answer":"natural-language answer","used_evidence_ids":["E1"]}
@@ -44,7 +45,8 @@ function payload(
   packet: EvidenceBlock[],
   criteria: NumericDetermination[],
 ) {
-  return `ORIGINAL QUESTION:\n${question}\n\nSEMANTIC INTERPRETATION:\n${JSON.stringify(semantic)}\n\nVERIFIED ENTITIES:\n${JSON.stringify(entities)}\n\nDETERMINISTIC NUMERIC RESULTS (use only when present and explain from cited evidence):\n${JSON.stringify(criteria)}\n\nAPPROVED EVIDENCE PACKET:\n${evidencePacketText(packet)}`;
+  const endpoints = requiredRelationshipEndpoints(semantic, packet);
+  return `ORIGINAL QUESTION:\n${question}\n\nSEMANTIC INTERPRETATION:\n${JSON.stringify(semantic)}\n\nVERIFIED ENTITIES:\n${JSON.stringify(entities)}\n\nMANDATORY RELATIONSHIP ENDPOINTS (each must be a separate bullet/numbered result and supported by its listed evidence IDs):\n${JSON.stringify(endpoints)}\n\nDETERMINISTIC NUMERIC RESULTS (use only when present and explain from cited evidence):\n${JSON.stringify(criteria)}\n\nAPPROVED EVIDENCE PACKET:\n${evidencePacketText(packet)}`;
 }
 
 export async function generateAnswer(

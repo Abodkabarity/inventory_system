@@ -120,3 +120,34 @@ test('numeric determination requires its threshold and evidence in the answer', 
   });
   assert.ok(result.errors.includes('numeric_criterion_threshold_omission:12'));
 });
+
+test('reverse specialty answer cannot hide one treatment in document prose', () => {
+  const reversePacket = [
+    { ...packet[0], id: 'E1', document_id: 'ppi', document_title: 'What you should know about the PPI coverage', text: 'Eligible Clinician Specialty: Otolaryngology' },
+    { ...packet[0], id: 'E2', document_id: 'oma', document_title: 'Omalizumab Overview', text: 'Eligible clinical specialties for Omalizumab: Otolaryngology' },
+  ];
+  const reverseSemantic: SemanticRequest = {
+    ...semantic, entities: ['Otolaryngology'], relationship_direction: 'specialty_to_treatment', answer_cardinality: 'multiple',
+  };
+  const result = validateAnswer({
+    answer: 'Omalizumab is supported. The PPI coverage document also mentions Otolaryngology.',
+    usedEvidenceIds: ['E1', 'E2'], question: 'Which treatments can an ENT doctor prescribe?',
+    semantic: reverseSemantic, entities: [], packet: reversePacket,
+  });
+  assert.ok(result.errors.includes('relationship_endpoint_not_enumerated:PPI'));
+  assert.ok(result.errors.includes('relationship_endpoint_not_enumerated:Omalizumab'));
+});
+
+test('reverse specialty answer passes when every endpoint is an explicit result', () => {
+  const reversePacket = [
+    { ...packet[0], id: 'E1', document_id: 'ppi', document_title: 'What you should know about the PPI coverage', text: 'Eligible Clinician Specialty: Otolaryngology' },
+    { ...packet[0], id: 'E2', document_id: 'oma', document_title: 'Omalizumab Overview', text: 'Eligible clinical specialties for Omalizumab: Otolaryngology' },
+  ];
+  const result = validateAnswer({
+    answer: 'The retrieved evidence supports:\n1. PPI — Otolaryngology is eligible.\n2. Omalizumab — Otolaryngology is eligible.',
+    usedEvidenceIds: ['E1', 'E2'], question: 'Which treatments can an ENT doctor prescribe?',
+    semantic: { ...semantic, entities: ['Otolaryngology'], relationship_direction: 'specialty_to_policy', answer_cardinality: 'multiple' },
+    entities: [], packet: reversePacket,
+  });
+  assert.equal(result.valid, true);
+});

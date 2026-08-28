@@ -17,9 +17,24 @@ function directEntityMatch(unit: SearchUnit, entities: ResolvedEntity[]) {
   });
 }
 
+const SEMANTIC_ENTITY_STOP_TERMS = new Set([
+  'doctor', 'doctors', 'clinician', 'clinicians', 'specialist', 'specialists', 'specialty', 'specialties',
+  'treatment', 'treatments', 'medicine', 'medicines', 'medication', 'medications', 'drug', 'drugs',
+  'policy', 'policies', 'document', 'documents', 'coverage', 'rule', 'rules',
+  'طبيب', 'أطباء', 'تخصص', 'تخصصات', 'علاج', 'علاجات', 'دواء', 'أدوية', 'سياسة', 'سياسات', 'وثيقة', 'وثائق', 'تغطية',
+]);
+
+function semanticFocusTerms(semantic: SemanticRequest) {
+  return semantic.entities.filter((term) => {
+    const normalized = normalize(term);
+    if (normalized.length < 3 || SEMANTIC_ENTITY_STOP_TERMS.has(normalized)) return false;
+    return normalized.split(' ').some((token) => !SEMANTIC_ENTITY_STOP_TERMS.has(token));
+  });
+}
+
 function semanticFocusMatchCount(unit: SearchUnit, semantic: SemanticRequest) {
   const text = ` ${normalize(`${unit.document_title} ${unit.section_title ?? ''} ${unit.table_title ?? ''} ${unit.retrieval_text}`)} `;
-  return semantic.entities.filter((term) => {
+  return semanticFocusTerms(semantic).filter((term) => {
     const normalized = normalize(term);
     return normalized.length >= 3 && text.includes(` ${normalized} `);
   }).length;
@@ -182,6 +197,35 @@ export function evidencePacketText(packet: EvidenceBlock[]) {
       : block.sheet_name ? `Sheet: ${block.sheet_name}; Row: ${block.row_from ?? 'n/a'}${block.row_to && block.row_to !== block.row_from ? `-${block.row_to}` : ''}` : 'Location: source record';
     return `${block.id}\nDocument: ${block.document_title}\n${location}\nSection: ${block.section ?? 'n/a'}\nType: ${block.evidence_type}${block.gold ? ' (GOLD DIRECT EVIDENCE)' : ''}\n\n${block.text}`;
   }).join('\n\n---\n\n');
+}
+
+function endpointLabel(documentTitle: string) {
+  const stripped = documentTitle
+    .replace(/^what you should know about\s+(?:the\s+)?/iu, '')
+    .replace(/\b(?:overview|coverage|policy|summary|tables?)\b/giu, ' ')
+    .replace(/\b(?:updated|update)\b.*$/iu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return stripped.length >= 2 ? stripped : documentTitle.trim();
+}
+
+export function requiredRelationshipEndpoints(semantic: SemanticRequest, packet: EvidenceBlock[]) {
+  if (semantic.answer_cardinality === 'single' || !/^specialty_to_/iu.test(semantic.relationship_direction)) return [];
+  const endpoints = new Map<string, { name: string; document_title: string; evidence_ids: string[] }>();
+  for (const block of packet) {
+    const name = endpointLabel(block.document_title);
+    const key = normalize(name);
+    const existing = endpoints.get(key);
+    if (existing) {
+      existing.evidence_ids.push(block.id);
+    } else {
+      endpoints.set(key, { name, document_title: block.document_title, evidence_ids: [block.id] });
+    }
+  }
+  return [...endpoints.values()].map((endpoint) => ({
+    ...endpoint,
+    evidence_ids: [...new Set(endpoint.evidence_ids)],
+  }));
 }
 
 export function citationsFor(packet: EvidenceBlock[], usedIds: string[]): Citation[] {

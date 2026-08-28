@@ -52,6 +52,22 @@ test('multiple-result selection keeps only documents with a direct semantic enti
   assert.deepEqual(new Set(selected.map((item) => item.document_id)), new Set(['a', 'b']));
 });
 
+test('generic AI entity words cannot anchor unrelated reverse-lookup documents', () => {
+  const reverseSemantic = {
+    ...semantic,
+    entities: ['ENT doctor', 'otolaryngology', 'treatments', 'policies'],
+    relationship_direction: 'specialty_to_policy',
+    answer_cardinality: 'multiple' as const,
+  };
+  const candidates = [
+    unit('ppi', { document_id: 'ppi', retrieval_text: 'Eligible clinician specialty: Otolaryngology' }),
+    unit('omalizumab', { document_id: 'oma', retrieval_text: 'Omalizumab eligible specialties: Otolaryngology' }),
+    unit('noise', { document_id: 'noise', retrieval_text: 'Policy notes for unrelated treatments', hybrid_rrf_score: 3 }),
+  ];
+  const selected = chooseEvidenceUnits(candidates, reverseSemantic, []);
+  assert.deepEqual(new Set(selected.map((item) => item.document_id)), new Set(['ppi', 'oma']));
+});
+
 test('an unverified named subject with no direct textual match is missing evidence', () => {
   const missing = { ...semantic, entities: ['Absent Subject'] };
   assert.deepEqual(chooseEvidenceUnits([unit('noise')], missing, []), []);
