@@ -5,6 +5,8 @@ import {
   guardUserOutput,
   initialSandboxFromContract,
   mergeCanonicalTerms,
+  hasPrematureAggregateClosure,
+  missingSupportedRelationValues,
   preserveRetrievalSeeds,
   REASONING_ENGINE_VERSION,
   recoveryPlanFromSandbox,
@@ -164,6 +166,25 @@ Deno.test('I feedback objectives differ while the reasoning implementation remai
   assert(!normal.reconsider_interpretation && incorrect.reconsider_interpretation, 'Incorrect objective did not change');
   assert(incomplete.preserve_supported_previous_facts && !incorrect.preserve_supported_previous_facts, 'Incomplete objective did not change');
   assert(REASONING_ENGINE_VERSION === 'insurance-v3-shared-reasoning-v171', 'shared engine signature changed unexpectedly');
+});
+
+Deno.test('C2 generated aggregate answer cannot omit a verified relationship or claim premature closure', () => {
+  const relationshipLedger: EvidenceLedger = {
+    ...ledger,
+    aggregation_complete: false,
+    facets: [{
+      ...ledger.facets[0],
+      relation_paths: [
+        { facet_id: 'f1', value: 'Treatment Alpha', source_node_id: 's1', endpoint_node_id: 'e1', nodes: [], edges: [], evidence_ids: ['e1'], status: 'supported', rejection_reason: null },
+        { facet_id: 'f1', value: 'Treatment Beta', source_node_id: 's2', endpoint_node_id: 'e2', nodes: [], edges: [], evidence_ids: ['e2'], status: 'supported', rejection_reason: null },
+      ],
+    }],
+  };
+  const incomplete = 'Treatment Alpha is supported. No other policy documents were found.';
+  assert(missingSupportedRelationValues(incomplete, relationshipLedger).includes('Treatment Beta'), 'omitted verified relationship was not detected');
+  assert(hasPrematureAggregateClosure(incomplete, contract, relationshipLedger), 'premature aggregate closure was not detected');
+  const fallback = deterministicGroundedSynthesis(contract.original_question, contract, relationshipLedger, evidence);
+  assert(fallback.answer.includes('Treatment Alpha') && fallback.answer.includes('Treatment Beta'), 'grounded fallback omitted a verified relationship');
 });
 
 Deno.test('J first-pass search reuses the AI question contract without a duplicate AI planning call', () => {

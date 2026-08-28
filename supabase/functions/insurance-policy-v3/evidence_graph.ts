@@ -11,6 +11,29 @@ const structuralScopeKeys = [
 
 const contextBinding = (chunk: V3Chunk) => String(chunk.metadata.context_binding ?? '') === 'same_document_owner_context';
 
+export function selectDocumentOwnerContexts<T extends V3Chunk>(owners: T[], limitPerDocument = 2) {
+  const selected: T[] = [];
+  const byDocument = new Map<string, T[]>();
+  for (const owner of owners) byDocument.set(owner.document_id, [...(byDocument.get(owner.document_id) ?? []), owner]);
+  for (const documentOwners of byDocument.values()) {
+    const add = (owner: T | undefined) => {
+      if (owner && !selected.some((item) => item.chunk_id === owner.chunk_id)
+        && selected.filter((item) => item.document_id === owner.document_id).length < limitPerDocument) selected.push(owner);
+    };
+    // Keep the strongest query-specific context, then reserve one slot for the
+    // earliest document-level page. This prevents duplicate eligibility pages
+    // from crowding out the policy subject/treatment needed to bind a row to
+    // what its document actually governs.
+    add(documentOwners[0]);
+    const firstPage = [...documentOwners]
+      .filter((owner) => String(owner.metadata.owner_unit_type ?? '') === 'page')
+      .sort((left, right) => left.page_from - right.page_from || (left.chunk_index ?? 0) - (right.chunk_index ?? 0))[0];
+    add(firstPage);
+    for (const owner of documentOwners) add(owner);
+  }
+  return selected;
+}
+
 export function evidenceForContractInspection(evidence: V3Chunk[], limit = 12) {
   const direct = evidence.filter((chunk) => !contextBinding(chunk));
   const owners = evidence.filter(contextBinding);

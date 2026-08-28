@@ -5,6 +5,7 @@ import {
   clarificationGate,
   evidenceForContractInspection,
   preserveEvidenceLedgerOnProviderFailure,
+  selectDocumentOwnerContexts,
   validateDocumentRelationshipBindings,
 } from './evidence_graph.ts';
 import type { SemanticInterpretation, V3Chunk } from './retrieval.ts';
@@ -237,4 +238,13 @@ Deno.test('TEST P: document owner context safely bridges different sections of o
   ];
   const result = validateDocumentRelationshipBindings(contract(), evidence, ledger([path('therapy_list', 'Treatment T', 'specialty-row', 'owner-context')]));
   assertEquals(result.ledger.facets[0].status, 'supported');
+});
+
+Deno.test('TEST Q: owner selection preserves the earliest policy-subject page beside the strongest eligibility page', () => {
+  const owners = [
+    chunk('ranked-page-2-a', 'D1', 'Eligible Specialty = Specialist S', 2, { context_binding: 'same_document_owner_context', owner_unit_type: 'page' }),
+    chunk('ranked-page-2-b', 'D1', 'Eligible Specialty = Specialist S duplicate layout', 2, { context_binding: 'same_document_owner_context', owner_unit_type: 'page' }),
+    chunk('policy-page-1', 'D1', 'This policy covers Treatment T.', 1, { context_binding: 'same_document_owner_context', owner_unit_type: 'page' }),
+  ];
+  assertEquals(selectDocumentOwnerContexts(owners, 2).map((item) => item.chunk_id), ['ranked-page-2-a', 'policy-page-1']);
 });

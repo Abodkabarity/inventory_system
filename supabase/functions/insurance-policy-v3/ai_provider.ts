@@ -5,7 +5,12 @@ const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 // Together counts hidden GPT-OSS reasoning inside max_tokens. Preserve the
 // validated visible-output budget while reserving room for low-effort reasoning.
 const TOGETHER_REASONING_TOKEN_RESERVE = 1024;
-const PROVIDER_TIMEOUT_MS = 24_000;
+const PROVIDER_TIMEOUT_MS: Record<AICallType, number> = {
+  semantic: 24_000,
+  rerank: 16_000,
+  recovery: 18_000,
+  'final-answer': 20_000,
+};
 
 export type AIProviderName = 'together' | 'groq_fallback';
 export type AICallType = 'semantic' | 'rerank' | 'recovery' | 'final-answer';
@@ -182,7 +187,7 @@ async function callProvider(provider: ProviderConfig, request: AIRequest, callTy
   const apiKey = Deno.env.get(provider.secretName);
   if (!apiKey) throw new AIProviderError(provider.name, null, false, 'not_configured');
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS[callType]);
   let response: Response;
   try {
     response = await fetch(provider.endpoint, {

@@ -5,11 +5,11 @@ import { hasStrongVerifiedEvidence } from './fallback.ts';
 import { newRequestTrace, persistRequestTrace, type RequestTrace } from './diagnostics.ts';
 import { alignSemanticMedication, evaluateOrThresholdTimeWindows, renderDeterministicCriterionAnswer } from './criteria.ts';
 import { embedRetrievalQuery } from './embedding.ts';
-import { contractRelevantEvidence, deterministicGroundedSynthesis, feedbackObjective, guardUserOutput, initialSandboxFromContract, looksLikeRawStructuredOutput, mergeCanonicalTerms, preserveRetrievalSeeds, REASONING_ENGINE_VERSION, recoveryPlanFromSandbox, requiresAggregateCollection, semanticQuestionContract } from './reasoning_engine.ts';
+import { contractRelevantEvidence, deterministicGroundedSynthesis, feedbackObjective, guardUserOutput, hasPrematureAggregateClosure, initialSandboxFromContract, looksLikeRawStructuredOutput, mergeCanonicalTerms, missingSupportedRelationValues, preserveRetrievalSeeds, REASONING_ENGINE_VERSION, recoveryPlanFromSandbox, requiresAggregateCollection, semanticQuestionContract } from './reasoning_engine.ts';
 import { preferredAnswerShouldReplace, relationSnapshot, semanticCachePayload, semanticCacheSignature, validatePreferredAnswerSources } from './validated_cache.ts';
 import { findVerifiedSemanticMemory, recordSemanticMemoryFeedback, storeVerifiedSemanticRecovery, type RecoveryHypothesis, type SemanticMemoryHint } from './semantic_recovery_memory.ts';
 import { extractVerifiedSearchStrategy, validatedLearningGate } from './validated_learning.ts';
-import { aggregateSearchState, clarificationGate, preserveEvidenceLedgerOnProviderFailure, type EvidenceGraphDiagnostics } from './evidence_graph.ts';
+import { aggregateSearchState, clarificationGate, preserveEvidenceLedgerOnProviderFailure, selectDocumentOwnerContexts, type EvidenceGraphDiagnostics } from './evidence_graph.ts';
 import { requestBudgetState } from './request_budget.ts';
 import {
   buildRetrievalPlan, enforceRouteSafety, evidenceForAnswer, groundEntityOnlySemantic, isolateMedicationCandidates, normalize,
@@ -232,16 +232,14 @@ async function hydrateEvidence(db: DBClient, units: HybridSearchUnit[], judgment
       sheet_name: row.sheet_name == null ? null : String(row.sheet_name),
       row_from: row.row_from == null ? null : Number(row.row_from), row_to: row.row_to == null ? null : Number(row.row_to),
       chunk_index: Number(row.sibling_order ?? 0), section_title: String(row.section_title ?? row.table_title ?? ''), chunk_text: ownerText,
-      metadata: { ...metadata, context_binding: 'same_document_owner_context', source_chunk_ids: row.source_chunk_ids, policy_scope: metadata.policy_scope ?? documentId },
+      metadata: { ...metadata, context_binding: 'same_document_owner_context', owner_unit_type: row.unit_type, source_chunk_ids: row.source_chunk_ids, policy_scope: metadata.policy_scope ?? documentId },
       score: 3, fts_rank: 0, trigram_score: 0, matched_entity_count: 0, matched_dimensions: [],
     }];
   });
   const rankedOwners = rerankChunks(isolateMedicationCandidates(projectedOwners, entities, knownEntities), entities, dimensions, semantic.treatment_stage, question, semantic);
-  const ownersByDocument = new Map<string, typeof rankedOwners>();
-  for (const owner of rankedOwners) {
-    const current = ownersByDocument.get(owner.document_id) ?? [];
-    if (current.length < 2) ownersByDocument.set(owner.document_id, [...current, owner]);
-  }
+  const selectedOwners = selectDocumentOwnerContexts(rankedOwners, 2);
+  const ownersByDocument = new Map<string, typeof selectedOwners>();
+  for (const owner of selectedOwners) ownersByDocument.set(owner.document_id, [...(ownersByDocument.get(owner.document_id) ?? []), owner]);
   const projectedUnitById = new Map(projectedRows.map((chunk) => {
     const unit = [...selectedUnits, ...((siblingResult.data ?? []) as Array<Record<string, unknown>>).map((row) => {
       const document = documentById.get(String(row.document_id));
@@ -511,7 +509,10 @@ Deno.serve(async (request) => {
     if (typeof body.feedback_message_id === 'string') {
       const feedbackMessageId = body.feedback_message_id;
       const { data: assistant, error } = await db.from('insurance_chat_messages').select('id,session_id,message,citations,parsed_data,created_at').eq('id', feedbackMessageId).eq('role', 'assistant').single();
-      if (error || !assistant) return respond({ error: 'The feedback message is invalid.' }, 400);
+      if (error || !assistant) {
+        console.warn('insurance_v3_feedback_message_unavailable', { feedback_message_id: feedbackMessageId, user_id: auth.user.id });
+        return respond({ feedback_recorded: false, recovery_exhausted: true, feedback_unavailable: true, insurance_v3: true });
+      }
       const { data: priorAudit } = await db.from('insurance_answer_audits').select('id,raw_question,structured_query,verified_entities,verified_evidence,final_citations,recovery_attempt').eq('message_id', feedbackMessageId).order('created_at', { ascending: false }).limit(1).maybeSingle();
       await applySemanticMemoryFeedback(db, memoryDb, feedbackMessageId, false);
       const validatedCacheInvalidated = await invalidateValidatedAnswerAfterNegativeFeedback(db, auth.user.id, priorAudit as Record<string, unknown> | null);
@@ -848,7 +849,7 @@ Deno.serve(async (request) => {
       try {
         if (!requestBudgetState(started).optional_reasoning_allowed) throw new Error('request_reasoning_budget_exhausted');
         const recoveryHypothesisResult = await generateSemanticSearchHypotheses(question, semantic, questionContract, verifiedEntities, {
-          first_pass_evidence: selection.selected.slice(0, 10).map((chunk) => ({ heading: chunk.section_title, document: chunk.document_title, page: chunk.page_from, text: chunk.chunk_text.slice(0, 800) })),
+          first_pass_evidence: selection.selected.slice(0, 6).map((chunk) => ({ heading: chunk.section_title, document: chunk.document_title, page: chunk.page_from, text: chunk.chunk_text.slice(0, 450) })),
           previous_searches: previousSemanticSearches,
           feedback_reason: objective.name,
         });
@@ -859,10 +860,12 @@ Deno.serve(async (request) => {
         // distinct search plan. Reuse it as a clue set when a later provider
         // call fails instead of discarding evidence already discovered.
         recoverySemanticSandbox = initialSemanticSandbox;
-        trace.providers.recovery_hypothesis_error = error instanceof Error ? error.name : 'unknown';
+        trace.providers.recovery_hypothesis_error = diagnosticError(error);
+        const budgetExhausted = error instanceof Error && error.message === 'request_reasoning_budget_exhausted';
         trace.providers.shared_reasoning_engine = {
           ...(trace.providers.shared_reasoning_engine as Record<string, unknown>),
-          provider_failure_stage: 'recovery_semantic_hypothesis',
+          provider_failure_stage: budgetExhausted ? null : 'recovery_semantic_hypothesis',
+          latency_budget_stage_skipped: budgetExhausted ? 'recovery_semantic_hypothesis' : null,
         };
       }
       recoverySearchChanged = searchStrategyChanged(previousSemanticSearches, recoverySemanticSandbox.hypotheses);
@@ -1307,6 +1310,22 @@ Deno.serve(async (request) => {
     if (guarded.raw_json_blocked || guarded.raw_evidence_dump_blocked) {
       answerGenerator = 'shared_output_guard_synthesis_fallback';
       trace.fallback_used = 'user_output_sanitizer';
+    }
+    const missingRelationValues = missingSupportedRelationValues(answerResult.answer, synthesisLedger);
+    const prematureAggregateClosure = hasPrematureAggregateClosure(answerResult.answer, questionContract, synthesisLedger);
+    if (missingRelationValues.length > 0 || prematureAggregateClosure) {
+      const fallback = deterministicGroundedSynthesis(question, questionContract, synthesisLedger, answerEvidence);
+      answerResult.answer = fallback.answer;
+      answerResult.used_evidence_ids = fallback.used_evidence_ids;
+      answerGenerator = 'relationship_complete_grounded_synthesis_fallback';
+      trace.fallback_used = missingRelationValues.length > 0
+        ? 'supported_relation_omission_guard'
+        : 'premature_aggregate_closure_guard';
+      trace.providers.shared_reasoning_engine = {
+        ...(trace.providers.shared_reasoning_engine as Record<string, unknown>),
+        missing_supported_relation_values: missingRelationValues,
+        premature_aggregate_closure: prematureAggregateClosure,
+      };
     }
     trace.providers.shared_reasoning_engine = {
       ...(trace.providers.shared_reasoning_engine as Record<string, unknown>),

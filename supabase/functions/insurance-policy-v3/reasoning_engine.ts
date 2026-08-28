@@ -1,7 +1,7 @@
 import type { EvidenceLedger, QuestionContract, RecoveryPlan, SemanticHypothesisSandbox } from './ai.ts';
 import type { HybridSearchUnit, SemanticInterpretation, V3Chunk, V3Entity } from './retrieval.ts';
 
-export const REASONING_ENGINE_VERSION = 'insurance-v3-shared-reasoning-v171';
+export const REASONING_ENGINE_VERSION = 'insurance-v3-shared-reasoning-v173';
 
 export function semanticQuestionContract(
   question: string,
@@ -227,6 +227,17 @@ export function deterministicGroundedSynthesis(
   for (const facet of contract.required_answer_facets) {
     const entry = ledger.facets.find((item) => item.facet_id === facet.id);
     if (!entry || entry.status === 'missing') continue;
+    const supportedPaths = (entry.relation_paths ?? []).filter((path) => path.status === 'supported');
+    if (supportedPaths.length > 0) {
+      for (const path of supportedPaths) {
+        bullets.push(`- ${facet.description}: ${path.value}.`);
+        path.evidence_ids.forEach((id) => {
+          const found = byId.get(id);
+          if (found) usedIndexes.add(found.index);
+        });
+      }
+      continue;
+    }
     const rows = entry.evidence_ids.flatMap((id) => byId.has(id) ? [byId.get(id)!] : []);
     const claims = [...new Set(rows.flatMap(({ chunk }) => claimLines(chunk, facet.description)))].slice(0, 2);
     rows.forEach(({ index }) => usedIndexes.add(index));
@@ -256,6 +267,23 @@ export function deterministicGroundedSynthesis(
     answer: `${heading}\n${bullets.join('\n')}${missingText}${aggregateText}`.trim(),
     used_evidence_ids: [...usedIndexes].sort((a, b) => a - b).map((index) => `E${index + 1}`),
   };
+}
+
+export function missingSupportedRelationValues(answer: string, ledger: EvidenceLedger) {
+  const answerTokens = normalizedTokens(answer);
+  return [...new Set(ledger.facets.flatMap((facet) => (facet.relation_paths ?? [])
+    .filter((path) => path.status === 'supported')
+    .map((path) => path.value.trim())
+    .filter(Boolean)))].filter((value) => {
+      const valueTokens = [...normalizedTokens(value)];
+      return valueTokens.length > 0 && !valueTokens.every((token) => answerTokens.has(token));
+    });
+}
+
+export function hasPrematureAggregateClosure(answer: string, contract: QuestionContract, ledger: EvidenceLedger) {
+  if (contract.answer_cardinality !== 'aggregate' || ledger.aggregation_complete === true) return false;
+  return /\b(?:no other|no additional|none other|only (?:policy|policies|document|documents|treatment|treatments))\b/i.test(answer)
+    || /(?:لا توجد|لا يوجد|لم توجد|لم يوجد)\s+(?:أي\s+)?(?:وثائق|سياسات|علاجات)\s+(?:أخرى|إضافية)/u.test(answer);
 }
 
 export function guardUserOutput(
