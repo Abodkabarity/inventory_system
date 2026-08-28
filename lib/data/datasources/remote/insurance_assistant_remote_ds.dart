@@ -4,11 +4,6 @@ import 'package:crypto/crypto.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class InsuranceAssistantRemoteDs {
-  static const _knowledgeBaseVersion = String.fromEnvironment(
-    'INSURANCE_KB_VERSION',
-    defaultValue: 'v3',
-  );
-
   final SupabaseClient client;
 
   InsuranceAssistantRemoteDs(this.client);
@@ -70,11 +65,7 @@ class InsuranceAssistantRemoteDs {
     Map<String, dynamic> body,
   ) async {
     final response = await client.functions.invoke(
-      // V2 evaluates reviewed, structured policy rules.  The legacy function
-      // remains deployed independently as a safe rollback path.
-      _knowledgeBaseVersion == 'v3'
-          ? 'insurance-policy-v3'
-          : 'insurance-policy-v2',
+      'insurance-policy-v4',
       body: body,
     );
     final data = Map<String, dynamic>.from(response.data as Map);
@@ -83,7 +74,7 @@ class InsuranceAssistantRemoteDs {
   }
 
   Future<void> submitFeedback(String messageId, int rating) async {
-    if (rating > 0 && _knowledgeBaseVersion == 'v3') {
+    if (rating > 0) {
       await _invokeAssistant({'positive_feedback_message_id': messageId});
       return;
     }
