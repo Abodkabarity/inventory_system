@@ -183,3 +183,38 @@ Deno.test('TEST M: a model-proposed endpoint must occur in its cited evidence', 
   assertEquals(result.ledger.facets[0].status, 'partial');
   assert(result.diagnostics.relationship_rejection_reason.includes('endpoint_label_not_grounded_in_cited_evidence'));
 });
+
+Deno.test('TEST N: multi-subject reverse and forward facets use their own directed relationship anchors', () => {
+  const multi = contract({
+    primary_subject: 'policy',
+    requested_relationships: [
+      { subject: 'ENT doctor', relation: 'allowed_to_prescribe', object: 'treatment', direction: 'forward' },
+      { subject: 'policy document', relation: 'applies_to', object: 'ENT doctor', direction: 'reverse' },
+    ],
+    required_answer_facets: [
+      { id: 'treatments', description: 'treatments the clinician can prescribe', requested_type: 'list<string>', required: true },
+      { id: 'policies', description: 'policy documents that apply', requested_type: 'list of policy identifiers', required: true },
+    ],
+    initial_search_hypotheses: [{
+      query: 'ENT doctor otolaryngology eligible treatments policy', mode: 'semantic',
+      concepts: ['ENT doctor', 'Otolaryngology', 'treatment', 'policy document'], relationship_direction: 'bidirectional',
+    }],
+  });
+  const evidence = [chunk('combined', 'D1', 'Otolaryngology is an eligible specialty for Treatment T under Policy D1.', 2, { policy_scope: 'D1' })];
+  const treatmentPath = path('treatments', 'Treatment T', 'combined', 'combined', 'treat', 'treatment');
+  treatmentPath.nodes[0].label = 'Otolaryngology';
+  const policyPath = path('policies', 'Policy D1', 'combined', 'combined', 'policy', 'policy document');
+  policyPath.nodes[0].label = 'Otolaryngology';
+  const multiLedger: EvidenceLedger = {
+    status: 'complete',
+    facets: [
+      { facet_id: 'treatments', status: 'supported', evidence_ids: ['combined'], relation_paths: [treatmentPath], explanation: 'Direct binding.' },
+      { facet_id: 'policies', status: 'supported', evidence_ids: ['combined'], relation_paths: [policyPath], explanation: 'Reverse owner binding.' },
+    ],
+    missing_facets: [], relation_direction_preserved: true, detected_relation_direction: 'bidirectional',
+    cross_document_search: true, aggregation_complete: true, matched_subjects: ['Treatment T', 'Policy D1'], next_searches: [], reason: 'Complete.',
+  };
+  const result = validateDocumentRelationshipBindings(multi, evidence, multiLedger);
+  assertEquals(result.ledger.status, 'complete');
+  assertEquals(result.ledger.facets.map((facet) => facet.relation_paths.length), [1, 1]);
+});

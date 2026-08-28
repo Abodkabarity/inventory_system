@@ -31,6 +31,13 @@ function usagePart(usage: unknown, primary: string, alternate: string) {
   return typeof value === 'number' ? value : 0;
 }
 type AIMetadata = { usage: unknown; latency_ms: number; provider: AIProviderName; model: string };
+function diagnosticError(error: unknown) {
+  if (error instanceof AIProviderError) return {
+    name: error.name, provider: error.provider, status: error.status,
+    temporary: error.temporary, code: error.providerCode,
+  };
+  return { name: error instanceof Error ? error.name : 'unknown' };
+}
 function aiDiagnostics(semantic: AIMetadata, reranks: AIMetadata[], answer: AIMetadata | null) {
   const calls = [semantic, ...reranks, ...(answer ? [answer] : [])];
   return {
@@ -46,6 +53,21 @@ function aiDiagnostics(semantic: AIMetadata, reranks: AIMetadata[], answer: AIMe
 }
 function mergeUnits(left: HybridSearchUnit[], right: HybridSearchUnit[]) {
   return [...new Map([...left, ...right].map((u) => [u.search_unit_id, u])).values()].sort((a, b) => Number(b.hybrid_rrf_score) - Number(a.hybrid_rrf_score));
+}
+function diversifiedUnits(units: HybridSearchUnit[], limit = 12, maximumPerDocument = 2) {
+  const counts = new Map<string, number>(); const selected: HybridSearchUnit[] = [];
+  for (const unit of units) {
+    const count = counts.get(unit.document_id) ?? 0;
+    if (count >= maximumPerDocument) continue;
+    selected.push(unit); counts.set(unit.document_id, count + 1);
+    if (selected.length >= limit) break;
+  }
+  return selected;
+}
+function aiConfirmedEvidence<T extends V3Chunk>(evidence: T[], answerBearingSourceIds: Set<string>): T[] {
+  return evidence.filter((chunk) => answerBearingSourceIds.has(chunk.chunk_id)
+    || (Array.isArray(chunk.metadata.source_chunk_ids)
+      && chunk.metadata.source_chunk_ids.some((id) => answerBearingSourceIds.has(String(id)))));
 }
 function evidenceLedgerFallback(contract: QuestionContract, evidence: V3Chunk[], verifiedStrongEvidence: boolean): EvidenceLedger {
   const ids = evidence.slice(0, 8).map((chunk) => chunk.chunk_id);
@@ -206,13 +228,13 @@ async function hydrateEvidence(db: DBClient, units: HybridSearchUnit[], judgment
     file_name: unit.file_name, page_from: unit.page_from, page_to: unit.page_to, sheet_name: unit.sheet_name,
     row_from: unit.row_from, row_to: unit.row_to, chunk_index: unit.sibling_order, section_title: unit.section_title,
     chunk_text: typeof unit.metadata.row_text === 'string' ? unit.metadata.row_text : unit.retrieval_text,
-    metadata: { ...unit.metadata, source_chunk_ids: unit.source_chunk_ids },
+    metadata: { ...unit.metadata, source_chunk_ids: unit.source_chunk_ids, policy_scope: unit.metadata.policy_scope ?? unit.document_id },
     score: (unitById.has(unit.search_unit_id) ? 12 : 7) + (judgmentById.get(unit.search_unit_id)?.answer_bearing ? 24 : 0),
     fts_rank: 0, trigram_score: 0, matched_entity_count: unit.entity_match_count ?? 0, matched_dimensions: [],
   }));
   const projectedSourceIds = new Set(projectedRows.flatMap((chunk) => Array.isArray(chunk.metadata.source_chunk_ids) ? chunk.metadata.source_chunk_ids.map(String) : []));
   const originalChunks = ((data ?? []) as V3Chunk[]).filter((chunk) => !projectedSourceIds.has(chunk.chunk_id))
-    .map((chunk) => ({ ...chunk, score: Number(chunk.score || 0) + (sourceJudgmentBoost.get(chunk.chunk_id) ?? 0) }));
+    .map((chunk) => ({ ...chunk, metadata: { ...chunk.metadata, policy_scope: chunk.metadata.policy_scope ?? chunk.document_id }, score: Number(chunk.score || 0) + (sourceJudgmentBoost.get(chunk.chunk_id) ?? 0) }));
   const scoped = isolateMedicationCandidates([...projectedRows, ...originalChunks], entities, knownEntities);
   const ranked = rerankChunks(scoped, entities, dimensions, semantic.treatment_stage, question, semantic);
   const projectedUnitById = new Map(projectedRows.map((chunk) => {
@@ -716,6 +738,7 @@ Deno.serve(async (request) => {
     let selectedUnits: HybridSearchUnit[] = [];
     let expandIds: string[] = [];
     let strongEvidence = false;
+    let directExtractiveFallback = false;
     let successfulRecoveryPlan: RecoveryPlan | null = null;
     let recoverySemanticSandbox: SemanticHypothesisSandbox | null = null;
     let recoverySearchChanged: boolean | null = null;
@@ -733,30 +756,38 @@ Deno.serve(async (request) => {
         answerEvidence = selection.selected.slice(0, 4);
         strongEvidence = selection.selected.length > 0 && selection.sufficient && selection.missingDimensions.length === 0;
       } else {
-        const retrieved = await retrieveHybrid(
-          db,
-          lexicalInformationQuery(question, semantic, verifiedEntities, [...contractConcepts, ...contractQueries, ...rememberedConcepts, ...rememberedQueries].slice(0, 16)),
-          vectorInformationQuery(semantic, verifiedEntities, plan.query, [...contractQueries, ...rememberedQueries, ...contractConcepts, ...rememberedConcepts].slice(0, 16)),
-          verifiedEntities, allEntities,
-        );
-        embeddingRuns.push(retrieved.embedding); units = retrieved.units;
         const focusedHypotheses = initialSemanticSandbox.hypotheses.filter((hypothesis) => hypothesis.kind !== 'literal')
           .sort((left, right) => Number(['reverse_relation', 'evidence_discovered'].includes(right.kind)) - Number(['reverse_relation', 'evidence_discovered'].includes(left.kind)))
           .slice(0, 2);
-        const focusedResults = await Promise.allSettled(focusedHypotheses.map((focusedHypothesis) =>
-          retrieveHybrid(db, focusedHypothesis.query, focusedHypothesis.query, verifiedEntities, allEntities)
-            .then((result) => ({ result, mode: focusedHypothesis.mode }))
+        const initialSearches = [
+          {
+            lexical: lexicalInformationQuery(question, semantic, verifiedEntities, [...contractConcepts, ...contractQueries, ...rememberedConcepts, ...rememberedQueries].slice(0, 16)),
+            vector: vectorInformationQuery(semantic, verifiedEntities, plan.query, [...contractQueries, ...rememberedQueries, ...contractConcepts, ...rememberedConcepts].slice(0, 16)),
+            mode: 'all' as const,
+          },
+          ...focusedHypotheses.map((hypothesis) => ({ lexical: hypothesis.query, vector: hypothesis.query, mode: hypothesis.mode })),
+        ];
+        const initialResults = await Promise.allSettled(initialSearches.map((search) =>
+          retrieveHybrid(db, search.lexical, search.vector, verifiedEntities, allEntities)
+            .then((result) => ({ result, mode: search.mode }))
         ));
-        for (const focused of focusedResults) {
-          if (focused.status === 'fulfilled') {
-            embeddingRuns.push(focused.value.result.embedding);
-            units = mergeUnits(units, unitModeFilter(focused.value.result.units, focused.value.mode));
-          } else trace.providers.initial_planned_search_error = focused.reason instanceof Error ? focused.reason.name : 'unknown';
+        for (const retrieved of initialResults) {
+          if (retrieved.status === 'fulfilled') {
+            embeddingRuns.push(retrieved.value.result.embedding);
+            units = mergeUnits(units, unitModeFilter(retrieved.value.result.units, retrieved.value.mode));
+          } else trace.providers.initial_planned_search_error = retrieved.reason instanceof Error ? retrieved.reason.name : 'unknown';
         }
-        // Hydrate the deterministic hybrid TOP candidates, then let one richer
-        // AI evidence audit perform relevance, relationship, and sufficiency
-        // reasoning together. This removes a redundant pre-hydration AI call.
-        trace.providers.retrieval_rerank_mode = 'hybrid_rrf_then_hydrated_ai_evidence_audit';
+        try {
+          if (!requestBudgetState(started).optional_reasoning_allowed) throw new Error('request_reasoning_budget_exhausted');
+          const rerank = await rerankAndJudgeEvidence(question, semantic, verifiedEntities, diversifiedUnits(units));
+          aiCalls.push(rerank); evidenceJudgments = rerank.judgments; sufficiency = rerank.sufficiency; units = rerankUnits(units, evidenceJudgments);
+          trace.providers.retrieval_rerank_mode = 'document_diversified_ai_rerank_then_hydrated_evidence_audit';
+        } catch (error) {
+          trace.fallback_used = 'document_diversified_deterministic_rerank';
+          trace.providers.reranker_error = error instanceof Error ? error.name : 'unknown';
+          const diversified = diversifiedUnits(units);
+          units = [...diversified, ...units.filter((unit) => !diversified.some((selected) => selected.search_unit_id === unit.search_unit_id))];
+        }
         const hydrated = await hydrateEvidence(db, units, evidenceJudgments, verifiedEntities, allEntities, dimensions, question, semantic);
         selection = hydrated.selection; answerEvidence = hydrated.answerEvidence; selectedUnits = hydrated.selectedUnits; expandIds = hydrated.expandIds; answerBearingSourceIds = hydrated.answerBearingSourceIds;
         units = mergeUnits(hydrated.expandedUnits, units);
@@ -776,8 +807,11 @@ Deno.serve(async (request) => {
             evidenceLedger = evidenceLedgerFallback(questionContract, answerEvidence, preInspectionStrongEvidence);
             sufficiency = { status: evidenceLedger.status, answered_information: evidenceLedger.facets.filter((facet) => facet.status === 'supported').map((facet) => facet.facet_id), missing_information: evidenceLedger.missing_facets, reason: evidenceLedger.reason };
             strongEvidence = ledgerSupportsAnswer(questionContract, evidenceLedger, answerEvidence);
+            const confirmed = aiConfirmedEvidence(answerEvidence, answerBearingSourceIds);
+            if (confirmed.length > 0) answerEvidence = confirmed;
+            directExtractiveFallback ||= confirmed.length > 0;
             trace.fallback_used = trace.fallback_used ?? 'deterministic_evidence_ledger';
-            trace.providers.evidence_inspector_error = error instanceof Error ? error.name : 'unknown';
+            trace.providers.evidence_inspector_error = diagnosticError(error);
           }
         }
       }
@@ -980,8 +1014,18 @@ Deno.serve(async (request) => {
           }
         }
         units = mergeUnits(units, newUnits);
-        // The hydrated evidence auditor below is the single AI relevance and
-        // sufficiency authority for this round.
+        let recoveryJudgments: EvidenceJudgment[] = [];
+        try {
+          if (!requestBudgetState(started).optional_reasoning_allowed) throw new Error('request_reasoning_budget_exhausted');
+          const rerank = await rerankAndJudgeEvidence(question, semantic, verifiedEntities, diversifiedUnits(units));
+          aiCalls.push(rerank); recoveryJudgments = rerank.judgments; sufficiency = rerank.sufficiency; units = rerankUnits(units, recoveryJudgments);
+        } catch (error) {
+          trace.fallback_used = trace.fallback_used ?? 'document_diversified_recovery_rerank';
+          trace.providers.recovery_reranker_error = error instanceof Error ? error.name : 'unknown';
+          const diversified = diversifiedUnits(units);
+          units = [...diversified, ...units.filter((unit) => !diversified.some((selected) => selected.search_unit_id === unit.search_unit_id))];
+        }
+        evidenceJudgments = recoveryJudgments.length ? recoveryJudgments : evidenceJudgments;
         if (units.length > 0) {
           const hydrated = await hydrateEvidence(db, units, evidenceJudgments, verifiedEntities, allEntities, dimensions, question, semantic);
           selection = hydrated.selection; answerEvidence = hydrated.answerEvidence; selectedUnits = hydrated.selectedUnits; expandIds = hydrated.expandIds; answerBearingSourceIds = hydrated.answerBearingSourceIds;
@@ -1016,7 +1060,10 @@ Deno.serve(async (request) => {
               );
               sufficiency = { status: evidenceLedger.status, answered_information: evidenceLedger.facets.filter((facet) => facet.status === 'supported').map((facet) => facet.facet_id), missing_information: evidenceLedger.missing_facets, reason: evidenceLedger.reason };
               strongEvidence = ledgerSupportsAnswer(questionContract, evidenceLedger, answerEvidence);
-              trace.providers.recovery_evidence_inspector_error = error instanceof Error ? error.name : 'unknown';
+              const confirmed = aiConfirmedEvidence(answerEvidence, answerBearingSourceIds);
+              if (confirmed.length > 0) answerEvidence = confirmed;
+              directExtractiveFallback ||= confirmed.length > 0;
+              trace.providers.recovery_evidence_inspector_error = diagnosticError(error);
             }
           }
         }
@@ -1085,7 +1132,10 @@ Deno.serve(async (request) => {
       facet_type_validation: bindingDiagnostics?.facet_type_validation ?? [],
       verifier_relation_path_result: bindingDiagnostics?.verifier_relation_path_result ?? 'not_required',
     };
-    const supportedLedgerEvidence = Boolean(evidenceLedger?.facets.some((facet) => facet.status === 'supported' && facet.evidence_ids.length > 0) && answerEvidence.length > 0);
+    const supportedLedgerEvidence = Boolean(
+      (evidenceLedger?.facets.some((facet) => facet.status === 'supported' && facet.evidence_ids.length > 0) || directExtractiveFallback)
+      && answerEvidence.length > 0,
+    );
     if ((!strongEvidence && !supportedLedgerEvidence) || answerEvidence.length === 0) {
       const sharedDiagnostics = trace.providers.shared_reasoning_engine as Record<string, unknown>;
       const evidenceAuditUnavailable = Boolean(
@@ -1093,7 +1143,7 @@ Deno.serve(async (request) => {
         || trace.providers.recovery_evidence_inspector_error
         || sharedDiagnostics.provider_failure_stage,
       );
-      if (evidenceAuditUnavailable && selection.selected.length > 0) {
+      if (evidenceAuditUnavailable && selection.selected.length > 0 && !directExtractiveFallback) {
         throw new AIProvidersTemporarilyUnavailableError();
       }
       const alternateSemanticExpansionAttempted = initialSemanticSandbox.hypotheses.some((hypothesis) => hypothesis.kind !== 'literal')

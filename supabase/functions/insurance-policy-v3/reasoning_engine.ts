@@ -1,7 +1,7 @@
 import type { EvidenceLedger, QuestionContract, RecoveryPlan, SemanticHypothesisSandbox } from './ai.ts';
 import type { V3Chunk } from './retrieval.ts';
 
-export const REASONING_ENGINE_VERSION = 'insurance-v3-shared-reasoning-v166';
+export const REASONING_ENGINE_VERSION = 'insurance-v3-shared-reasoning-v167';
 
 export type FeedbackObjectiveName = 'normal' | 'incorrect' | 'incomplete' | 'misunderstood';
 export type FeedbackObjective = {

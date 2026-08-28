@@ -46,10 +46,40 @@ function typeCompatible(requestedType: string, endpointType: string) {
       || [...endpointTokens].every((token) => requestedTokens.has(token)));
 }
 
+const genericContainerTokens = new Set(['list', 'array', 'string', 'strings', 'identifier', 'identifiers', 'value', 'values', 'item', 'items', 'of', 'e', 'g']);
+
+function semanticTypeCompatible(requestedType: string, relationshipEndpoint: string | null, endpointType: string) {
+  if (typeCompatible(requestedType, endpointType)) return true;
+  const semanticRequested = normalized(requestedType).split(' ').filter((token) => token && !genericContainerTokens.has(token)).join(' ');
+  return Boolean(semanticRequested && typeCompatible(semanticRequested, endpointType))
+    || Boolean(relationshipEndpoint && typeCompatible(relationshipEndpoint, endpointType));
+}
+
 function labelCompatible(expected: string, actual: string) {
   const left = normalized(expected); const right = normalized(actual);
   if (!left || !right) return false;
   return left === right || left.includes(right) || right.includes(left);
+}
+
+function mentionedInCluster(cluster: string, term: string) {
+  const haystack = normalized(cluster); const needle = normalized(term);
+  if (!haystack || !needle) return false;
+  if (` ${haystack} `.includes(` ${needle} `)) return true;
+  const tokens = needle.split(' ').filter((token) => token.length >= 3);
+  return tokens.length > 0 && tokens.some((token) => new Set(haystack.split(' ')).has(token));
+}
+
+function requestTerminologyCompatible(expected: string, actual: string, contract: QuestionContract) {
+  if (labelCompatible(expected, actual)) return true;
+  return contract.initial_search_hypotheses.some((hypothesis) => {
+    const cluster = `${hypothesis.query} ${hypothesis.concepts.join(' ')}`;
+    return mentionedInCluster(cluster, expected) && mentionedInCluster(cluster, actual);
+  });
+}
+
+function directedRelationshipEndpoints(relationship: QuestionContract['requested_relationships'][number]) {
+  if (relationship.direction === 'reverse') return { source: relationship.object ?? relationship.subject, endpoint: relationship.subject };
+  return { source: relationship.subject, endpoint: relationship.object };
 }
 
 function labelGroundedInEvidence(label: string, chunks: V3Chunk[]) {
@@ -122,14 +152,21 @@ export function validateDocumentRelationshipBindings(
       const nodes = new Map(path.nodes.map((node) => [node.id, node]));
       const endpoint = nodes.get(path.endpoint_node_id);
       const source = nodes.get(path.source_node_id);
-      const endpointTypeValid = Boolean(endpoint && typeCompatible(requestedType, endpoint.node_type));
+      const matchingRelationship = source && endpoint ? contract.requested_relationships.find((relationship) => {
+        const directed = directedRelationshipEndpoints(relationship);
+        return requestTerminologyCompatible(directed.source, source.label, contract)
+          && semanticTypeCompatible(requestedType, directed.endpoint, endpoint.node_type);
+      }) : null;
+      const endpointTypeValid = Boolean(endpoint && (matchingRelationship
+        || (contract.requested_relationships.length === 0 && semanticTypeCompatible(requestedType, null, endpoint.node_type))));
       diagnostics.facet_type_validation.push({
         facet_id: entry.facet_id, requested_type: requestedType,
         endpoint_type: endpoint?.node_type ?? '', valid: endpointTypeValid,
       });
       let rejection: string | null = null;
       if (!source || !endpoint || path.nodes.length < 2 || path.edges.length < 1) rejection = 'invalid_path_shape';
-      else if (!labelCompatible(contract.primary_subject, source.label)) rejection = 'source_subject_mismatch';
+      else if (contract.requested_relationships.length > 0 && !matchingRelationship) rejection = 'requested_relationship_mismatch';
+      else if (contract.requested_relationships.length === 0 && !requestTerminologyCompatible(contract.primary_subject, source.label, contract)) rejection = 'source_subject_mismatch';
       else if (!endpointTypeValid) rejection = 'facet_endpoint_type_mismatch';
       else if (chunks.length !== ids.length || ids.length === 0) rejection = 'unknown_evidence_reference';
       else if (new Set(chunks.map((chunk) => chunk.document_id)).size !== 1) rejection = 'relationship_path_crosses_document_boundary';
