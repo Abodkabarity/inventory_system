@@ -3,6 +3,7 @@ import {
   deterministicGroundedSynthesis,
   feedbackObjective,
   guardUserOutput,
+  initialSandboxFromContract,
   mergeCanonicalTerms,
   REASONING_ENGINE_VERSION,
   recoveryPlanFromSandbox,
@@ -105,5 +106,12 @@ Deno.test('I feedback objectives differ while the reasoning implementation remai
   const normal = feedbackObjective(null); const incorrect = feedbackObjective('incorrect'); const incomplete = feedbackObjective('incomplete');
   assert(!normal.reconsider_interpretation && incorrect.reconsider_interpretation, 'Incorrect objective did not change');
   assert(incomplete.preserve_supported_previous_facts && !incorrect.preserve_supported_previous_facts, 'Incomplete objective did not change');
-  assert(REASONING_ENGINE_VERSION === 'insurance-v3-shared-reasoning-v165', 'shared engine signature changed unexpectedly');
+  assert(REASONING_ENGINE_VERSION === 'insurance-v3-shared-reasoning-v166', 'shared engine signature changed unexpectedly');
+});
+
+Deno.test('J first-pass search reuses the AI question contract without a duplicate AI planning call', () => {
+  const initial = initialSandboxFromContract(contract.original_question, contract);
+  assert(initial.hypotheses.length === contract.initial_search_hypotheses.length, 'contract hypotheses were not preserved');
+  assert(initial.hypotheses[0].relationship_direction === 'reverse', 'relationship direction was not preserved');
+  assert(initial.hypotheses[0].kind === 'reverse_relation', 'reverse search was not classified for execution');
 });

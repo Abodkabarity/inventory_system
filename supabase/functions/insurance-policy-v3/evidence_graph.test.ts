@@ -159,3 +159,27 @@ Deno.test('TEST K: provider failure preserves the prior evidence ledger', () => 
   };
   assertEquals(preserveEvidenceLedgerOnProviderFailure(previous, fallback), previous);
 });
+
+Deno.test('TEST L: a plausible path from an unrelated document cannot invent the contract subject', () => {
+  const evidence = [
+    chunk('unrelated-row', 'D9', 'Eligible Specialty = Different Specialty', 2, { policy_scope: 'omega' }),
+    chunk('unrelated-owner', 'D9', 'This policy covers Treatment T.', 1, { context_binding: 'same_document_owner_context', policy_scope: 'omega' }),
+  ];
+  const result = validateDocumentRelationshipBindings(
+    contract(), evidence, ledger([path('therapy_list', 'Treatment T', 'unrelated-row', 'unrelated-owner')]),
+  );
+  assertEquals(result.ledger.facets[0].status, 'partial');
+  assert(result.diagnostics.relationship_rejection_reason.includes('source_label_not_grounded_in_cited_evidence'));
+});
+
+Deno.test('TEST M: a model-proposed endpoint must occur in its cited evidence', () => {
+  const evidence = [
+    chunk('specialty-row', 'D1', 'Eligible Specialty = Specialist S', 2, { policy_scope: 'alpha' }),
+    chunk('owner-context', 'D1', 'This policy covers a different treatment.', 1, { context_binding: 'same_document_owner_context', policy_scope: 'alpha' }),
+  ];
+  const result = validateDocumentRelationshipBindings(
+    contract(), evidence, ledger([path('therapy_list', 'Treatment T', 'specialty-row', 'owner-context')]),
+  );
+  assertEquals(result.ledger.facets[0].status, 'partial');
+  assert(result.diagnostics.relationship_rejection_reason.includes('endpoint_label_not_grounded_in_cited_evidence'));
+});

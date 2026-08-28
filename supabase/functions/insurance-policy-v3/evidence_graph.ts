@@ -52,6 +52,19 @@ function labelCompatible(expected: string, actual: string) {
   return left === right || left.includes(right) || right.includes(left);
 }
 
+function labelGroundedInEvidence(label: string, chunks: V3Chunk[]) {
+  const value = normalized(label);
+  if (!value || chunks.length === 0) return false;
+  const corpus = normalized(chunks.map((chunk) => [
+    chunk.document_title, chunk.section_title, chunk.chunk_text,
+    chunk.metadata.row_text, chunk.metadata.table_title, chunk.metadata.policy_subject,
+  ].filter(Boolean).join(' ')).join(' '));
+  if (corpus.includes(value)) return true;
+  const tokens = value.split(' ').filter(Boolean);
+  const corpusTokens = new Set(corpus.split(' ').filter(Boolean));
+  return tokens.length > 0 && tokens.every((token) => corpusTokens.has(token));
+}
+
 function connected(path: EvidenceRelationPath) {
   const reachable = new Set([path.source_node_id]);
   let changed = true;
@@ -123,6 +136,8 @@ export function validateDocumentRelationshipBindings(
       else if (path.edges.some((edge) => !nodes.has(edge.from_node_id) || !nodes.has(edge.to_node_id)
         || edge.evidence_ids.length === 0 || edge.evidence_ids.some((id) => !ids.includes(id)))) rejection = 'invalid_edge_evidence';
       else if (path.nodes.some((node) => node.evidence_ids.length === 0 || node.evidence_ids.some((id) => !ids.includes(id)))) rejection = 'invalid_node_evidence';
+      else if (!labelGroundedInEvidence(source.label, source.evidence_ids.flatMap((id) => byId.has(id) ? [byId.get(id)!] : []))) rejection = 'source_label_not_grounded_in_cited_evidence';
+      else if (!labelGroundedInEvidence(endpoint.label, endpoint.evidence_ids.flatMap((id) => byId.has(id) ? [byId.get(id)!] : []))) rejection = 'endpoint_label_not_grounded_in_cited_evidence';
       else if (!connected(path)) rejection = 'relationship_path_not_connected';
       else {
         const conflict = conflictingExplicitScope(chunks);

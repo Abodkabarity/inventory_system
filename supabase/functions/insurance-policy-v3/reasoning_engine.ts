@@ -1,7 +1,7 @@
 import type { EvidenceLedger, QuestionContract, RecoveryPlan, SemanticHypothesisSandbox } from './ai.ts';
 import type { V3Chunk } from './retrieval.ts';
 
-export const REASONING_ENGINE_VERSION = 'insurance-v3-shared-reasoning-v165';
+export const REASONING_ENGINE_VERSION = 'insurance-v3-shared-reasoning-v166';
 
 export type FeedbackObjectiveName = 'normal' | 'incorrect' | 'incomplete' | 'misunderstood';
 export type FeedbackObjective = {
@@ -49,6 +49,34 @@ export function requiresAggregateCollection(contract: QuestionContract) {
 
 export function mergeCanonicalTerms(...groups: Array<Array<string | null | undefined>>) {
   return [...new Set(groups.flat().map((value) => String(value ?? '').normalize('NFKC').trim()).filter(Boolean))].slice(0, 40);
+}
+
+export function initialSandboxFromContract(question: string, contract: QuestionContract): SemanticHypothesisSandbox {
+  const literal = question.normalize('NFKC').trim().toLocaleLowerCase();
+  const hypotheses = contract.initial_search_hypotheses.slice(0, 5).map((hypothesis, index) => {
+    const query = hypothesis.query.normalize('NFKC').trim();
+    const queryIsLiteral = query.toLocaleLowerCase() === literal;
+    const reverse = ['reverse', 'bidirectional', 'aggregation'].includes(hypothesis.relationship_direction);
+    return {
+      kind: queryIsLiteral && index === 0 ? 'literal' as const : reverse ? 'reverse_relation' as const : 'canonical' as const,
+      query,
+      concepts: hypothesis.concepts,
+      mode: hypothesis.mode,
+      relationship_direction: hypothesis.relationship_direction,
+      basis: queryIsLiteral ? 'user_literal' as const : 'general_knowledge_search_only' as const,
+    };
+  }).filter((hypothesis) => hypothesis.query.length > 0);
+  const relationshipDirection = hypotheses.find((hypothesis) => hypothesis.relationship_direction !== 'unknown')?.relationship_direction ?? 'unknown';
+  return {
+    terminology_mismatch_plausible: hypotheses.some((hypothesis) => hypothesis.kind !== 'literal'),
+    relation_direction_original: relationshipDirection,
+    relation_direction_reconsidered: relationshipDirection,
+    evidence_discovered_terminology: [],
+    hypotheses: hypotheses.length ? hypotheses : [{
+      kind: 'literal', query: question.trim(), concepts: [], mode: 'all',
+      relationship_direction: 'unknown', basis: 'user_literal',
+    }],
+  };
 }
 
 export function recoveryPlanFromSandbox(

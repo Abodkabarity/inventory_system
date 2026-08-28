@@ -16,8 +16,8 @@ test('recovery performs one independent dynamic semantic expansion with 3-6 hypo
 });
 
 test('first-pass candidates and verified evidence remain inputs to recovery', () => {
-  assert.match(pipeline, /retrieved_candidates: units\.slice/);
-  assert.match(pipeline, /selected_evidence: selection\.selected\.slice/);
+  assert.match(pipeline, /first_pass_evidence: selection\.selected\.slice/);
+  assert.match(pipeline, /evidenceLedger\?\.next_searches/);
   assert.match(pipeline, /first_pass_clues_reused/);
   assert.match(pipeline, /Build and inspect the normal evidence baseline for every request/);
   assert.doesNotMatch(pipeline, /if \(!pipelineContext\.forceRecovery\) \{\s+if \(retrievalMode/);
@@ -26,7 +26,8 @@ test('first-pass candidates and verified evidence remain inputs to recovery', ()
 test('reverse and cross-document recovery is open-vocabulary and provenance preserving', () => {
   assert.match(ai, /reverse relationships/);
   assert.match(ai, /aggregate across documents while preserving provenance/);
-  assert.match(pipeline, /recoveryPlan\.searches\.slice\(0, 6\)/);
+  assert.match(pipeline, /recoveryPlan\.searches\.slice\(0, 5\)/);
+  assert.match(pipeline, /Promise\.allSettled\(recoverySearches/);
 });
 
 test('normal path gets memory hints without overwriting semantic identity', () => {
