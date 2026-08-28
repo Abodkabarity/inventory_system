@@ -5,12 +5,14 @@ import {
   guardUserOutput,
   initialSandboxFromContract,
   mergeCanonicalTerms,
+  preserveRetrievalSeeds,
   REASONING_ENGINE_VERSION,
   recoveryPlanFromSandbox,
   requiresAggregateCollection,
+  semanticQuestionContract,
 } from './reasoning_engine.ts';
 import type { EvidenceLedger, QuestionContract, SemanticHypothesisSandbox } from './ai.ts';
-import type { V3Chunk } from './retrieval.ts';
+import type { HybridSearchUnit, SemanticInterpretation, V3Chunk } from './retrieval.ts';
 
 function assert(condition: unknown, message: string) {
   if (!condition) throw new Error(message);
@@ -55,6 +57,36 @@ const sandbox: SemanticHypothesisSandbox = {
 Deno.test('A same semantic request uses one engine identity for Normal Incorrect and Incomplete', () => {
   const ids = ['normal', 'incorrect', 'incomplete'].map(() => REASONING_ENGINE_VERSION);
   assert(new Set(ids).size === 1, 'feedback paths must share one semantic engine id');
+});
+
+Deno.test('A2 semantic output compiles a multi-part open-vocabulary contract without a second AI call', () => {
+  const semantic: SemanticInterpretation = {
+    route: 'policy_question', medication: null, generic: null, drug_class: null, indication: null,
+    intent: ['find permitted treatments', 'find applicable policies'], requested_dimensions: ['treatment options', 'policy applicability'],
+    treatment_stage: null, semantic_intent: 'Resolve a professional-specialty reverse policy lookup.',
+    requested_information: 'Treatments and applicable policy documents', information_need: 'Specialty-linked policy evidence',
+    retrieval_queries: [], search_concepts: ['Synthetic specialty'], search_phrases: [], search_query: null,
+    negation: [], temporal_context: null, facts: [], source_requested: false,
+  };
+  const compiled = semanticQuestionContract('Synthetic multi-part question', semantic, []);
+  assert(compiled.primary_subject === 'Synthetic specialty', 'semantic subject anchor was lost');
+  assert(compiled.requested_relationships.length === 2, 'multi-part relationships were not preserved');
+  assert(compiled.required_answer_facets.length === 2, 'multi-part facets were not preserved');
+  assert(compiled.answer_cardinality === 'aggregate', 'unanchored multi-part lookup was not treated as aggregate');
+});
+
+Deno.test('A3 newly retrieved top evidence survives stale reranker judgments', () => {
+  const unit = (id: string, score: number): HybridSearchUnit => ({
+    search_unit_id: id, document_id: `doc-${id}`, document_title: id, file_name: `${id}.pdf`, unit_type: 'text_chunk',
+    page_from: 1, page_to: 1, sheet_name: null, row_from: null, row_to: null, section_title: null, table_title: null,
+    parent_unit_id: null, sibling_order: 0, retrieval_text: id, source_chunk_ids: [id], metadata: {}, vector_rank: null,
+    fts_rank: null, trigram_rank: null, heading_rank: null, entity_rank: null, vector_similarity: null, fts_score: null,
+    trigram_score: null, entity_match_count: 0, hybrid_rrf_score: score,
+  });
+  const newlyRetrieved = unit('new-direct-evidence', 100);
+  const stalePositive = unit('old-reranker-choice', 1);
+  const selected = preserveRetrievalSeeds([newlyRetrieved, stalePositive], [stalePositive, newlyRetrieved], [stalePositive]);
+  assert(selected.some((candidate) => candidate.search_unit_id === newlyRetrieved.search_unit_id), 'new direct retrieval evidence was dropped');
 });
 
 Deno.test('B canonical terminology discovered in one round is preserved for later rounds', () => {
@@ -106,7 +138,7 @@ Deno.test('I feedback objectives differ while the reasoning implementation remai
   const normal = feedbackObjective(null); const incorrect = feedbackObjective('incorrect'); const incomplete = feedbackObjective('incomplete');
   assert(!normal.reconsider_interpretation && incorrect.reconsider_interpretation, 'Incorrect objective did not change');
   assert(incomplete.preserve_supported_previous_facts && !incorrect.preserve_supported_previous_facts, 'Incomplete objective did not change');
-  assert(REASONING_ENGINE_VERSION === 'insurance-v3-shared-reasoning-v167', 'shared engine signature changed unexpectedly');
+  assert(REASONING_ENGINE_VERSION === 'insurance-v3-shared-reasoning-v168', 'shared engine signature changed unexpectedly');
 });
 
 Deno.test('J first-pass search reuses the AI question contract without a duplicate AI planning call', () => {

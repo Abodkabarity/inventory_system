@@ -5,7 +5,7 @@ import { hasStrongVerifiedEvidence } from './fallback.ts';
 import { newRequestTrace, persistRequestTrace, type RequestTrace } from './diagnostics.ts';
 import { alignSemanticMedication, evaluateOrThresholdTimeWindows, renderDeterministicCriterionAnswer } from './criteria.ts';
 import { embedRetrievalQuery } from './embedding.ts';
-import { contractRelevantEvidence, deterministicGroundedSynthesis, feedbackObjective, guardUserOutput, initialSandboxFromContract, looksLikeRawStructuredOutput, mergeCanonicalTerms, REASONING_ENGINE_VERSION, recoveryPlanFromSandbox, requiresAggregateCollection } from './reasoning_engine.ts';
+import { contractRelevantEvidence, deterministicGroundedSynthesis, feedbackObjective, guardUserOutput, initialSandboxFromContract, looksLikeRawStructuredOutput, mergeCanonicalTerms, preserveRetrievalSeeds, REASONING_ENGINE_VERSION, recoveryPlanFromSandbox, requiresAggregateCollection, semanticQuestionContract } from './reasoning_engine.ts';
 import { preferredAnswerShouldReplace, relationSnapshot, semanticCachePayload, semanticCacheSignature, validatePreferredAnswerSources } from './validated_cache.ts';
 import { findVerifiedSemanticMemory, recordSemanticMemoryFeedback, storeVerifiedSemanticRecovery, type RecoveryHypothesis, type SemanticMemoryHint } from './semantic_recovery_memory.ts';
 import { extractVerifiedSearchStrategy, validatedLearningGate } from './validated_learning.ts';
@@ -96,29 +96,6 @@ function ledgerSupportsAnswer(contract: QuestionContract, ledger: EvidenceLedger
   return ledger.status === 'complete' && aggregateReady && evidence.length > 0
     && (!requiresExplicitDirectionProof(contract) || ledger.relation_direction_preserved);
 }
-function fallbackQuestionContract(question: string, semantic: SemanticInterpretation, entities: V3Entity[]): QuestionContract {
-  const dimensions = [...new Set((semantic.requested_dimensions ?? []).map((value) => String(value).trim()).filter(Boolean))];
-  const fallbackNeed = String(semantic.requested_information ?? semantic.information_need ?? semantic.semantic_intent ?? question).trim();
-  const facets = dimensions.length > 0
-    ? dimensions.map((description, index) => ({ id: `semantic_facet_${index + 1}`, description, requested_type: description, required: true }))
-    : [{ id: 'semantic_information_need', description: fallbackNeed, requested_type: fallbackNeed, required: true }];
-  const primarySubject = entities[0]?.canonical_name
-    ?? semantic.medication ?? semantic.generic ?? semantic.drug_class ?? semantic.indication ?? fallbackNeed;
-  return {
-    original_question: question,
-    primary_subject: String(primarySubject).slice(0, 500),
-    secondary_subjects: entities.slice(1, 9).map((entity) => entity.canonical_name),
-    requested_relationships: [],
-    required_answer_facets: facets.slice(0, 12),
-    comparison_axes: [], constraints: [], patient_facts: [], ambiguities: [],
-    expected_answer_type: 'grounded response', answer_cardinality: 'unknown', source_requirement: semantic.source_requested,
-    initial_search_hypotheses: [{
-      query: question.slice(0, 500), mode: 'all',
-      concepts: [...new Set([...(semantic.search_concepts ?? []), ...entities.map((entity) => entity.canonical_name)])].slice(0, 10),
-      relationship_direction: 'unknown',
-    }],
-  };
-}
 function requiresExplicitDirectionProof(contract: QuestionContract) {
   return contract.requested_relationships.some((relationship) =>
     ['reverse', 'bidirectional', 'comparison'].includes(relationship.direction)
@@ -144,6 +121,7 @@ function rerankUnits(units: HybridSearchUnit[], judgments: RerankResult['judgmen
   });
 }
 function judgedUnits(units: HybridSearchUnit[], judgments: RerankResult['judgments']) {
+  const retrievalOrderedUnits = [...units].sort((left, right) => Number(right.hybrid_rrf_score) - Number(left.hybrid_rrf_score));
   const reranked = rerankUnits(units, judgments);
   const positiveIds = new Set(judgments.filter((x) => x.answer_bearing || x.relevance_score >= 55).map((x) => x.candidate_id));
   const aiSelected = reranked.filter((unit) => positiveIds.has(unit.search_unit_id));
@@ -151,8 +129,7 @@ function judgedUnits(units: HybridSearchUnit[], judgments: RerankResult['judgmen
   // high-confidence, entity-isolated retrieval evidence before structural
   // hydration. A small RRF seed set protects recall; downstream chunk ranking
   // and the hydrated AI sufficiency judge still control usable evidence.
-  const recallSeeds = units.slice(0, 10);
-  const selected = [...new Map([...aiSelected, ...recallSeeds].map((unit) => [unit.search_unit_id, unit])).values()].slice(0, 14);
+  const selected = preserveRetrievalSeeds(retrievalOrderedUnits, reranked, aiSelected);
   return selected.length ? selected : units.slice(0, 6);
 }
 // The Edge Function intentionally uses runtime-discovered RPCs introduced by
@@ -582,15 +559,22 @@ Deno.serve(async (request) => {
     trace.semantic = semantic; trace.verified_entities = verifiedEntities;
     const contractStarted = Date.now();
     let contractResult: ({ contract: QuestionContract } & AIMetadata);
-    try {
+    const semanticContract = semanticQuestionContract(question, semantic, verifiedEntities);
+    if (!objective.rebuild_question_contract) {
+      contractResult = {
+        contract: semanticContract, usage: null, latency_ms: 0,
+        provider: semanticResult.provider, model: semanticResult.model,
+      };
+      trace.providers.question_contract_source = 'mandatory_semantic_interpreter';
+    } else try {
       contractResult = await createQuestionContract(question, semantic, verifiedEntities, objective.name);
     } catch (error) {
       contractResult = {
-        contract: fallbackQuestionContract(question, semantic, verifiedEntities), usage: null, latency_ms: Date.now() - contractStarted,
+        contract: semanticContract, usage: null, latency_ms: Date.now() - contractStarted,
         provider: semanticResult.provider, model: semanticResult.model,
       };
       trace.fallback_used = 'semantic_question_contract_fallback';
-      trace.providers.question_contract_error = error instanceof Error ? error.name : 'unknown';
+      trace.providers.question_contract_error = diagnosticError(error);
     }
     const questionContract = contractResult.contract;
     trace.question_contract = questionContract as unknown as Record<string, unknown>;
