@@ -168,15 +168,20 @@ async function hydrateEvidence(db: DBClient, units: HybridSearchUnit[], judgment
   const judgmentById = new Map(judgments.map((x) => [x.candidate_id, x]));
   const expandIds = selectedUnits.filter((u) => judgmentById.get(u.search_unit_id)?.expansion_needed || ['table_row', 'table', 'section', 'page'].includes(u.unit_type)).map((u) => u.search_unit_id);
   const parentIds = [...new Set(selectedUnits.filter((u) => u.unit_type === 'table_row' && u.parent_unit_id).map((u) => u.parent_unit_id as string))];
-  const [hydratedResult, siblingResult] = await Promise.all([
+  const selectedDocumentIds = [...new Set(selectedUnits.map((unit) => unit.document_id))];
+  const [hydratedResult, siblingResult, ownerResult] = await Promise.all([
     db.rpc('insurance_v3_hydrate_search_units', { p_unit_ids: selectedUnits.map((u) => u.search_unit_id), p_expand_unit_ids: expandIds, p_limit: 60 }),
     parentIds.length
       ? db.from('insurance_v3_search_units').select('id,document_id,unit_type,page_from,page_to,sheet_name,row_from,row_to,section_title,table_title,parent_unit_id,sibling_order,retrieval_text,source_chunk_ids,metadata').eq('active', true).in('parent_unit_id', parentIds).order('sibling_order').limit(80)
+      : Promise.resolve({ data: [], error: null }),
+    selectedDocumentIds.length
+      ? db.from('insurance_v3_search_units').select('id,document_id,unit_type,page_from,page_to,sheet_name,row_from,row_to,section_title,table_title,parent_unit_id,sibling_order,retrieval_text,source_chunk_ids,metadata').eq('active', true).in('document_id', selectedDocumentIds).in('unit_type', ['page', 'section']).limit(240)
       : Promise.resolve({ data: [], error: null }),
   ]);
   const { data, error } = hydratedResult;
   if (error) throw error;
   if (siblingResult.error) throw siblingResult.error;
+  if (ownerResult.error) throw ownerResult.error;
   const unitById = new Map(selectedUnits.map((unit) => [unit.search_unit_id, unit]));
   const sourceJudgmentBoost = new Map<string, number>();
   const answerBearingSourceIds = new Set<string>();
@@ -214,6 +219,29 @@ async function hydrateEvidence(db: DBClient, units: HybridSearchUnit[], judgment
     .map((chunk) => ({ ...chunk, metadata: { ...chunk.metadata, policy_scope: chunk.metadata.policy_scope ?? chunk.document_id }, score: Number(chunk.score || 0) + (sourceJudgmentBoost.get(chunk.chunk_id) ?? 0) }));
   const scoped = isolateMedicationCandidates([...projectedRows, ...originalChunks], entities, knownEntities);
   const ranked = rerankChunks(scoped, entities, dimensions, semantic.treatment_stage, question, semantic);
+  const projectedOwners = ((ownerResult.data ?? []) as Array<Record<string, unknown>>).flatMap((row): V3Chunk[] => {
+    const documentId = String(row.document_id ?? '');
+    const document = documentById.get(documentId);
+    const id = String(row.id ?? '');
+    const ownerText = String(row.retrieval_text ?? '').trim();
+    if (!documentId || !document || !id || !ownerText) return [];
+    const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata as Record<string, unknown> : {};
+    return [{
+      chunk_id: id, document_id: documentId, document_title: document.title, file_name: document.file,
+      page_from: Number(row.page_from ?? 1), page_to: Number(row.page_to ?? row.page_from ?? 1),
+      sheet_name: row.sheet_name == null ? null : String(row.sheet_name),
+      row_from: row.row_from == null ? null : Number(row.row_from), row_to: row.row_to == null ? null : Number(row.row_to),
+      chunk_index: Number(row.sibling_order ?? 0), section_title: String(row.section_title ?? row.table_title ?? ''), chunk_text: ownerText,
+      metadata: { ...metadata, context_binding: 'same_document_owner_context', source_chunk_ids: row.source_chunk_ids, policy_scope: metadata.policy_scope ?? documentId },
+      score: 3, fts_rank: 0, trigram_score: 0, matched_entity_count: 0, matched_dimensions: [],
+    }];
+  });
+  const rankedOwners = rerankChunks(isolateMedicationCandidates(projectedOwners, entities, knownEntities), entities, dimensions, semantic.treatment_stage, question, semantic);
+  const ownersByDocument = new Map<string, typeof rankedOwners>();
+  for (const owner of rankedOwners) {
+    const current = ownersByDocument.get(owner.document_id) ?? [];
+    if (current.length < 2) ownersByDocument.set(owner.document_id, [...current, owner]);
+  }
   const projectedUnitById = new Map(projectedRows.map((chunk) => {
     const unit = [...selectedUnits, ...((siblingResult.data ?? []) as Array<Record<string, unknown>>).map((row) => {
       const document = documentById.get(String(row.document_id));
@@ -235,6 +263,10 @@ async function hydrateEvidence(db: DBClient, units: HybridSearchUnit[], judgment
   // response cannot delete entity-isolated TOP10 evidence. Hydrated recall
   // evidence remains visible to the sufficiency and final grounding stages.
   selection.selected = [...new Map([...selection.selected, ...recallEvidence].map((chunk) => [chunk.chunk_id, chunk])).values()].slice(0, 12);
+  const ownerContexts = [...new Set(selection.selected.map((chunk) => chunk.document_id))]
+    .flatMap((documentId) => ownersByDocument.get(documentId) ?? []);
+  selection.selected = [...new Map([...selection.selected, ...ownerContexts]
+    .map((chunk) => [chunk.chunk_id, chunk])).values()];
   const judgedAnswerEvidence = ranked.filter((chunk) => answerBearingSourceIds.has(chunk.chunk_id)
     || judgmentById.get(chunk.chunk_id)?.answer_bearing === true
     || (Array.isArray(chunk.metadata.source_chunk_ids) && chunk.metadata.source_chunk_ids.some((id) => answerBearingSourceIds.has(String(id)))));

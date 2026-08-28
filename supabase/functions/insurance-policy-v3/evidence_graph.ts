@@ -11,6 +11,32 @@ const structuralScopeKeys = [
 
 const contextBinding = (chunk: V3Chunk) => String(chunk.metadata.context_binding ?? '') === 'same_document_owner_context';
 
+export function evidenceForContractInspection(evidence: V3Chunk[], limit = 12) {
+  const direct = evidence.filter((chunk) => !contextBinding(chunk));
+  const owners = evidence.filter(contextBinding);
+  const bundled: V3Chunk[] = [];
+  const add = (chunk: V3Chunk) => {
+    if (!bundled.some((item) => item.chunk_id === chunk.chunk_id)) bundled.push(chunk);
+  };
+  // Put a bounded owner/subject context beside each direct row. Context can
+  // complete row -> document -> treatment proof, but cannot answer alone.
+  for (const chunk of direct) {
+    if (bundled.length >= limit) break;
+    add(chunk);
+    const compatibleOwners = owners.filter((owner) => owner.document_id === chunk.document_id
+      && !conflictingExplicitScope([chunk, owner]));
+    for (const owner of compatibleOwners.slice(0, 2)) {
+      if (bundled.length >= limit) break;
+      add(owner);
+    }
+  }
+  for (const chunk of evidence) {
+    if (bundled.length >= limit) break;
+    add(chunk);
+  }
+  return bundled.slice(0, limit);
+}
+
 function scopeValues(chunk: V3Chunk) {
   return new Map(structuralScopeKeys.flatMap((key) => {
     const value = normalized(chunk.metadata[key]);
@@ -19,7 +45,14 @@ function scopeValues(chunk: V3Chunk) {
 }
 
 function conflictingExplicitScope(chunks: V3Chunk[]) {
-  for (const key of structuralScopeKeys) {
+  const sameDocumentOwnerJoin = chunks.some(contextBinding)
+    && new Set(chunks.map((chunk) => chunk.document_id)).size === 1;
+  // Owner context may bridge pages/sections within one policy. Stable policy
+  // identity must still agree; local section/table coordinates need not.
+  const comparableKeys = sameDocumentOwnerJoin
+    ? structuralScopeKeys.filter((key) => !['section_path', 'parent_unit_id'].includes(key))
+    : structuralScopeKeys;
+  for (const key of comparableKeys) {
     const values = new Set(chunks.map((chunk) => scopeValues(chunk).get(key)).filter(Boolean));
     if (values.size > 1) return key;
   }

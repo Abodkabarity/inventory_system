@@ -3,6 +3,7 @@ import type { EvidenceLedger, EvidenceRelationPath, QuestionContract } from './a
 import {
   aggregateSearchState,
   clarificationGate,
+  evidenceForContractInspection,
   preserveEvidenceLedgerOnProviderFailure,
   validateDocumentRelationshipBindings,
 } from './evidence_graph.ts';
@@ -217,4 +218,23 @@ Deno.test('TEST N: multi-subject reverse and forward facets use their own direct
   const result = validateDocumentRelationshipBindings(multi, evidence, multiLedger);
   assertEquals(result.ledger.status, 'complete');
   assertEquals(result.ledger.facets.map((facet) => facet.relation_paths.length), [1, 1]);
+});
+
+Deno.test('TEST O: inspection bundles direct eligibility with same-document treatment owner context', () => {
+  const evidence = [
+    chunk('specialty-a', 'A', 'Eligible Specialty = Specialist S', 2, { policy_scope: 'A' }),
+    chunk('noise-b', 'B', 'Unrelated evidence', 1, { policy_scope: 'B' }),
+    chunk('owner-a', 'A', 'Policy A covers Treatment T.', 1, { context_binding: 'same_document_owner_context', policy_scope: 'A' }),
+    chunk('owner-b', 'B', 'Policy B covers Treatment Z.', 1, { context_binding: 'same_document_owner_context', policy_scope: 'B' }),
+  ];
+  assertEquals(evidenceForContractInspection(evidence, 3).map((item) => item.chunk_id), ['specialty-a', 'owner-a', 'noise-b']);
+});
+
+Deno.test('TEST P: document owner context safely bridges different sections of one policy', () => {
+  const evidence = [
+    chunk('specialty-row', 'D1', 'Eligible Specialty = Specialist S', 3, { policy_scope: 'D1', section_path: 'eligibility' }),
+    chunk('owner-context', 'D1', 'This policy covers Treatment T.', 1, { context_binding: 'same_document_owner_context', policy_scope: 'D1', section_path: 'overview' }),
+  ];
+  const result = validateDocumentRelationshipBindings(contract(), evidence, ledger([path('therapy_list', 'Treatment T', 'specialty-row', 'owner-context')]));
+  assertEquals(result.ledger.facets[0].status, 'supported');
 });

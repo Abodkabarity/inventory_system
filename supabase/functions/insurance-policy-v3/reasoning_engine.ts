@@ -1,7 +1,7 @@
 import type { EvidenceLedger, QuestionContract, RecoveryPlan, SemanticHypothesisSandbox } from './ai.ts';
 import type { HybridSearchUnit, SemanticInterpretation, V3Chunk, V3Entity } from './retrieval.ts';
 
-export const REASONING_ENGINE_VERSION = 'insurance-v3-shared-reasoning-v169';
+export const REASONING_ENGINE_VERSION = 'insurance-v3-shared-reasoning-v170';
 
 export function semanticQuestionContract(
   question: string,

@@ -2,7 +2,7 @@ import type { HybridSearchUnit, SemanticInterpretation, V3Chunk, V3Entity } from
 import { extractOrThresholdTimeRuleGroups, type OrThresholdTimeEvaluation } from './criteria.ts';
 import { AI_MODEL, AIProviderError, callAI, callGroqAfterMalformedTogether, type AICallType, type AIProviderName, type AIRequest, type AIUsage } from './ai_provider.ts';
 import { answerIncorporatesMissingEvidenceFacts, hasMeaningfulAdditionalEvidence, recoveryEvidenceWithMissingFacts, removeBroadAbsenceClaimsAfterRecovery, substantiallyEquivalentAnswer } from './incomplete_recovery.ts';
-import { relationPathsVerified, validateDocumentRelationshipBindings, type EvidenceGraphDiagnostics } from './evidence_graph.ts';
+import { evidenceForContractInspection, relationPathsVerified, validateDocumentRelationshipBindings, type EvidenceGraphDiagnostics } from './evidence_graph.ts';
 
 export { AI_MODEL };
 
@@ -851,7 +851,8 @@ export async function inspectEvidenceAgainstContract(
   verifiedEntities: V3Entity[], evidence: V3Chunk[], priorSearches: string[] = [],
 ): Promise<{ ledger: EvidenceLedger; binding_diagnostics: EvidenceGraphDiagnostics } & AIResultMetadata> {
   const started = Date.now();
-  const supplied = evidence.slice(0, 12).map((chunk) => ({
+  const inspectionEvidence = evidenceForContractInspection(evidence, 12);
+  const supplied = inspectionEvidence.map((chunk) => ({
     id: chunk.chunk_id, document_id: chunk.document_id, document: chunk.document_title, section: chunk.section_title,
     page_from: chunk.page_from, page_to: chunk.page_to, row_from: chunk.row_from, row_to: chunk.row_to,
     context_binding: chunk.metadata.context_binding ?? null,
@@ -913,7 +914,7 @@ export async function inspectEvidenceAgainstContract(
     matched_subjects: strings(raw.matched_subjects, 30), next_searches: nextSearches,
     reason: String(raw.reason ?? '').slice(0, 700),
   };
-  const bound = validateDocumentRelationshipBindings(contract, evidence, unvalidatedLedger);
+  const bound = validateDocumentRelationshipBindings(contract, inspectionEvidence, unvalidatedLedger);
   return { ledger: bound.ledger, binding_diagnostics: bound.diagnostics, usage: completionUsage(completion.payload), latency_ms: Date.now() - started, provider: completion.provider, model: completion.model };
 }
 
