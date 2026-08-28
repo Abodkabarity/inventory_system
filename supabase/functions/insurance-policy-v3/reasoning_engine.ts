@@ -1,7 +1,7 @@
 import type { EvidenceLedger, QuestionContract, RecoveryPlan, SemanticHypothesisSandbox } from './ai.ts';
 import type { HybridSearchUnit, SemanticInterpretation, V3Chunk, V3Entity } from './retrieval.ts';
 
-export const REASONING_ENGINE_VERSION = 'insurance-v3-shared-reasoning-v168';
+export const REASONING_ENGINE_VERSION = 'insurance-v3-shared-reasoning-v169';
 
 export function semanticQuestionContract(
   question: string,
@@ -10,17 +10,20 @@ export function semanticQuestionContract(
 ): QuestionContract {
   const dimensions = [...new Set((semantic.requested_dimensions ?? []).map((value) => String(value).trim()).filter(Boolean))];
   const fallbackNeed = String(semantic.requested_information ?? semantic.information_need ?? semantic.semantic_intent ?? question).trim();
-  const facets = dimensions.length > 0
+  const semanticFacets = semantic.semantic_facets ?? [];
+  const facets = semanticFacets.length > 0
+    ? semanticFacets.map((facet, index) => ({ id: `semantic_facet_${index + 1}`, description: facet.description, requested_type: facet.requested_type, required: true }))
+    : dimensions.length > 0
     ? dimensions.map((description, index) => ({ id: `semantic_facet_${index + 1}`, description, requested_type: description, required: true }))
     : [{ id: 'semantic_information_need', description: fallbackNeed, requested_type: fallbackNeed, required: true }];
   const primarySubject = entities[0]?.canonical_name
     ?? semantic.medication ?? semantic.generic ?? semantic.drug_class ?? semantic.indication
     ?? semantic.search_concepts?.[0] ?? semantic.intent?.[0] ?? fallbackNeed;
   const intents = (semantic.intent ?? []).map((value) => String(value).trim()).filter(Boolean);
-  const relationships = intents.map((intent, index) => ({
+  const relationships = (semantic.semantic_relationships?.length ? semantic.semantic_relationships : intents.map((intent, index) => ({
     subject: String(primarySubject).slice(0, 240), relation: intent.slice(0, 240),
     object: dimensions[index] ?? dimensions[0] ?? null, direction: 'unknown' as const,
-  })).slice(0, 8);
+  }))).slice(0, 8);
   return {
     original_question: question, primary_subject: String(primarySubject).slice(0, 500),
     secondary_subjects: entities.slice(1, 9).map((entity) => entity.canonical_name),
@@ -28,7 +31,7 @@ export function semanticQuestionContract(
     comparison_axes: [], constraints: [],
     patient_facts: (semantic.facts ?? []).map((fact) => [fact.concept, fact.value, fact.unit, fact.temporal].filter((value) => value != null).join(' ')).slice(0, 12),
     ambiguities: [], expected_answer_type: intents.length > 1 ? 'multi-part grounded response' : 'grounded response',
-    answer_cardinality: intents.length > 1 && entities.length === 0 ? 'aggregate' : 'unknown',
+    answer_cardinality: semantic.answer_cardinality ?? (intents.length > 1 && entities.length === 0 ? 'aggregate' : 'unknown'),
     source_requirement: semantic.source_requested,
     initial_search_hypotheses: [{
       query: question.slice(0, 500), mode: 'all',
@@ -128,8 +131,10 @@ export function recoveryPlanFromSandbox(
   objective: FeedbackObjective,
   canonicalTerms: string[],
 ): RecoveryPlan {
-  const hypotheses = sandbox.hypotheses
+  const priority = (kind: SemanticHypothesisSandbox['hypotheses'][number]['kind']) => kind === 'evidence_discovered' ? 4 : kind === 'reverse_relation' ? 3 : kind === 'acronym_or_professional' ? 2 : kind === 'canonical' ? 1 : 0;
+  const hypotheses = [...sandbox.hypotheses]
     .filter((hypothesis) => objective.require_alternative_semantic_hypotheses ? hypothesis.kind !== 'literal' : true)
+    .sort((left, right) => priority(right.kind) - priority(left.kind))
     .slice(0, 5);
   return {
     decision: hypotheses.length ? 'search' : 'not_found',

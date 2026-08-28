@@ -192,7 +192,7 @@ Deno.test('TEST N: multi-subject reverse and forward facets use their own direct
       { subject: 'policy document', relation: 'applies_to', object: 'ENT doctor', direction: 'reverse' },
     ],
     required_answer_facets: [
-      { id: 'treatments', description: 'treatments the clinician can prescribe', requested_type: 'list<string>', required: true },
+      { id: 'treatments', description: 'treatments the clinician can prescribe', requested_type: 'allowed treatments', required: true },
       { id: 'policies', description: 'policy documents that apply', requested_type: 'list of policy identifiers', required: true },
     ],
     initial_search_hypotheses: [{

@@ -106,6 +106,19 @@ const semanticResponseFormat = {
         indication: nullableString,
         intent: { type: 'array', items: { type: 'string' }, maxItems: 8 },
         requested_dimensions: { type: 'array', items: { type: 'string' }, maxItems: 12 },
+        semantic_facets: { type: 'array', maxItems: 12, items: {
+          type: 'object', additionalProperties: false,
+          properties: { description: { type: 'string' }, requested_type: { type: 'string' } },
+          required: ['description', 'requested_type'],
+        } },
+        semantic_relationships: { type: 'array', maxItems: 8, items: {
+          type: 'object', additionalProperties: false,
+          properties: {
+            subject: { type: 'string' }, relation: { type: 'string' }, object: nullableString,
+            direction: { type: 'string', enum: ['forward', 'reverse', 'bidirectional', 'comparison', 'unknown'] },
+          }, required: ['subject', 'relation', 'object', 'direction'],
+        } },
+        answer_cardinality: { type: 'string', enum: ['singular', 'aggregate', 'unknown'] },
         treatment_stage: { anyOf: [{ type: 'string', enum: ['initiation', 'continuation', 'refill'] }, { type: 'null' }] },
         semantic_intent: nullableString,
         requested_information: nullableString,
@@ -133,7 +146,7 @@ const semanticResponseFormat = {
         },
         source_requested: { type: 'boolean' },
       },
-      required: ['route', 'medication', 'generic', 'drug_class', 'indication', 'intent', 'requested_dimensions', 'treatment_stage', 'semantic_intent', 'requested_information', 'information_need', 'retrieval_queries', 'search_concepts', 'search_phrases', 'search_query', 'negation', 'temporal_context', 'facts', 'source_requested'],
+      required: ['route', 'medication', 'generic', 'drug_class', 'indication', 'intent', 'requested_dimensions', 'semantic_facets', 'semantic_relationships', 'answer_cardinality', 'treatment_stage', 'semantic_intent', 'requested_information', 'information_need', 'retrieval_queries', 'search_concepts', 'search_phrases', 'search_query', 'negation', 'temporal_context', 'facts', 'source_requested'],
     },
   },
 };
@@ -184,11 +197,11 @@ export async function interpretQuestion(question: string, verifiedEntityCatalog:
     // The expanded retrieval plan has substantially more JSON fields than the
     // previous semantic contract. Together counts hidden reasoning inside the
     // request budget, so leave enough visible-output room to close the JSON.
-    maxOutputTokens: 1200,
+    maxOutputTokens: 1500,
     response_format: { type: 'json_object' },
     together_response_format: semanticResponseFormat,
     messages: [
-      { role: 'system', content: `Interpret an insurance-policy question for retrieval. This semantic step is mandatory for every message. Never supply or infer policy facts. Preserve the user's full meaning across Arabic, English, mixed language, abbreviations, shorthand, negation, numbers, units, comparisons, alternatives, and temporal relationships. verified_entity_catalog contains trusted canonical names and aliases, not policy facts. When the message contains a transliterated, misspelled, abbreviated, Arabic-script, or mixed-script medicine name, select medication/generic/drug_class only from a confidently matching catalog entity and copy its canonical_name exactly. If identity is ambiguous, do not guess. Never introduce a dose, threshold, age, duration, route, frequency, or other numeric fact that the user did not state; those are evidence outputs, not semantic inputs. Never expand the requested scope: a dosage schedule asks for dose and frequency, not treatment duration unless the user explicitly asks how long treatment continues. treatment_stage is initiation when the user asks what is required before starting, initial approval, or first coverage; continuation when asking whether an existing treatment can continue; refill only for repeat dispensing. source_requested is true only when the user explicitly asks for a source, page, document, or citation. Return JSON only with: route (policy_question, catalog_discovery, source_request, clarification_required, out_of_scope), medication, generic, drug_class, indication, intent[], requested_dimensions[] (open vocabulary hints, never a closed taxonomy), treatment_stage (initiation, continuation, refill, or null), semantic_intent (a precise free-form statement of what the user is asking), requested_information (the exact information the evidence must contain), information_need (one precise answer-bearing evidence need), retrieval_queries[] (up to six diverse document-search formulations preserving identity and constraints), search_concepts[] (compact concepts and synonyms useful for document retrieval), search_phrases[] (short source-like phrases likely to appear in evidence), search_query (a concise text-first retrieval query), negation[] (negated or absent facts), temporal_context, facts[] (concept,value,unit,polarity,temporal), source_requested. Retrieval queries must not contain candidate answers or numbers absent from the user's message. The retrieval plan must describe the request, not answer it. Keep output compact.` },
+      { role: 'system', content: `Interpret an insurance-policy question for retrieval. This semantic step is mandatory for every message. Never supply or infer policy facts. Preserve the user's full meaning across Arabic, English, mixed language, abbreviations, shorthand, negation, numbers, units, comparisons, alternatives, and temporal relationships. verified_entity_catalog contains trusted canonical names and aliases, not policy facts. When the message contains a transliterated, misspelled, abbreviated, Arabic-script, or mixed-script medicine name, select medication/generic/drug_class only from a confidently matching catalog entity and copy its canonical_name exactly. If identity is ambiguous, do not guess. Never introduce a dose, threshold, age, duration, route, frequency, diagnosis, treatment, or other policy fact that the user did not state; those are evidence outputs, not semantic inputs. Never expand the requested scope. treatment_stage is initiation when the user asks what is required before starting, initial approval, or first coverage; continuation when asking whether an existing treatment can continue; refill only for repeat dispensing. source_requested is true only when the user explicitly asks for a source, page, document, or citation. semantic_facets must contain every atomic answer need; requested_type must be a short semantic endpoint type such as treatment, medication, policy document, specialty, criterion, dose, age, lab threshold, or time window, never a sentence or container type. semantic_relationships must preserve each grammatical subject, relation, object, and direction independently. Use answer_cardinality=aggregate for a requested collection or reverse lookup with potentially multiple owners. Return compact JSON only with all schema fields. Retrieval queries must not contain candidate answers or facts absent from the user's message; they may expand user terminology such as an abbreviation or professional title but must not guess which medicine, diagnosis, or policy will answer. The retrieval plan must describe the request, not answer it.` },
       { role: 'user', content: JSON.stringify({ question, verified_entity_catalog: verifiedEntityCatalog }) },
     ],
   }, 'semantic');
@@ -202,6 +215,7 @@ export async function interpretQuestion(question: string, verifiedEntityCatalog:
   const questionNumbers = new Set(normalizeDigits(question).match(/\d+(?:\.\d+)?/g) ?? []);
   const numericallyGrounded = (value: string) => (normalizeDigits(value).match(/\d+(?:\.\d+)?/g) ?? []).every((number) => questionNumbers.has(number));
   const groundedStrings = (value: unknown) => strings(value).filter(numericallyGrounded);
+  const directions = new Set(['forward', 'reverse', 'bidirectional', 'comparison', 'unknown']);
   const normalizedQuestion = question.normalize('NFKC').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
   const rawIndication = stringOrNull(raw.indication);
   const indicationCatalogMatches = rawIndication ? verifiedEntityCatalog.filter((entity) => entity.entity_type === 'indication'
@@ -224,6 +238,17 @@ export async function interpretQuestion(question: string, verifiedEntityCatalog:
       route: routes.has(String(raw.route)) ? raw.route as SemanticInterpretation['route'] : 'clarification_required',
       medication: stringOrNull(raw.medication), generic: stringOrNull(raw.generic), drug_class: stringOrNull(raw.drug_class), indication: groundedIndication,
       intent: strings(raw.intent), requested_dimensions: strings(raw.requested_dimensions), treatment_stage: stringOrNull(raw.treatment_stage),
+      semantic_facets: (Array.isArray(raw.semantic_facets) ? raw.semantic_facets : []).flatMap((item) => {
+        if (!item || typeof item !== 'object') return [];
+        const row = item as Record<string, unknown>; const description = String(row.description ?? '').trim(); const requestedType = String(row.requested_type ?? '').trim();
+        return description && requestedType ? [{ description: description.slice(0, 500), requested_type: requestedType.slice(0, 120) }] : [];
+      }).slice(0, 12),
+      semantic_relationships: (Array.isArray(raw.semantic_relationships) ? raw.semantic_relationships : []).flatMap((item) => {
+        if (!item || typeof item !== 'object') return [];
+        const row = item as Record<string, unknown>; const subject = String(row.subject ?? '').trim(); const relation = String(row.relation ?? '').trim();
+        return subject && relation ? [{ subject: subject.slice(0, 240), relation: relation.slice(0, 240), object: stringOrNull(row.object), direction: directions.has(String(row.direction)) ? String(row.direction) as 'forward' | 'reverse' | 'bidirectional' | 'comparison' | 'unknown' : 'unknown' as const }] : [];
+      }).slice(0, 8),
+      answer_cardinality: ['singular', 'aggregate', 'unknown'].includes(String(raw.answer_cardinality)) ? raw.answer_cardinality as 'singular' | 'aggregate' | 'unknown' : 'unknown',
       semantic_intent: stringOrNull(raw.semantic_intent), requested_information: stringOrNull(raw.requested_information),
       information_need: stringOrNull(raw.information_need), retrieval_queries: groundedStrings(raw.retrieval_queries).slice(0, 6),
       search_concepts: groundedStrings(raw.search_concepts), search_phrases: groundedStrings(raw.search_phrases), search_query: numericallyGrounded(String(raw.search_query ?? '')) ? stringOrNull(raw.search_query) : null,

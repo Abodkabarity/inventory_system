@@ -39,8 +39,10 @@ function typeCompatible(requestedType: string, endpointType: string) {
   const endpoint = normalized(endpointType);
   if (!requested || !endpoint) return false;
   if (requested === endpoint) return true;
-  const requestedTokens = new Set(requested.split(' ').filter(Boolean));
-  const endpointTokens = new Set(endpoint.split(' ').filter(Boolean));
+  const singular = (token: string) => token.endsWith('ies') && token.length > 4 ? `${token.slice(0, -3)}y`
+    : token.endsWith('s') && !token.endsWith('ss') && token.length > 3 ? token.slice(0, -1) : token;
+  const requestedTokens = new Set(requested.split(' ').filter(Boolean).map(singular));
+  const endpointTokens = new Set(endpoint.split(' ').filter(Boolean).map(singular));
   return requestedTokens.size > 0 && endpointTokens.size > 0
     && ([...requestedTokens].every((token) => endpointTokens.has(token))
       || [...endpointTokens].every((token) => requestedTokens.has(token)));

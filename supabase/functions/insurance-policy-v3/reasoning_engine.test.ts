@@ -65,6 +65,15 @@ Deno.test('A2 semantic output compiles a multi-part open-vocabulary contract wit
     intent: ['find permitted treatments', 'find applicable policies'], requested_dimensions: ['treatment options', 'policy applicability'],
     treatment_stage: null, semantic_intent: 'Resolve a professional-specialty reverse policy lookup.',
     requested_information: 'Treatments and applicable policy documents', information_need: 'Specialty-linked policy evidence',
+    semantic_facets: [
+      { description: 'permitted treatments', requested_type: 'treatment' },
+      { description: 'applicable policies', requested_type: 'policy document' },
+    ],
+    semantic_relationships: [
+      { subject: 'Synthetic specialty', relation: 'may prescribe', object: 'treatment', direction: 'forward' },
+      { subject: 'policy document', relation: 'applies to', object: 'Synthetic specialty', direction: 'reverse' },
+    ],
+    answer_cardinality: 'aggregate',
     retrieval_queries: [], search_concepts: ['Synthetic specialty'], search_phrases: [], search_query: null,
     negation: [], temporal_context: null, facts: [], source_requested: false,
   };
@@ -72,7 +81,23 @@ Deno.test('A2 semantic output compiles a multi-part open-vocabulary contract wit
   assert(compiled.primary_subject === 'Synthetic specialty', 'semantic subject anchor was lost');
   assert(compiled.requested_relationships.length === 2, 'multi-part relationships were not preserved');
   assert(compiled.required_answer_facets.length === 2, 'multi-part facets were not preserved');
+  assert(compiled.required_answer_facets[1].requested_type === 'policy document', 'semantic endpoint type was replaced by descriptive wording');
   assert(compiled.answer_cardinality === 'aggregate', 'unanchored multi-part lookup was not treated as aggregate');
+});
+
+Deno.test('B2 evidence-discovered recovery searches outrank generic hypotheses before the bounded cutoff', () => {
+  const crowded: SemanticHypothesisSandbox = {
+    ...sandbox,
+    hypotheses: [
+      ...sandbox.hypotheses,
+      { kind: 'canonical', query: 'generic four', concepts: [], mode: 'all', relationship_direction: 'unknown', basis: 'general_knowledge_search_only' },
+      { kind: 'canonical', query: 'generic five', concepts: [], mode: 'all', relationship_direction: 'unknown', basis: 'general_knowledge_search_only' },
+      { kind: 'evidence_discovered', query: 'direct evidence terminology', concepts: ['direct term'], mode: 'all', relationship_direction: 'unknown', basis: 'retrieved_evidence' },
+    ],
+  };
+  const plan = recoveryPlanFromSandbox(crowded, feedbackObjective(null), []);
+  assert(plan.searches.length === 5, 'bounded recovery size changed');
+  assert(plan.searches[0].query === 'direct evidence terminology', 'direct evidence clue was truncated behind generic searches');
 });
 
 Deno.test('A3 newly retrieved top evidence survives stale reranker judgments', () => {
@@ -138,7 +163,7 @@ Deno.test('I feedback objectives differ while the reasoning implementation remai
   const normal = feedbackObjective(null); const incorrect = feedbackObjective('incorrect'); const incomplete = feedbackObjective('incomplete');
   assert(!normal.reconsider_interpretation && incorrect.reconsider_interpretation, 'Incorrect objective did not change');
   assert(incomplete.preserve_supported_previous_facts && !incorrect.preserve_supported_previous_facts, 'Incomplete objective did not change');
-  assert(REASONING_ENGINE_VERSION === 'insurance-v3-shared-reasoning-v168', 'shared engine signature changed unexpectedly');
+  assert(REASONING_ENGINE_VERSION === 'insurance-v3-shared-reasoning-v169', 'shared engine signature changed unexpectedly');
 });
 
 Deno.test('J first-pass search reuses the AI question contract without a duplicate AI planning call', () => {

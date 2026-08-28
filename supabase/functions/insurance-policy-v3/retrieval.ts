@@ -6,6 +6,9 @@ export type SemanticInterpretation = {
   indication: string | null;
   intent: string[];
   requested_dimensions: string[];
+  semantic_facets?: Array<{ description: string; requested_type: string }>;
+  semantic_relationships?: Array<{ subject: string; relation: string; object: string | null; direction: 'forward' | 'reverse' | 'bidirectional' | 'comparison' | 'unknown' }>;
+  answer_cardinality?: 'singular' | 'aggregate' | 'unknown';
   treatment_stage: string | null;
   semantic_intent: string | null;
   requested_information: string | null;
