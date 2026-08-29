@@ -17,6 +17,7 @@ from insurance_ingestion.worker import (
     ExtractedBlock,
     extract_csv,
     extract_docx,
+    extract_entity_aliases,
     extract_pdf,
     extract_xls,
     extract_xlsb,
@@ -43,6 +44,23 @@ ENTITY_SEED: dict[str, dict[str, list[str]]] = {
         "Trulicity": ["Trulicity"],
         "Zarzio": ["Zarzio"],
         "Botox": ["Botox"],
+        "Cibinqo": ["Cibinqo"],
+        "Emgality": ["Emgality"],
+        "Entyvio": ["Entyvio"],
+        "Eylea": ["Eylea"],
+        "Jyseleca": ["Jyseleca"],
+        "Lucentis": ["Lucentis"],
+        "Olumiant": ["Olumiant"],
+        "Spinraza": ["Spinraza"],
+        "Tremfya": ["Tremfya"],
+        "Xeljanz": ["Xeljanz"],
+        "Xolair": ["Xolair"],
+        "Nucala": ["Nucala"],
+        "Ocrevus": ["Ocrevus"],
+        "Skyrizi": ["Skyrizi"],
+        "Taltz": ["Taltz"],
+        "Cosentyx": ["Cosentyx"],
+        "Stelara": ["Stelara"],
     },
     "medication_generic": {
         "Erenumab": ["Erenumab"],
@@ -77,6 +95,15 @@ ENTITY_SEED: dict[str, dict[str, list[str]]] = {
         "Icosapent ethyl": ["Icosapent ethyl", "Icosapent"],
         "Reslizumab": ["Reslizumab"],
         "Benralizumab": ["Benralizumab"],
+        "Bulevirtide": ["Bulevirtide"],
+        "Etelcalcitide": ["Etelcalcitide"],
+        "Iptacopan": ["Iptacopan"],
+        "Isotretinoin": ["Isotretinoin"],
+        "Mitapivat": ["Mitapivat"],
+        "Nusinersen": ["Nusinersen"],
+        "Ribociclib": ["Ribociclib"],
+        "Somatropin": ["Somatropin", "recombinant growth hormone", "growth hormone"],
+        "Human normal immunoglobulin": ["Human normal immunoglobulin", "Human Immunoglobulin", "IVIG"],
     },
     "indication": {
         "Homozygous Familial Hypercholesterolaemia": [
@@ -100,6 +127,16 @@ ENTITY_SEED: dict[str, dict[str, list[str]]] = {
         ],
         "Severe asthma": ["Severe asthma", "asthma"],
         "Gastroesophageal reflux disease": ["Gastroesophageal reflux disease", "GERD"],
+        "Multiple sclerosis": ["Multiple sclerosis", "MS"],
+        "Spinal muscular atrophy": ["Spinal muscular atrophy", "SMA"],
+        "Benign prostatic hyperplasia": ["Benign prostatic hyperplasia", "BPH"],
+        "Polycystic ovary syndrome": ["Polycystic ovary syndrome", "PCOS"],
+        "Glaucoma": ["Glaucoma"],
+        "Acne": ["Acne"],
+        "Prostate cancer": ["Prostate cancer"],
+    },
+    "specialty": {
+        "Otolaryngology": ["Otolaryngology", "ENT"],
     },
     "drug_class": {
         "CGRP inhibitors": ["CGRP inhibitors", "CGRP"],
@@ -108,6 +145,12 @@ ENTITY_SEED: dict[str, dict[str, list[str]]] = {
         "Omega-3 therapies": ["Omega-3 therapies", "Omega-3", "Omega 3", "Omega-3-Acid Ethyl Esters"],
         "Proton pump inhibitors": ["Proton pump inhibitors", "PPI", "PPIs"],
         "Janus kinase inhibitors": ["Janus kinase inhibitors", "JAKi", "JAK inhibitors"],
+        "TNF-alpha inhibitors": ["TNF-alpha inhibitors", "TNF inhibitors", "TNF-α"],
+        "VEGF inhibitors": ["VEGF inhibitors", "Anti-VEGF", "Anti-Vascular Endothelial Growth Factor"],
+        "Continuous glucose monitoring": ["Continuous glucose monitoring", "CGM"],
+        "Automated insulin delivery": ["Automated insulin delivery", "AID"],
+        "CPAP and BiPAP": ["CPAP", "BiPAP", "CPAP and BiPAP"],
+        "Growth hormone therapy": ["Growth hormone therapy"],
     },
     "insurer": {"Daman": ["Daman"]},
 }
@@ -125,6 +168,23 @@ BRAND_RELATIONS = {
     "Trulicity": "Dulaglutide",
     "Zarzio": "Filgrastim",
     "Botox": "Botulinum toxin",
+    "Cibinqo": "Abrocitinib",
+    "Emgality": "Galcanezumab",
+    "Entyvio": "Vedolizumab",
+    "Eylea": "Aflibercept",
+    "Jyseleca": "Filgotinib",
+    "Lucentis": "Ranibizumab",
+    "Olumiant": "Baricitinib",
+    "Spinraza": "Nusinersen",
+    "Tremfya": "Guselkumab",
+    "Xeljanz": "Tofacitinib",
+    "Xolair": "Omalizumab",
+    "Nucala": "Mepolizumab",
+    "Ocrevus": "Ocrelizumab",
+    "Skyrizi": "Risankizumab",
+    "Taltz": "Ixekizumab",
+    "Cosentyx": "Secukinumab",
+    "Stelara": "Ustekinumab",
 }
 
 TOPIC_PATTERNS = {
@@ -336,13 +396,56 @@ def semantic_chunks(blocks: list[ExtractedBlock], pages: list[dict[str, Any]]) -
     return deduped
 
 
-def found_entities(text: str) -> list[dict[str, str]]:
+def discovered_entities(blocks: list[ExtractedBlock], document_id: str, document_title: str) -> list[dict[str, Any]]:
+    mapped: dict[tuple[str, str], dict[str, Any]] = {}
+    type_map = {
+        "medication": "medication_generic",
+        "ingredient": "medication_generic",
+        "therapy_class": "drug_class",
+    }
+    static_aliases = {
+        normalized(alias)
+        for entities in ENTITY_SEED.values()
+        for canonical, aliases in entities.items()
+        for alias in [canonical, *aliases]
+    }
+    allowed_discoveries = {"medicine_suffix_mention", "document_title_medication"}
+    for alias in extract_entity_aliases(blocks, document_id=document_id, document_title=document_title):
+        discovery = str((alias.get("metadata") or {}).get("discovery") or "")
+        if discovery not in allowed_discoveries:
+            continue
+        entity_type = type_map.get(str(alias.get("entity_type")))
+        canonical = re.sub(r"^INN[-\s]+", "", str(alias.get("canonical_name") or "").strip(), flags=re.IGNORECASE)
+        alias_value = str(alias.get("alias") or canonical).strip()
+        norm = normalized(canonical)
+        if not entity_type or not norm or norm in static_aliases or norm in {"statin", "dupliumab"}:
+            continue
+        key = (entity_type, norm)
+        item = mapped.setdefault(key, {
+            "entity_type": entity_type,
+            "canonical_name": canonical,
+            "aliases": set(),
+        })
+        item["aliases"].update(value for value in (canonical, alias_value) if value)
+    return [{**item, "aliases": sorted(item["aliases"], key=str.casefold)} for item in mapped.values()]
+
+
+def found_entities(text: str, extra_entities: list[dict[str, Any]] | None = None) -> list[dict[str, str]]:
     value = f" {normalized(text)} "
     output: list[dict[str, str]] = []
     for entity_type, entities in ENTITY_SEED.items():
         for canonical, aliases in entities.items():
             if any(f" {normalized(alias)} " in value for alias in aliases):
                 output.append({"entity_type": entity_type, "canonical_name": canonical})
+    for entity in extra_entities or []:
+        aliases = entity.get("aliases") or [entity["canonical_name"]]
+        if any(f" {normalized(str(alias))} " in value for alias in aliases):
+            candidate = {
+                "entity_type": str(entity["entity_type"]),
+                "canonical_name": str(entity["canonical_name"]),
+            }
+            if candidate not in output:
+                output.append(candidate)
     return output
 
 
@@ -378,7 +481,7 @@ def version_for(path: Path) -> str | None:
     if match:
         day, month, year = match.groups()
         return f"{year}-{int(month):02d}-{int(day):02d}"
-    return "old" if "old" in name.casefold() else None
+    return "old" if re.search(r"(?:^|[\s_.-])old(?:$|[\s_.-])", name, flags=re.IGNORECASE) else None
 
 
 def sql_value(value: Any) -> str:
@@ -401,10 +504,28 @@ def insert_sql(table: str, columns: list[str], rows: Iterable[list[Any]], confli
     return f"insert into public.{table} ({','.join(columns)}) values\n{rendered}\n{conflict};\n"
 
 
-def build(source_root: Path, output_root: Path) -> dict[str, Any]:
-    files, ignored = source_files(source_root)
-    manifest: dict[str, Any] = {"source_root": str(source_root.resolve()), "documents": [], "ignored": ignored}
+def build(source_root: Path | list[Path], output_root: Path) -> dict[str, Any]:
+    roots = [source_root] if isinstance(source_root, Path) else source_root
+    files: list[Path] = []
+    ignored: list[dict[str, str]] = []
+    seen_paths: set[str] = set()
+    for root in roots:
+        root_files, root_ignored = source_files(root)
+        ignored.extend(root_ignored)
+        for path in root_files:
+            resolved = str(path.resolve()).casefold()
+            if resolved not in seen_paths:
+                seen_paths.add(resolved)
+                files.append(path)
+    files.sort(key=lambda item: str(item).casefold())
+    manifest: dict[str, Any] = {
+        "source_root": str(roots[0].resolve()),
+        "source_roots": [str(root.resolve()) for root in roots],
+        "documents": [],
+        "ignored": ignored,
+    }
     all_entities: dict[tuple[str, str], dict[str, Any]] = {}
+    discovered_aliases: dict[tuple[str, str], set[str]] = defaultdict(set)
     document_text: dict[str, str] = {}
 
     for path in files:
@@ -421,6 +542,14 @@ def build(source_root: Path, output_root: Path) -> dict[str, Any]:
             chunks = semantic_chunks(blocks, pages)
             if not chunks:
                 raise RuntimeError("extraction produced no searchable chunks")
+            dynamic_entities = discovered_entities(blocks, document_id, report["title"])
+            for entity in dynamic_entities:
+                key = (entity["entity_type"], normalized(entity["canonical_name"]))
+                all_entities[key] = {
+                    "entity_type": entity["entity_type"],
+                    "canonical_name": entity["canonical_name"],
+                }
+                discovered_aliases[key].update(entity["aliases"])
             for page in pages:
                 page["id"] = stable_id("page", document_id, str(page["page_number"]))
                 page["content_hash"] = sha256(page["normalized_text"])
@@ -429,7 +558,7 @@ def build(source_root: Path, output_root: Path) -> dict[str, Any]:
                 # continuation paragraph. The approved filename/title is valid
                 # routing metadata, so link that verified entity to every chunk
                 # without copying any clinical fact into metadata.
-                entities = found_entities(f"{report['title']}\n{chunk['text']}")
+                entities = found_entities(f"{report['title']}\n{chunk['text']}", dynamic_entities)
                 metadata = {**chunk.pop("metadata"), **retrieval_metadata(chunk["text"], entities)}
                 chunk.update({
                     "id": stable_id("chunk", document_id, str(index)), "chunk_index": index,
@@ -463,7 +592,7 @@ def build(source_root: Path, output_root: Path) -> dict[str, Any]:
                 chunk["metadata"] = {**chunk["metadata"], **retrieval_metadata(chunk["text"], chunk["entities"])}
             document_text[document_id] = "\n".join(chunk["text"] for chunk in chunks)
             report.update({
-                "status": "ready", "is_active": "old" not in path.name.casefold(),
+                "status": "ready", "is_active": version_for(path) != "old",
                 "pages_or_sheets": len(pages), "characters_extracted": sum(len(page["raw_text"]) for page in pages),
                 "chunks_created": len(chunks),
                 "entities_found": sorted({item["canonical_name"] for chunk in chunks for item in chunk["entities"]}),
@@ -485,7 +614,9 @@ def build(source_root: Path, output_root: Path) -> dict[str, Any]:
         by_stem[logical].append(document)
     for documents in by_stem.values():
         if len(documents) > 1:
-            preferred = next((item for item in documents if item["type"] == "pdf" and "old" not in item["file"].casefold()), documents[0])
+            preferred = next((item for item in documents if item["type"] == "pdf" and not re.search(
+                r"(?:^|[\s_.-])old(?:$|[\s_.-])", item["file"], flags=re.IGNORECASE
+            )), documents[0])
             for item in documents:
                 if item is not preferred and item["status"] == "ready":
                     item["is_active"] = False
@@ -505,7 +636,9 @@ def build(source_root: Path, output_root: Path) -> dict[str, Any]:
 
     entities = []
     for (entity_type, norm), item in sorted(all_entities.items()):
-        aliases = ENTITY_SEED[entity_type][item["canonical_name"]]
+        aliases = list(ENTITY_SEED.get(entity_type, {}).get(item["canonical_name"], []))
+        aliases.extend(discovered_aliases.get((entity_type, norm), set()))
+        aliases.append(item["canonical_name"])
         unique_aliases = {
             normalized(alias): alias for alias in aliases if normalized(alias)
         }
@@ -536,6 +669,10 @@ def build_sql(manifest: dict[str, Any]) -> str:
     sql = ["""begin;
 
 -- V3 is rebuilt as an isolated corpus. These deletes never touch V2 or legacy tables.
+-- V4 entity facts are a derived shadow index with restrictive entity foreign keys;
+-- clear them first and rebuild them after the new V3 corpus is committed.
+delete from public.insurance_v4_fact_review_queue;
+delete from public.insurance_v4_entity_facts;
 delete from public.insurance_v3_chunk_entities;
 delete from public.insurance_v3_entity_relations;
 delete from public.insurance_v3_aliases;
@@ -584,6 +721,36 @@ delete from public.insurance_v3_documents;
     # transaction. The scheduled embedding worker then processes only units
     # whose content hash changed; no per-document embedding step is required.
     sql.append("select * from public.insurance_v3_refresh_search_units();")
+    sql.append("""
+update public.insurance_v3_documents as document
+set storage_bucket = 'insurance-documents',
+    storage_path = (
+      select object.name
+      from storage.objects as object
+      where object.bucket_id = 'insurance-documents'
+        and object.name like left(document.document_hash, 12) || '/%'
+      order by object.created_at desc
+      limit 1
+    )
+where (document.storage_path is null or document.storage_path = '')
+  and exists (
+    select 1
+    from storage.objects as object
+    where object.bucket_id = 'insurance-documents'
+      and object.name like left(document.document_hash, 12) || '/%'
+  );
+
+do $$
+begin
+  if exists (
+    select 1 from public.insurance_v3_documents
+    where is_active and (storage_bucket is null or storage_path is null or storage_path = '')
+  ) then
+    raise exception 'Every active V3 document must have a Storage object reference.';
+  end if;
+end;
+$$;
+""")
     sql.append("commit;\n")
     return "\n".join(part for part in sql if part)
 
@@ -624,10 +791,11 @@ def write_reports(manifest: dict[str, Any], output_root: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build the source-first insurance V3 corpus and SQL payload.")
-    parser.add_argument("source", type=Path)
+    parser.add_argument("source", type=Path, nargs="+")
     parser.add_argument("--output", type=Path, default=Path("insurance_v3/generated"))
     args = parser.parse_args()
-    manifest = build(args.source.resolve(), args.output.resolve())
+    sources = [source.resolve() for source in args.source]
+    manifest = build(sources[0] if len(sources) == 1 else sources, args.output.resolve())
     print(json.dumps({"documents": len(manifest["documents"]), "chunks": sum(item["chunks_created"] for item in manifest["documents"]), "entities": len(manifest["entities"]), "relations": len(manifest["relations"]), "output": str(args.output.resolve())}, ensure_ascii=False))
 
 

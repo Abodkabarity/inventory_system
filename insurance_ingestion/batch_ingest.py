@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
+import time
 from pathlib import Path
 
 try:
@@ -11,28 +13,11 @@ except ImportError:
     from worker import InsuranceIngestionWorker, SUPPORTED, build_client, sha256_bytes
 
 
-CATEGORY_RULES = [
-    (r"cgrp|galcanezumab", "migraine_cgrp"),
-    (r"glp-?1.*mash|mash", "glp1_mash"),
-    (r"glp-?1", "diabetes_glp1"),
-    (r"omega-?3", "omega3_therapy"),
-    (r"botox|botulinum", "botulinum_toxin"),
-    (r"filgrastim|zarzio", "filgrastim"),
-    (r"dupilumab", "dupilumab"),
-    (r"biologic therapy|f-6030", "biologic_prerequisite"),
-    (r"janus|jaki", "jak_inhibitors"),
-    (r"mepolizumab", "mepolizumab"),
-    (r"omalizumab", "omalizumab"),
-    (r"ondansetron", "ondansetron"),
-    (r"tralokinumab", "tralokinumab"),
-    (r"pcsk9", "pcsk9_inhibitors"),
-    (r"ppi", "ppi_coverage"),
-]
-
-
 def infer_category(name: str) -> str:
-    normalized = name.casefold()
-    return next((category for pattern, category in CATEGORY_RULES if re.search(pattern, normalized)), "insurance_policy")
+    # The document's extracted content creates its entity/topic profile. File
+    # names must not require code changes when future policies are uploaded.
+    del name
+    return "insurance_policy"
 
 
 def infer_version(name: str) -> str:
@@ -44,7 +29,7 @@ def infer_version(name: str) -> str:
     if matches:
         day, month, year = matches[-1]
         return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
-    return "old" if "old" in name.casefold() else "current"
+    return "old" if re.search(r"(?:^|[\s_.-])old(?:$|[\s_.-])", name, flags=re.IGNORECASE) else "current"
 
 
 def title_from_path(path: Path) -> str:
@@ -52,10 +37,15 @@ def title_from_path(path: Path) -> str:
     return re.sub(r"\s+", " ", title).strip()
 
 
+def is_old_version(path: Path) -> bool:
+    return bool(re.search(r"(?:^|[\s_.-])old(?:$|[\s_.-])", path.name, flags=re.IGNORECASE))
+
+
 def main() -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Ingest every supported insurance document in a folder.")
     parser.add_argument("directory", type=Path)
-    parser.add_argument("--skip-embeddings", action="store_true")
     parser.add_argument(
         "--force",
         action="store_true",
@@ -67,24 +57,18 @@ def main() -> None:
         raise NotADirectoryError(directory)
 
     client = build_client()
-    worker = InsuranceIngestionWorker(client, skip_embeddings=args.skip_embeddings)
+    worker = InsuranceIngestionWorker(client)
     results: list[dict] = []
-    for path in sorted(directory.iterdir(), key=lambda item: item.name.casefold()):
+    for path in sorted(directory.rglob("*"), key=lambda item: str(item.relative_to(directory)).casefold()):
         if not path.is_file() or path.suffix.casefold() not in SUPPORTED:
             continue
         checksum = sha256_bytes(path.read_bytes())
-        existing = client.table("insurance_documents").select("id,processing_status,metadata").eq("checksum", checksum).execute().data
+        inactive = is_old_version(path)
+        existing = client.table("insurance_documents").select("id,processing_status,metadata,is_active").eq("checksum", checksum).execute().data
         if existing and existing[0]["processing_status"] == "ready" and not args.force:
+            if bool(existing[0].get("is_active")) == inactive:
+                client.table("insurance_documents").update({"is_active": not inactive}).eq("id", existing[0]["id"]).execute()
             results.append({"file": path.name, "id": existing[0]["id"], "status": "already_ready"})
-            continue
-        if (
-            args.skip_embeddings
-            and existing
-            and not args.force
-            and existing[0]["processing_status"] == "embedding"
-            and int((existing[0].get("metadata") or {}).get("chunk_count") or 0) > 0
-        ):
-            results.append({"file": path.name, "id": existing[0]["id"], "status": "already_extracted"})
             continue
 
         document_id = worker.register(
@@ -93,14 +77,20 @@ def main() -> None:
             infer_version(path.name),
             infer_category(path.name),
         )
-        worker.process(document_id, path)
-        inactive = "old" in path.name.casefold()
+        for attempt in range(3):
+            try:
+                worker.process(document_id, path)
+                break
+            except Exception:
+                if attempt == 2:
+                    raise
+                time.sleep(2 ** attempt)
         if inactive:
             client.table("insurance_documents").update({"is_active": False}).eq("id", document_id).execute()
         results.append({
             "file": path.name,
             "id": document_id,
-            "status": "awaiting_embeddings" if args.skip_embeddings else "ready",
+            "status": "ready",
             "active": not inactive,
         })
         print(json.dumps(results[-1], ensure_ascii=False), flush=True)
@@ -108,7 +98,6 @@ def main() -> None:
     print(json.dumps({
         "documents": len(results),
         "already_ready": sum(item["status"] == "already_ready" for item in results),
-        "awaiting_embeddings": sum(item["status"] == "awaiting_embeddings" for item in results),
         "results": results,
     }, ensure_ascii=False))
 

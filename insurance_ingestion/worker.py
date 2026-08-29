@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import mimetypes
 import os
 import re
 import socket
+import subprocess
 import sys
+import tempfile
 import uuid
 from datetime import UTC, datetime
 from dataclasses import dataclass, field
@@ -32,12 +35,14 @@ except ImportError:  # The worker still preserves text if optional mojibake repa
     ftfy = None
 
 
-SUPPORTED = {".pdf", ".docx", ".xlsx", ".xlsb"}
+SUPPORTED = {".pdf", ".docx", ".xlsx", ".xls", ".xlsb", ".csv"}
 MIME_TYPES = {
     ".pdf": "application/pdf",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xls": "application/vnd.ms-excel",
     ".xlsb": "application/vnd.ms-excel.sheet.binary.macroEnabled.12",
+    ".csv": "text/csv",
 }
 
 
@@ -225,6 +230,78 @@ def document_profile(blocks: list[ExtractedBlock], *, title: str) -> dict[str, A
     }
 
 
+def classify_document(*, title: str, filename: str, suffix: str, profile: dict[str, Any]) -> dict[str, Any]:
+    """Classify document role from its own metadata/structure, never from a drug list."""
+    normalized = normalize_entity_name(f"{title} {filename}")
+    fields = {normalize_entity_name(str(value)) for value in profile.get("form_field_names", [])}
+    regression = bool(re.search(r"\binsurance conversation\b|\bconversation export\b|\bchat export\b", normalized))
+    explicit_form = bool(re.search(r"\b(form|prerequisite|pre requisite|questionnaire)\b", normalized))
+    form_signals = sum(
+        any(signal in field for field in fields)
+        for signal in ("signature", "stamp", "medical justification", "patient name", "physician name")
+    )
+    is_form = explicit_form or (len(fields) >= 8 and form_signals >= 2)
+    spreadsheet = suffix in {".xlsx", ".xls", ".xlsb", ".csv"}
+    has_codes = any("code" in field or "icd" in field for field in fields)
+    if regression:
+        return {"document_type": "regression_test_source", "status": "regression_test_source", "authority_level": 0, "kind": "regression_export"}
+    if is_form:
+        return {"document_type": "pre_requisite_form", "status": "form", "authority_level": 20, "kind": "form"}
+    if spreadsheet and has_codes:
+        return {"document_type": "diagnosis_code_table", "status": "pending_review", "authority_level": 40, "kind": "spreadsheet_reference"}
+    if spreadsheet:
+        return {"document_type": "reference_table", "status": "pending_review", "authority_level": 40, "kind": "spreadsheet_reference"}
+    if re.search(r"\b(guideline|adjudication guide)\b", normalized):
+        return {"document_type": "adjudication_guideline", "status": "pending_review", "authority_level": 60, "kind": "guideline"}
+    if re.search(r"\b(overview|reference)\b", normalized):
+        return {"document_type": "clinical_overview", "status": "reference", "authority_level": 30, "kind": "supporting_reference"}
+    return {"document_type": "policy_summary", "status": "pending_review", "authority_level": 50, "kind": "summary"}
+
+
+def logical_document_title(title: str) -> str:
+    """Remove format/version noise for duplicate proposals without merging scopes."""
+    value = normalize_text(title)
+    value = re.sub(r"\b(?:updated?|old|new|final|copy|version|rev(?:ision)?)\b", " ", value, flags=re.IGNORECASE)
+    value = re.sub(r"(?<!\d)(?:20\d{2}[-_/ ]\d{1,2}[-_/ ]\d{1,2}|\d{1,2}[-_/ ]\d{1,2}[-_/ ]20\d{2})(?!\d)", " ", value)
+    value = re.sub(r"\b(?:pdf|docx|xlsx|xlsb?|csv)\b", " ", value, flags=re.IGNORECASE)
+    return normalize_text(re.sub(r"[-_]+", " ", value))
+
+
+def _group_table_chunks(chunks: list[ExtractedBlock]) -> dict[str, list[ExtractedBlock]]:
+    groups: dict[str, list[ExtractedBlock]] = {}
+    for chunk in chunks:
+        if chunk.content_type != "table_row":
+            continue
+        key = "|".join((
+            str(chunk.page_from or ""), str(chunk.sheet_name or ""),
+            str(chunk.metadata.get("table_index") or 0),
+        ))
+        groups.setdefault(key, []).append(chunk)
+    return groups
+
+
+def regression_questions(chunks: list[ExtractedBlock]) -> list[dict[str, Any]]:
+    """Extract questions only from chat exports; never treat their answers as policy."""
+    questions: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for chunk in chunks:
+        for line in chunk.text.splitlines():
+            value = normalize_text(line).lstrip("-• ")
+            if not value.endswith(("?", "؟")) or len(value) < 5:
+                continue
+            normalized = normalize_entity_name(value)
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            questions.append({
+                "question": value,
+                "language": "mixed" if re.search(r"[A-Za-z]", value) and re.search(r"[\u0600-\u06ff]", value)
+                else "ar" if re.search(r"[\u0600-\u06ff]", value) else "en",
+                "source_page": chunk.page_from,
+            })
+    return questions
+
+
 def extract_document_catalog(
     chunks: list[ExtractedBlock],
     *,
@@ -281,6 +358,12 @@ def extract_document_catalog(
             entity_type = entity_type_for_header(normalize_field_name(label))
             if entity_type:
                 register(value, entity_type, "labeled_prose", {"label": label})
+    if not catalog:
+        # A form or circular can be authoritative for a named policy subject
+        # without containing a medication column. Index its trusted title as a
+        # policy term so the document remains retrievable without inventing a
+        # clinical entity or fact.
+        register(document_title, "policy_term", "document_title")
     return list(catalog.values())
 
 
@@ -290,7 +373,13 @@ def document_health_report(
     catalog: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Fail closed before READY: verify structure and exact catalog term retrieval."""
-    searchable = "\n".join(normalize_entity_name(chunk.text) for chunk in chunks)
+    # The approved title is trusted document metadata and is indexed alongside
+    # extracted body text. A title-only medication must not fail its own exact
+    # retrieval probe merely because the body uses tables or pronouns.
+    searchable = "\n".join([
+        normalize_entity_name(str(profile.get("title") or "")),
+        *(normalize_entity_name(chunk.text) for chunk in chunks),
+    ])
     important = [entry for entry in catalog if entry["entity_type"] != "policy_term"]
     probes = important or [
         {"canonical_name": title}
@@ -313,6 +402,131 @@ def document_health_report(
         "chunk_count": len(chunks),
         "catalog_entity_count": len(catalog),
         "failed_exact_terms": failed_terms[:20],
+    }
+
+
+INTENT_SIGNAL_PATTERNS: dict[str, re.Pattern[str]] = {
+    "dose": re.compile(r"\b(dose|dosage|mg|mcg|g|ml|جرعة)\b", re.IGNORECASE),
+    "route": re.compile(r"\b(oral|orally|subcutaneous|intravenous|nasal|route|فموي|وريدي|أنفي)\b", re.IGNORECASE),
+    "indication": re.compile(r"\b(indicat|used for|treatment of|prevention of|يستخدم|دواعي)\b", re.IGNORECASE),
+    "coverage": re.compile(r"\b(covered|coverage|eligible|eligibility|criteria|تغطية|مغط|مؤهل)\b", re.IGNORECASE),
+    "approval": re.compile(r"\b(approval|authori[sz]ation|pre[- ]?approval|موافقة|تصريح)\b", re.IGNORECASE),
+    "documentation": re.compile(r"\b(document|report|signed|stamped|prescription|مستند|تقرير|مختوم|موقع)\b", re.IGNORECASE),
+    "previous_therapy": re.compile(r"\b(previous|prior|failed|failure|trial|contraindicat|سابق|فشل|تجربة)\b", re.IGNORECASE),
+    "age": re.compile(r"\b(age|aged|years? old|adult|pediatric|عمر|سنة|بالغ)\b", re.IGNORECASE),
+    "prescriber": re.compile(r"\b(prescrib|physician|doctor|clinician|specialt|طبيب|تخصص)\b", re.IGNORECASE),
+    "lab_requirement": re.compile(r"\b(lab|laboratory|test result|hba1c|a1c|تحليل|مختبر)\b", re.IGNORECASE),
+    "initial_dispensing": re.compile(r"\b(initial|starting|first prescription|supply|refill|dispens|ابتدائي|صرف|إعادة)\b", re.IGNORECASE),
+    "switching": re.compile(r"\b(switch|switching|change therapy|تبديل|تغيير العلاج)\b", re.IGNORECASE),
+}
+
+TREATMENT_USE_PATTERNS: dict[str, re.Pattern[str]] = {
+    "acute": re.compile(r"\b(acute|attack|as needed|حاد|نوبة|عند اللزوم)\b", re.IGNORECASE),
+    "preventive": re.compile(r"\b(prevent|prevention|preventive|prophyl|وقاية|وقائي)\b", re.IGNORECASE),
+    "maintenance": re.compile(r"\b(maintenance|continuation|continued therapy|استمرار|صيانة)\b", re.IGNORECASE),
+}
+
+NUMERIC_FACT_PATTERN = re.compile(
+    r"(?P<operator>>=|<=|>|<|=|≥|≤|at least|minimum|maximum|more than|less than)?\s*"
+    r"(?P<value>\d+(?:\.\d+)?)\s*"
+    r"(?P<unit>%|mg|mcg|g|ml|years?|months?|weeks?|days?|hours?|times?)?",
+    re.IGNORECASE,
+)
+
+
+def intent_tags_for_text(value: str) -> list[str]:
+    return [name for name, pattern in INTENT_SIGNAL_PATTERNS.items() if pattern.search(value)]
+
+
+def treatment_uses_for_text(value: str) -> list[str]:
+    return [name for name, pattern in TREATMENT_USE_PATTERNS.items() if pattern.search(value)]
+
+
+def fact_predicate(context: str, unit: str | None) -> str:
+    lowered = context.casefold()
+    if re.search(r"\b(age|aged|years? old|عمر)\b", lowered):
+        return "age_requirement"
+    if re.search(r"\b(hba1c|a1c|lab|laboratory|تحليل)\b", lowered):
+        return "lab_requirement"
+    if re.search(r"\b(dose|dosage|administer|take|جرعة)\b", lowered) or unit in {"mg", "mcg", "g", "ml"}:
+        return "dose"
+    if re.search(r"\b(duration|within|past|supply|مدة|خلال)\b", lowered) or unit in {"day", "days", "month", "months", "week", "weeks", "hour", "hours"}:
+        return "duration"
+    if re.search(r"\b(frequency|daily|weekly|monthly|times|مرة|يومي|أسبوعي|شهري)\b", lowered):
+        return "frequency"
+    if unit == "%":
+        return "percentage_threshold"
+    return "numeric_value"
+
+
+def numeric_facts_for_chunk(chunk: ExtractedBlock) -> list[dict[str, Any]]:
+    """Extract only explicit source numbers; never infer clinical meaning."""
+    facts: list[dict[str, Any]] = []
+    text = normalize_text(chunk.text)
+    for match in NUMERIC_FACT_PATTERN.finditer(text):
+        start = max(0, match.start() - 100)
+        end = min(len(text), match.end() + 100)
+        context = normalize_text(text[start:end])
+        raw_operator = normalize_text(match.group("operator") or "")
+        operator_map = {
+            "≥": ">=", "at least": ">=", "minimum": ">=",
+            "≤": "<=", "maximum": "<=", "more than": ">", "less than": "<",
+        }
+        operator = operator_map.get(raw_operator.casefold(), raw_operator or None)
+        unit = (match.group("unit") or "").casefold() or None
+        facts.append({
+            "predicate": fact_predicate(context, unit),
+            "value_number": float(match.group("value")),
+            "value_text": normalize_text(match.group(0)),
+            "unit": unit,
+            "operator": operator,
+            "source_excerpt": context,
+            "source_page": chunk.page_from,
+            "source_section": chunk.section_title,
+        })
+    return facts
+
+
+def chunk_semantics(
+    chunk: ExtractedBlock,
+    catalog: list[dict[str, Any]],
+) -> dict[str, Any]:
+    normalized_text = normalize_entity_name(chunk.text)
+    normalized_section = normalize_entity_name(chunk.section_title or "")
+    mentioned = [
+        entry for entry in catalog
+        if entry["entity_type"] != "policy_term"
+        and str(entry["normalized_entity"]) in normalized_text
+    ]
+    explicit = normalize_entity_name(str(chunk.metadata.get("entity_name") or ""))
+    primary = next((entry for entry in mentioned if entry["normalized_entity"] == explicit), None)
+    primary = primary or next(
+        (entry for entry in mentioned if entry["normalized_entity"] == normalized_section), None
+    )
+    if primary is None and len(mentioned) == 1:
+        primary = mentioned[0]
+    entity_type = str(primary["entity_type"]) if primary else ""
+    intent_tags = intent_tags_for_text(chunk.text)
+    if primary:
+        scope = "class_specific" if entity_type == "therapy_class" else (
+            "disease_specific" if entity_type == "diagnosis" else "entity_specific"
+        )
+    elif "coverage" in intent_tags or "approval" in intent_tags:
+        scope = "policy_general"
+    else:
+        scope = "mixed"
+    diagnoses = [
+        str(entry["normalized_entity"]) for entry in mentioned
+        if entry["entity_type"] == "diagnosis"
+    ]
+    return {
+        "scope": scope,
+        "primary": primary,
+        "mentioned": mentioned,
+        "intent_tags": intent_tags,
+        "treatment_uses": treatment_uses_for_text(chunk.text),
+        "condition_tags": diagnoses,
+        "numeric_facts": numeric_facts_for_chunk(chunk),
     }
 
 
@@ -531,21 +745,57 @@ def text_outside_tables(page: Any, tables: list[Any]) -> str:
     return page.filter(outside).extract_text(x_tolerance=2, y_tolerance=2) or ""
 
 
+def _windows_ocr_image(image: Any) -> str:
+    script = Path(__file__).resolve().parent / "windows_ocr.ps1"
+    if os.name != "nt" or not script.is_file():
+        return ""
+    image_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as handle:
+            image_path = Path(handle.name)
+        image.save(image_path, format="PNG")
+        completed = subprocess.run(
+            [
+                "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                "-File", str(script), "-ImagePath", str(image_path),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+        )
+        if completed.returncode != 0:
+            return ""
+        return normalize_text(completed.stdout)
+    finally:
+        if image_path is not None:
+            image_path.unlink(missing_ok=True)
+
+
 def ocr_pdf_page(path: Path, page_index: int) -> str:
     try:
         import pypdfium2 as pdfium
-        import pytesseract
 
         pdf = pdfium.PdfDocument(str(path))
         try:
             image = pdf[page_index].render(scale=2.6).to_pil()
-            return normalize_text(pytesseract.image_to_string(image, lang="eng+ara"))
+            try:
+                import pytesseract
+
+                text = normalize_text(pytesseract.image_to_string(image, lang="eng+ara"))
+            except Exception:
+                text = _windows_ocr_image(image)
+            if len(re.sub(r"\W", "", text, flags=re.UNICODE)) >= 25:
+                return text
+            raise RuntimeError("OCR produced insufficient text.")
         finally:
             pdf.close()
     except Exception as error:
         raise RuntimeError(
             f"Page {page_index + 1} needs OCR, but local OCR failed. "
-            "Install Tesseract with English and Arabic language packs."
+            "Install Tesseract with English and Arabic language packs or enable Windows OCR."
         ) from error
 
 
@@ -734,6 +984,73 @@ def extract_xlsb(path: Path) -> list[ExtractedBlock]:
     return blocks
 
 
+def extract_xls(path: Path) -> list[ExtractedBlock]:
+    """Extract legacy XLS workbooks without converting or flattening rows."""
+    try:
+        import xlrd
+    except ImportError as error:
+        raise RuntimeError(
+            "XLS extraction requires xlrd. Install insurance_ingestion/requirements.txt."
+        ) from error
+
+    workbook = xlrd.open_workbook(str(path), on_demand=True)
+    blocks: list[ExtractedBlock] = []
+    try:
+        for sheet_name in workbook.sheet_names():
+            sheet = workbook.sheet_by_name(sheet_name)
+            rows = [
+                [normalize_text(str(sheet.cell_value(row, column))) for column in range(sheet.ncols)]
+                for row in range(sheet.nrows)
+            ]
+            header_index = next((index for index, row in enumerate(rows) if any(row)), None)
+            if header_index is None:
+                continue
+            blocks.extend(table_row_blocks(
+                rows[header_index:],
+                extraction_method="xls",
+                section_title=sheet_name,
+                section_path=sheet_name,
+                table_index=0,
+                sheet_name=sheet_name,
+                source_file=path.name,
+            ))
+    finally:
+        workbook.release_resources()
+    return blocks
+
+
+def extract_csv(path: Path) -> list[ExtractedBlock]:
+    """Extract CSV as one first-class table with stable row/column evidence."""
+    raw = path.read_bytes()
+    text: str | None = None
+    for encoding in ("utf-8-sig", "utf-16", "cp1252"):
+        try:
+            text = raw.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        raise RuntimeError("CSV encoding is not supported; save the file as UTF-8, UTF-16, or Windows-1252.")
+    sample = text[:8192]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+    except csv.Error:
+        dialect = csv.excel
+    rows = [[normalize_text(value) for value in row] for row in csv.reader(text.splitlines(), dialect)]
+    header_index = next((index for index, row in enumerate(rows) if any(row)), None)
+    if header_index is None:
+        return []
+    return table_row_blocks(
+        rows[header_index:],
+        extraction_method="csv",
+        section_title=path.stem,
+        section_path=path.stem,
+        table_index=0,
+        sheet_name=path.stem,
+        source_file=path.name,
+    )
+
+
 def sliding_chunks(words: list[str], maximum: int = 340, overlap: int = 40) -> Iterable[list[str]]:
     start = 0
     while start < len(words):
@@ -772,44 +1089,19 @@ def chunk_blocks(blocks: list[ExtractedBlock]) -> list[ExtractedBlock]:
     return chunks
 
 
-class LocalEmbeddingProvider:
-    dimension = 384
-    index_model = "gte-small"
-
-    def __init__(self, model_name: str | None = None) -> None:
-        from sentence_transformers import SentenceTransformer
-
-        # Query-time embeddings are generated by Supabase.ai gte-small. Stored
-        # passages must use the same model family, pooling and normalization;
-        # vectors from different models are not comparable.
-        self.model_name = model_name or os.environ.get(
-            "INSURANCE_EMBEDDING_MODEL",
-            "thenlper/gte-small",
-        )
-        self.model = SentenceTransformer(self.model_name)
-
-    def embed_passages(self, values: list[str]) -> list[list[float]]:
-        vectors = self.model.encode(
-            values,
-            normalize_embeddings=True,
-            show_progress_bar=len(values) > 32,
-        )
-        return [vector.tolist() for vector in vectors]
-
-
 class InsuranceIngestionWorker:
     bucket = "insurance-documents"
-    worker_version = "2026.08.13-hardening-v2"
+    worker_version = "2026.08.18-strict-evidence-v2"
 
-    def __init__(self, client: Client, skip_embeddings: bool = False) -> None:
+    def __init__(self, client: Client) -> None:
         self.client = client
-        self.skip_embeddings = skip_embeddings
-        self.embedding_provider = None if skip_embeddings else LocalEmbeddingProvider()
 
     def register(self, path: Path, title: str, version: str | None, category: str | None) -> str:
         suffix = path.suffix.lower()
         if suffix not in SUPPORTED:
-            raise ValueError(f"Unsupported file type: {suffix}. Expected PDF, DOCX, or XLSX.")
+            raise ValueError(
+                f"Unsupported file type: {suffix}. Expected PDF, DOCX, XLSX, XLS, XLSB, or CSV."
+            )
         payload = path.read_bytes()
         checksum = sha256_bytes(payload)
         existing = self.client.table("insurance_documents").select("id").eq("checksum", checksum).execute().data
@@ -854,12 +1146,9 @@ class InsuranceIngestionWorker:
                 "document_category": category,
                 "checksum": checksum,
                 "processing_status": "queued",
-                "embedding_model": self.embedding_provider.index_model
-                if self.embedding_provider else None,
                 "metadata": {
                     "ingested_from": "local_worker",
-                    "embedding_model": self.embedding_provider.index_model
-                    if self.embedding_provider else None,
+                    "retrieval_mode": "lexical_verified_v1",
                 },
             }
         ).execute().data[0]
@@ -891,7 +1180,9 @@ class InsuranceIngestionWorker:
                 ".pdf": extract_pdf,
                 ".docx": extract_docx,
                 ".xlsx": extract_xlsx,
+                ".xls": extract_xls,
                 ".xlsb": extract_xlsb,
+                ".csv": extract_csv,
             }
             blocks = extractors[path.suffix.lower()](path)
             if not reprocessing_ready_document:
@@ -899,69 +1190,6 @@ class InsuranceIngestionWorker:
             chunks = chunk_blocks(blocks)
             if not chunks:
                 raise RuntimeError("Extraction completed but produced no searchable chunks.")
-            embeddings: list[list[float] | None]
-            if self.embedding_provider:
-                if not reprocessing_ready_document:
-                    self._status(document_id, "embedding")
-                embeddings = self.embedding_provider.embed_passages([chunk.text for chunk in chunks])
-            else:
-                embeddings = [None] * len(chunks)
-
-            rows = []
-            for index, (chunk, embedding) in enumerate(zip(chunks, embeddings, strict=True)):
-                document_topic = normalize_entity_name(
-                    str(document.get("document_category") or document.get("title") or "")
-                )
-                rows.append(
-                    {
-                        "document_id": document_id,
-                        "chunk_index": index,
-                        "page_from": chunk.page_from,
-                        "page_to": chunk.page_to,
-                        "sheet_name": chunk.sheet_name,
-                        "row_from": chunk.row_from,
-                        "row_to": chunk.row_to,
-                        "section_title": chunk.section_title,
-                        "content_text": chunk.text,
-                        "raw_content": chunk.raw,
-                        "content_type": chunk.content_type,
-                        "extraction_method": chunk.extraction_method,
-                        "token_count": token_estimate(chunk.text),
-                        "content_hash": content_hash(chunk.text),
-                        "embedding": embedding,
-                        "embedding_model": self.embedding_provider.index_model
-                        if self.embedding_provider else None,
-                        "metadata": {
-                            **chunk.metadata,
-                            "document_topic": document.get("title"),
-                            "topic_normalized": document_topic,
-                            "document_category": document.get("document_category"),
-                            "document_version": document.get("version"),
-                            "parent_group": chunk.metadata.get("logical_row_group")
-                            or f"{chunk.page_from or chunk.sheet_name or 'document'}:{chunk.section_title or 'root'}",
-                            "embedding_model": self.embedding_provider.index_model
-                            if self.embedding_provider else None,
-                        },
-                        "parent_group": chunk.metadata.get("logical_row_group")
-                        or f"{chunk.page_from or chunk.sheet_name or 'document'}:{chunk.section_title or 'root'}",
-                        "topic": document.get("title"),
-                        "topic_normalized": document_topic,
-                        "structured_fields": chunk.metadata.get("fields") or {},
-                        "numeric_facts": [],
-                    }
-                )
-            processing_run_id = str(uuid.uuid4())
-            replacement = self.client.rpc(
-                "replace_insurance_document_chunks_v2",
-                {
-                    "p_document_id": document_id,
-                    "p_processing_run_id": processing_run_id,
-                    "p_rows": rows,
-                    "p_worker_version": self.worker_version,
-                },
-            ).execute().data
-            if not replacement or int(replacement.get("chunk_count", 0)) != len(rows):
-                raise RuntimeError("Atomic chunk replacement did not persist the complete generation.")
             aliases = extract_entity_aliases(
                 chunks,
                 document_id=document_id,
@@ -980,6 +1208,68 @@ class InsuranceIngestionWorker:
                     "Document health validation failed: "
                     + ", ".join(name for name, passed in health["checks"].items() if not passed)
                 )
+            rows = []
+            for index, chunk in enumerate(chunks):
+                document_topic = normalize_entity_name(
+                    str(document.get("document_category") or document.get("title") or "")
+                )
+                semantics = chunk_semantics(chunk, catalog)
+                rows.append(
+                    {
+                        "document_id": document_id,
+                        "chunk_index": index,
+                        "page_from": chunk.page_from,
+                        "page_to": chunk.page_to,
+                        "sheet_name": chunk.sheet_name,
+                        "row_from": chunk.row_from,
+                        "row_to": chunk.row_to,
+                        "section_title": chunk.section_title,
+                        "content_text": chunk.text,
+                        "raw_content": chunk.raw,
+                        "content_type": chunk.content_type,
+                        "extraction_method": chunk.extraction_method,
+                        "token_count": token_estimate(chunk.text),
+                        "content_hash": content_hash(chunk.text),
+                        "embedding": None,
+                        "embedding_model": None,
+                        "metadata": {
+                            **chunk.metadata,
+                            "document_topic": document.get("title"),
+                            "topic_normalized": document_topic,
+                            "document_category": document.get("document_category"),
+                            "document_version": document.get("version"),
+                            "parent_group": chunk.metadata.get("logical_row_group")
+                            or f"{chunk.page_from or chunk.sheet_name or 'document'}:{chunk.section_title or 'root'}",
+                            "retrieval_mode": "lexical_verified_v1",
+                            "evidence_scope": semantics["scope"],
+                            "primary_entity_normalized": (
+                                semantics["primary"]["normalized_entity"]
+                                if semantics["primary"] else None
+                            ),
+                            "intent_tags": semantics["intent_tags"],
+                            "treatment_uses": semantics["treatment_uses"],
+                            "condition_tags": semantics["condition_tags"],
+                        },
+                        "parent_group": chunk.metadata.get("logical_row_group")
+                        or f"{chunk.page_from or chunk.sheet_name or 'document'}:{chunk.section_title or 'root'}",
+                        "topic": document.get("title"),
+                        "topic_normalized": document_topic,
+                        "structured_fields": chunk.metadata.get("fields") or {},
+                        "numeric_facts": semantics["numeric_facts"],
+                    }
+                )
+            processing_run_id = str(uuid.uuid4())
+            replacement = self.client.rpc(
+                "replace_insurance_document_chunks_v2",
+                {
+                    "p_document_id": document_id,
+                    "p_processing_run_id": processing_run_id,
+                    "p_rows": rows,
+                    "p_worker_version": self.worker_version,
+                },
+            ).execute().data
+            if not replacement or int(replacement.get("chunk_count", 0)) != len(rows):
+                raise RuntimeError("Atomic chunk replacement did not persist the complete generation.")
             self.client.table("insurance_document_entities").delete().eq(
                 "document_id", document_id
             ).execute()
@@ -1045,6 +1335,14 @@ class InsuranceIngestionWorker:
                     catalog,
                     on_conflict="document_id,entity_type,normalized_entity",
                 ).execute()
+                self._persist_strict_semantics(document_id, chunks, catalog)
+            self._persist_policy_v2_candidate(
+                document=document,
+                chunks=chunks,
+                catalog=catalog,
+                profile=profile,
+                health=health,
+            )
             self.client.table("insurance_document_health_checks").insert(
                 {
                     "document_id": document_id,
@@ -1054,42 +1352,40 @@ class InsuranceIngestionWorker:
                     "worker_version": self.worker_version,
                 }
             ).execute()
-            final_status = "ready" if self.embedding_provider else "embedding"
-            validation_status = "verified" if self.embedding_provider else "pending"
+            final_status = "ready"
+            validation_status = "verified"
             self.client.table("insurance_documents").update(
                 {
                     "processing_status": final_status,
                     "processing_error": None,
                     "extraction_completed_at": utc_now(),
-                    "embedding_model": self.embedding_provider.index_model
-                    if self.embedding_provider else None,
+                    "embedding_model": None,
                     "search_validation_status": validation_status,
-                    "search_validated_at": utc_now() if self.embedding_provider else None,
+                    "search_validated_at": utc_now(),
                     "metadata": {
                         **(document.get("metadata") or {}),
                         "chunk_count": len(rows),
                         "document_profile": profile,
                         "document_health": health,
-                        "embedding_model": self.embedding_provider.index_model
-                        if self.embedding_provider else None,
+                        "retrieval_mode": "lexical_verified_v1",
                     },
                 }
             ).eq("id", document_id).execute()
             self.client.table("insurance_processing_runs").update(
                 {
-                    "status": "ready" if self.embedding_provider else "embedding",
+                    "status": "ready",
                     "validation_status": validation_status,
                     "validation_report": {
                         "chunk_count": len(rows),
                         "entity_count": len(aliases),
                         "atomic_replacement": True,
                     },
-                    "completed_at": utc_now() if self.embedding_provider else None,
+                    "completed_at": utc_now(),
                 }
             ).eq("id", processing_run_id).execute()
             self.client.table("insurance_ingestion_jobs").update(
                 {
-                    "status": "completed" if self.embedding_provider else "running",
+                    "status": "completed",
                     "updated_at": utc_now(),
                     "last_error": None,
                 }
@@ -1105,6 +1401,535 @@ class InsuranceIngestionWorker:
         finally:
             if temporary and path:
                 path.unlink(missing_ok=True)
+
+    def _stage_policy_v2_catalog_entities(
+        self,
+        *,
+        v2_document_id: str,
+        catalog: list[dict[str, Any]],
+    ) -> None:
+        """Register source-derived entities without changing reviewed rules.
+
+        This is safe for an already-active document: re-ingestion may improve
+        recognition of source terms, but it cannot rewrite scopes, conditions,
+        evidence, or activation state.
+        """
+        type_map = {
+            "medication": "drug_generic", "medicine": "drug_generic",
+            "drug": "drug_generic", "generic": "drug_generic",
+            "generic_name": "drug_generic", "ingredient": "drug_generic",
+            "brand": "drug_brand", "brand_name": "drug_brand",
+            "therapy_class": "drug_class", "drug_class": "drug_class",
+            "disease": "disease", "diagnosis": "diagnosis",
+            "condition": "disease", "indication": "indication",
+            "lab": "lab_test", "lab_test": "lab_test", "test": "test",
+            "procedure": "procedure", "specialty": "specialty",
+            "policy_term": "policy_concept", "product": "policy_concept",
+        }
+        staged_entities: list[dict[str, Any]] = []
+        for item in catalog:
+            entity_type = type_map.get(str(item.get("entity_type")), "policy_concept")
+            canonical = normalize_text(str(item.get("canonical_name") or ""))
+            normalized = normalize_entity_name(canonical)
+            if canonical and normalized:
+                staged_entities.append({
+                    "canonical_name": canonical,
+                    "normalized_name": normalized,
+                    "entity_type": entity_type,
+                    "active": True,
+                })
+        if not staged_entities:
+            return
+        staged_entities = list({
+            (row["entity_type"], row["normalized_name"]): row
+            for row in staged_entities
+        }.values())
+        self.client.table("policy_v2_entities").upsert(
+            staged_entities, on_conflict="entity_type,normalized_name"
+        ).execute()
+        entity_rows = self.client.table("policy_v2_entities").select(
+            "id,canonical_name,entity_type"
+        ).in_("canonical_name", list({row["canonical_name"] for row in staged_entities})).execute().data
+        entity_by_key = {
+            (str(row["canonical_name"]), str(row["entity_type"])): str(row["id"])
+            for row in entity_rows
+        }
+        alias_rows = []
+        for item in staged_entities:
+            entity_id = entity_by_key.get((item["canonical_name"], item["entity_type"]))
+            if entity_id:
+                alias_rows.append({
+                    "entity_id": entity_id,
+                    "alias": item["canonical_name"],
+                    "normalized_alias": item["normalized_name"],
+                    "language": "und",
+                    "alias_type": "brand_name" if item["entity_type"] == "drug_brand" else "generic_name",
+                    "verified": True,
+                    "confidence": 1,
+                    "fuzzy_allowed": False,
+                    "source_document_id": v2_document_id,
+                })
+        if alias_rows:
+            alias_rows = list({
+                (row["entity_id"], row["normalized_alias"]): row
+                for row in alias_rows
+            }.values())
+            self.client.table("policy_v2_entity_aliases").upsert(
+                alias_rows, on_conflict="entity_id,normalized_alias"
+            ).execute()
+
+    def _persist_policy_v2_candidate(
+        self,
+        *,
+        document: dict[str, Any],
+        chunks: list[ExtractedBlock],
+        catalog: list[dict[str, Any]],
+        profile: dict[str, Any],
+        health: dict[str, Any],
+    ) -> None:
+        """Stage generic V2 policy material for reviewer approval.
+
+        This path deliberately does *not* invent coverage rules or activate a
+        document.  It extracts the durable structure that a reviewer needs to
+        approve rules later: pages, headings, table rows, canonical entities,
+        verified source aliases, and a health report.  Therefore a new drug
+        can be recognized without an application-code change, while an unsafe
+        automatic interpretation can never become an active policy.
+        """
+        source_document_id = str(document["id"])
+        classification = classify_document(
+            title=str(document["title"]),
+            filename=str(document["original_file_name"]),
+            suffix=f".{str(document['file_extension']).lower()}",
+            profile=profile,
+        )
+        logical_title = logical_document_title(str(document["title"]))
+        logical_normalized = normalize_entity_name(logical_title)
+        logical_rows = self.client.table("policy_v2_logical_documents").select("id").eq(
+            "normalized_title", logical_normalized
+        ).limit(1).execute().data
+        if logical_rows:
+            logical_document_id = str(logical_rows[0]["id"])
+        else:
+            logical_document_id = str(self.client.table("policy_v2_logical_documents").insert({
+                "canonical_title": logical_title,
+                "normalized_title": logical_normalized,
+                "policy_family": logical_title,
+                "document_kind": classification["kind"],
+                "authority_level": classification["authority_level"],
+            }).execute().data[0]["id"])
+        normalized_hash = content_hash("\n".join(chunk.text for chunk in chunks))
+        existing_rows = self.client.table("policy_v2_documents").select(
+            "id,status"
+        ).eq("source_document_id", source_document_id).execute().data
+        if existing_rows and existing_rows[0].get("status") == "active":
+            # An active policy must be superseded through the review workflow,
+            # never silently rewritten by a re-ingestion job. Source-derived
+            # entity discovery is additive and does not modify policy logic.
+            self._stage_policy_v2_catalog_entities(
+                v2_document_id=str(existing_rows[0]["id"]), catalog=catalog
+            )
+            return
+        document_row = {
+            "source_document_id": source_document_id,
+            "logical_document_id": logical_document_id,
+            "title": str(document["title"]),
+            "original_filename": str(document["original_file_name"]),
+            "document_type": classification["document_type"],
+            "policy_family": logical_title,
+            "version": document.get("version"),
+            "status": classification["status"],
+            "authority_level": classification["authority_level"],
+            "source_hash": f"v2:{document['checksum']}",
+            "normalized_content_hash": normalized_hash,
+            "readiness_status": "not_ready",
+            "health_report": health,
+            "is_searchable": False,
+            "notes": "Automatically extracted; reviewer approval required before activation.",
+        }
+        if existing_rows:
+            v2_document_id = str(existing_rows[0]["id"])
+            self.client.table("policy_v2_documents").update(document_row).eq(
+                "id", v2_document_id
+            ).execute()
+            self.client.table("policy_v2_document_pages").delete().eq(
+                "document_id", v2_document_id
+            ).execute()
+            self.client.table("policy_v2_document_sections").delete().eq(
+                "document_id", v2_document_id
+            ).execute()
+            self.client.table("policy_v2_table_records").delete().eq(
+                "document_id", v2_document_id
+            ).execute()
+            self.client.table("policy_v2_document_tables").delete().eq(
+                "document_id", v2_document_id
+            ).execute()
+        else:
+            v2_document_id = str(
+                self.client.table("policy_v2_documents").insert(document_row).execute().data[0]["id"]
+            )
+        self.client.table("policy_v2_review_items").delete().eq(
+            "document_id", v2_document_id
+        ).eq("status", "pending").execute()
+
+        duplicate_files = self.client.table("policy_v2_source_files").select("id").eq(
+            "normalized_content_hash", normalized_hash
+        ).neq("document_id", v2_document_id).limit(1).execute().data
+        self.client.table("policy_v2_source_files").upsert({
+            "logical_document_id": logical_document_id,
+            "document_id": v2_document_id,
+            "original_filename": str(document["original_file_name"]),
+            "mime_type": document.get("mime_type"),
+            "extension": str(document["file_extension"]).lower(),
+            "byte_size": document.get("file_size"),
+            "source_hash": str(document["checksum"]),
+            "normalized_content_hash": normalized_hash,
+            "extraction_status": "duplicate" if duplicate_files else "pending_review",
+            "duplicate_of_file_id": duplicate_files[0]["id"] if duplicate_files else None,
+        }, on_conflict="document_id").execute()
+        source_file = self.client.table("policy_v2_source_files").select("id").eq(
+            "document_id", v2_document_id
+        ).single().execute().data
+        import_job = self.client.table("policy_v2_import_jobs").insert({
+            "source_file_id": source_file["id"],
+            "status": "needs_review",
+            "extractor_version": self.worker_version,
+            "statistics": {
+                "chunks": len(chunks), "entities": len(catalog),
+                "sections": profile.get("section_count", 0),
+                "table_rows": profile.get("table_row_count", 0),
+            },
+            "started_at": utc_now(), "finished_at": utc_now(),
+        }).execute().data[0]
+
+        page_text: dict[int, list[str]] = {}
+        for chunk in chunks:
+            if chunk.page_from is None:
+                continue
+            page_number = int(chunk.page_from)
+            page_text.setdefault(page_number, []).append(chunk.text)
+        page_rows = [
+            {
+                "document_id": v2_document_id,
+                "page_number": page_number,
+                "raw_text": "\n".join(parts),
+                "normalized_text": normalize_entity_name("\n".join(parts)),
+            }
+            for page_number, parts in sorted(page_text.items())
+        ]
+        if page_rows:
+            self.client.table("policy_v2_document_pages").upsert(
+                page_rows, on_conflict="document_id,page_number"
+            ).execute()
+
+        section_rows = [
+            {
+                "document_id": v2_document_id,
+                "section_title": str(section["title"]),
+                "normalized_title": normalize_entity_name(str(section["title"])),
+                "section_type": "other",
+                "sort_order": index,
+            }
+            for index, section in enumerate(profile.get("sections") or [])
+        ]
+        if section_rows:
+            self.client.table("policy_v2_document_sections").insert(section_rows).execute()
+
+        table_rows_by_key: dict[tuple[str, str, int], dict[str, Any]] = {}
+        for index, chunk in enumerate(chunk for chunk in chunks if chunk.content_type == "table_row"):
+            fields = chunk.metadata.get("fields") or {}
+            table_index = int(chunk.metadata.get("table_index") or 0)
+            table_key = str(
+                chunk.metadata.get("table_key")
+                or f"{chunk.section_title or 'table'}:{table_index}"
+            )
+            row_index = int(chunk.row_from if chunk.row_from is not None else index)
+            table_rows_by_key[(v2_document_id, table_key, row_index)] = {
+                "document_id": v2_document_id,
+                "page_number": chunk.page_from,
+                "table_key": table_key,
+                "row_index": row_index,
+                "cells": fields,
+                "normalized_cells": {
+                    str(key): normalize_entity_name(str(value)) for key, value in fields.items()
+                },
+                "source_text": chunk.text,
+                "reviewed": False,
+            }
+        table_rows = list(table_rows_by_key.values())
+        if table_rows:
+            self.client.table("policy_v2_table_records").upsert(
+                table_rows, on_conflict="document_id,table_key,row_index"
+            ).execute()
+
+        # Preserve normalized table/row/cell coordinates for future policies.
+        for table_key, grouped in _group_table_chunks(chunks).items():
+            first = grouped[0]
+            table_row = self.client.table("policy_v2_document_tables").insert({
+                "document_id": v2_document_id,
+                "page_number": first.page_from,
+                "sheet_name": first.sheet_name,
+                "table_index": int(first.metadata.get("table_index") or 0),
+                "title": str(first.metadata.get("table_title") or first.section_title or table_key),
+                "extraction_method": first.extraction_method,
+                "reviewed": False,
+            }).execute().data[0]
+            headers = list(first.metadata.get("headers") or [])
+            column_ids: dict[int, str] = {}
+            for column_index, header in enumerate(headers):
+                column = self.client.table("policy_v2_document_table_columns").upsert({
+                    "table_id": table_row["id"], "column_index": column_index,
+                    "header": str(header), "normalized_header": normalize_field_name(str(header)),
+                }, on_conflict="table_id,column_index").execute().data[0]
+                column_ids[column_index] = str(column["id"])
+            for chunk in grouped:
+                fields = list((chunk.metadata.get("fields") or {}).values())
+                row = self.client.table("policy_v2_document_table_rows").upsert({
+                    "table_id": table_row["id"], "row_number": int(chunk.row_from or 0),
+                    "source_text": chunk.text, "normalized_text": normalize_entity_name(chunk.text),
+                    "reviewed": False,
+                }, on_conflict="table_id,row_number").execute().data[0]
+                for column_index, value in enumerate(fields):
+                    if column_index not in column_ids:
+                        continue
+                    self.client.table("policy_v2_document_table_cells").upsert({
+                        "row_id": row["id"], "column_id": column_ids[column_index],
+                        "raw_value": str(value), "normalized_value": normalize_entity_name(str(value)),
+                    }, on_conflict="row_id,column_id").execute()
+
+        # Conversation exports contribute regression questions only. Their
+        # entity names, answers and numeric values never enter policy knowledge.
+        if classification["document_type"] == "regression_test_source":
+            self.client.table("policy_v2_regression_test_cases").delete().eq(
+                "source_document_id", v2_document_id
+            ).eq("active", False).execute()
+            for candidate in regression_questions(chunks):
+                self.client.table("policy_v2_regression_test_cases").insert({
+                    "source_document_id": v2_document_id,
+                    "language": candidate["language"],
+                    "question": candidate["question"],
+                    "expected_frame": {"source_page": candidate["source_page"], "requires_admin_expectation": True},
+                    "active": False,
+                }).execute()
+            self.client.table("policy_v2_review_items").insert({
+                "document_id": v2_document_id,
+                "item_type": "metadata",
+                "proposed_value": {"classification": classification, "profile": profile, "health": health},
+                "source_evidence": [{"source_document_id": source_document_id}],
+                "status": "pending",
+            }).execute()
+            return
+
+        self._stage_policy_v2_catalog_entities(
+            v2_document_id=v2_document_id, catalog=catalog
+        )
+
+        self.client.table("policy_v2_review_items").insert({
+            "document_id": v2_document_id,
+            "item_type": "metadata",
+            "proposed_value": {"profile": profile, "health": health},
+            "source_evidence": [{"source_document_id": source_document_id}],
+            "status": "pending",
+        }).execute()
+        rule_proposals = []
+        for chunk in chunks:
+            semantics = chunk_semantics(chunk, catalog)
+            if not semantics["numeric_facts"] and not semantics["intent_tags"]:
+                continue
+            rule_proposals.append({
+                "document_id": v2_document_id,
+                "item_type": "rule",
+                "proposed_value": {
+                    "proposal_only": True,
+                    "scope": semantics["scope"],
+                    "primary_entity": semantics["primary"],
+                    "intent_tags": semantics["intent_tags"],
+                    "treatment_uses": semantics["treatment_uses"],
+                    "numeric_facts": semantics["numeric_facts"],
+                },
+                "source_evidence": [{
+                    "page": chunk.page_from, "sheet": chunk.sheet_name,
+                    "row_from": chunk.row_from, "row_to": chunk.row_to,
+                    "section": chunk.section_title, "text": chunk.text,
+                }],
+                "status": "pending",
+            })
+        if rule_proposals:
+            self.client.table("policy_v2_review_items").insert(rule_proposals).execute()
+        if not rule_proposals:
+            self.client.table("policy_v2_import_findings").insert({
+                "import_job_id": import_job["id"], "document_id": v2_document_id,
+                "finding_type": "no_rule_candidates", "severity": "warning",
+                "details": {"message": "No deterministic rule candidates were found; manual structuring is required."},
+                "status": "open",
+            }).execute()
+
+    def _persist_strict_semantics(
+        self,
+        document_id: str,
+        chunks: list[ExtractedBlock],
+        catalog: list[dict[str, Any]],
+    ) -> None:
+        """Persist source-derived validation metadata after atomic replacement."""
+        entity_rows = [
+            {
+                "entity_type": entry["entity_type"],
+                "canonical_name": entry["canonical_name"],
+                "normalized_name": entry["normalized_entity"],
+                "verification_status": "source_verified",
+                "metadata": {
+                    "last_source_document_id": document_id,
+                    "catalog_source": entry["source"],
+                },
+            }
+            for entry in catalog
+            if entry["entity_type"] != "policy_term"
+        ]
+        if not entity_rows:
+            return
+        self.client.table("insurance_entities").upsert(
+            entity_rows,
+            on_conflict="entity_type,normalized_name",
+        ).execute()
+        normalized_names = sorted({str(row["normalized_name"]) for row in entity_rows})
+        global_entities = self.client.table("insurance_entities").select(
+            "id,entity_type,canonical_name,normalized_name"
+        ).in_("normalized_name", normalized_names).execute().data
+        entity_map = {
+            (str(row["entity_type"]), str(row["normalized_name"])): row
+            for row in global_entities
+        }
+        for entry in catalog:
+            global_entity = entity_map.get((str(entry["entity_type"]), str(entry["normalized_entity"])))
+            if not global_entity:
+                continue
+            self.client.table("insurance_entity_catalog").update({
+                "canonical_entity_id": global_entity["id"],
+            }).eq("document_id", document_id).eq(
+                "entity_type", entry["entity_type"]
+            ).eq("normalized_entity", entry["normalized_entity"]).execute()
+            self.client.table("insurance_document_entities").update({
+                "canonical_entity_id": global_entity["id"],
+            }).eq("document_id", document_id).eq(
+                "normalized_entity", entry["normalized_entity"]
+            ).execute()
+            self.client.table("insurance_entity_names").upsert({
+                "entity_id": global_entity["id"],
+                "display_name": entry["canonical_name"],
+                "normalized_name": entry["normalized_entity"],
+                "name_type": entry["entity_type"] if entry["entity_type"] in {"brand", "generic", "ingredient"} else "canonical",
+                "language": "und",
+                "source_document_id": document_id,
+                "verified": True,
+                "metadata": {"source": entry["source"]},
+            }, on_conflict="entity_id,normalized_name,name_type,source_document_id").execute()
+
+        persisted_chunks = self.client.table("insurance_document_chunks").select(
+            "id,content_hash"
+        ).eq("document_id", document_id).execute().data
+        chunk_ids = {str(row["content_hash"]): str(row["id"]) for row in persisted_chunks}
+        chunk_entity_rows: list[dict[str, Any]] = []
+        fact_rows: list[dict[str, Any]] = []
+        criterion_rows: list[dict[str, Any]] = []
+        for chunk in chunks:
+            chunk_id = chunk_ids.get(content_hash(chunk.text))
+            if not chunk_id:
+                continue
+            semantics = chunk_semantics(chunk, catalog)
+            primary_entry = semantics["primary"]
+            primary = entity_map.get((
+                str(primary_entry["entity_type"]),
+                str(primary_entry["normalized_entity"]),
+            )) if primary_entry else None
+            self.client.table("insurance_document_chunks").update({
+                "evidence_scope": semantics["scope"],
+                "primary_entity_id": primary["id"] if primary else None,
+                "intent_tags": semantics["intent_tags"],
+                "treatment_uses": semantics["treatment_uses"],
+                "condition_tags": semantics["condition_tags"],
+            }).eq("id", chunk_id).execute()
+            for mentioned in semantics["mentioned"]:
+                entity = entity_map.get((
+                    str(mentioned["entity_type"]),
+                    str(mentioned["normalized_entity"]),
+                ))
+                if not entity:
+                    continue
+                chunk_entity_rows.append({
+                    "chunk_id": chunk_id,
+                    "entity_id": entity["id"],
+                    "relation_type": "primary_subject" if primary and entity["id"] == primary["id"] else "mentioned",
+                    "source": "document_extraction",
+                    "confidence": 1,
+                    "metadata": {"worker_version": self.worker_version},
+                })
+            fact_scope = semantics["scope"] if semantics["scope"] in {
+                "entity_specific", "class_specific", "disease_specific", "criteria_specific"
+            } else "policy_general"
+            for fact in semantics["numeric_facts"]:
+                fact_rows.append({
+                    "document_id": document_id,
+                    "chunk_id": chunk_id,
+                    "subject_entity_id": primary["id"] if primary else None,
+                    "predicate": fact["predicate"],
+                    "value_text": fact["value_text"],
+                    "value_number": fact["value_number"],
+                    "unit": fact["unit"],
+                    "operator": fact["operator"],
+                    "scope": fact_scope,
+                    "source_excerpt": fact["source_excerpt"],
+                    "source_page": fact["source_page"],
+                    "source_section": fact["source_section"],
+                    "verified": True,
+                    "extraction_version": self.worker_version,
+                })
+                if fact["operator"] in {"<", "<=", "=", ">=", ">"}:
+                    criterion_rows.append({
+                        "document_id": document_id,
+                        "chunk_id": chunk_id,
+                        "subject_entity_id": primary["id"] if primary else None,
+                        "criterion_group": chunk.section_title,
+                        "field_name": fact["predicate"],
+                        "operator": fact["operator"],
+                        "expected_number": fact["value_number"],
+                        "unit": fact["unit"],
+                        "source_excerpt": fact["source_excerpt"],
+                        "verified": True,
+                        "extraction_version": self.worker_version,
+                    })
+        chunk_entity_rows = list({
+            (row["chunk_id"], row["entity_id"], row["relation_type"]): row
+            for row in chunk_entity_rows
+        }.values())
+        fact_rows = list({
+            (
+                row["chunk_id"], row["subject_entity_id"], row["predicate"],
+                row["value_text"], row["value_number"], row["unit"], row["operator"],
+            ): row
+            for row in fact_rows
+        }.values())
+        criterion_rows = list({
+            (
+                row["chunk_id"], row["subject_entity_id"], row["field_name"],
+                row["operator"], row["expected_number"], row.get("expected_text"), row["unit"],
+            ): row
+            for row in criterion_rows
+        }.values())
+        if chunk_entity_rows:
+            self.client.table("insurance_chunk_entities").upsert(
+                chunk_entity_rows,
+                on_conflict="chunk_id,entity_id,relation_type",
+            ).execute()
+        if fact_rows:
+            self.client.table("insurance_evidence_facts").upsert(
+                fact_rows,
+                on_conflict="chunk_id,subject_entity_id,predicate,value_text,value_number,unit,operator",
+            ).execute()
+        if criterion_rows:
+            self.client.table("insurance_criteria").upsert(
+                criterion_rows,
+                on_conflict="chunk_id,subject_entity_id,field_name,operator,expected_number,expected_text,unit",
+            ).execute()
 
     def _status(self, document_id: str, status: str, **extra: Any) -> None:
         self.client.table("insurance_documents").update(
@@ -1128,12 +1953,11 @@ def main() -> None:
     parser.add_argument("--title")
     parser.add_argument("--version")
     parser.add_argument("--category")
-    parser.add_argument("--skip-embeddings", action="store_true")
     args = parser.parse_args()
     path = args.path.expanduser().resolve()
     if not path.is_file():
         raise FileNotFoundError(path)
-    worker = InsuranceIngestionWorker(build_client(), skip_embeddings=args.skip_embeddings)
+    worker = InsuranceIngestionWorker(build_client())
     document_id = worker.register(path, args.title or path.stem, args.version, args.category)
     worker.process(document_id, path)
     print(f"Ready: {document_id} ({path.name}) on {socket.gethostname()}")
