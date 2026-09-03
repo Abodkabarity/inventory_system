@@ -4,9 +4,18 @@ import 'package:crypto/crypto.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class InsuranceAssistantRemoteDs {
-  static const _knowledgeBaseVersion = String.fromEnvironment(
-    'INSURANCE_KB_VERSION',
-    defaultValue: 'v3',
+  /// Immediate rollback target. Build with
+  /// `--dart-define=INSURANCE_POLICY_FUNCTION=insurance-policy-simple-v44-agentic-candidate`
+  /// to return to the pre-deep-review release.
+  static const rollbackPolicyFunctionName =
+      'insurance-policy-simple-v44-agentic-candidate';
+
+  /// Retained only as the older production fallback; the normal rollback is V44.
+  static const legacyRollbackPolicyFunctionName = 'insurance-policy-v5';
+
+  static const policyFunctionName = String.fromEnvironment(
+    'INSURANCE_POLICY_FUNCTION',
+    defaultValue: 'insurance-policy-simple-v45-deep-review-candidate',
   );
 
   final SupabaseClient client;
@@ -51,7 +60,7 @@ class InsuranceAssistantRemoteDs {
     return _invokeAssistant({
       'message': question,
       'branch_name': branchName,
-      if (sessionId != null) 'session_id': sessionId,
+      'session_id': ?sessionId,
       if (debug) 'debug': true,
     });
   }
@@ -70,11 +79,7 @@ class InsuranceAssistantRemoteDs {
     Map<String, dynamic> body,
   ) async {
     final response = await client.functions.invoke(
-      // V2 evaluates reviewed, structured policy rules.  The legacy function
-      // remains deployed independently as a safe rollback path.
-      _knowledgeBaseVersion == 'v3'
-          ? 'insurance-policy-v3'
-          : 'insurance-policy-v2',
+      policyFunctionName,
       body: body,
     );
     final data = Map<String, dynamic>.from(response.data as Map);
@@ -83,7 +88,7 @@ class InsuranceAssistantRemoteDs {
   }
 
   Future<void> submitFeedback(String messageId, int rating) async {
-    if (rating > 0 && _knowledgeBaseVersion == 'v3') {
+    if (rating > 0) {
       await _invokeAssistant({'positive_feedback_message_id': messageId});
       return;
     }
@@ -179,18 +184,20 @@ class InsuranceAssistantRemoteDs {
       'xlsb': 'application/vnd.ms-excel.sheet.binary.macroEnabled.12',
       'csv': 'text/csv',
     };
-    if (!mimeTypes.containsKey(extension))
+    if (!mimeTypes.containsKey(extension)) {
       throw Exception(
         'Only PDF, DOCX, XLSX, XLS, XLSB, and CSV files are supported.',
       );
+    }
     final checksum = sha256.convert(bytes).toString();
     final existing = await client
         .from('insurance_documents')
         .select('id')
         .eq('checksum', checksum)
         .maybeSingle();
-    if (existing != null)
+    if (existing != null) {
       throw Exception('This exact document is already in the knowledge base.');
+    }
     final safeName = fileName.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '-');
     final storagePath = '${checksum.substring(0, 12)}/$safeName';
     await client.storage

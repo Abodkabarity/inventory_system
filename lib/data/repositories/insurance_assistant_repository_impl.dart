@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import '../../domain/entities/insurance_assistant_models.dart';
@@ -10,7 +11,9 @@ class InsuranceAssistantRepositoryImpl implements InsuranceAssistantRepository {
   InsuranceAssistantRepositoryImpl(this.remote);
 
   InsuranceCitation _citation(Map<String, dynamic> map) => InsuranceCitation(
+    evidenceId: (map['evidence_id'] ?? map['id'] ?? '').toString(),
     chunkId: (map['chunk_id'] ?? '').toString(),
+    documentId: map['document_id']?.toString(),
     documentTitle: (map['document_title'] ?? 'Insurance guideline').toString(),
     fileName: (map['file_name'] ?? '').toString(),
     storageBucket: (map['storage_bucket'] ?? 'insurance-documents').toString(),
@@ -26,10 +29,187 @@ class InsuranceAssistantRepositoryImpl implements InsuranceAssistantRepository {
     supportLevel: (map['support_level'] ?? 'supporting_evidence').toString(),
   );
 
-  InsuranceChatMessage _message(Map<String, dynamic> map) {
-    final parsedData = map['parsed_data'] is Map
-        ? Map<String, dynamic>.from(map['parsed_data'] as Map)
-        : const <String, dynamic>{};
+  Map<String, dynamic>? _map(Object? value) {
+    if (value is Map) return Map<String, dynamic>.from(value);
+    if (value is String && value.trimLeft().startsWith('{')) {
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  List<Object?> _list(Object? value) => value is List ? value : const [];
+
+  String? _optionalString(Object? value) {
+    final text = value?.toString().trim();
+    return text == null || text.isEmpty || text == 'null' ? null : text;
+  }
+
+  List<String> _stringList(Object? value) => _list(
+    value,
+  ).map(_optionalString).whereType<String>().toList(growable: false);
+
+  InsuranceAnswerCriterion? _criterion(Object? value) {
+    if (value is String && value.trim().isNotEmpty) {
+      return InsuranceAnswerCriterion(label: value.trim(), status: 'unknown');
+    }
+    final row = _map(value);
+    final label = _optionalString(
+      row?['label'] ?? row?['criterion'] ?? row?['text'],
+    );
+    if (row == null || label == null) return null;
+    return InsuranceAnswerCriterion(
+      label: label,
+      status: _optionalString(row['status']) ?? 'unknown',
+      detail: _optionalString(row['detail'] ?? row['explanation']),
+      evidenceIds: _stringList(
+        row['evidence_ids'] ?? row['citation_ids'] ?? row['citations'],
+      ),
+    );
+  }
+
+  InsuranceDoseSchedule? _doseSchedule(Object? value) {
+    final row = _map(value);
+    if (row == null) return null;
+    final schedule = InsuranceDoseSchedule(
+      dose: _optionalString(row['dose']),
+      route: _optionalString(row['route']),
+      frequency: _optionalString(row['frequency']),
+      loading: _optionalString(row['loading']),
+      maintenance: _optionalString(row['maintenance']),
+      evidenceIds: _stringList(
+        row['evidence_ids'] ?? row['citation_ids'] ?? row['citations'],
+      ),
+    );
+    return schedule.isEmpty ? null : schedule;
+  }
+
+  InsuranceAnswerClaim? _claim(Object? value, int index) {
+    if (value is String && value.trim().isNotEmpty) {
+      return InsuranceAnswerClaim(id: 'claim-$index', text: value.trim());
+    }
+    final row = _map(value);
+    final text = _optionalString(row?['text'] ?? row?['claim']);
+    if (row == null || text == null) return null;
+    return InsuranceAnswerClaim(
+      id: _optionalString(row['id']) ?? 'claim-$index',
+      text: text,
+      subjectEntityId: _optionalString(row['subject_entity_id']),
+      predicate: _optionalString(row['predicate']),
+      value: _optionalString(row['value']),
+      unit: _optionalString(row['unit']),
+      polarity: _optionalString(row['polarity']) ?? 'affirmed',
+      certainty: _optionalString(row['certainty']) ?? 'direct',
+      evidenceIds: _stringList(
+        row['evidence_ids'] ?? row['citation_ids'] ?? row['citations'],
+      ),
+      evidenceQuote: _optionalString(row['evidence_quote'] ?? row['quote']),
+    );
+  }
+
+  InsurancePresentationRow? _presentationRow(Object? value) {
+    final row = _map(value);
+    final label = _optionalString(row?['label']);
+    final displayValue = _optionalString(row?['value']);
+    if (row == null || label == null || displayValue == null) return null;
+    return InsurancePresentationRow(
+      label: label,
+      status: _optionalString(row['status']) ?? 'informational',
+      value: displayValue,
+      evidenceIds: _stringList(row['evidence_ids']),
+    );
+  }
+
+  InsurancePresentationSection? _presentationSection(Object? value) {
+    final row = _map(value);
+    final id = _optionalString(row?['id']);
+    final title = _optionalString(row?['title']);
+    if (row == null || id == null || title == null) return null;
+    return InsurancePresentationSection(
+      id: id,
+      title: title,
+      rows: _list(row['rows'])
+          .map(_presentationRow)
+          .whereType<InsurancePresentationRow>()
+          .toList(growable: false),
+    );
+  }
+
+  InsuranceAnswerPresentation? _presentation(Object? value) {
+    final row = _map(value);
+    final answerType = _optionalString(row?['answer_type']);
+    final title = _optionalString(row?['display_title']);
+    final verdict = _optionalString(row?['display_verdict']);
+    if (row == null || answerType == null || title == null || verdict == null) {
+      return null;
+    }
+    return InsuranceAnswerPresentation(
+      answerType: answerType,
+      displayTitle: title,
+      displayVerdict: verdict,
+      tone: _optionalString(row['tone']) ?? 'informational',
+      complete: row['complete'] == true,
+      explanation: _optionalString(row['explanation']),
+      comparisonRows: _list(row['comparison_rows'])
+          .map(_presentationRow)
+          .whereType<InsurancePresentationRow>()
+          .toList(growable: false),
+      sections: _list(row['sections'])
+          .map(_presentationSection)
+          .whereType<InsurancePresentationSection>()
+          .toList(growable: false),
+      missingInformation: _stringList(row['missing_information']),
+      nextAction: _optionalString(row['next_action']),
+      evidenceSourceCount: (row['evidence_source_count'] as num?)?.toInt() ?? 0,
+      displayedEvidenceIds: _stringList(row['displayed_evidence_ids']),
+    );
+  }
+
+  InsuranceAnswerCard? _answerCard(Object? value) {
+    final row = _map(value);
+    if (row == null) return null;
+    final verdictValue = row['verdict'];
+    final verdictMap = _map(verdictValue);
+    final verdict = _optionalString(
+      verdictMap?['status'] ?? verdictMap?['value'] ?? verdictValue,
+    );
+    final summary = _optionalString(
+      row['summary'] ?? verdictMap?['summary'] ?? row['answer'],
+    );
+    if (verdict == null || summary == null) return null;
+    final criteria = _list(
+      row['criteria'] ?? row['coverage_criteria'],
+    ).map(_criterion).whereType<InsuranceAnswerCriterion>().toList();
+    final claims = <InsuranceAnswerClaim>[];
+    final claimRows = _list(row['claims'] ?? row['supported_claims']);
+    for (var index = 0; index < claimRows.length; index++) {
+      final claim = _claim(claimRows[index], index);
+      if (claim != null) claims.add(claim);
+    }
+    return InsuranceAnswerCard(
+      version: _optionalString(row['version']) ?? '1',
+      verdict: verdict,
+      summary: summary,
+      criteria: criteria,
+      doseSchedule: _doseSchedule(
+        row['dose_schedule'] ?? row['dose'] ?? row['schedule'],
+      ),
+      missingInformation: _stringList(
+        row['missing_information'] ?? row['missing'] ?? row['unknowns'],
+      ),
+      nextAction: _optionalString(
+        row['next_action'] ?? row['recommended_action'],
+      ),
+      claims: claims,
+      presentation: _presentation(row['presentation']),
+    );
+  }
+
+  InsuranceChatMessage messageFromMap(Map<String, dynamic> map) {
+    final parsedData = _map(map['parsed_data']) ?? const <String, dynamic>{};
+    final semantic = _map(parsedData['semantic']);
     const conversationalIntents = {
       'greeting',
       'thanks',
@@ -59,6 +239,19 @@ class InsuranceAssistantRepositoryImpl implements InsuranceAssistantRepository {
             clarificationMap!['candidates'] as List,
           )
         : const <Map<String, dynamic>>[];
+    final citations = List<Map<String, dynamic>>.from(
+      map['citations'] ?? parsedData['citations'] ?? const [],
+    ).map(_citation).toList(growable: false);
+    final answerStatus =
+        _optionalString(map['answer_status'] ?? parsedData['answer_status']) ??
+        'legacy';
+    final answerGenerator = _optionalString(
+      map['answer_generator'] ?? parsedData['answer_generator'],
+    );
+    final evidenceChecked =
+        map['evidence_checked'] == true ||
+        parsedData['evidence_checked'] == true ||
+        (answerStatus.startsWith('grounded') && citations.isNotEmpty);
     return InsuranceChatMessage(
       id: (map['id'] ?? map['message_id'] ?? '').toString(),
       role: (map['role'] ?? 'assistant').toString(),
@@ -67,15 +260,17 @@ class InsuranceAssistantRepositoryImpl implements InsuranceAssistantRepository {
           DateTime.tryParse((map['created_at'] ?? '').toString()) ??
           DateTime.now(),
       confidence: (map['confidence'] as num?)?.toDouble(),
-      citations: List<Map<String, dynamic>>.from(
-        map['citations'] ?? const [],
-      ).map(_citation).toList(),
+      citations: citations,
       conversational:
           map['conversational'] == true ||
           parsedData['conversational'] == true ||
+          semantic?['route'] == 'conversation' ||
+          answerStatus == 'conversation' ||
           conversationalIntents.contains(savedIntent),
       aiGenerated:
-          map['answer_generator'] == 'groq' || parsedData['groq'] != null,
+          (answerGenerator != null &&
+              !answerGenerator.startsWith('deterministic')) ||
+          parsedData['groq'] != null,
       clarification: clarificationMap == null
           ? null
           : InsuranceClarification(
@@ -100,6 +295,14 @@ class InsuranceAssistantRepositoryImpl implements InsuranceAssistantRepository {
       recoveryDepth:
           (parsedData['recovery_depth'] as num?)?.toInt() ??
           (map['recovery_used'] == true ? 1 : 0),
+      recoveryOfMessageId:
+          (parsedData['recovery_of_message_id'] ??
+                  map['recovery_of_message_id'])
+              ?.toString(),
+      answerStatus: answerStatus,
+      evidenceChecked: evidenceChecked,
+      answerGenerator: answerGenerator,
+      answerCard: _answerCard(map['answer_card'] ?? parsedData['answer_card']),
     );
   }
 
@@ -126,7 +329,7 @@ class InsuranceAssistantRepositoryImpl implements InsuranceAssistantRepository {
   Future<List<InsuranceChatMessage>> fetchMessages(String sessionId) async {
     final messages = (await remote.fetchMessages(
       sessionId,
-    )).map(_message).toList();
+    )).map(messageFromMap).toList();
     messages.sort((left, right) {
       final chronological = left.createdAt.compareTo(right.createdAt);
       if (chronological != 0) return chronological;
@@ -151,7 +354,7 @@ class InsuranceAssistantRepositoryImpl implements InsuranceAssistantRepository {
     );
     return (
       sessionId: result['session_id'].toString(),
-      message: _message(result),
+      message: messageFromMap(result),
     );
   }
 
@@ -169,7 +372,7 @@ class InsuranceAssistantRepositoryImpl implements InsuranceAssistantRepository {
     );
     return (
       sessionId: result['session_id'].toString(),
-      message: _message(result),
+      message: messageFromMap(result),
     );
   }
 
@@ -191,12 +394,16 @@ class InsuranceAssistantRepositoryImpl implements InsuranceAssistantRepository {
     if (result['recovery_exhausted'] == true || result['answer'] == null) {
       return null;
     }
-    return _message(result);
+    return messageFromMap(result);
   }
 
   @override
   Future<String> createSourceUrl(InsuranceCitation citation) =>
-      remote.createSourceUrl(citation.storageBucket, citation.storagePath);
+      remote.createSourceUrl(
+        citation.storageBucket,
+        citation.storagePath,
+        documentId: citation.documentId,
+      );
 
   @override
   Future<List<InsuranceDocumentSummary>> fetchDocuments() async =>

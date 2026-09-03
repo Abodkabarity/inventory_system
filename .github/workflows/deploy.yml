@@ -4,6 +4,21 @@ on:
   push:
     branches: [ "master" ]
   workflow_dispatch:
+    inputs:
+      policy_function:
+        description: Insurance policy function used by the web app
+        required: true
+        default: insurance-policy-simple-v45-deep-review-candidate
+        type: choice
+        options:
+          - insurance-policy-simple-v45-deep-review-candidate
+          - insurance-policy-simple-v44-agentic-candidate
+          - insurance-policy-simple-v42-luna-candidate
+          - insurance-policy-v5
+          - insurance-policy-v4
+
+env:
+  INSURANCE_POLICY_FUNCTION: ${{ github.event_name == 'workflow_dispatch' && inputs.policy_function || 'insurance-policy-simple-v45-deep-review-candidate' }}
 
 permissions:
   contents: read
@@ -35,6 +50,7 @@ jobs:
           --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }}
           --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
           --dart-define=INSURANCE_KB_VERSION=v3
+          --dart-define=INSURANCE_POLICY_FUNCTION=${{ env.INSURANCE_POLICY_FUNCTION }}
 
       - uses: actions/upload-pages-artifact@v3
         with:

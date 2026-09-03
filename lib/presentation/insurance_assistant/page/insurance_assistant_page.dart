@@ -245,7 +245,44 @@ class _InsuranceAssistantPageState extends State<InsuranceAssistantPage> {
     } catch (_) {}
   }
 
-  Future<void> _handleFeedback(InsuranceChatMessage message, int rating) async {
+  Set<String> _previousAnswerIds() {
+    final previous = <String>{};
+    for (final message in _messages) {
+      final recoveryOf = message.recoveryOfMessageId;
+      if (!message.isUser && recoveryOf != null && recoveryOf.isNotEmpty) {
+        previous.add(recoveryOf);
+      }
+    }
+    for (var index = 0; index < _messages.length; index++) {
+      final message = _messages[index];
+      if (message.isUser ||
+          message.recoveryDepth < 1 ||
+          message.recoveryOfMessageId != null) {
+        continue;
+      }
+      for (
+        var candidateIndex = index - 1;
+        candidateIndex >= 0;
+        candidateIndex--
+      ) {
+        final candidate = _messages[candidateIndex];
+        if (!candidate.isUser &&
+            candidate.recoveryDepth == 0 &&
+            !candidate.conversational) {
+          previous.add(candidate.id);
+          break;
+        }
+      }
+    }
+    return previous;
+  }
+
+  Future<void> _handleFeedback(
+    InsuranceChatMessage message,
+    int rating, {
+    String? recoveryReason,
+  }) async {
+    if (_sending) return;
     if (rating > 0) {
       await _repository.submitFeedback(message.id, 1);
       if (mounted) {
@@ -255,39 +292,21 @@ class _InsuranceAssistantPageState extends State<InsuranceAssistantPage> {
       }
       return;
     }
-    final reason = await showDialog<String>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('What needs improvement?'),
-        children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, 'incorrect'),
-            child: const Text('Incorrect'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, 'incomplete'),
-            child: const Text('Incomplete'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, 'misunderstood'),
-            child: const Text('Misunderstood my question'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, 'wrong_source'),
-            child: const Text('Wrong source'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, 'other'),
-            child: const Text('Other'),
-          ),
-        ],
-      ),
-    );
+    final deepReview = message.recoveryDepth > 0;
+    final reason =
+        recoveryReason ??
+        await showDialog<String>(
+          context: context,
+          builder: (_) => const _FeedbackReasonDialog(),
+        );
     if (reason == null || !mounted) return;
     setState(() {
       _sending = true;
       _error = null;
     });
+    // The recovery indicator is appended to the list. Move to it immediately
+    // so users can see that the deeper evidence search has started.
+    _scrollToBottom();
     try {
       final recovered = await _repository.recoverFromFeedback(
         messageId: message.id,
@@ -307,9 +326,11 @@ class _InsuranceAssistantPageState extends State<InsuranceAssistantPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            recovered == null
+            deepReview
+                ? 'Thanks — this case was flagged for review.'
+                : recovered == null
                 ? 'The case was recorded for review; no further automatic retry will run.'
-                : 'A deeper source verification was completed.',
+                : 'Deep Review completed using the approved documents.',
           ),
         ),
       );
@@ -356,8 +377,9 @@ class _InsuranceAssistantPageState extends State<InsuranceAssistantPage> {
         Uri.parse(url),
         webOnlyWindowName: '_blank',
       );
-      if (!launched)
+      if (!launched) {
         throw Exception('The source document could not be opened.');
+      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -471,6 +493,7 @@ class _InsuranceAssistantPageState extends State<InsuranceAssistantPage> {
   }
 
   Widget _buildConversation(bool evidenceBesideChat) {
+    final previousAnswerIds = _previousAnswerIds();
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -501,13 +524,17 @@ class _InsuranceAssistantPageState extends State<InsuranceAssistantPage> {
                       controller: _scrollController,
                       padding: const EdgeInsets.fromLTRB(24, 24, 24, 18),
                       itemCount: _messages.length + (_sending ? 1 : 0),
-                      separatorBuilder: (_, __) => const SizedBox(height: 20),
+                      separatorBuilder: (_, _) => const SizedBox(height: 20),
                       itemBuilder: (context, index) {
-                        if (index == _messages.length)
+                        if (index == _messages.length) {
                           return const _ThinkingBubble();
+                        }
                         final message = _messages[index];
                         return _MessageBubble(
                           message: message,
+                          previousAnswer: previousAnswerIds.contains(
+                            message.id,
+                          ),
                           selectedCitation: _selectedCitation,
                           onCitationTap: (citation) {
                             setState(() => _selectedCitation = citation);
@@ -526,10 +553,19 @@ class _InsuranceAssistantPageState extends State<InsuranceAssistantPage> {
                               );
                             }
                           },
-                          onFeedback: message.isUser
+                          onFeedback: message.isUser || _sending
                               ? null
                               : (rating) =>
                                     unawaited(_handleFeedback(message, rating)),
+                          onRecoveryFeedback: message.isUser || _sending
+                              ? null
+                              : (reason) => unawaited(
+                                  _handleFeedback(
+                                    message,
+                                    -1,
+                                    recoveryReason: reason,
+                                  ),
+                                ),
                           clarificationEnabled:
                               message.clarification != null &&
                               !_confirmedClarifications.contains(
@@ -585,96 +621,189 @@ class _AssistantHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(18),
-      child: Row(
-        children: [
-          IconButton.filledTonal(
-            tooltip: 'Back to orders',
-            onPressed: onBack,
-            icon: const Icon(Icons.arrow_back_rounded),
-          ),
-          const SizedBox(width: 12),
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF6D5DFB), Color(0xFF0EA5E9)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF6D5DFB).withValues(alpha: .25),
-                  blurRadius: 18,
-                  offset: const Offset(0, 7),
-                ),
-              ],
-            ),
-            child: const Icon(
-              Icons.auto_awesome_rounded,
-              color: Colors.white,
-              size: 25,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 680) {
+          return Padding(
+            padding: const EdgeInsets.all(14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Insurance Knowledge Assistant',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                    color: Color(0xFF111827),
-                  ),
+                Row(
+                  children: [
+                    IconButton.filledTonal(
+                      tooltip: 'Back to orders',
+                      onPressed: onBack,
+                      icon: const Icon(Icons.arrow_back_rounded),
+                    ),
+                    const SizedBox(width: 9),
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF6D5DFB), Color(0xFF0EA5E9)],
+                        ),
+                        borderRadius: BorderRadius.circular(13),
+                      ),
+                      child: const Icon(
+                        Icons.auto_awesome_rounded,
+                        color: Colors.white,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'Insurance Knowledge Assistant',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF111827),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  '$branchName • Clinical & coverage intelligence',
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    color: Color(0xFF64748B),
-                    fontWeight: FontWeight.w600,
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Wrap(
+                    spacing: 8,
+                    children: [
+                      if (canManage)
+                        IconButton.filledTonal(
+                          tooltip: 'Knowledge Library',
+                          onPressed: onDocuments,
+                          icon: const Icon(Icons.folder_copy_outlined),
+                        ),
+                      IconButton.filledTonal(
+                        tooltip: exporting ? 'Preparing export' : 'Export PDF',
+                        onPressed: exportEnabled && !exporting
+                            ? onExport
+                            : null,
+                        icon: exporting
+                            ? const SizedBox.square(
+                                dimension: 17,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.picture_as_pdf_outlined),
+                      ),
+                      IconButton.filled(
+                        tooltip: 'New chat',
+                        style: IconButton.styleFrom(
+                          backgroundColor: const Color(0xFF5B55E7),
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: onNewConversation,
+                        icon: const Icon(Icons.add_comment_rounded),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.all(18),
+          child: Row(
+            children: [
+              IconButton.filledTonal(
+                tooltip: 'Back to orders',
+                onPressed: onBack,
+                icon: const Icon(Icons.arrow_back_rounded),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF6D5DFB), Color(0xFF0EA5E9)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF6D5DFB).withValues(alpha: .25),
+                      blurRadius: 18,
+                      offset: const Offset(0, 7),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.auto_awesome_rounded,
+                  color: Colors.white,
+                  size: 25,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Insurance Knowledge Assistant',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$branchName • Clinical & coverage intelligence',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: Color(0xFF64748B),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (canManage) ...[
+                OutlinedButton.icon(
+                  onPressed: onDocuments,
+                  icon: const Icon(Icons.folder_copy_outlined),
+                  label: const Text('Knowledge Library'),
+                ),
+                const SizedBox(width: 10),
+              ],
+              OutlinedButton.icon(
+                onPressed: exportEnabled && !exporting ? onExport : null,
+                icon: exporting
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.picture_as_pdf_outlined),
+                label: Text(exporting ? 'Preparing…' : 'Export PDF'),
+              ),
+              const SizedBox(width: 10),
+              FilledButton.icon(
+                onPressed: onNewConversation,
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF5B55E7),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 15,
+                  ),
+                ),
+                icon: const Icon(Icons.add_comment_rounded),
+                label: const Text('New chat'),
+              ),
+            ],
           ),
-          if (canManage) ...[
-            OutlinedButton.icon(
-              onPressed: onDocuments,
-              icon: const Icon(Icons.folder_copy_outlined),
-              label: const Text('Knowledge Library'),
-            ),
-            const SizedBox(width: 10),
-          ],
-          OutlinedButton.icon(
-            onPressed: exportEnabled && !exporting ? onExport : null,
-            icon: exporting
-                ? const SizedBox.square(
-                    dimension: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.picture_as_pdf_outlined),
-            label: Text(exporting ? 'Preparing…' : 'Export PDF'),
-          ),
-          const SizedBox(width: 10),
-          FilledButton.icon(
-            onPressed: onNewConversation,
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF5B55E7),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
-            ),
-            icon: const Icon(Icons.add_comment_rounded),
-            label: const Text('New chat'),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -814,43 +943,58 @@ class _ConversationStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFE8EEF5))),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 9,
-            height: 9,
-            decoration: const BoxDecoration(
-              color: Color(0xFF22C55E),
-              shape: BoxShape.circle,
-            ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 540;
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: Color(0xFFE8EEF5))),
           ),
-          const SizedBox(width: 8),
-          Text(
-            documentCountLabel,
-            style: const TextStyle(
-              color: Color(0xFF475569),
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
+          child: Row(
+            children: [
+              Container(
+                width: 9,
+                height: 9,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF22C55E),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  documentCountLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF475569),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (!compact) ...[
+                const SizedBox(width: 12),
+                const Icon(
+                  Icons.shield_outlined,
+                  size: 17,
+                  color: Color(0xFF10B981),
+                ),
+                const SizedBox(width: 6),
+                const Text(
+                  'Private knowledge base',
+                  style: TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ],
           ),
-          const Spacer(),
-          const Icon(Icons.shield_outlined, size: 17, color: Color(0xFF10B981)),
-          const SizedBox(width: 6),
-          const Text(
-            'Private knowledge base',
-            style: TextStyle(
-              color: Color(0xFF64748B),
-              fontSize: 11.5,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -964,20 +1108,196 @@ class _WelcomeView extends StatelessWidget {
   }
 }
 
+class _FeedbackReasonDialog extends StatelessWidget {
+  const _FeedbackReasonDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 470),
+        child: Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          clipBehavior: Clip.antiAlias,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(22, 22, 22, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEEF2FF),
+                        borderRadius: BorderRadius.circular(13),
+                      ),
+                      child: const Icon(
+                        Icons.rate_review_rounded,
+                        color: Color(0xFF4F46E5),
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 11),
+                    const Expanded(
+                      child: Text(
+                        'What should I improve?',
+                        style: TextStyle(
+                          color: Color(0xFF172033),
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      tooltip: 'Close',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Choose the closest reason so I can re-check the approved documents.',
+                  style: TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 13,
+                    height: 1.42,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                _FeedbackReasonOption(
+                  value: 'incorrect',
+                  icon: Icons.cancel_outlined,
+                  title: 'Incorrect',
+                  description: 'The answer appears wrong',
+                ),
+                const SizedBox(height: 9),
+                _FeedbackReasonOption(
+                  value: 'incomplete',
+                  icon: Icons.note_alt_outlined,
+                  title: 'Incomplete',
+                  description: 'The answer is missing important information',
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FeedbackReasonOption extends StatelessWidget {
+  final String value;
+  final IconData icon;
+  final String title;
+  final String description;
+
+  const _FeedbackReasonOption({
+    required this.value,
+    required this.icon,
+    required this.title,
+    required this.description,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFF8FAFF),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        hoverColor: const Color(0xFFEEF2FF),
+        splashColor: const Color(0xFFC7D2FE),
+        onTap: () => Navigator.of(context).pop(value),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE0E7FF)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 35,
+                height: 35,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(11),
+                  border: Border.all(color: const Color(0xFFDDE5F8)),
+                ),
+                child: Icon(icon, size: 19, color: const Color(0xFF4F46E5)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Color(0xFF1E293B),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      description,
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 11.5,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: Color(0xFF94A3B8),
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _MessageBubble extends StatelessWidget {
   final InsuranceChatMessage message;
+  final bool previousAnswer;
   final InsuranceCitation? selectedCitation;
   final ValueChanged<InsuranceCitation> onCitationTap;
   final ValueChanged<int>? onFeedback;
+  final ValueChanged<String>? onRecoveryFeedback;
   final bool clarificationEnabled;
   final ValueChanged<InsuranceClarificationCandidate> onClarificationSelected;
   final bool showDeveloperDebug;
 
   const _MessageBubble({
     required this.message,
+    required this.previousAnswer,
     required this.selectedCitation,
     required this.onCitationTap,
     required this.onFeedback,
+    required this.onRecoveryFeedback,
     required this.clarificationEnabled,
     required this.onClarificationSelected,
     required this.showDeveloperDebug,
@@ -1008,19 +1328,6 @@ class _MessageBubble extends StatelessWidget {
     return spans;
   }
 
-  String _supportLabel(InsuranceCitation citation) {
-    switch (citation.supportLevel) {
-      case 'strongest_direct_support':
-        return 'Strongest direct support';
-      case 'corroborating_evidence':
-        return 'Corroborating evidence';
-      case 'additional_supporting_source':
-        return 'Additional supporting source';
-      default:
-        return 'Supporting evidence';
-    }
-  }
-
   ({String answer, String? source}) _separateAnswerAndSource() {
     final value = message.message.trim();
     final sourceMarker = RegExp(
@@ -1037,9 +1344,22 @@ class _MessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final user = message.isUser;
     final content = _separateAnswerAndSource();
-    final evidenceBacked =
-        message.citations.isNotEmpty || content.source != null;
-    final arabic = RegExp(r'[\u0600-\u06FF]').hasMatch(content.answer);
+    final arabic = RegExp(
+      r'[\u0600-\u06FF]',
+    ).hasMatch(message.answerCard?.summary ?? content.answer);
+    final deepReview = !user && message.recoveryDepth > 0;
+    final secondaryAnswer = !user && previousAnswer;
+    final compact = MediaQuery.sizeOf(context).width < 600;
+    final assistantSurface = deepReview
+        ? const Color(0xFFF7F5FF)
+        : secondaryAnswer
+        ? const Color(0xFFF8FAFC)
+        : const Color(0xFFF5F7FF);
+    final assistantBorder = deepReview
+        ? const Color(0xFFD8CCFF)
+        : secondaryAnswer
+        ? const Color(0xFFE2E8F0)
+        : const Color(0xFFD8E1FF);
     return Align(
       alignment: user ? Alignment.centerRight : Alignment.centerLeft,
       child: ConstrainedBox(
@@ -1050,13 +1370,15 @@ class _MessageBubble extends StatelessWidget {
               ? MainAxisAlignment.end
               : MainAxisAlignment.start,
           children: [
-            if (!user) ...[
+            if (!user && !compact) ...[
               Container(
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF5B55E7), Color(0xFF3B82F6)],
+                  gradient: LinearGradient(
+                    colors: deepReview
+                        ? const [Color(0xFF7C3AED), Color(0xFF6366F1)]
+                        : const [Color(0xFF5B55E7), Color(0xFF3B82F6)],
                   ),
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
@@ -1084,16 +1406,14 @@ class _MessageBubble extends StatelessWidget {
                           colors: [Color(0xFF5B55E7), Color(0xFF3B82F6)],
                         )
                       : null,
-                  color: user ? null : const Color(0xFFF5F7FF),
+                  color: user ? null : assistantSurface,
                   borderRadius: BorderRadius.only(
                     topLeft: const Radius.circular(18),
                     topRight: const Radius.circular(18),
                     bottomLeft: Radius.circular(user ? 18 : 7),
                     bottomRight: Radius.circular(user ? 5 : 18),
                   ),
-                  border: user
-                      ? null
-                      : Border.all(color: const Color(0xFFD8E1FF)),
+                  border: user ? null : Border.all(color: assistantBorder),
                   boxShadow: user
                       ? null
                       : [
@@ -1112,91 +1432,113 @@ class _MessageBubble extends StatelessWidget {
                     if (!user) ...[
                       Row(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFE0E7FF),
-                              borderRadius: BorderRadius.circular(9),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.check_circle_rounded,
-                                  size: 16,
-                                  color: Color(0xFF4F46E5),
-                                ),
-                                SizedBox(width: 6),
-                                Text(
-                                  'ANSWER',
-                                  style: TextStyle(
-                                    color: Color(0xFF4338CA),
-                                    fontSize: 11,
-                                    letterSpacing: .7,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ],
-                            ),
+                          _AnswerKindBadge(
+                            deepReview: deepReview,
+                            previousAnswer: secondaryAnswer,
+                            arabic: arabic,
                           ),
-                          if (message.aiGenerated) ...[
+                          if (message.aiGenerated && !compact) ...[
                             const SizedBox(width: 7),
-                            const _AiBadge(),
+                            _AiBadge(generator: message.answerGenerator),
+                          ],
+                          if (!compact && message.answerStatus != 'legacy') ...[
+                            const SizedBox(width: 7),
+                            _AnswerStatusBadge(
+                              status: message.answerStatus,
+                              arabic: arabic,
+                            ),
                           ],
                           const Spacer(),
-                          if (evidenceBacked) const _EvidenceBadge(),
+                          if (message.evidenceChecked &&
+                              !compact &&
+                              message.answerCard?.presentation == null)
+                            _EvidenceBadge(arabic: arabic),
                         ],
                       ),
+                      if (deepReview) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          arabic
+                              ? 'أُعيد التحقق من الوثائق المعتمدة بعد ملاحظتك'
+                              : 'Re-checked across approved documents after your feedback',
+                          textDirection: arabic
+                              ? TextDirection.rtl
+                              : TextDirection.ltr,
+                          style: const TextStyle(
+                            color: Color(0xFF6D5AA7),
+                            fontSize: 11.5,
+                            height: 1.35,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 13),
                     ],
-                    Container(
-                      width: double.infinity,
-                      padding: EdgeInsets.all(user ? 0 : 17),
-                      decoration: user
-                          ? null
-                          : BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: const Color(0xFFE1E7F5),
+                    if (!user &&
+                        !message.conversational &&
+                        message.answerCard != null)
+                      _AnswerCardRenderer(
+                        card: message.answerCard!,
+                        citations: message.citations,
+                        arabic: arabic,
+                        onCitationTap: onCitationTap,
+                      )
+                    else
+                      Container(
+                        width: double.infinity,
+                        padding: EdgeInsets.all(user ? 0 : 17),
+                        decoration: user
+                            ? null
+                            : BoxDecoration(
+                                color: secondaryAnswer
+                                    ? const Color(0xFFFCFDFE)
+                                    : Colors.white,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: deepReview
+                                      ? const Color(0xFFE0D7FF)
+                                      : secondaryAnswer
+                                      ? const Color(0xFFE8EDF3)
+                                      : const Color(0xFFE1E7F5),
+                                ),
+                              ),
+                        child: Directionality(
+                          textDirection: arabic
+                              ? TextDirection.rtl
+                              : TextDirection.ltr,
+                          child: Text.rich(
+                            TextSpan(
+                              children: _answerSpans(
+                                content.answer,
+                                TextStyle(
+                                  color: user
+                                      ? Colors.white
+                                      : secondaryAnswer
+                                      ? const Color(0xFF475569)
+                                      : const Color(0xFF172033),
+                                  height: user ? 1.5 : 1.68,
+                                  fontSize: user ? 14.5 : 16,
+                                  fontWeight: user
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                ),
                               ),
                             ),
-                      child: Directionality(
-                        textDirection: arabic
-                            ? TextDirection.rtl
-                            : TextDirection.ltr,
-                        child: Text.rich(
-                          TextSpan(
-                            children: _answerSpans(
-                              content.answer,
-                              TextStyle(
-                                color: user
-                                    ? Colors.white
-                                    : const Color(0xFF172033),
-                                height: user ? 1.5 : 1.68,
-                                fontSize: user ? 14.5 : 16,
-                                fontWeight: user
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                              ),
+                            style: TextStyle(
+                              color: user
+                                  ? Colors.white
+                                  : secondaryAnswer
+                                  ? const Color(0xFF475569)
+                                  : const Color(0xFF172033),
+                              height: user ? 1.5 : 1.68,
+                              fontSize: user ? 14.5 : 16,
+                              fontWeight: user
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
                             ),
-                          ),
-                          style: TextStyle(
-                            color: user
-                                ? Colors.white
-                                : const Color(0xFF172033),
-                            height: user ? 1.5 : 1.68,
-                            fontSize: user ? 14.5 : 16,
-                            fontWeight: user
-                                ? FontWeight.w700
-                                : FontWeight.w500,
                           ),
                         ),
                       ),
-                    ),
                     if (!user && message.clarification != null) ...[
                       const SizedBox(height: 13),
                       Wrap(
@@ -1235,104 +1577,16 @@ class _MessageBubble extends StatelessWidget {
                       const SizedBox(height: 12),
                       _InlineSource(source: content.source!),
                     ],
-                    if (!user && message.citations.isNotEmpty) ...[
+                    if (!user &&
+                        message.citations.isNotEmpty &&
+                        message.answerCard?.presentation == null) ...[
                       const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.menu_book_rounded,
-                            size: 19,
-                            color: Color(0xFF5B55E7),
-                          ),
-                          const SizedBox(width: 7),
-                          Text(
-                            '${message.citations.length} supporting source${message.citations.length == 1 ? '' : 's'}',
-                            style: const TextStyle(
-                              color: Color(0xFF475569),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
+                      _SourcesList(
+                        citations: message.citations,
+                        selectedCitation: selectedCitation,
+                        arabic: arabic,
+                        onCitationTap: onCitationTap,
                       ),
-                      const SizedBox(height: 11),
-                      ...message.citations
-                          .take(3)
-                          .map(
-                            (citation) => Padding(
-                              padding: const EdgeInsets.only(bottom: 7),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(12),
-                                onTap: () => onCitationTap(citation),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 11,
-                                    vertical: 11,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color:
-                                        selectedCitation?.chunkId ==
-                                            citation.chunkId
-                                        ? const Color(0xFFEDE9FE)
-                                        : Colors.white,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color:
-                                          selectedCitation?.chunkId ==
-                                              citation.chunkId
-                                          ? const Color(0xFFA78BFA)
-                                          : const Color(0xFFDCE5EF),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.picture_as_pdf_outlined,
-                                        color: Color(0xFFEF4444),
-                                        size: 19,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              '${citation.documentTitle} • ${citation.locationLabel}',
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                fontSize: 12.5,
-                                                color: Color(0xFF334155),
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 3),
-                                            Text(
-                                              _supportLabel(citation),
-                                              style: TextStyle(
-                                                fontSize: 10.5,
-                                                color:
-                                                    citation.supportLevel ==
-                                                        'strongest_direct_support'
-                                                    ? const Color(0xFF059669)
-                                                    : const Color(0xFF64748B),
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      const Icon(
-                                        Icons.chevron_right_rounded,
-                                        size: 18,
-                                        color: Color(0xFF94A3B8),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
                     ],
                     if (!user &&
                         showDeveloperDebug &&
@@ -1394,37 +1648,70 @@ class _MessageBubble extends StatelessWidget {
                     ],
                     if (!user &&
                         !message.conversational &&
-                        onFeedback != null) ...[
+                        !secondaryAnswer &&
+                        (onFeedback != null || onRecoveryFeedback != null)) ...[
                       const SizedBox(height: 10),
                       const Divider(color: Color(0xFFDDE5F3)),
-                      Row(
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 5,
                         children: [
-                          const Text(
-                            'Was this grounded answer useful?',
-                            style: TextStyle(
+                          Text(
+                            deepReview
+                                ? arabic
+                                      ? 'هل كانت المراجعة المتعمقة مفيدة؟'
+                                      : 'Was this deep review helpful?'
+                                : arabic
+                                ? 'هل كانت هذه الإجابة مفيدة؟'
+                                : 'Was this answer helpful?',
+                            style: const TextStyle(
                               color: Color(0xFF94A3B8),
                               fontSize: 11.5,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          const SizedBox(width: 5),
                           IconButton(
-                            onPressed: () => onFeedback!(1),
+                            onPressed: onFeedback == null
+                                ? null
+                                : () => onFeedback!(1),
                             visualDensity: VisualDensity.compact,
                             icon: const Icon(
                               Icons.thumb_up_alt_outlined,
                               size: 16,
                             ),
-                            tooltip: 'Useful',
+                            tooltip: arabic ? 'مفيد' : 'Useful',
                           ),
-                          IconButton(
-                            onPressed: () => onFeedback!(-1),
-                            visualDensity: VisualDensity.compact,
-                            icon: const Icon(
-                              Icons.thumb_down_alt_outlined,
-                              size: 16,
+                          OutlinedButton.icon(
+                            onPressed: onRecoveryFeedback == null
+                                ? null
+                                : () => onRecoveryFeedback!('incorrect'),
+                            icon: const Icon(Icons.cancel_outlined, size: 15),
+                            label: Text(arabic ? 'غير صحيحة' : 'Incorrect'),
+                            style: OutlinedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              foregroundColor: const Color(0xFFB42318),
+                              side: const BorderSide(color: Color(0xFFF3B5AF)),
+                              textStyle: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
-                            tooltip: 'Needs improvement',
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: onRecoveryFeedback == null
+                                ? null
+                                : () => onRecoveryFeedback!('incomplete'),
+                            icon: const Icon(Icons.note_alt_outlined, size: 15),
+                            label: Text(arabic ? 'غير مكتملة' : 'Incomplete'),
+                            style: OutlinedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              foregroundColor: const Color(0xFF6D28D9),
+                              side: const BorderSide(color: Color(0xFFD8B4FE)),
+                              textStyle: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -1435,6 +1722,1292 @@ class _MessageBubble extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _AnswerCardRenderer extends StatelessWidget {
+  final InsuranceAnswerCard card;
+  final List<InsuranceCitation> citations;
+  final bool arabic;
+  final ValueChanged<InsuranceCitation> onCitationTap;
+
+  const _AnswerCardRenderer({
+    required this.card,
+    required this.citations,
+    required this.arabic,
+    required this.onCitationTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final presentation = card.presentation;
+    if (presentation == null) {
+      return _StructuredAnswerCard(
+        card: card,
+        citations: citations,
+        arabic: arabic,
+        onCitationTap: onCitationTap,
+      );
+    }
+    return _ProfessionalAnswerCard(
+      presentation: presentation,
+      citations: citations,
+      arabic: arabic,
+      onCitationTap: onCitationTap,
+    );
+  }
+}
+
+class _ProfessionalAnswerCard extends StatefulWidget {
+  final InsuranceAnswerPresentation presentation;
+  final List<InsuranceCitation> citations;
+  final bool arabic;
+  final ValueChanged<InsuranceCitation> onCitationTap;
+
+  const _ProfessionalAnswerCard({
+    required this.presentation,
+    required this.citations,
+    required this.arabic,
+    required this.onCitationTap,
+  });
+
+  @override
+  State<_ProfessionalAnswerCard> createState() =>
+      _ProfessionalAnswerCardState();
+}
+
+class _ProfessionalAnswerCardState extends State<_ProfessionalAnswerCard> {
+  bool _evidenceExpanded = false;
+
+  ({Color color, Color surface, IconData icon}) get _tone =>
+      switch (widget.presentation.tone) {
+        'positive' => (
+          color: const Color(0xFF047857),
+          surface: const Color(0xFFECFDF5),
+          icon: Icons.verified_rounded,
+        ),
+        'negative' => (
+          color: const Color(0xFFB42318),
+          surface: const Color(0xFFFEF2F2),
+          icon: Icons.cancel_rounded,
+        ),
+        'warning' => (
+          color: const Color(0xFFB45309),
+          surface: const Color(0xFFFFFBEB),
+          icon: Icons.rule_rounded,
+        ),
+        _ => (
+          color: const Color(0xFF4338CA),
+          surface: const Color(0xFFEEF2FF),
+          icon: Icons.info_rounded,
+        ),
+      };
+
+  List<InsuranceCitation> _citationsFor(List<String> ids) {
+    final allowed = ids.toSet();
+    return widget.citations
+        .where(
+          (citation) =>
+              allowed.contains(citation.resolvedEvidenceId) ||
+              allowed.contains(citation.chunkId),
+        )
+        .toList(growable: false);
+  }
+
+  ({Color color, IconData icon}) _rowTone(String status) => switch (status) {
+    'eligible' || 'met' || 'covered' || 'affirmed' => (
+      color: const Color(0xFF047857),
+      icon: Icons.check_circle_rounded,
+    ),
+    'not_eligible' ||
+    'not_met' ||
+    'not_covered' ||
+    'denied' => (color: const Color(0xFFB42318), icon: Icons.cancel_rounded),
+    'conditional' ||
+    'unknown' => (color: const Color(0xFFB45309), icon: Icons.help_rounded),
+    _ => (color: const Color(0xFF4338CA), icon: Icons.info_outline_rounded),
+  };
+
+  Widget _evidenceButton(List<String> ids) {
+    final matches = _citationsFor(ids);
+    if (matches.isEmpty) return const SizedBox.shrink();
+    return TextButton.icon(
+      onPressed: () => _showClaimEvidence(matches),
+      icon: const Icon(Icons.menu_book_rounded, size: 15),
+      label: Text(widget.arabic ? 'عرض الدليل' : 'View evidence'),
+      style: TextButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        foregroundColor: const Color(0xFF4F46E5),
+        textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+      ),
+    );
+  }
+
+  Future<void> _showClaimEvidence(List<InsuranceCitation> citations) =>
+      showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        builder: (context) => SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * .72,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                  child: Text(
+                    widget.arabic ? 'الأدلة الداعمة' : 'Supporting evidence',
+                    style: const TextStyle(
+                      color: Color(0xFF172033),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 18),
+                    itemCount: citations.length,
+                    separatorBuilder: (_, _) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final citation = citations[index];
+                      return ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 7,
+                        ),
+                        leading: const Icon(
+                          Icons.picture_as_pdf_outlined,
+                          color: Color(0xFFEF4444),
+                        ),
+                        title: Text(
+                          citation.documentTitle,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        subtitle: Text(
+                          '${citation.locationLabel}\n${citation.excerpt}',
+                          style: const TextStyle(height: 1.4),
+                        ),
+                        isThreeLine: true,
+                        trailing: const Icon(Icons.open_in_new_rounded),
+                        onTap: () {
+                          Navigator.of(context).pop();
+                          widget.onCitationTap(citation);
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  Widget _resultRow(InsurancePresentationRow row) {
+    final tone = _rowTone(row.status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAFBFF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE3E8F2)),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final label = Text(
+            row.label,
+            style: const TextStyle(
+              color: Color(0xFF334155),
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+          );
+          final result = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(tone.icon, size: 18, color: tone.color),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  row.value,
+                  style: TextStyle(
+                    color: tone.color,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              _evidenceButton(row.evidenceIds),
+            ],
+          );
+          if (constraints.maxWidth < 520) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [label, const SizedBox(height: 7), result],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(flex: 3, child: label),
+              const SizedBox(width: 8),
+              Flexible(flex: 2, child: result),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _factRow(InsurancePresentationRow row) => Padding(
+    padding: const EdgeInsets.only(bottom: 9),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final label = Text(
+          row.label,
+          style: const TextStyle(
+            color: Color(0xFF64748B),
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        );
+        final value = Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                row.value,
+                style: const TextStyle(
+                  color: Color(0xFF1E293B),
+                  fontSize: 13,
+                  height: 1.4,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            _evidenceButton(row.evidenceIds),
+          ],
+        );
+        if (constraints.maxWidth < 520) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [label, const SizedBox(height: 4), value],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(width: 128, child: label),
+            const SizedBox(width: 9),
+            Expanded(child: value),
+          ],
+        );
+      },
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final presentation = widget.presentation;
+    final tone = _tone;
+    final allEvidence = _citationsFor(presentation.displayedEvidenceIds);
+    return Directionality(
+      textDirection: widget.arabic ? TextDirection.rtl : TextDirection.ltr,
+      child: Container(
+        key: const ValueKey('insurance-answer-card'),
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: tone.color.withValues(alpha: .24)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(17),
+              color: tone.surface,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    presentation.displayTitle,
+                    style: const TextStyle(
+                      color: Color(0xFF172033),
+                      fontSize: 16,
+                      height: 1.3,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 9),
+                  Row(
+                    children: [
+                      Icon(tone.icon, size: 20, color: tone.color),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Text(
+                          presentation.displayVerdict,
+                          style: TextStyle(
+                            color: tone.color,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(17),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (presentation.comparisonRows.isNotEmpty) ...[
+                    LayoutBuilder(
+                      builder: (context, constraints) => Column(
+                        children: presentation.comparisonRows
+                            .map(
+                              (row) => Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: _resultRow(row),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ),
+                  ],
+                  for (final section in presentation.sections) ...[
+                    if (section.rows.isNotEmpty) ...[
+                      Padding(
+                        padding: const EdgeInsets.only(top: 3, bottom: 10),
+                        child: Text(
+                          section.title,
+                          style: const TextStyle(
+                            color: Color(0xFF27324A),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      ...section.rows.map(_factRow),
+                    ],
+                  ],
+                  if (presentation.explanation?.trim().isNotEmpty == true) ...[
+                    if (presentation.comparisonRows.isNotEmpty ||
+                        presentation.sections.isNotEmpty)
+                      const Divider(height: 22, color: Color(0xFFE8EDF5)),
+                    Text(
+                      presentation.explanation!,
+                      style: const TextStyle(
+                        color: Color(0xFF475569),
+                        fontSize: 13,
+                        height: 1.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                  if (presentation.missingInformation.isNotEmpty) ...[
+                    const SizedBox(height: 13),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFFBEB),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFFDE68A)),
+                      ),
+                      child: Text(
+                        presentation.missingInformation.join('\n'),
+                        style: const TextStyle(
+                          color: Color(0xFF92400E),
+                          fontSize: 12.5,
+                          height: 1.45,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (presentation.nextAction?.trim().isNotEmpty == true) ...[
+                    const SizedBox(height: 11),
+                    Text(
+                      presentation.nextAction!,
+                      style: const TextStyle(
+                        color: Color(0xFF1E3A5F),
+                        fontSize: 12.5,
+                        height: 1.45,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                  if (allEvidence.isNotEmpty) ...[
+                    const Divider(height: 24, color: Color(0xFFE8EDF5)),
+                    InkWell(
+                      key: const ValueKey('insurance-evidence-verification'),
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () => setState(
+                        () => _evidenceExpanded = !_evidenceExpanded,
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 5),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.verified_rounded,
+                              color: Color(0xFF059669),
+                              size: 18,
+                            ),
+                            const SizedBox(width: 7),
+                            Expanded(
+                              child: Text(
+                                widget.arabic
+                                    ? 'تم التحقق من الأدلة · ${presentation.evidenceSourceCount} مصدر معتمد'
+                                    : 'Evidence verified · ${presentation.evidenceSourceCount} approved source${presentation.evidenceSourceCount == 1 ? '' : 's'}',
+                                style: const TextStyle(
+                                  color: Color(0xFF047857),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            Icon(
+                              _evidenceExpanded
+                                  ? Icons.expand_less_rounded
+                                  : Icons.expand_more_rounded,
+                              color: const Color(0xFF059669),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (_evidenceExpanded) ...[
+                      const SizedBox(height: 8),
+                      ...allEvidence.map(
+                        (citation) => Material(
+                          color: Colors.transparent,
+                          child: ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(
+                              Icons.picture_as_pdf_outlined,
+                              color: Color(0xFFEF4444),
+                            ),
+                            title: Text(
+                              citation.documentTitle,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            subtitle: Text(
+                              '${citation.locationLabel}\n${citation.excerpt}',
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                height: 1.35,
+                              ),
+                            ),
+                            onTap: () => widget.onCitationTap(citation),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StructuredAnswerCard extends StatelessWidget {
+  final InsuranceAnswerCard card;
+  final List<InsuranceCitation> citations;
+  final bool arabic;
+  final ValueChanged<InsuranceCitation> onCitationTap;
+
+  const _StructuredAnswerCard({
+    required this.card,
+    required this.citations,
+    required this.arabic,
+    required this.onCitationTap,
+  });
+
+  ({String label, Color color, IconData icon}) get _verdictStyle =>
+      switch (card.verdict) {
+        'covered' => (
+          label: arabic ? 'مغطّى' : 'Covered',
+          color: const Color(0xFF047857),
+          icon: Icons.verified_rounded,
+        ),
+        'not_covered' => (
+          label: arabic ? 'غير مغطّى' : 'Not covered',
+          color: const Color(0xFFB42318),
+          icon: Icons.cancel_rounded,
+        ),
+        'conditional' => (
+          label: arabic ? 'تغطية مشروطة' : 'Conditional coverage',
+          color: const Color(0xFFB45309),
+          icon: Icons.rule_rounded,
+        ),
+        'partial' => (
+          label: arabic ? 'تحقق جزئي' : 'Partially established',
+          color: const Color(0xFFB45309),
+          icon: Icons.incomplete_circle_rounded,
+        ),
+        'needs_more_information' => (
+          label: arabic
+              ? 'يلزم المزيد من المعلومات'
+              : 'More information needed',
+          color: const Color(0xFF0369A1),
+          icon: Icons.help_rounded,
+        ),
+        'insufficient_evidence' => (
+          label: arabic ? 'الأدلة غير كافية' : 'Insufficient evidence',
+          color: const Color(0xFF475569),
+          icon: Icons.find_in_page_outlined,
+        ),
+        'conflict' => (
+          label: arabic ? 'تعارض في الأدلة' : 'Evidence conflict',
+          color: const Color(0xFF7E22CE),
+          icon: Icons.warning_amber_rounded,
+        ),
+        _ => (
+          label: arabic ? 'معلومة من السياسة' : 'Policy information',
+          color: const Color(0xFF4338CA),
+          icon: Icons.info_rounded,
+        ),
+      };
+
+  ({IconData icon, Color color, String label}) _criterionStyle(String status) =>
+      switch (status) {
+        'met' => (
+          icon: Icons.check_circle_rounded,
+          color: const Color(0xFF059669),
+          label: arabic ? 'متحقق' : 'Met',
+        ),
+        'not_met' => (
+          icon: Icons.cancel_rounded,
+          color: const Color(0xFFDC2626),
+          label: arabic ? 'غير متحقق' : 'Not met',
+        ),
+        _ => (
+          icon: Icons.help_rounded,
+          color: const Color(0xFFD97706),
+          label: arabic ? 'غير معروف' : 'Unknown',
+        ),
+      };
+
+  Widget _title(String english, String arabicLabel, IconData icon) => Row(
+    children: [
+      Icon(icon, size: 18, color: const Color(0xFF4F46E5)),
+      const SizedBox(width: 7),
+      Expanded(
+        child: Text(
+          arabic ? arabicLabel : english,
+          style: const TextStyle(
+            color: Color(0xFF27324A),
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    ],
+  );
+
+  Widget _references(List<String> ids) => _EvidenceReferenceChips(
+    evidenceIds: ids,
+    citations: citations,
+    arabic: arabic,
+    onCitationTap: onCitationTap,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final verdict = _verdictStyle;
+    final dose = card.doseSchedule;
+    final doseFields = <(String, String)>[
+      if (dose?.dose != null) (arabic ? 'الجرعة' : 'Dose', dose!.dose!),
+      if (dose?.route != null)
+        (arabic ? 'طريقة الإعطاء' : 'Route', dose!.route!),
+      if (dose?.frequency != null)
+        (arabic ? 'التكرار' : 'Frequency', dose!.frequency!),
+      if (dose?.loading != null)
+        (arabic ? 'جرعة البدء' : 'Loading', dose!.loading!),
+      if (dose?.maintenance != null)
+        (arabic ? 'جرعة الاستمرار' : 'Maintenance', dose!.maintenance!),
+    ];
+    return Directionality(
+      textDirection: arabic ? TextDirection.rtl : TextDirection.ltr,
+      child: Container(
+        key: const ValueKey('insurance-answer-card'),
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: verdict.color.withValues(alpha: .27)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(17, 15, 17, 16),
+              color: verdict.color.withValues(alpha: .075),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: verdict.color.withValues(alpha: .12),
+                          borderRadius: BorderRadius.circular(11),
+                        ),
+                        child: Icon(
+                          verdict.icon,
+                          color: verdict.color,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              arabic ? 'النتيجة' : 'VERDICT',
+                              style: TextStyle(
+                                color: verdict.color.withValues(alpha: .78),
+                                fontSize: 10.5,
+                                letterSpacing: arabic ? 0 : .65,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              verdict.label,
+                              style: TextStyle(
+                                color: verdict.color,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    card.summary,
+                    style: const TextStyle(
+                      color: Color(0xFF172033),
+                      fontSize: 15,
+                      height: 1.6,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (card.criteria.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(17, 16, 17, 8),
+                child: _title(
+                  'Coverage criteria',
+                  'شروط التغطية',
+                  Icons.rule_folder_outlined,
+                ),
+              ),
+              ...card.criteria.map((criterion) {
+                final status = _criterionStyle(criterion.status);
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(17, 5, 17, 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Icon(status.icon, color: status.color, size: 19),
+                      ),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              criterion.label,
+                              style: const TextStyle(
+                                color: Color(0xFF27324A),
+                                fontSize: 13.5,
+                                height: 1.4,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            Text(
+                              status.label,
+                              style: TextStyle(
+                                color: status.color,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            if (criterion.detail != null) ...[
+                              const SizedBox(height: 3),
+                              Text(
+                                criterion.detail!,
+                                style: const TextStyle(
+                                  color: Color(0xFF64748B),
+                                  fontSize: 12.5,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ],
+                            _references(criterion.evidenceIds),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+            if (doseFields.isNotEmpty) ...[
+              const Divider(height: 24, color: Color(0xFFE8EDF5)),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(17, 0, 17, 10),
+                child: _title(
+                  'Dose & schedule',
+                  'الجرعة والجدول',
+                  Icons.medication_liquid_rounded,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(17, 0, 17, 12),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: doseFields
+                      .map(
+                        (field) => Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 11,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: Text.rich(
+                            TextSpan(
+                              text: '${field.$1}: ',
+                              style: const TextStyle(
+                                color: Color(0xFF64748B),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              children: [
+                                TextSpan(
+                                  text: field.$2,
+                                  style: const TextStyle(
+                                    color: Color(0xFF1E293B),
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(17, 0, 17, 8),
+                child: _references(dose?.evidenceIds ?? const []),
+              ),
+            ],
+            if (card.missingInformation.isNotEmpty) ...[
+              const Divider(height: 24, color: Color(0xFFE8EDF5)),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(17, 0, 17, 8),
+                child: _title(
+                  'Missing information',
+                  'المعلومات الناقصة',
+                  Icons.help_outline_rounded,
+                ),
+              ),
+              ...card.missingInformation.map(
+                (item) => Padding(
+                  padding: const EdgeInsets.fromLTRB(17, 3, 17, 5),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(top: 6),
+                        child: Icon(
+                          Icons.circle,
+                          size: 6,
+                          color: Color(0xFFD97706),
+                        ),
+                      ),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: Text(
+                          item,
+                          style: const TextStyle(
+                            color: Color(0xFF475569),
+                            fontSize: 13,
+                            height: 1.45,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 7),
+            ],
+            if (card.nextAction?.trim().isNotEmpty == true) ...[
+              const Divider(height: 24, color: Color(0xFFE8EDF5)),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(17, 0, 17, 16),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFBFDBFE)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _title(
+                        'Next action',
+                        'الخطوة التالية',
+                        Icons.arrow_circle_right_outlined,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        card.nextAction!,
+                        style: const TextStyle(
+                          color: Color(0xFF1E3A5F),
+                          fontSize: 13.5,
+                          height: 1.45,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            if (card.claims.isNotEmpty) ...[
+              const Divider(height: 10, color: Color(0xFFE8EDF5)),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(17, 13, 17, 8),
+                child: _title(
+                  'Evidence-linked facts',
+                  'الحقائق المرتبطة بالأدلة',
+                  Icons.link_rounded,
+                ),
+              ),
+              ...card.claims.map(
+                (claim) => Padding(
+                  padding: const EdgeInsets.fromLTRB(17, 4, 17, 11),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(11),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFAFBFF),
+                      borderRadius: BorderRadius.circular(11),
+                      border: Border.all(color: const Color(0xFFE4E9F3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          claim.text,
+                          style: const TextStyle(
+                            color: Color(0xFF334155),
+                            fontSize: 12.8,
+                            height: 1.45,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        if (claim.evidenceQuote != null) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            '“${claim.evidenceQuote}”',
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xFF64748B),
+                              fontSize: 11.5,
+                              height: 1.4,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                        _references(claim.evidenceIds),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 5),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EvidenceReferenceChips extends StatelessWidget {
+  final List<String> evidenceIds;
+  final List<InsuranceCitation> citations;
+  final bool arabic;
+  final ValueChanged<InsuranceCitation> onCitationTap;
+
+  const _EvidenceReferenceChips({
+    required this.evidenceIds,
+    required this.citations,
+    required this.arabic,
+    required this.onCitationTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (evidenceIds.isEmpty) return const SizedBox.shrink();
+    final ids = evidenceIds.toSet();
+    final matches = citations.asMap().entries.where(
+      (entry) =>
+          ids.contains(entry.value.resolvedEvidenceId) ||
+          ids.contains(entry.value.chunkId),
+    );
+    if (matches.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 7),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 5,
+        children: matches
+            .map(
+              (entry) => ActionChip(
+                visualDensity: VisualDensity.compact,
+                avatar: const Icon(
+                  Icons.menu_book_rounded,
+                  size: 14,
+                  color: Color(0xFF4F46E5),
+                ),
+                label: Text(
+                  arabic
+                      ? 'دليل ${entry.key + 1}'
+                      : 'Evidence ${entry.key + 1}',
+                  style: const TextStyle(
+                    color: Color(0xFF4338CA),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                side: const BorderSide(color: Color(0xFFC7D2FE)),
+                backgroundColor: const Color(0xFFEEF2FF),
+                tooltip:
+                    '${entry.value.documentTitle} • ${entry.value.locationLabel}',
+                onPressed: () => onCitationTap(entry.value),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+}
+
+class _SourcesList extends StatefulWidget {
+  final List<InsuranceCitation> citations;
+  final InsuranceCitation? selectedCitation;
+  final bool arabic;
+  final ValueChanged<InsuranceCitation> onCitationTap;
+
+  const _SourcesList({
+    required this.citations,
+    required this.selectedCitation,
+    required this.arabic,
+    required this.onCitationTap,
+  });
+
+  @override
+  State<_SourcesList> createState() => _SourcesListState();
+}
+
+class _SourcesListState extends State<_SourcesList> {
+  bool _showAll = false;
+
+  String _location(InsuranceCitation citation) {
+    if (!widget.arabic) return citation.locationLabel;
+    if (citation.pageFrom != null) {
+      return citation.pageTo != null && citation.pageTo != citation.pageFrom
+          ? 'الصفحات ${citation.pageFrom}-${citation.pageTo}'
+          : 'صفحة ${citation.pageFrom}';
+    }
+    if (citation.sheetName != null) {
+      final rows = citation.rowFrom == null
+          ? ''
+          : citation.rowTo != null && citation.rowTo != citation.rowFrom
+          ? ' • الصفوف ${citation.rowFrom}-${citation.rowTo}'
+          : ' • الصف ${citation.rowFrom}';
+      return 'ورقة: ${citation.sheetName}$rows';
+    }
+    return citation.sectionTitle?.trim().isNotEmpty == true
+        ? citation.sectionTitle!
+        : 'وثيقة المصدر';
+  }
+
+  String _supportLabel(InsuranceCitation citation) {
+    switch (citation.supportLevel) {
+      case 'gold_evidence':
+        return widget.arabic ? 'دليل مباشر معتمد' : 'Gold direct evidence';
+      case 'strongest_direct_support':
+        return widget.arabic ? 'أقوى دليل مباشر' : 'Strongest direct support';
+      case 'corroborating_evidence':
+        return widget.arabic ? 'دليل مؤيد' : 'Corroborating evidence';
+      case 'additional_supporting_source':
+        return widget.arabic
+            ? 'مصدر داعم إضافي'
+            : 'Additional supporting source';
+      default:
+        return widget.arabic ? 'دليل داعم' : 'Supporting evidence';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = _showAll ? widget.citations : widget.citations.take(3);
+    return Directionality(
+      textDirection: widget.arabic ? TextDirection.rtl : TextDirection.ltr,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.menu_book_rounded,
+                size: 19,
+                color: Color(0xFF5B55E7),
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  widget.arabic
+                      ? '${widget.citations.length} ${widget.citations.length == 1 ? 'مصدر داعم' : 'مصادر داعمة'}'
+                      : '${widget.citations.length} supporting source${widget.citations.length == 1 ? '' : 's'}',
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF475569),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 11),
+          ...visible.map((citation) {
+            final selected =
+                widget.selectedCitation?.resolvedEvidenceId ==
+                    citation.resolvedEvidenceId ||
+                (citation.resolvedEvidenceId.isEmpty &&
+                    widget.selectedCitation?.chunkId == citation.chunkId);
+            final gold = citation.supportLevel == 'gold_evidence';
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 7),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => widget.onCitationTap(citation),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 11,
+                    vertical: 11,
+                  ),
+                  decoration: BoxDecoration(
+                    color: selected ? const Color(0xFFEDE9FE) : Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: selected
+                          ? const Color(0xFFA78BFA)
+                          : gold
+                          ? const Color(0xFFA7F3D0)
+                          : const Color(0xFFDCE5EF),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        gold
+                            ? Icons.verified_rounded
+                            : Icons.picture_as_pdf_outlined,
+                        color: gold
+                            ? const Color(0xFF059669)
+                            : const Color(0xFFEF4444),
+                        size: 19,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${citation.documentTitle} • ${_location(citation)}',
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                color: Color(0xFF334155),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              _supportLabel(citation),
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                color: gold
+                                    ? const Color(0xFF059669)
+                                    : const Color(0xFF64748B),
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        widget.arabic
+                            ? Icons.chevron_left_rounded
+                            : Icons.chevron_right_rounded,
+                        size: 18,
+                        color: const Color(0xFF94A3B8),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+          if (widget.citations.length > 3)
+            TextButton.icon(
+              key: const ValueKey('insurance-show-all-sources'),
+              onPressed: () => setState(() => _showAll = !_showAll),
+              icon: Icon(
+                _showAll
+                    ? Icons.expand_less_rounded
+                    : Icons.expand_more_rounded,
+                size: 18,
+              ),
+              label: Text(
+                _showAll
+                    ? widget.arabic
+                          ? 'إخفاء المصادر الإضافية'
+                          : 'Show fewer sources'
+                    : widget.arabic
+                    ? 'إظهار كل المصادر (${widget.citations.length})'
+                    : 'Show all sources (${widget.citations.length})',
+              ),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF4F46E5),
+                textStyle: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnswerKindBadge extends StatelessWidget {
+  final bool deepReview;
+  final bool previousAnswer;
+  final bool arabic;
+
+  const _AnswerKindBadge({
+    required this.deepReview,
+    required this.previousAnswer,
+    required this.arabic,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final label = arabic
+        ? deepReview
+              ? 'مراجعة معمّقة'
+              : previousAnswer
+              ? 'الإجابة السابقة'
+              : 'الإجابة'
+        : deepReview
+        ? 'DEEP REVIEW'
+        : previousAnswer
+        ? 'PREVIOUS ANSWER'
+        : 'ANSWER';
+    final background = deepReview
+        ? const Color(0xFFEDE9FE)
+        : previousAnswer
+        ? const Color(0xFFF1F5F9)
+        : const Color(0xFFE0E7FF);
+    final foreground = deepReview
+        ? const Color(0xFF6D28D9)
+        : previousAnswer
+        ? const Color(0xFF64748B)
+        : const Color(0xFF4338CA);
+    final icon = deepReview
+        ? Icons.auto_awesome_rounded
+        : previousAnswer
+        ? Icons.history_rounded
+        : Icons.check_circle_rounded;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: foreground),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: foreground,
+              fontSize: 11,
+              letterSpacing: .7,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1496,36 +3069,44 @@ class _InlineSource extends StatelessWidget {
 }
 
 class _AiBadge extends StatelessWidget {
-  const _AiBadge();
+  final String? generator;
+
+  const _AiBadge({this.generator});
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-    decoration: BoxDecoration(
-      color: const Color(0xFF7C3AED),
-      borderRadius: BorderRadius.circular(8),
-    ),
-    child: const Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.auto_awesome_rounded, size: 14, color: Colors.white),
-        SizedBox(width: 4),
-        Text(
-          'AI',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 11,
-            letterSpacing: .7,
-            fontWeight: FontWeight.w900,
+  Widget build(BuildContext context) => Tooltip(
+    message: generator == null ? 'AI-assisted answer' : 'Generator: $generator',
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xFF7C3AED),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.auto_awesome_rounded, size: 14, color: Colors.white),
+          SizedBox(width: 4),
+          Text(
+            'AI',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              letterSpacing: .7,
+              fontWeight: FontWeight.w900,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     ),
   );
 }
 
 class _EvidenceBadge extends StatelessWidget {
-  const _EvidenceBadge();
+  final bool arabic;
+
+  const _EvidenceBadge({required this.arabic});
+
   @override
   Widget build(BuildContext context) {
     const color = Color(0xFF059669);
@@ -1536,12 +3117,72 @@ class _EvidenceBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(99),
       ),
       child: Text(
-        'Evidence checked',
+        arabic ? 'تم التحقق من الأدلة' : 'Evidence checked',
         style: TextStyle(
           color: color,
           fontSize: 10.5,
           fontWeight: FontWeight.w800,
         ),
+      ),
+    );
+  }
+}
+
+class _AnswerStatusBadge extends StatelessWidget {
+  final String status;
+  final bool arabic;
+
+  const _AnswerStatusBadge({required this.status, required this.arabic});
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, color, icon) = switch (status) {
+      'grounded' => (
+        arabic ? 'موثّقة' : 'Validated',
+        const Color(0xFF059669),
+        Icons.verified_rounded,
+      ),
+      'grounded_extractive' => (
+        arabic ? 'استخراج موثّق' : 'Source extract',
+        const Color(0xFF0369A1),
+        Icons.fact_check_outlined,
+      ),
+      'clarification_required' => (
+        arabic ? 'يلزم توضيح' : 'Clarification needed',
+        const Color(0xFFD97706),
+        Icons.help_outline_rounded,
+      ),
+      'internal_error' => (
+        arabic ? 'خطأ مؤقت' : 'Temporary error',
+        const Color(0xFFB42318),
+        Icons.error_outline_rounded,
+      ),
+      _ => (
+        arabic ? 'تمت المعالجة' : 'Processed',
+        const Color(0xFF64748B),
+        Icons.check_circle_outline_rounded,
+      ),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .09),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 13),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1553,7 +3194,6 @@ class _ThinkingBubble extends StatelessWidget {
   Widget build(BuildContext context) => const Align(
     alignment: Alignment.centerLeft,
     child: Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
         CircleAvatar(
           radius: 18,
@@ -1567,12 +3207,16 @@ class _ThinkingBubble extends StatelessWidget {
         SizedBox(width: 10),
         _PulseDots(),
         SizedBox(width: 9),
-        Text(
-          'Searching policies and verifying evidence...',
-          style: TextStyle(
-            color: Color(0xFF64748B),
-            fontSize: 12.5,
-            fontWeight: FontWeight.w600,
+        Flexible(
+          child: Text(
+            'Searching policies and verifying evidence...',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Color(0xFF64748B),
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ],
@@ -1999,19 +3643,21 @@ class _DocumentCenterDialogState extends State<_DocumentCenterDialog> {
       } catch (_) {
         // The legacy health list remains usable during a staged migration.
       }
-      if (mounted)
+      if (mounted) {
         setState(() {
           _documents = documents;
           _readiness = readiness;
           _loading = false;
           _error = null;
         });
+      }
     } catch (error) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _loading = false;
           _error = error.toString();
         });
+      }
     }
   }
 
@@ -2023,8 +3669,9 @@ class _DocumentCenterDialogState extends State<_DocumentCenterDialog> {
     );
     if (picked == null ||
         picked.files.isEmpty ||
-        picked.files.single.bytes == null)
+        picked.files.single.bytes == null) {
       return;
+    }
     final file = picked.files.single;
     if (!mounted) return;
     final controller = TextEditingController(
@@ -2068,10 +3715,11 @@ class _DocumentCenterDialogState extends State<_DocumentCenterDialog> {
       );
       await _load();
     } catch (error) {
-      if (mounted)
+      if (mounted) {
         setState(
           () => _error = error.toString().replaceFirst('Exception: ', ''),
         );
+      }
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
@@ -2148,7 +3796,7 @@ class _DocumentCenterDialogState extends State<_DocumentCenterDialog> {
                 Expanded(
                   child: ListView.separated(
                     itemCount: rows.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 7),
+                    separatorBuilder: (_, _) => const SizedBox(height: 7),
                     itemBuilder: (_, index) {
                       final row = rows[index];
                       final accepted = row['accepted'] == true;
@@ -2222,7 +3870,7 @@ class _DocumentCenterDialogState extends State<_DocumentCenterDialog> {
           height: 600,
           child: ListView.separated(
             itemCount: rows.length,
-            separatorBuilder: (_, __) => const Divider(),
+            separatorBuilder: (_, _) => const Divider(),
             itemBuilder: (_, index) {
               final row = rows[index];
               final location = row['page_from'] != null
@@ -2372,7 +4020,7 @@ class _DocumentCenterDialogState extends State<_DocumentCenterDialog> {
                   : ListView.separated(
                       padding: const EdgeInsets.all(18),
                       itemCount: _documents.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 9),
+                      separatorBuilder: (_, _) => const SizedBox(height: 9),
                       itemBuilder: (_, index) {
                         final document = _documents[index];
                         final readiness = _readiness
