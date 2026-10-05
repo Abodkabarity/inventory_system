@@ -6,8 +6,10 @@ import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/branch_submission_tracker_excel_exporter.dart';
+import '../../../core/utils/branch_submission_tracker_rules.dart';
 import '../../../domain/entities/branch_setting.dart';
 import '../../../domain/entities/branch_submission_miss.dart';
+import '../../../domain/entities/branch_submission_schedule.dart';
 import 'stock_check_page.dart'
     show StockCheckDateRangePickerDialog, StockCheckDateRangePickerMode;
 
@@ -41,7 +43,7 @@ class _BranchSubmissionTrackerPageState
     super.initState();
     final today = _dateOnly(DateTime.now());
     _range = DateTimeRange(
-      start: today.subtract(const Duration(days: 364)),
+      start: submissionTrackerMonthStart(today),
       end: today,
     );
     _load(scanFirst: true);
@@ -108,11 +110,17 @@ class _BranchSubmissionTrackerPageState
   }
 
   Future<void> _scanMisses() async {
-    final branches = (await _fetchBranches())
+    final allBranches = await _fetchBranches();
+    final branches = allBranches
         .where(
           (branch) => branch.isActive && branch.branchName.trim().isNotEmpty,
         )
         .toList();
+    final branchByName = {
+      for (final branch in allBranches)
+        if (branch.branchName.trim().isNotEmpty) branch.branchName: branch,
+    };
+    final scheduleHistory = await _fetchScheduleHistory();
     final submissions = await _fetchSubmittedRows();
     final submissionByKey = <String, DateTime>{};
     for (final row in submissions) {
@@ -138,9 +146,26 @@ class _BranchSubmissionTrackerPageState
     while (!day.isAfter(last)) {
       final weekday = DateFormat('EEEE').format(day);
       for (final branch in branches) {
-        if (!branch.orderDays.contains(weekday)) continue;
+        if (!shouldTrackBranchSubmissionOn(
+          branch: branch,
+          runDate: day,
+          trackerActivationAt: _trackingActivationAt,
+        )) {
+          continue;
+        }
 
-        final deadline = _deadlineFor(day, branch);
+        final schedule = submissionScheduleForDate(
+          scheduleHistory[branch.branchName] ?? const [],
+          day,
+        );
+        final orderDays = schedule?.orderDays ?? branch.orderDays;
+        if (!orderDays.contains(weekday)) continue;
+
+        final deadline = _deadlineFor(
+          day,
+          schedule?.submitStartHour ?? branch.submitStartHour,
+          schedule?.submitEndHour ?? branch.submitEndHour,
+        );
         if (deadline.isBefore(_trackingActivationAt)) continue;
         if (deadline.isAfter(now)) continue;
 
@@ -162,6 +187,7 @@ class _BranchSubmissionTrackerPageState
           'submitted_at': submittedAt?.toIso8601String(),
           'status': status,
           'minutes_late': minutesLate < 0 ? 0 : minutesLate,
+          'is_valid': true,
           'updated_at': now.toIso8601String(),
         });
       }
@@ -173,6 +199,42 @@ class _BranchSubmissionTrackerPageState
       await _client
           .from('branch_submission_misses')
           .upsert(payloads.sublist(i, end), onConflict: 'run_date,branch_name');
+    }
+
+    // This table is a derived report cache. Remove rows that are no longer
+    // valid after a branch start date/schedule or submission correction.
+    final expectedKeys = payloads
+        .map((row) => '${row['run_date']}|${row['branch_name']}')
+        .toSet();
+    final existing = await _fetchRawMissRows();
+    final staleIds = existing
+        .where((row) {
+          final branchName = (row['branch_name'] ?? '').toString();
+          final runDate = DateTime.tryParse((row['run_date'] ?? '').toString());
+          final branch = branchByName[branchName];
+          if (branch == null || runDate == null) return false;
+
+          final beforeBranchStart = !shouldTrackBranchSubmissionOn(
+            branch: branch,
+            runDate: runDate,
+            trackerActivationAt: _trackingActivationAt,
+          );
+          if (beforeBranchStart) return true;
+
+          // Preserve history for branches that are inactive now. Without an
+          // activation history table we cannot reconstruct when they stopped.
+          if (!branch.isActive) return false;
+          return !expectedKeys.contains('${row['run_date']}|$branchName');
+        })
+        .map((row) => (row['id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toList();
+    for (var i = 0; i < staleIds.length; i += 200) {
+      final end = (i + 200) > staleIds.length ? staleIds.length : i + 200;
+      await _client
+          .from('branch_submission_misses')
+          .delete()
+          .inFilter('id', staleIds.sublist(i, end));
     }
   }
 
@@ -194,7 +256,8 @@ class _BranchSubmissionTrackerPageState
           order_edit_limit,
           additional_order_limit,
           area,
-          branch_type
+          branch_type,
+          submission_tracking_started_on
         ''')
         .order('branch_name', ascending: true);
     return List<Map<String, dynamic>>.from(
@@ -222,6 +285,31 @@ class _BranchSubmissionTrackerPageState
     return rows;
   }
 
+  Future<Map<String, List<BranchSubmissionSchedule>>>
+  _fetchScheduleHistory() async {
+    final result = <String, List<BranchSubmissionSchedule>>{};
+    var from = 0;
+    const size = 1000;
+    while (true) {
+      final page = await _client
+          .from('branch_submission_schedule_history')
+          .select(
+            'branch_name,effective_from,order_days,submit_start_hour,submit_end_hour',
+          )
+          .lte('effective_from', _dbDate(_range.end))
+          .order('effective_from', ascending: true)
+          .range(from, from + size - 1);
+      final rows = List<Map<String, dynamic>>.from(page);
+      for (final row in rows) {
+        final schedule = BranchSubmissionSchedule.fromMap(row);
+        result.putIfAbsent(schedule.branchName, () => []).add(schedule);
+      }
+      if (rows.length < size) break;
+      from += size;
+    }
+    return result;
+  }
+
   Future<List<BranchSubmissionMiss>> _fetchMisses() async {
     final rows = <BranchSubmissionMiss>[];
     var from = 0;
@@ -232,6 +320,7 @@ class _BranchSubmissionTrackerPageState
           .select()
           .gte('run_date', _dbDate(_range.start))
           .lte('run_date', _dbDate(_range.end))
+          .eq('is_valid', true)
           .order('run_date', ascending: false)
           .range(from, from + size - 1);
       final list = List<Map<String, dynamic>>.from(page);
@@ -247,21 +336,44 @@ class _BranchSubmissionTrackerPageState
     return rows;
   }
 
-  DateTime _deadlineFor(DateTime runDate, BranchSetting branch) {
-    final isFullDay = branch.submitStartHour == 0 && branch.submitEndHour == 24;
+  Future<List<Map<String, dynamic>>> _fetchRawMissRows() async {
+    final rows = <Map<String, dynamic>>[];
+    var from = 0;
+    const size = 1000;
+    while (true) {
+      final page = await _client
+          .from('branch_submission_misses')
+          .select('id,run_date,branch_name')
+          .gte('run_date', _dbDate(_range.start))
+          .lte('run_date', _dbDate(_range.end))
+          .range(from, from + size - 1);
+      final list = List<Map<String, dynamic>>.from(page);
+      rows.addAll(list);
+      if (list.length < size) break;
+      from += size;
+    }
+    return rows;
+  }
+
+  DateTime _deadlineFor(
+    DateTime runDate,
+    int submitStartHour,
+    int submitEndHour,
+  ) {
+    final isFullDay = submitStartHour == 0 && submitEndHour == 24;
     final deadlineDay = isFullDay
         ? runDate
-        : branch.submitStartHour > branch.submitEndHour
+        : submitStartHour > submitEndHour
         ? runDate
         : runDate.subtract(const Duration(days: 1));
-    if (branch.submitEndHour >= 24) {
+    if (submitEndHour >= 24) {
       return DateTime(deadlineDay.year, deadlineDay.month, deadlineDay.day + 1);
     }
     return DateTime(
       deadlineDay.year,
       deadlineDay.month,
       deadlineDay.day,
-      branch.submitEndHour,
+      submitEndHour,
     );
   }
 
@@ -392,7 +504,7 @@ class _BranchSubmissionTrackerPageState
                     Expanded(
                       child: _MetricCard(
                         icon: Icons.schedule_send_rounded,
-                        title: 'Not submitted by branch',
+                        title: 'Submitted after deadline',
                         value: '$lateSubmitted',
                         color: const Color(0xFF7C3AED),
                       ),
@@ -640,7 +752,7 @@ class _ControlPanel extends StatelessWidget {
                 ),
                 SizedBox(height: 3),
                 Text(
-                  'Default report range is one full year. New tracker records are created only from the activation date forward.',
+                  'The report opens on the current month. Each branch is tracked only from its own tracking start date.',
                   style: TextStyle(
                     color: AppColors.subText,
                     fontWeight: FontWeight.w700,
@@ -867,6 +979,24 @@ class _ReportCardState extends State<_ReportCard> {
                 ],
                 onChanged: widget.onZoneChanged,
               ),
+              const SizedBox(width: 10),
+              _FilterDropDown(
+                width: 190,
+                label: 'Status',
+                value: widget.selectedStatus,
+                items: const [
+                  DropdownMenuItem(value: 'all', child: Text('All statuses')),
+                  DropdownMenuItem(
+                    value: 'not_submitted',
+                    child: Text('Not submitted'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'late_submitted',
+                    child: Text('Submitted late'),
+                  ),
+                ],
+                onChanged: widget.onStatusChanged,
+              ),
             ],
           ),
           const SizedBox(height: 14),
@@ -1079,7 +1209,8 @@ class _SubmissionTrackerGridSource extends DataGridSource {
   static String _date(DateTime value) => DateFormat('dd/MM/yyyy').format(value);
   static String _dateTime(DateTime value) =>
       DateFormat('dd/MM/yyyy HH:mm').format(value.toLocal());
-  static String _statusLabel(String status) => 'Not submitted by branch';
+  static String _statusLabel(String status) =>
+      branchSubmissionStatusLabel(status);
   static String _late(int minutes) {
     final days = minutes ~/ 1440;
     final hours = (minutes % 1440) ~/ 60;

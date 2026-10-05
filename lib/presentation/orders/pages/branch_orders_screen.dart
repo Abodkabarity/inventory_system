@@ -24,6 +24,7 @@ import '../widgets/branch_allocation_dialog.dart';
 import '../widgets/branch_stock_check_page.dart';
 import '../widgets/branch_zone_cubit.dart';
 import '../widgets/items_to_order_dialog.dart';
+import '../widgets/insurance_assistant_zone_access.dart';
 import '../widgets/low_demand_order_suggestions_dialog.dart';
 import '../widgets/max_allowed_dialog.dart';
 import '../widgets/orders_grid_controller.dart';
@@ -31,6 +32,7 @@ import '../widgets/orders_table.dart';
 import '../widgets/orders_toolbar.dart';
 import '../widgets/pending_items_to_order_dialog.dart';
 import 'branch_orders_actions.dart';
+import 'branch_order_guide_page.dart';
 import 'branch_orders_selectors.dart';
 import 'branch_widgets/columns_panel.dart';
 
@@ -52,6 +54,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
   bool _showAllocationPage = false;
   bool _showStockCheckPage = false;
   bool _showInsuranceAssistantPage = false;
+  bool _showGuidePage = false;
   bool _stockCheckLoading = false;
   String _stockCheckBranchName = '';
   _StockCheckPendingInfo _stockCheckInfo = _StockCheckPendingInfo.empty();
@@ -264,6 +267,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
       _showAllocationPage = true;
       _showStockCheckPage = false;
       _showInsuranceAssistantPage = false;
+      _showGuidePage = false;
       _ordersDrawerOpen = false;
     });
     context.read<OrdersBloc>().add(const OrdersLoadBranchAllocationTasks());
@@ -274,13 +278,17 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
       _showStockCheckPage = true;
       _showAllocationPage = false;
       _showInsuranceAssistantPage = false;
+      _showGuidePage = false;
       _ordersDrawerOpen = false;
     });
   }
 
   void _openInsuranceAssistantPage() {
+    final zone = context.read<BranchZoneCubit>().state.zone;
+    if (!InsuranceAssistantZoneAccess.isEnabled(zone)) return;
     setState(() {
       _showInsuranceAssistantPage = true;
+      _showGuidePage = false;
       _showStockCheckPage = false;
       _showAllocationPage = false;
       _ordersDrawerOpen = false;
@@ -293,12 +301,23 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
       _showAllocationPage = false;
       _showStockCheckPage = false;
       _showInsuranceAssistantPage = false;
+      _showGuidePage = false;
       _ordersDrawerOpen = false;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.read<OrdersBloc>().add(const OrdersLoadBranchAllocationTasks());
       _loadPendingStockChecks(branchName, showLoading: false);
+    });
+  }
+
+  void _openGuidePage() {
+    setState(() {
+      _showGuidePage = true;
+      _showAllocationPage = false;
+      _showStockCheckPage = false;
+      _showInsuranceAssistantPage = false;
+      _ordersDrawerOpen = false;
     });
   }
 
@@ -564,6 +583,12 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
     return BlocBuilder<OrdersBloc, OrdersState>(
       builder: (context, s) {
         final isBusy = s.isBusy;
+        final insuranceAssistantEnabled =
+            InsuranceAssistantZoneAccess.isEnabled(
+              context.watch<BranchZoneCubit>().state.zone,
+            );
+        final showInsuranceAssistantPage =
+            insuranceAssistantEnabled && _showInsuranceAssistantPage;
 
         final visibleStats = BranchOrdersSelectors.calcStats(
           s.viewRows,
@@ -614,11 +639,13 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
           body: Stack(
             children: [
               SafeArea(
-                child: _showInsuranceAssistantPage
+                child: showInsuranceAssistantPage
                     ? InsuranceAssistantPage(
                         branchName: s.branchName,
                         onBack: _openOrderPage,
                       )
+                    : _showGuidePage
+                    ? BranchOrderGuidePage(onBack: _openOrderPage)
                     : _showStockCheckPage
                     ? BranchStockCheckPage(
                         branchName: s.branchName,
@@ -2287,7 +2314,9 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                 branchName: s.branchName,
                 showAllocationPage: _showAllocationPage,
                 showStockCheckPage: _showStockCheckPage,
-                showInsuranceAssistantPage: _showInsuranceAssistantPage,
+                showInsuranceAssistantPage: showInsuranceAssistantPage,
+                insuranceAssistantEnabled: insuranceAssistantEnabled,
+                showGuidePage: _showGuidePage,
                 hasPendingAllocation: hasAllocationNotice,
                 pendingToSend: s.pendingOutgoingAllocationCount,
                 incomingCount: s.incomingAllocationTasks.length,
@@ -2300,12 +2329,13 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                 onOpenAllocation: () => _openBranchAllocationPage(context),
                 onOpenStockCheck: _openBranchStockCheckPage,
                 onOpenInsuranceAssistant: _openInsuranceAssistantPage,
+                onOpenGuide: _openGuidePage,
               ),
               _OrdersDrawerToggleButton(
                 open: _ordersDrawerOpen,
                 showAllocationPage: _showAllocationPage,
                 showStockCheckPage: _showStockCheckPage,
-                showInsuranceAssistantPage: _showInsuranceAssistantPage,
+                showInsuranceAssistantPage: showInsuranceAssistantPage,
                 hasPendingAllocation: hasAllocationNotice,
                 pendingToSend: s.pendingOutgoingAllocationCount,
                 incomingCount: s.incomingAllocationTasks.length,
@@ -2315,7 +2345,8 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                 onPressed: () {
                   if (_showAllocationPage ||
                       _showStockCheckPage ||
-                      _showInsuranceAssistantPage) {
+                      showInsuranceAssistantPage ||
+                      _showGuidePage) {
                     _openOrderPage();
                     return;
                   }
@@ -2888,6 +2919,8 @@ class _OrdersOverlayDrawer extends StatelessWidget {
   final bool showAllocationPage;
   final bool showStockCheckPage;
   final bool showInsuranceAssistantPage;
+  final bool insuranceAssistantEnabled;
+  final bool showGuidePage;
   final bool hasPendingAllocation;
   final int pendingToSend;
   final int incomingCount;
@@ -2900,6 +2933,7 @@ class _OrdersOverlayDrawer extends StatelessWidget {
   final VoidCallback onOpenAllocation;
   final VoidCallback onOpenStockCheck;
   final VoidCallback onOpenInsuranceAssistant;
+  final VoidCallback onOpenGuide;
 
   const _OrdersOverlayDrawer({
     required this.open,
@@ -2907,6 +2941,8 @@ class _OrdersOverlayDrawer extends StatelessWidget {
     required this.showAllocationPage,
     required this.showStockCheckPage,
     required this.showInsuranceAssistantPage,
+    required this.insuranceAssistantEnabled,
+    required this.showGuidePage,
     required this.hasPendingAllocation,
     required this.pendingToSend,
     required this.incomingCount,
@@ -2919,6 +2955,7 @@ class _OrdersOverlayDrawer extends StatelessWidget {
     required this.onOpenAllocation,
     required this.onOpenStockCheck,
     required this.onOpenInsuranceAssistant,
+    required this.onOpenGuide,
   });
 
   @override
@@ -3037,7 +3074,8 @@ class _OrdersOverlayDrawer extends StatelessWidget {
                             selected:
                                 !showAllocationPage &&
                                 !showStockCheckPage &&
-                                !showInsuranceAssistantPage,
+                                !showInsuranceAssistantPage &&
+                                !showGuidePage,
                             color: const Color(0xFF0EA5E9),
                             onTap: onOpenOrders,
                           ),
@@ -3079,16 +3117,31 @@ class _OrdersOverlayDrawer extends StatelessWidget {
                                 : null,
                             onTap: onOpenStockCheck,
                           ),
-                          /* const SizedBox(height: 10),
+                          if (insuranceAssistantEnabled) ...[
+                            const SizedBox(height: 10),
+                            _OrdersDrawerItem(
+                              key: const ValueKey(
+                                'orders-insurance-assistant-entry',
+                              ),
+                              icon: Icons.auto_awesome_rounded,
+                              title: 'Insurance AI',
+                              subtitle: 'Coverage & clinical knowledge',
+                              selected: showInsuranceAssistantPage,
+                              color: const Color(0xFF6D5DFB),
+                              badge: 'AI',
+                              onTap: onOpenInsuranceAssistant,
+                            ),
+                          ],
+                          const SizedBox(height: 10),
                           _OrdersDrawerItem(
-                            icon: Icons.auto_awesome_rounded,
-                            title: 'Insurance AI',
-                            subtitle: 'Coverage & clinical knowledge',
-                            selected: showInsuranceAssistantPage,
-                            color: const Color(0xFF6D5DFB),
-                            badge: 'AI',
-                            onTap: onOpenInsuranceAssistant,
-                          ),*/
+                            icon: Icons.menu_book_rounded,
+                            title: 'Order Guide',
+                            subtitle: 'How orders, edits & submission work',
+                            selected: showGuidePage,
+                            color: const Color(0xFF7C3AED),
+                            badge: 'NEW',
+                            onTap: onOpenGuide,
+                          ),
                           const Spacer(),
                           const Divider(height: 28, color: AppColors.border),
                           _DrawerLogoutButton(),
@@ -3136,6 +3189,7 @@ class _OrdersDrawerItem extends StatelessWidget {
   final VoidCallback onTap;
 
   const _OrdersDrawerItem({
+    super.key,
     required this.icon,
     required this.title,
     required this.subtitle,

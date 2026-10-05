@@ -63,7 +63,6 @@ dependencies:
   xml: ^7.0.1
   url_launcher: ^6.3.2
   crypto: ^3.0.6
-  http: ^1.2.2
 
 
 
@@ -94,6 +93,7 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/images/
+    - assets/images/order_guide/
     - assets/sounds/
     - assets/icon/
 

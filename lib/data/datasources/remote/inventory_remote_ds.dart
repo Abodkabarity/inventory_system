@@ -149,7 +149,8 @@ class InventoryRemoteDs {
           order_edit_limit,
           additional_order_limit,
           area,
-          branch_type
+          branch_type,
+          submission_tracking_started_on
         ''')
           .order('branch_name', ascending: true);
     } catch (_) {

@@ -18,6 +18,7 @@ class BranchSetting extends Equatable {
   final int additionalOrderLimit;
   final String area;
   final String branchType;
+  final DateTime? submissionTrackingStartedOn;
 
   const BranchSetting({
     required this.branchName,
@@ -35,6 +36,7 @@ class BranchSetting extends Equatable {
     required this.additionalOrderLimit,
     required this.area,
     required this.branchType,
+    this.submissionTrackingStartedOn,
   });
 
   factory BranchSetting.empty() {
@@ -54,6 +56,7 @@ class BranchSetting extends Equatable {
       additionalOrderLimit: 15,
       area: '',
       branchType: '',
+      submissionTrackingStartedOn: null,
     );
   }
 
@@ -74,6 +77,9 @@ class BranchSetting extends Equatable {
       additionalOrderLimit: _int(map['additional_order_limit'], 15),
       area: (map['area'] ?? '').toString(),
       branchType: (map['branch_type'] ?? '').toString(),
+      submissionTrackingStartedOn: DateTime.tryParse(
+        (map['submission_tracking_started_on'] ?? '').toString(),
+      ),
     );
   }
 
@@ -113,6 +119,7 @@ class BranchSetting extends Equatable {
     int? additionalOrderLimit,
     String? area,
     String? branchType,
+    DateTime? submissionTrackingStartedOn,
   }) {
     return BranchSetting(
       branchName: branchName ?? this.branchName,
@@ -130,6 +137,8 @@ class BranchSetting extends Equatable {
       additionalOrderLimit: additionalOrderLimit ?? this.additionalOrderLimit,
       area: area ?? this.area,
       branchType: branchType ?? this.branchType,
+      submissionTrackingStartedOn:
+          submissionTrackingStartedOn ?? this.submissionTrackingStartedOn,
     );
   }
 
@@ -185,5 +194,6 @@ class BranchSetting extends Equatable {
     additionalOrderLimit,
     area,
     branchType,
+    submissionTrackingStartedOn,
   ];
 }
