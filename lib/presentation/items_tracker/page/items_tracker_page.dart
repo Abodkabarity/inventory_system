@@ -1,22 +1,29 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/items_tracker_excel_importer.dart';
 import '../../../core/utils/items_tracker_excel_exporter_stub.dart'
     if (dart.library.html) '../../../core/utils/items_tracker_excel_exporter.dart';
 import '../../../data/datasources/remote/items_tracker_remote_ds.dart';
 import '../../../domain/entities/items_tracker_record.dart';
+import '../../../domain/entities/items_tracker_column_filter.dart';
 import '../../../domain/repositories/items_tracker_repository.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
 import '../widgets/items_tracker_dialogs.dart';
-import '../widgets/items_tracker_grid.dart';
+import '../widgets/items_tracker_company_dialog.dart';
+import '../widgets/items_tracker_import_dialog.dart';
+import '../widgets/items_tracker_cards.dart';
 import '../widgets/items_tracker_notifications.dart';
+import '../widgets/items_tracker_email_dialog.dart';
+import '../widgets/items_tracker_column_filter_menu.dart';
 
 class ItemsTrackerPage extends StatefulWidget {
   final String role;
@@ -42,7 +49,6 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
   late final String _role;
 
   final _searchController = TextEditingController();
-  final _gridController = ItemsTrackerGridController();
 
   Timer? _searchDebounce;
   Timer? _realtimeDebounce;
@@ -50,6 +56,7 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
 
   List<ItemsTrackerRecord> _records = const [];
   List<ItemsTrackerRecord> _visibleRecords = const [];
+  final _columnFilters = <ItemsTrackerColumn, ItemsTrackerColumnFilter>{};
   List<ItemsTrackerNotification> _notifications = const [];
   Map<String, String> _searchIndex = const {};
   List<String> _itemStatuses = const [];
@@ -60,6 +67,7 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
   bool _loading = true;
   bool _refreshing = false;
   bool _exporting = false;
+  bool _importing = false;
   bool _notificationsLoading = false;
   String? _error;
 
@@ -112,6 +120,18 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'items_tracker_comments',
+          callback: changed,
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'items_tracker_emails',
+          callback: changed,
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'items_tracker_email_items',
           callback: changed,
         )
         .onPostgresChanges(
@@ -219,23 +239,18 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
       unawaited(_loadNotifications());
     }
 
-    _gridController.clearFilters();
     _searchController.text = notification.itemCode;
     setState(() {
       _departmentFilter = 'all';
       _caseStatusFilter = 'all';
       _myQueueOnly = false;
+      _columnFilters.clear();
       _applyFilters();
     });
     _showMessage('Showing ${notification.itemCode} · ${notification.itemName}');
   }
 
   int _compareRecords(ItemsTrackerRecord left, ItemsTrackerRecord right) {
-    final leftMine = left.canAct(_role) ? 0 : 1;
-    final rightMine = right.canAct(_role) ? 0 : 1;
-    final mineComparison = leftMine.compareTo(rightMine);
-    if (mineComparison != 0) return mineComparison;
-
     final leftClosed = left.caseStatus == ItemsTrackerCaseStatuses.done ? 1 : 0;
     final rightClosed = right.caseStatus == ItemsTrackerCaseStatuses.done
         ? 1
@@ -243,26 +258,60 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
     final closedComparison = leftClosed.compareTo(rightClosed);
     if (closedComparison != 0) return closedComparison;
 
+    final leftMine = left.canAct(_role) ? 0 : 1;
+    final rightMine = right.canAct(_role) ? 0 : 1;
+    final mineComparison = leftMine.compareTo(rightMine);
+    if (mineComparison != 0) return mineComparison;
+
     return right.updatedAt.compareTo(left.updatedAt);
   }
 
   void _applyFilters() {
+    _visibleRecords = _records.where(_matchesFilters).toList(growable: false);
+  }
+
+  bool _matchesFilters(
+    ItemsTrackerRecord record, {
+    ItemsTrackerColumn? except,
+  }) {
     final query = _searchController.text.trim().toLowerCase();
-    _visibleRecords = _records
-        .where((record) {
-          if (_departmentFilter != 'all' &&
-              record.followUpRole != _departmentFilter) {
-            return false;
-          }
-          if (_caseStatusFilter != 'all' &&
-              record.caseStatus != _caseStatusFilter) {
-            return false;
-          }
-          if (_myQueueOnly && !record.canAct(_role)) return false;
-          return query.isEmpty ||
-              (_searchIndex[record.id]?.contains(query) ?? false);
-        })
-        .toList(growable: false);
+    if (_departmentFilter != 'all' &&
+        record.followUpRole != _departmentFilter) {
+      return false;
+    }
+    if (_caseStatusFilter != 'all' && record.caseStatus != _caseStatusFilter) {
+      return false;
+    }
+    if (_myQueueOnly && !record.canAct(_role)) return false;
+    for (final entry in _columnFilters.entries) {
+      if (entry.key != except && !entry.value.matches(entry.key, record)) {
+        return false;
+      }
+    }
+    return query.isEmpty || (_searchIndex[record.id]?.contains(query) ?? false);
+  }
+
+  Future<void> _openColumnFilter(
+    BuildContext anchor,
+    ItemsTrackerColumn column,
+  ) async {
+    final filter = await showItemsTrackerColumnFilter(
+      context: anchor,
+      column: column,
+      records: _records
+          .where((record) => _matchesFilters(record, except: column))
+          .toList(),
+      current: _columnFilters[column],
+    );
+    if (filter == null || !mounted) return;
+    setState(() {
+      if (filter.isActive) {
+        _columnFilters[column] = filter;
+      } else {
+        _columnFilters.remove(column);
+      }
+      _applyFilters();
+    });
   }
 
   void _scheduleSearch() {
@@ -275,25 +324,38 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
   void _clearFilters() {
     _searchDebounce?.cancel();
     _searchController.clear();
-    _gridController.clearFilters();
     setState(() {
       _departmentFilter = 'all';
       _caseStatusFilter = 'all';
       _myQueueOnly = false;
+      _columnFilters.clear();
       _applyFilters();
     });
   }
 
   Future<void> _openEditor([ItemsTrackerRecord? record]) async {
     if (!_canEditInventory) return;
-    final changed = await showItemsTrackerEditorDialog(
-      context: context,
-      repository: _repository,
-      statusOptions: _itemStatuses,
-      record: record,
-    );
+    ItemsTrackerAddMode? mode;
+    if (record == null) {
+      mode = await showItemsTrackerAddMode(context);
+      if (!mounted || mode == null) return;
+    }
+    final changed = mode == ItemsTrackerAddMode.company
+        ? await showItemsTrackerCompanyDialog(
+            context: context,
+            repository: _repository,
+            statusOptions: _itemStatuses,
+          )
+        : await showItemsTrackerEditorDialog(
+            context: context,
+            repository: _repository,
+            statusOptions: _itemStatuses,
+            record: record,
+          );
     if (changed) {
-      _showMessage(record == null ? 'Item added to tracker.' : 'Item updated.');
+      _showMessage(
+        record == null ? 'Products added to tracker.' : 'Item updated.',
+      );
       await _load(silent: true);
     }
   }
@@ -351,6 +413,95 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
     );
     if (changed) {
       _showMessage('Activity saved to the permanent timeline.');
+      await _load(silent: true);
+    }
+  }
+
+  Future<void> _openCompanyAction(String company, String followUpRole) async {
+    final department = ItemsTrackerRoles.normalize(followUpRole);
+    if (department != _role) return;
+    final allCompanyRecords = _records
+        .where(
+          (record) =>
+              record.canGroupByCompany &&
+              ItemsTrackerRoles.normalize(record.followUpRole) == department &&
+              record.company.trim().toLowerCase() ==
+                  company.trim().toLowerCase(),
+        )
+        .toList();
+    if (allCompanyRecords.length < 2) return;
+    final eligible = allCompanyRecords
+        .where((record) => record.canAct(_role))
+        .toList();
+    if (eligible.isEmpty) return;
+    var draft = '';
+    final note = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Action for $company · ${ItemsTrackerRoles.label(department)}',
+        ),
+        content: SizedBox(
+          width: 460,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'This action applies to ${eligible.length} non-medicine products followed up by ${ItemsTrackerRoles.label(department)}. Each timeline entry will identify this company and department.',
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                onChanged: (value) => draft = value,
+                maxLines: 4,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Action',
+                  hintText: 'Describe the action for this company…',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = draft.trim();
+              if (value.isNotEmpty) Navigator.pop(context, value);
+            },
+            child: const Text('Save company action'),
+          ),
+        ],
+      ),
+    );
+    if (note == null || !mounted) return;
+    var saved = 0;
+    try {
+      for (final record in eligible) {
+        await _repository.addAction(
+          AddItemsTrackerAction(
+            itemId: record.id,
+            actionDate: DateTime.now(),
+            body:
+                '[Company action: $company | Follow up by: ${ItemsTrackerRoles.label(department)} | Non-medicine products] $note',
+            caseStatus: record.caseStatus,
+            expectedVersion: record.rowVersion,
+          ),
+        );
+        saved++;
+      }
+      _showMessage('Company action saved to $saved product timelines.');
+    } catch (error) {
+      _showMessage(
+        'Saved for $saved of ${eligible.length} products. ${_friendlyError(error)}',
+        isError: true,
+      );
+    } finally {
       await _load(silent: true);
     }
   }
@@ -443,9 +594,12 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
 
   Future<void> _exportRecords() async {
     if (_exporting) return;
-    if (_records.isEmpty) {
+    final records = _visibleRecords
+        .where((record) => record.canAct(_role))
+        .toList(growable: false);
+    if (records.isEmpty) {
       _showMessage(
-        'There are no Item Tracker records to export.',
+        'No products assigned to your department match the current filters.',
         isError: true,
       );
       return;
@@ -453,8 +607,10 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
 
     setState(() => _exporting = true);
     try {
-      await ItemsTrackerExcelExporter.export(_records);
-      _showMessage('${_records.length} Item Tracker records exported.');
+      await ItemsTrackerExcelExporter.export(records, role: _role);
+      _showMessage(
+        '${records.length} products assigned to your department exported. Write your actions in the Action updates sheet.',
+      );
     } catch (error) {
       _showMessage(
         'Could not export the Item Tracker report: $error',
@@ -462,6 +618,45 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
       );
     } finally {
       if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  Future<void> _importActions() async {
+    if (_importing || !ItemsTrackerRoles.isAllowed(_role)) return;
+    setState(() => _importing = true);
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['xlsx'],
+        withData: true,
+      );
+      if (!mounted || picked == null) return;
+      final file = picked.files.single;
+      final bytes = file.bytes;
+      if (bytes == null) {
+        throw const FormatException('Could not read the selected file.');
+      }
+      final parsed = ItemsTrackerExcelImporter.parse(bytes);
+      if (!mounted) return;
+      final changed = await showItemsTrackerImportDialog(
+        context: context,
+        repository: _repository,
+        file: parsed,
+        fileName: file.name,
+        role: _role,
+      );
+      if (changed && mounted) await _load(silent: true);
+    } catch (error) {
+      if (mounted) {
+        _showMessage(
+          error is FormatException
+              ? error.message.toString()
+              : 'Could not import actions. Please try again.',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _importing = false);
     }
   }
 
@@ -503,10 +698,12 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
                 : null,
             onRefresh: () => _load(silent: _records.isNotEmpty),
             exporting: _exporting,
+            importing: _importing,
             unreadNotifications: _notifications
                 .where((item) => item.isUnread)
                 .length,
             onExport: _exportRecords,
+            onImport: _importActions,
             onNotifications: _openNotifications,
             onAdd: _canEditInventory ? () => _openEditor() : null,
             onLogout: !widget.embedded && !widget.showBackButton
@@ -615,7 +812,7 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
       );
     }
 
-    if (_visibleRecords.isEmpty) {
+    if (_records.isEmpty) {
       return _EmptyState(
         icon: _records.isEmpty
             ? Icons.playlist_add_rounded
@@ -635,11 +832,17 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
       );
     }
 
-    return ItemsTrackerGrid(
-      controller: _gridController,
+    return ItemsTrackerCards(
       records: _visibleRecords,
+      allRecords: _records,
       role: _role,
       statusOptions: _itemStatuses,
+      columnFilters: _columnFilters,
+      onColumnFilter: _openColumnFilter,
+      onClearColumnFilter: (column) => setState(() {
+        _columnFilters.remove(column);
+        _applyFilters();
+      }),
       onStatusUpdatedToChanged: _updateStatusUpdatedTo,
       onEditInventory: _openEditor,
       onAction: _openAction,
@@ -647,7 +850,35 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
       onAttachment: _openLatestAttachment,
       onTrackerStatusChanged: _updateTrackerStatus,
       onComment: _openComments,
+      onCompanyAction: _openCompanyAction,
+      onEmail: (record) => _openEmail([record]),
+      onCompanyEmail: (company, team) => _openEmail(
+        _records
+            .where(
+              (record) =>
+                  record.canGroupByCompany &&
+                  record.company.trim().toLowerCase() ==
+                      company.trim().toLowerCase() &&
+                  ItemsTrackerRoles.normalize(record.followUpRole) == team,
+            )
+            .toList(),
+        company: company,
+      ),
     );
+  }
+
+  Future<void> _openEmail(
+    List<ItemsTrackerRecord> records, {
+    String? company,
+  }) async {
+    if (!_canEditInventory || records.isEmpty) return;
+    await showItemsTrackerEmailDialog(
+      context: context,
+      repository: _repository,
+      itemIds: records.map((record) => record.id).toList(),
+      company: company,
+    );
+    if (mounted) await _load(silent: true);
   }
 }
 
@@ -657,11 +888,13 @@ class _TopBar extends StatelessWidget {
   final bool showBackButton;
   final bool refreshing;
   final bool exporting;
+  final bool importing;
   final int unreadNotifications;
   final bool canAdd;
   final VoidCallback? onBack;
   final VoidCallback onRefresh;
   final VoidCallback onExport;
+  final VoidCallback onImport;
   final VoidCallback onNotifications;
   final VoidCallback? onAdd;
   final VoidCallback? onLogout;
@@ -672,11 +905,13 @@ class _TopBar extends StatelessWidget {
     required this.showBackButton,
     required this.refreshing,
     required this.exporting,
+    required this.importing,
     required this.unreadNotifications,
     required this.canAdd,
     required this.onBack,
     required this.onRefresh,
     required this.onExport,
+    required this.onImport,
     required this.onNotifications,
     required this.onAdd,
     required this.onLogout,
@@ -720,7 +955,7 @@ class _TopBar extends StatelessWidget {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final compact = constraints.maxWidth < 900;
+          final compact = constraints.maxWidth < 1100;
 
           return Row(
             children: [
@@ -844,6 +1079,42 @@ class _TopBar extends StatelessWidget {
                     style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
                 ),
+              if (ItemsTrackerRoles.isAllowed(role)) ...[
+                const SizedBox(width: 10),
+                if (compact)
+                  _HeaderIconButton(
+                    tooltip: 'Import actions from Excel',
+                    icon: Icons.file_upload_outlined,
+                    loading: importing,
+                    onPressed: importing ? null : onImport,
+                  )
+                else
+                  FilledButton.icon(
+                    key: const ValueKey('itemsTrackerImport'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xffe7f3f5),
+                      foregroundColor: const Color(0xff174653),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 15,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(13),
+                      ),
+                    ),
+                    onPressed: importing ? null : onImport,
+                    icon: importing
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.file_upload_outlined, size: 20),
+                    label: Text(
+                      importing ? 'Importing…' : 'Import',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+              ],
               if (canAdd) ...[
                 const SizedBox(width: 10),
                 FilledButton.icon(
@@ -1133,15 +1404,15 @@ class _MetricsStrip extends StatelessWidget {
             _MetricCard(
               width: width,
               label: 'Tracked items',
-              helper: 'All active records',
+              helper: 'All tracked products',
               value: '$tracked',
               icon: Icons.inventory_2_outlined,
               color: const Color(0xff2d91b5),
             ),
             _MetricCard(
               width: width,
-              label: 'My queue',
-              helper: 'Needs your team',
+              label: 'Assigned to my team',
+              helper: 'Products your team follows up',
               value: '$myQueue',
               icon: Icons.assignment_ind_outlined,
               color: const Color(0xff137f95),
@@ -1149,7 +1420,7 @@ class _MetricsStrip extends StatelessWidget {
             _MetricCard(
               width: width,
               label: 'Pending',
-              helper: 'Waiting for action',
+              helper: 'Open tracker cases',
               value: '$pending',
               icon: Icons.pending_actions_rounded,
               color: const Color(0xffce7a18),
@@ -1165,7 +1436,7 @@ class _MetricsStrip extends StatelessWidget {
             _MetricCard(
               width: width,
               label: 'Total required value',
-              helper: 'Across all tracked items',
+              helper: 'Pending products only',
               value: '',
               numericValue: totalRequiredValue,
               valuePrefix: 'AED ',
@@ -1441,7 +1712,7 @@ class _WorkspaceHeader extends StatelessWidget {
                 ),
                 SizedBox(height: 2),
                 Text(
-                  'Prioritized workflow view — drag, resize, sort or filter any column',
+                  'Review the reason, latest action and follow-up owner · Open Details for more',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -1730,34 +2001,6 @@ class _FilterSelect extends StatelessWidget {
   }
 }
 
-class _QueueToggle extends StatelessWidget {
-  final String role;
-  final bool selected;
-  final ValueChanged<bool> onChanged;
-
-  const _QueueToggle({
-    required this.role,
-    required this.selected,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return FilterChip(
-      selected: selected,
-      showCheckmark: false,
-      avatar: Icon(
-        selected
-            ? Icons.assignment_turned_in_rounded
-            : Icons.assignment_ind_outlined,
-        size: 17,
-      ),
-      label: Text('My queue · ${ItemsTrackerRoles.label(role)}'),
-      onSelected: onChanged,
-    );
-  }
-}
-
 class _LoadingState extends StatelessWidget {
   const _LoadingState();
 
@@ -1865,17 +2108,17 @@ ThemeData _trackerTheme(ThemeData base) {
       surface: Colors.white,
     ),
     textTheme: base.textTheme.copyWith(
-      bodyLarge: const TextStyle(
+      bodyLarge: base.textTheme.bodyLarge?.copyWith(
         color: text,
         fontSize: 14,
         fontWeight: FontWeight.w500,
       ),
-      bodyMedium: const TextStyle(
+      bodyMedium: base.textTheme.bodyMedium?.copyWith(
         color: text,
         fontSize: 13,
         fontWeight: FontWeight.w500,
       ),
-      bodySmall: const TextStyle(
+      bodySmall: base.textTheme.bodySmall?.copyWith(
         color: subText,
         fontSize: 11.5,
         fontWeight: FontWeight.w500,
@@ -1915,7 +2158,10 @@ ThemeData _trackerTheme(ThemeData base) {
         backgroundColor: const Color(0xff183f56),
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
-        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+        textStyle: base.textTheme.labelLarge?.copyWith(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
       ),
     ),
@@ -1924,7 +2170,10 @@ ThemeData _trackerTheme(ThemeData base) {
         foregroundColor: const Color(0xff284c61),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         side: const BorderSide(color: border),
-        textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+        textStyle: base.textTheme.labelLarge?.copyWith(
+          fontSize: 12.5,
+          fontWeight: FontWeight.w600,
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
       ),
     ),

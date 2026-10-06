@@ -171,6 +171,9 @@ class ItemsTrackerRecord {
   final DateTime createdAt;
   final DateTime updatedAt;
   final int rowVersion;
+  final String emailStatus;
+  final DateTime? emailSentAt;
+  final String emailScope;
 
   const ItemsTrackerRecord({
     required this.id,
@@ -214,11 +217,20 @@ class ItemsTrackerRecord {
     required this.createdAt,
     required this.updatedAt,
     required this.rowVersion,
+    this.emailStatus = '',
+    this.emailSentAt,
+    this.emailScope = '',
   });
 
   bool canAct(String role) =>
       ItemsTrackerRoles.normalize(role) ==
       ItemsTrackerRoles.normalize(followUpRole);
+
+  bool get emailSent => emailStatus == 'sent';
+  bool get canSendEmail => !emailSent;
+
+  bool get canGroupByCompany =>
+      company.trim().isNotEmpty && category.trim().toUpperCase() != 'MEDICINE';
 
   bool canEditInventoryFields(String role) =>
       ItemsTrackerRoles.canEditInventoryFields(role);
@@ -319,6 +331,9 @@ class ItemsTrackerRecord {
       createdAt: createdAt,
       updatedAt: _asDateTime(map['updated_at']) ?? createdAt,
       rowVersion: _asInt(map['row_version']) ?? 1,
+      emailStatus: (map['email_status'] ?? '').toString(),
+      emailSentAt: _asDateTime(map['email_sent_at']),
+      emailScope: (map['email_scope'] ?? '').toString(),
     );
   }
 }
