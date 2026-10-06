@@ -6,6 +6,7 @@ import 'package:daily_order/presentation/items_tracker/widgets/items_tracker_imp
 import 'package:daily_order/domain/repositories/items_tracker_repository.dart';
 import 'package:daily_order/presentation/items_tracker/page/items_tracker_page.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -13,6 +14,7 @@ void main() {
     WidgetTester tester, {
     required String role,
     ItemsTrackerRepository? repository,
+    ThemeData? theme,
   }) async {
     tester.view.physicalSize = const Size(1920, 1080);
     tester.view.devicePixelRatio = 1;
@@ -21,6 +23,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        theme: theme,
         home: Scaffold(
           body: ItemsTrackerPage(
             role: role,
@@ -41,6 +44,198 @@ void main() {
     expect(find.byKey(const ValueKey('itemsTrackerExport')), findsOneWidget);
     expect(find.byKey(const ValueKey('itemsTrackerImport')), findsOneWidget);
     expect(find.text('Start the Items Tracker'), findsOneWidget);
+  });
+
+  testWidgets('desktop scrolling survives hover and hot reload', (
+    tester,
+  ) async {
+    final repository = _FakeItemsTrackerRepository(
+      records: [
+        for (var i = 0; i < 30; i++)
+          ItemsTrackerRecord.fromMap({
+            'id': 'scroll-$i',
+            'item_name': 'Scroll product $i',
+            'follow_up_role': 'inventory',
+          }),
+      ],
+    );
+    await pumpPage(
+      tester,
+      role: 'inventory',
+      repository: repository,
+      theme: ThemeData(platform: TargetPlatform.windows),
+    );
+    tester.view.physicalSize = const Size(1280, 900);
+    await tester.pumpAndSettle();
+    final horizontal = find.byWidgetPredicate(
+      (w) => w is SingleChildScrollView && w.scrollDirection == Axis.horizontal,
+    );
+    final bar = find.byWidgetPredicate(
+      (w) =>
+          w is Scrollbar &&
+          w.scrollbarOrientation == ScrollbarOrientation.bottom,
+    );
+    final controller = tester.widget<Scrollbar>(bar).controller!;
+    expect(controller.hasClients, isTrue);
+    expect(controller.position.maxScrollExtent, greaterThan(0));
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(tester.getBottomRight(bar) - const Offset(20, 3));
+    await tester.pumpAndSettle();
+    await tester.drag(horizontal, const Offset(-300, 0));
+    await tester.pumpAndSettle();
+    expect(controller.offset, greaterThan(0));
+    final reassembly = tester.binding.reassembleApplication();
+    await tester.pump();
+    await tester.pump();
+    await reassembly;
+    await tester.pumpAndSettle();
+    await mouse.moveTo(tester.getBottomLeft(bar) + const Offset(20, -3));
+    await tester.pumpAndSettle();
+    await tester.drag(
+      find.byKey(const ValueKey('itemsTrackerCards')),
+      const Offset(0, -250),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('saved blocked product keeps the badge in its row and details', (
+    tester,
+  ) async {
+    final repository = _FakeItemsTrackerRepository(
+      records: [
+        ItemsTrackerRecord.fromMap({
+          'id': 'blocked-record',
+          'item_code': 'DUPLICATE',
+          'item_name': 'Blocked product with a clear catalog name',
+          'category': 'MEDICINE',
+          'follow_up_role': 'inventory',
+          'catalog_is_block': true,
+        }),
+      ],
+    );
+    await pumpPage(tester, role: 'inventory', repository: repository);
+    expect(find.text('Block'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('itemCard:blocked-record')));
+    await tester.pumpAndSettle();
+    expect(find.text('Block'), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('duplicate codes stay selectable with a red Block badge', (
+    tester,
+  ) async {
+    final repository = _FakeItemsTrackerRepository(
+      products: [
+        for (final blocked in [false, true])
+          ItemsTrackerProduct.fromMap({
+            'item_code': 'DUPLICATE',
+            'item_name': blocked ? 'Blocked variant' : 'Available variant',
+            'category': 'COSMETICS',
+            'supplier': 'Supplier',
+            'company': 'Example Company',
+            'item_status': '1#NORMAL PURCHASE',
+            'catalog_key': blocked ? 'blocked-key' : 'available-key',
+            'unit_cost': blocked ? 12.5 : 8,
+            'is_block': blocked,
+          }),
+      ],
+    );
+    await pumpPage(tester, role: 'inventory', repository: repository);
+    await tester.tap(find.byKey(const ValueKey('itemsTrackerAddItem')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Single product'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('itemsTrackerProductSearch')),
+      'DUPLICATE',
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(ListTile, 'Available variant'), findsOneWidget);
+    expect(find.widgetWithText(ListTile, 'Blocked variant'), findsOneWidget);
+    expect(find.text('Block'), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.text('Block')).style?.color,
+      const Color(0xffb42318),
+    );
+    await tester.tap(find.widgetWithText(ListTile, 'Blocked variant'));
+    await tester.pumpAndSettle();
+    expect(find.text('Block'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('itemsTrackerRequiredQty')),
+      '2',
+    );
+    await tester.pumpAndSettle();
+    final costField = tester.widget<TextField>(
+      find.byKey(const ValueKey('itemsTrackerUnitCost')),
+    );
+    expect(costField.controller?.text, '12.5');
+    expect(costField.readOnly, isTrue);
+    expect(find.textContaining('25.00'), findsWidgets);
+    await tester.tap(find.byKey(const ValueKey('itemsTrackerDialogSave')));
+    await tester.pumpAndSettle();
+    expect(repository.createdRecords.single.catalogKey, 'blocked-key');
+    expect(repository.createdRecords.single.itemCode, 'DUPLICATE');
+    expect(repository.createdRecords.single.unitCost, 12.5);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('company selection preserves both variants of the same code', (
+    tester,
+  ) async {
+    final repository = _FakeItemsTrackerRepository(
+      products: [
+        for (final blocked in [false, true])
+          ItemsTrackerProduct.fromMap({
+            'item_code': 'DUPLICATE',
+            'item_name': blocked ? 'Blocked variant' : 'Available variant',
+            'category': 'COSMETICS',
+            'supplier': 'Supplier',
+            'company': 'Example Company',
+            'item_status': '1#NORMAL PURCHASE',
+            'catalog_key': blocked ? 'blocked-key' : 'available-key',
+            'unit_cost': blocked ? 12.5 : 8,
+            'is_block': blocked,
+          }),
+      ],
+    );
+    await pumpPage(tester, role: 'inventory', repository: repository);
+    await tester.tap(find.byKey(const ValueKey('itemsTrackerAddItem')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Company products'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('companyOption:Example Company')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Available variant'), findsOneWidget);
+    expect(find.text('Blocked variant'), findsOneWidget);
+    expect(find.text('Block'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const ValueKey('companyCost:0')))
+          .controller
+          ?.text,
+      '8.0',
+    );
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const ValueKey('companyCost:1')))
+          .controller
+          ?.text,
+      '12.5',
+    );
+    await tester.tap(find.byKey(const ValueKey('companyEntrySave')));
+    await tester.pumpAndSettle();
+    expect(repository.batches.single.map((p) => p.catalogKey), [
+      'available-key',
+      'blocked-key',
+    ]);
+    expect(repository.batches.single.map((p) => p.unitCost), [8, 12.5]);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(
@@ -1066,18 +1261,20 @@ class _FakeItemsTrackerRepository implements ItemsTrackerRepository {
   Future<List<ItemsTrackerProduct>> fetchCompanyProducts(
     String company,
   ) async => company == 'Example Company'
-      ? List.generate(
-          3,
-          (i) => ItemsTrackerProduct(
-            itemCode: 'A-${i + 1}',
-            itemName: 'Example product ${i + 1}',
-            category: i == 1 ? 'MEDICINE' : 'COSMETICS',
-            supplier: 'Supplier',
-            company: company,
-            itemStatus: '1#NORMAL PURCHASE',
-            retailPrice: 99,
-          ),
-        )
+      ? products.isNotEmpty
+            ? products
+            : List.generate(
+                3,
+                (i) => ItemsTrackerProduct(
+                  itemCode: 'A-${i + 1}',
+                  itemName: 'Example product ${i + 1}',
+                  category: i == 1 ? 'MEDICINE' : 'COSMETICS',
+                  supplier: 'Supplier',
+                  company: company,
+                  itemStatus: '1#NORMAL PURCHASE',
+                  retailPrice: 99,
+                ),
+              )
       : [];
 
   @override

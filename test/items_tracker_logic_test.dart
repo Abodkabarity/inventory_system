@@ -2,6 +2,27 @@ import 'package:daily_order/domain/entities/items_tracker_record.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('catalog blocked values and variant identity are mapped correctly', () {
+    expect(ItemsTrackerProduct.fromMap({'unit_cost': '12.50'}).unitCost, 12.5);
+    expect(ItemsTrackerProduct.fromMap({'unit_cost': 0}).unitCost, 0);
+    expect(ItemsTrackerProduct.fromMap({}).unitCost, isNull);
+    for (final value in [true, 'checked', ' TRUE ', 1]) {
+      expect(
+        ItemsTrackerProduct.fromMap({'is_block': value}).isBlocked,
+        isTrue,
+      );
+    }
+    for (final value in [false, 'unchecked', 'false', 0, null]) {
+      expect(
+        ItemsTrackerProduct.fromMap({'is_block': value}).isBlocked,
+        isFalse,
+      );
+    }
+    expect(
+      ItemsTrackerProduct.fromMap({'catalog_key': 'variant-key'}).catalogKey,
+      'variant-key',
+    );
+  });
   group('ItemsTrackerRoles', () {
     test(
       'routes medicine to purchase and every other category to category',
