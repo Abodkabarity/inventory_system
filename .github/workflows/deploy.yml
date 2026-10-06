@@ -39,6 +39,7 @@ jobs:
           path: build/web
 
   deploy:
+    if: github.ref == 'refs/heads/master'
     needs: build
 
     runs-on: ubuntu-latest
