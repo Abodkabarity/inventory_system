@@ -7,6 +7,7 @@ import '../../../domain/entities/items_tracker_record.dart';
 import '../../../domain/entities/items_tracker_column_filter.dart';
 import '../../../core/theme/app_colors.dart';
 import 'items_tracker_grid.dart';
+import 'items_tracker_block_badge.dart';
 
 /// A compact workspace: primary fields stay aligned, secondary fields live in
 /// the product's side panel. Non-medicine products group by company and team.
@@ -94,119 +95,116 @@ class ItemsTrackerCards extends StatelessWidget {
     ];
     return LayoutBuilder(
       builder: (context, constraints) {
-        return Scrollbar(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SizedBox(
-              width: math.max(1700, constraints.maxWidth),
-              height: constraints.maxHeight,
-              child: Column(
-                children: [
-                  if (columnFilters.isNotEmpty)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 6,
-                      ),
-                      color: Colors.white,
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 4,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          Text(
-                            '${records.length} matching items',
-                            style: const TextStyle(
-                              color: AppColors.subText,
-                              fontSize: 12,
-                            ),
+        return _CardsHorizontalScrollView(
+          child: SizedBox(
+            width: math.max(1700, constraints.maxWidth),
+            height: constraints.maxHeight,
+            child: Column(
+              children: [
+                if (columnFilters.isNotEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 6,
+                    ),
+                    color: Colors.white,
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          '${records.length} matching items',
+                          style: const TextStyle(
+                            color: AppColors.subText,
+                            fontSize: 12,
                           ),
-                          for (final column in columnFilters.keys)
-                            InputChip(
-                              label: Text(
-                                column.label,
-                                style: const TextStyle(
+                        ),
+                        for (final column in columnFilters.keys)
+                          InputChip(
+                            label: Text(
+                              column.label,
+                              style: const TextStyle(
+                                color: AppColors.secondaryColor,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            avatar: const Icon(
+                              Icons.filter_alt,
+                              size: 14,
+                              color: AppColors.primaryColor,
+                            ),
+                            backgroundColor: AppColors.backgroundWidget,
+                            side: BorderSide.none,
+                            onDeleted: () => onClearColumnFilter(column),
+                            deleteIcon: const Icon(Icons.close, size: 14),
+                          ),
+                      ],
+                    ),
+                  ),
+                _columnHeader(),
+                Expanded(
+                  child: records.isEmpty
+                      ? const Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.filter_alt_off_outlined,
+                                size: 32,
+                                color: AppColors.subText,
+                              ),
+                              SizedBox(height: 12),
+                              Text(
+                                'No matching items',
+                                style: TextStyle(
                                   color: AppColors.secondaryColor,
-                                  fontSize: 10,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
-                              avatar: const Icon(
-                                Icons.filter_alt,
-                                size: 14,
-                                color: AppColors.primaryColor,
-                              ),
-                              backgroundColor: AppColors.backgroundWidget,
-                              side: BorderSide.none,
-                              onDeleted: () => onClearColumnFilter(column),
-                              deleteIcon: const Icon(Icons.close, size: 14),
-                            ),
-                        ],
-                      ),
-                    ),
-                  _columnHeader(),
-                  Expanded(
-                    child: records.isEmpty
-                        ? const Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.filter_alt_off_outlined,
-                                  size: 32,
+                              SizedBox(height: 6),
+                              Text(
+                                'Adjust the column filters or select Clear.',
+                                style: TextStyle(
                                   color: AppColors.subText,
+                                  fontSize: 12,
                                 ),
-                                SizedBox(height: 12),
-                                Text(
-                                  'No matching items',
-                                  style: TextStyle(
-                                    color: AppColors.secondaryColor,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                SizedBox(height: 6),
-                                Text(
-                                  'Adjust the column filters or select Clear.',
-                                  style: TextStyle(
-                                    color: AppColors.subText,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                        : ListView.separated(
-                            key: const ValueKey('itemsTrackerCards'),
-                            padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
-                            itemCount: entries.length,
-                            separatorBuilder: (_, _) =>
-                                const SizedBox(height: 12),
-                            itemBuilder: (context, index) {
-                              final entry = entries[index];
-                              if (entry.key is String) {
-                                return _productRow(context, entry.value.single);
-                              }
-                              final company = entry.value.first.company.trim();
-                              final fullGroup = allRecords
-                                  .where(
-                                    (item) =>
-                                        item.canGroupByCompany &&
-                                        _groupKey(item) ==
-                                            _groupKey(entry.value.first),
-                                  )
-                                  .toList();
-                              return _companyGroup(
-                                context,
-                                company,
-                                entry.value,
-                                fullGroup,
-                              );
-                            },
+                              ),
+                            ],
                           ),
-                  ),
-                ],
-              ),
+                        )
+                      : ListView.separated(
+                          key: const ValueKey('itemsTrackerCards'),
+                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+                          itemCount: entries.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            final entry = entries[index];
+                            if (entry.key is String) {
+                              return _productRow(context, entry.value.single);
+                            }
+                            final company = entry.value.first.company.trim();
+                            final fullGroup = allRecords
+                                .where(
+                                  (item) =>
+                                      item.canGroupByCompany &&
+                                      _groupKey(item) ==
+                                          _groupKey(entry.value.first),
+                                )
+                                .toList();
+                            return _companyGroup(
+                              context,
+                              company,
+                              entry.value,
+                              fullGroup,
+                            );
+                          },
+                        ),
+                ),
+              ],
             ),
           ),
         );
@@ -548,16 +546,19 @@ class ItemsTrackerCards extends StatelessWidget {
                         ),
                       ),
                       Expanded(
-                        child: Text(
-                          record.itemName,
-                          textAlign: TextAlign.center,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: _ink,
-                            fontSize: 14,
-                            height: 1.5,
-                            fontWeight: FontWeight.w700,
+                        child: ItemsTrackerProductName(
+                          isBlocked: record.isBlocked,
+                          name: Text(
+                            record.itemName,
+                            textAlign: TextAlign.center,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: _ink,
+                              fontSize: 14,
+                              height: 1.5,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       ),
@@ -930,13 +931,16 @@ class ItemsTrackerCards extends StatelessWidget {
                     ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
-                      child: Text(
-                        record.itemName,
-                        style: const TextStyle(
-                          color: _ink,
-                          fontSize: 21,
-                          height: 1.4,
-                          fontWeight: FontWeight.w800,
+                      child: ItemsTrackerProductName(
+                        isBlocked: record.isBlocked,
+                        name: Text(
+                          record.itemName,
+                          style: const TextStyle(
+                            color: _ink,
+                            fontSize: 21,
+                            height: 1.4,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
                     ),
@@ -1195,4 +1199,46 @@ class ItemsTrackerCards extends StatelessWidget {
       ],
     ),
   );
+}
+
+/// Owns the horizontal controller independently of the vertical product list.
+class _CardsHorizontalScrollView extends StatefulWidget {
+  final Widget child;
+  const _CardsHorizontalScrollView({required this.child});
+
+  @override
+  State<_CardsHorizontalScrollView> createState() =>
+      _CardsHorizontalScrollViewState();
+}
+
+class _CardsHorizontalScrollViewState
+    extends State<_CardsHorizontalScrollView> {
+  final _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final behavior = ScrollConfiguration.of(context);
+    // The horizontal bar is explicit; the product list keeps its usual bar.
+    return ScrollConfiguration(
+      behavior: behavior.copyWith(scrollbars: false),
+      child: Scrollbar(
+        controller: _controller,
+        scrollbarOrientation: ScrollbarOrientation.bottom,
+        notificationPredicate: (notification) =>
+            notification.metrics.axis == Axis.horizontal,
+        child: SingleChildScrollView(
+          controller: _controller,
+          primary: false,
+          scrollDirection: Axis.horizontal,
+          child: ScrollConfiguration(behavior: behavior, child: widget.child),
+        ),
+      ),
+    );
+  }
 }

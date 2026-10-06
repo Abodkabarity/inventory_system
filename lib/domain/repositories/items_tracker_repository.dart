@@ -13,7 +13,7 @@ abstract class ItemsTrackerRepository {
 
   Future<List<ItemsTrackerProduct>> fetchCompanyProducts(String company);
 
-  /// Returns the distinct canonical values of item_report.item_status.
+  /// Returns the distinct canonical values of item_report_apg.item_status.
   Future<List<String>> fetchItemStatuses();
 
   Future<List<ItemsTrackerNotification>> fetchNotifications();
@@ -47,7 +47,7 @@ abstract class ItemsTrackerRepository {
   Future<void> updateInventoryFields(UpdateItemsTrackerRecord input);
 
   /// Updates only status_updated_to. The database RPC enforces Inventory-only
-  /// access and validates the selected value against item_report.item_status.
+  /// access and validates the selected value against item_report_apg.item_status.
   Future<void> updateStatusUpdatedTo(UpdateItemsTrackerStatus input);
 
   Future<void> updateTrackerStatus(UpdateItemsTrackerCaseStatus input);
@@ -85,6 +85,9 @@ class ItemsTrackerUploadFile {
 class CreateItemsTrackerRecord {
   final DateTime escalatedDate;
   final String itemCode;
+
+  /// Identifies the selected APG catalog variant, including repeated codes.
+  final String? catalogKey;
   final double? unitCost;
   final String inventoryNote;
   final double requiredQty;
@@ -97,6 +100,7 @@ class CreateItemsTrackerRecord {
   const CreateItemsTrackerRecord({
     required this.escalatedDate,
     required this.itemCode,
+    this.catalogKey,
     required this.unitCost,
     required this.inventoryNote,
     required this.requiredQty,

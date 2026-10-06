@@ -20,7 +20,7 @@ class ItemsTrackerRemoteDs implements ItemsTrackerRepository {
     var from = 0;
     while (true) {
       final response = await client
-          .from('item_tracker_grid')
+          .from('item_tracker_grid_apg')
           .select()
           .order('assignment_priority')
           .order('updated_at', ascending: false)
@@ -45,7 +45,7 @@ class ItemsTrackerRemoteDs implements ItemsTrackerRepository {
     final cleaned = query.trim();
     if (cleaned.length < 2) return const [];
     final response = await client.rpc(
-      'item_tracker_search_catalog',
+      'item_tracker_search_catalog_apg_cost',
       params: {'p_query': cleaned, 'p_limit': 12},
     );
     return (response as List)
@@ -60,7 +60,7 @@ class ItemsTrackerRemoteDs implements ItemsTrackerRepository {
   @override
   Future<List<ItemsTrackerCompany>> searchCompanies(String query) async {
     final response = await client.rpc(
-      'item_tracker_search_companies',
+      'item_tracker_search_companies_apg',
       params: {'p_query': query.trim(), 'p_limit': 30},
     );
     return (response as List)
@@ -79,7 +79,7 @@ class ItemsTrackerRemoteDs implements ItemsTrackerRepository {
     var offset = 0;
     while (true) {
       final response = await client.rpc(
-        'item_tracker_company_catalog',
+        'item_tracker_company_catalog_apg_cost',
         params: {
           'p_company': company.trim(),
           'p_offset': offset,
@@ -102,7 +102,7 @@ class ItemsTrackerRemoteDs implements ItemsTrackerRepository {
 
   @override
   Future<List<String>> fetchItemStatuses() async {
-    final response = await client.rpc('item_tracker_status_options');
+    final response = await client.rpc('item_tracker_status_options_apg');
     final statuses =
         (response as List)
             .map((row) {
@@ -154,10 +154,11 @@ class ItemsTrackerRemoteDs implements ItemsTrackerRepository {
       return (await createRecords([input])).single;
     }
     final response = await client.rpc(
-      'item_tracker_create',
+      'item_tracker_create_apg',
       params: {
         'p_escalated_date': _date(input.escalatedDate),
         'p_item_code': input.itemCode.trim(),
+        'p_catalog_key': input.catalogKey,
         'p_unit_cost': input.unitCost,
         'p_inventory_note': _nullableText(input.inventoryNote),
         'p_required_qty': input.requiredQty,
@@ -174,13 +175,14 @@ class ItemsTrackerRemoteDs implements ItemsTrackerRepository {
     List<CreateItemsTrackerRecord> inputs,
   ) async {
     final response = await client.rpc(
-      'item_tracker_create_batch',
+      'item_tracker_create_batch_apg',
       params: {
         'p_items': inputs
             .map(
               (input) => {
                 'escalated_date': _date(input.escalatedDate),
                 'item_code': input.itemCode.trim(),
+                'catalog_key': input.catalogKey,
                 'unit_cost': input.unitCost,
                 'inventory_note': _nullableText(input.inventoryNote),
                 'required_qty': input.requiredQty,
@@ -254,7 +256,7 @@ class ItemsTrackerRemoteDs implements ItemsTrackerRepository {
   @override
   Future<void> updateInventoryFields(UpdateItemsTrackerRecord input) async {
     await client.rpc(
-      'item_tracker_update_inventory_fields',
+      'item_tracker_update_inventory_fields_apg',
       params: {
         'p_item_id': input.itemId,
         'p_escalated_date': _date(input.escalatedDate),
@@ -294,7 +296,7 @@ class ItemsTrackerRemoteDs implements ItemsTrackerRepository {
   @override
   Future<void> updateStatusUpdatedTo(UpdateItemsTrackerStatus input) async {
     await client.rpc(
-      'item_tracker_update_status_updated_to',
+      'item_tracker_update_status_updated_to_apg',
       params: {
         'p_item_id': input.itemId,
         'p_status_updated_to': input.statusUpdatedTo.trim(),

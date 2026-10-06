@@ -2210,7 +2210,7 @@ String _friendlyError(Object error) {
     return 'Only Inventory can change this field.';
   }
   if (text.contains('INVALID_ITEM_STATUS')) {
-    return 'This status is no longer available in item_report.';
+    return 'This status is no longer available in the product catalog.';
   }
   if (text.contains('permission denied')) {
     return 'Your account does not have Items Tracker access. Confirm that app_users.role is inventory, purchase, or category.';

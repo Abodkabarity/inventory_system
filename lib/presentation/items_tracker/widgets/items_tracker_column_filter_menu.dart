@@ -138,9 +138,9 @@ class _ColumnFilterMenuState extends State<_ColumnFilterMenu> {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
-    final width = math.min(380.0, size.width - 24);
+    final width = math.min(460.0, size.width - 24);
     final height = math.min(
-      widget.column.isNumeric ? 640.0 : 510.0,
+      widget.column.isNumeric ? 720.0 : 610.0,
       size.height - 40,
     );
     final left = (widget.anchor.right - width).clamp(
@@ -174,13 +174,13 @@ class _ColumnFilterMenuState extends State<_ColumnFilterMenu> {
             child: Column(
               children: [
                 Container(
-                  padding: const EdgeInsets.fromLTRB(18, 12, 8, 12),
+                  padding: const EdgeInsets.fromLTRB(20, 14, 10, 14),
                   color: AppColors.backgroundWidget,
                   child: Row(
                     children: [
                       const Icon(
                         Icons.filter_alt_outlined,
-                        size: 20,
+                        size: 22,
                         color: AppColors.secondaryColor,
                       ),
                       const SizedBox(width: 10),
@@ -190,27 +190,33 @@ class _ColumnFilterMenuState extends State<_ColumnFilterMenu> {
                           style: const TextStyle(
                             color: AppColors.secondaryColor,
                             fontWeight: FontWeight.w800,
-                            fontSize: 15,
+                            fontSize: 17,
                           ),
                         ),
                       ),
                       IconButton(
                         tooltip: 'Cancel',
                         onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close, size: 19),
+                        icon: const Icon(Icons.close, size: 21),
                       ),
                     ],
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 10),
                   child: TextField(
                     key: ValueKey('columnFilterSearch:${widget.column.name}'),
                     controller: _search,
+                    style: const TextStyle(fontSize: 14.5),
                     onChanged: (_) => setState(() {}),
                     decoration: InputDecoration(
                       hintText: 'Search values…',
-                      prefixIcon: const Icon(Icons.search, size: 19),
+                      hintStyle: const TextStyle(fontSize: 14.5),
+                      prefixIcon: const Icon(Icons.search, size: 21),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 14,
+                      ),
                       isDense: true,
                       filled: true,
                       fillColor: const Color(0xfff5f8fb),
@@ -230,12 +236,14 @@ class _ColumnFilterMenuState extends State<_ColumnFilterMenu> {
                           child: TextField(
                             key: const ValueKey('columnFilterMin'),
                             controller: _min,
+                            style: const TextStyle(fontSize: 14.5),
                             keyboardType: const TextInputType.numberWithOptions(
                               decimal: true,
                               signed: true,
                             ),
                             decoration: const InputDecoration(
                               labelText: 'Minimum',
+                              labelStyle: TextStyle(fontSize: 14),
                               isDense: true,
                               border: OutlineInputBorder(),
                             ),
@@ -246,12 +254,14 @@ class _ColumnFilterMenuState extends State<_ColumnFilterMenu> {
                           child: TextField(
                             key: const ValueKey('columnFilterMax'),
                             controller: _max,
+                            style: const TextStyle(fontSize: 14.5),
                             keyboardType: const TextInputType.numberWithOptions(
                               decimal: true,
                               signed: true,
                             ),
                             decoration: const InputDecoration(
                               labelText: 'Maximum',
+                              labelStyle: TextStyle(fontSize: 14),
                               isDense: true,
                               border: OutlineInputBorder(),
                             ),
@@ -295,14 +305,14 @@ class _ColumnFilterMenuState extends State<_ColumnFilterMenu> {
                               : 'Select search results',
                           style: const TextStyle(
                             fontWeight: FontWeight.w600,
-                            fontSize: 12,
+                            fontSize: 14,
                           ),
                         ),
                       ),
                       Text(
                         '${visible.length} values',
                         style: const TextStyle(
-                          fontSize: 11,
+                          fontSize: 12.5,
                           color: AppColors.subText,
                         ),
                       ),
@@ -324,7 +334,7 @@ class _ColumnFilterMenuState extends State<_ColumnFilterMenu> {
                       ),
                       child: const Text(
                         'Select only these results',
-                        style: TextStyle(fontSize: 11),
+                        style: TextStyle(fontSize: 13.5),
                       ),
                     ),
                   ),
@@ -343,7 +353,10 @@ class _ColumnFilterMenuState extends State<_ColumnFilterMenu> {
                             final value = visible[index];
                             return CheckboxListTile(
                               key: ValueKey('columnFilterValue:$value'),
-                              dense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 5,
+                              ),
                               activeColor: AppColors.primaryColor,
                               controlAffinity: ListTileControlAffinity.leading,
                               value:
@@ -355,10 +368,12 @@ class _ColumnFilterMenuState extends State<_ColumnFilterMenu> {
                                 message: _label(value),
                                 child: Text(
                                   _label(value),
-                                  maxLines: 2,
+                                  maxLines: 3,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    fontSize: 12,
+                                    fontSize: 14.5,
+                                    height: 1.4,
+                                    fontWeight: FontWeight.w500,
                                     color: value.isEmpty
                                         ? AppColors.subText
                                         : AppColors.secondaryColor,
@@ -368,7 +383,7 @@ class _ColumnFilterMenuState extends State<_ColumnFilterMenu> {
                               secondary: Text(
                                 '${_counts[value] ?? 0}',
                                 style: const TextStyle(
-                                  fontSize: 11,
+                                  fontSize: 12.5,
                                   color: AppColors.subText,
                                 ),
                               ),
@@ -381,12 +396,12 @@ class _ColumnFilterMenuState extends State<_ColumnFilterMenu> {
                     padding: const EdgeInsets.all(10),
                     child: Text(
                       _error!,
-                      style: const TextStyle(color: Colors.red, fontSize: 12),
+                      style: const TextStyle(color: Colors.red, fontSize: 14),
                     ),
                   ),
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
+                    horizontal: 16,
                     vertical: 12,
                   ),
                   decoration: const BoxDecoration(
@@ -400,10 +415,12 @@ class _ColumnFilterMenuState extends State<_ColumnFilterMenu> {
                             Navigator.pop(context, ItemsTrackerColumnFilter()),
                         style: TextButton.styleFrom(
                           foregroundColor: AppColors.secondaryColor,
+                          textStyle: const TextStyle(fontSize: 14.5),
+                          minimumSize: const Size(0, 42),
                         ),
                         icon: const Icon(
                           Icons.filter_alt_off_outlined,
-                          size: 16,
+                          size: 18,
                         ),
                         label: const Text('Clear filter'),
                       ),
@@ -414,6 +431,11 @@ class _ColumnFilterMenuState extends State<_ColumnFilterMenu> {
                         style: FilledButton.styleFrom(
                           backgroundColor: AppColors.primaryColor,
                           foregroundColor: Colors.white,
+                          textStyle: const TextStyle(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          minimumSize: const Size(94, 42),
                         ),
                         child: const Text('Apply'),
                       ),

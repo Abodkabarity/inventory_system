@@ -102,6 +102,9 @@ class ItemsTrackerProduct {
   final String company;
   final String itemStatus;
   final double? retailPrice;
+  final double? unitCost;
+  final String? catalogKey;
+  final bool isBlocked;
 
   const ItemsTrackerProduct({
     required this.itemCode,
@@ -111,6 +114,9 @@ class ItemsTrackerProduct {
     required this.company,
     required this.itemStatus,
     required this.retailPrice,
+    this.unitCost,
+    this.catalogKey,
+    this.isBlocked = false,
   });
 
   factory ItemsTrackerProduct.fromMap(Map<String, dynamic> map) {
@@ -123,6 +129,16 @@ class ItemsTrackerProduct {
       itemStatus: (map['item_status'] ?? map['source_item_status'] ?? '')
           .toString(),
       retailPrice: _asDouble(map['retail'] ?? map['retail_snapshot']),
+      unitCost: _asDouble(map['unit_cost']),
+      catalogKey: map['catalog_key']?.toString(),
+      isBlocked: const {
+        'true',
+        '1',
+        'yes',
+        'checked',
+        'block',
+        'blocked',
+      }.contains((map['is_block'] ?? '').toString().trim().toLowerCase()),
     );
   }
 
@@ -130,6 +146,7 @@ class ItemsTrackerProduct {
 }
 
 class ItemsTrackerRecord {
+  final bool isBlocked;
   final String id;
   final DateTime escalatedDate;
   final String itemCode;
@@ -176,6 +193,7 @@ class ItemsTrackerRecord {
   final String emailScope;
 
   const ItemsTrackerRecord({
+    this.isBlocked = false,
     required this.id,
     required this.escalatedDate,
     required this.itemCode,
@@ -263,6 +281,7 @@ class ItemsTrackerRecord {
   factory ItemsTrackerRecord.fromMap(Map<String, dynamic> map) {
     final createdAt = _asDateTime(map['created_at']) ?? DateTime(1970);
     return ItemsTrackerRecord(
+      isBlocked: map['catalog_is_block'] == true,
       id: (map['id'] ?? '').toString(),
       escalatedDate:
           _asDateTime(map['escalated_date']) ??

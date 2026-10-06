@@ -10,6 +10,7 @@ import '../../../core/utils/uae_date_time_formatter.dart';
 import '../../../domain/entities/items_tracker_record.dart';
 import '../../../domain/repositories/items_tracker_repository.dart';
 import 'items_tracker_email_dialog.dart';
+import 'items_tracker_block_badge.dart';
 
 Future<bool> showItemsTrackerEditorDialog({
   required BuildContext context,
@@ -128,6 +129,7 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
         company: record.company,
         itemStatus: record.sourceItemStatus,
         retailPrice: record.retailSnapshot,
+        isBlocked: record.isBlocked,
       );
       _unitCost.text = record.unitCost?.toString() ?? '';
       _quantity.text = record.requiredQty.toString();
@@ -192,6 +194,7 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
     );
     setState(() {
       _product = product;
+      _unitCost.text = product.unitCost?.toString() ?? '';
       _search.text = product.searchLabel;
       _suggestions = const [];
       _followUpRole = autoFollowUp;
@@ -267,6 +270,7 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
           CreateItemsTrackerRecord(
             escalatedDate: _escalatedDate,
             itemCode: product.itemCode,
+            catalogKey: product.catalogKey,
             unitCost: cost,
             inventoryNote: _note.text,
             requiredQty: qty,
@@ -437,8 +441,15 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                                  trailing: const Icon(
-                                    Icons.arrow_forward_rounded,
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (product.isBlocked) ...[
+                                        const ItemsTrackerBlockBadge(),
+                                        const SizedBox(width: 10),
+                                      ],
+                                      const Icon(Icons.arrow_forward_rounded),
+                                    ],
                                   ),
                                   onTap: () => _selectProduct(product),
                                 ),
@@ -476,6 +487,7 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
                           child: TextField(
                             key: const ValueKey('itemsTrackerUnitCost'),
                             controller: _unitCost,
+                            readOnly: !_isEditing && _product?.unitCost != null,
                             keyboardType: const TextInputType.numberWithOptions(
                               decimal: true,
                             ),
@@ -483,7 +495,10 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
                             decoration: InputDecoration(
                               labelText: 'Item cost',
                               prefixText: 'AED  ',
-                              helperText: 'Manual purchase cost',
+                              helperText:
+                                  !_isEditing && _product?.unitCost != null
+                                  ? 'Filled automatically'
+                                  : 'Enter cost if available',
                               border: OutlineInputBorder(
                                 borderSide: BorderSide(
                                   color: AppColors.primaryColor,
@@ -1547,6 +1562,11 @@ class _SelectedProductCard extends StatelessWidget {
                         fontWeight: FontWeight.w800,
                       ),
                     ),
+                    if (product.isBlocked)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 6),
+                        child: ItemsTrackerBlockBadge(),
+                      ),
                   ],
                 ),
               ),
@@ -1596,6 +1616,7 @@ class _RecordSummary extends StatelessWidget {
             style: const TextStyle(fontWeight: FontWeight.w900),
           ),
           _InfoPill(label: 'Code', value: record.itemCode),
+          if (record.isBlocked) const ItemsTrackerBlockBadge(),
           _InfoPill(
             label: 'Assigned',
             value: ItemsTrackerRoles.label(record.followUpRole),
@@ -2424,9 +2445,13 @@ String _friendlyError(Object error) {
       text.contains('INVENTORY_PERMISSION_REQUIRED')) {
     return 'Only Inventory can change these fields.';
   }
+  if (text.contains('APG_CATALOG_SELECTION_REQUIRED') ||
+      text.contains('APG_CATALOG_SELECTION_CHANGED')) {
+    return 'The catalog was updated. Search again and reselect the product.';
+  }
   if (text.contains('ITEM_TRACKER_PRODUCT_NOT_FOUND') ||
       text.contains('ITEM_NOT_FOUND_IN_ITEM_REPORT')) {
-    return 'The selected product no longer exists in item_report.';
+    return 'The selected product is no longer available. Search again.';
   }
   return text
       .replaceFirst('PostgrestException(message: ', '')

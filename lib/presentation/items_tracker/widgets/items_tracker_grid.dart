@@ -5,6 +5,7 @@ import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../domain/entities/items_tracker_record.dart';
+import 'items_tracker_block_badge.dart';
 
 class ItemsTrackerGridController {
   VoidCallback? _clearGridFilters;
@@ -655,6 +656,7 @@ class ItemsTrackerDataSource extends DataGridSource {
                 child = _ItemNameCell(
                   name: record.itemName,
                   category: record.category,
+                  isBlocked: record.isBlocked,
                 );
                 break;
 
@@ -1073,8 +1075,13 @@ class _CodeCell extends StatelessWidget {
 class _ItemNameCell extends StatelessWidget {
   final String name;
   final String category;
+  final bool isBlocked;
 
-  const _ItemNameCell({required this.name, required this.category});
+  const _ItemNameCell({
+    required this.name,
+    required this.category,
+    required this.isBlocked,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1085,16 +1092,19 @@ class _ItemNameCell extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
       child: Tooltip(
         message: cleanName == '—' ? '' : cleanName,
-        child: Text(
-          cleanName,
-          maxLines: 3,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: Color(0xff18333f),
-            fontSize: 13,
-            height: 1.28,
-            fontWeight: FontWeight.w700,
+        child: ItemsTrackerProductName(
+          isBlocked: isBlocked,
+          name: Text(
+            cleanName,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xff18333f),
+              fontSize: 13,
+              height: 1.28,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
       ),

@@ -8,6 +8,7 @@ import '../../../domain/entities/items_tracker_record.dart';
 import '../../../domain/repositories/items_tracker_repository.dart';
 import 'items_tracker_dialogs.dart';
 import 'items_tracker_email_dialog.dart';
+import 'items_tracker_block_badge.dart';
 
 enum ItemsTrackerAddMode { product, company }
 
@@ -60,7 +61,7 @@ Future<ItemsTrackerAddMode?> showItemsTrackerAddMode(BuildContext context) {
                 icon: Icons.business_outlined,
                 title: 'Company products',
                 subtitle:
-                    'Select company products, enter optional costs, and add missing products manually.',
+                    'Select company products with automatic costs, and add missing products manually.',
                 onTap: () =>
                     Navigator.pop(context, ItemsTrackerAddMode.company),
               ),
@@ -184,6 +185,7 @@ class _CompanyProductDraft {
     List<String> statuses, {
     this.manual = false,
   }) {
+    cost.text = product.unitCost?.toString() ?? '';
     followUp = ItemsTrackerRoles.defaultFollowUpForCategory(product.category);
     status = statuses.contains(product.itemStatus)
         ? product.itemStatus
@@ -432,6 +434,7 @@ class _ItemsTrackerCompanyDialogState extends State<ItemsTrackerCompanyDialog> {
               (row) => CreateItemsTrackerRecord(
                 escalatedDate: _date,
                 itemCode: row.product.itemCode,
+                catalogKey: row.product.catalogKey,
                 unitCost: _number(row.cost.text),
                 inventoryNote: _reason.text.trim(),
                 requiredQty: _number(row.quantity.text)!,
@@ -592,7 +595,7 @@ class _ItemsTrackerCompanyDialogState extends State<ItemsTrackerCompanyDialog> {
                           Text(
                             costCount == 0
                                 ? 'Cost is optional. Leave empty if unknown.'
-                                : 'Known cost total: AED ${NumberFormat('#,##0.00').format(total)} · $costCount/${selected.length} costs entered',
+                                : 'Known cost total: AED ${NumberFormat('#,##0.00').format(total)} · $costCount/${selected.length} costs available',
                             style: const TextStyle(color: _muted, fontSize: 12),
                           ),
                         ],
@@ -1068,6 +1071,11 @@ class _ItemsTrackerCompanyDialogState extends State<ItemsTrackerCompanyDialog> {
                   '${p.itemCode.isEmpty ? 'Auto-generated code' : p.itemCode} · ${p.category}',
                   style: const TextStyle(color: _muted, fontSize: 11),
                 ),
+                if (p.isBlocked)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6),
+                    child: ItemsTrackerBlockBadge(),
+                  ),
                 if (row.manual)
                   const Padding(
                     padding: EdgeInsets.only(top: 6),
@@ -1088,6 +1096,7 @@ class _ItemsTrackerCompanyDialogState extends State<ItemsTrackerCompanyDialog> {
             width: 115,
             child: TextFormField(
               controller: row.cost,
+              readOnly: !row.manual && row.product.unitCost != null,
               enabled: row.selected,
               key: ValueKey('companyCost:$index'),
               keyboardType: const TextInputType.numberWithOptions(
@@ -1330,11 +1339,14 @@ String? _required(String? value) =>
     (value ?? '').trim().isEmpty ? 'Required' : null;
 String _errorText(Object error) {
   final message = error.toString();
+  if (message.contains('APG_CATALOG_SELECTION')) {
+    return 'The catalog was updated. Reload the company products and try again.';
+  }
   if (message.contains('PRODUCT_ALREADY_IN_ITEM_REPORT')) {
     return 'This code already exists in Item Report. Select the catalog product.';
   }
   if (message.contains('DUPLICATE_PRODUCT')) {
-    return 'Duplicate product codes are not allowed in one selection.';
+    return 'The same product was selected more than once.';
   }
   if (message.contains('INVENTORY_PERMISSION')) {
     return 'Only Inventory can add products.';
