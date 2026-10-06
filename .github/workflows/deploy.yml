@@ -2,7 +2,6 @@ name: Deploy Flutter Web
 
 on:
   push:
-    branches: [ "master" ]
   workflow_dispatch:
 
 permissions:
@@ -11,7 +10,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
+  group: "pages-${{ github.ref }}"
   cancel-in-progress: true
 
 jobs:
