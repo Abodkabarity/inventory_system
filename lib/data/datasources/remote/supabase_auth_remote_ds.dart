@@ -96,8 +96,8 @@ class SupabaseAuthRemoteDs {
       });
     }
 
-    // Other roles MUST have branch_name
-    if (branchName.isEmpty) {
+    // Only branch users require a branch assignment.
+    if (role == 'branch' && branchName.isEmpty) {
       throw Exception('No branch assigned for this user in app_users.');
     }
 
