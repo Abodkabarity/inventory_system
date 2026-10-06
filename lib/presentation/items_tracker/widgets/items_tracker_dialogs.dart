@@ -9,6 +9,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/uae_date_time_formatter.dart';
 import '../../../domain/entities/items_tracker_record.dart';
 import '../../../domain/repositories/items_tracker_repository.dart';
+import 'items_tracker_email_dialog.dart';
 
 Future<bool> showItemsTrackerEditorDialog({
   required BuildContext context,
@@ -106,6 +107,8 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
   String _followUpRole = ItemsTrackerRoles.category;
   bool _searching = false;
   bool _saving = false;
+  bool _emailOnAdd = false;
+  bool _added = false;
   int _searchToken = 0;
   String? _error;
 
@@ -229,6 +232,7 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
   }
 
   Future<void> _save() async {
+    if (_added || _saving) return;
     final product = _product;
     final qty = _qty;
     final cost = _cost;
@@ -259,7 +263,7 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
     try {
       final record = widget.record;
       if (record == null) {
-        await widget.repository.createRecord(
+        final itemId = await widget.repository.createRecord(
           CreateItemsTrackerRecord(
             escalatedDate: _escalatedDate,
             itemCode: product.itemCode,
@@ -270,6 +274,17 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
             followUpRole: _followUpRole,
           ),
         );
+        _added = true;
+        if (_emailOnAdd && mounted) {
+          setState(() => _saving = false);
+          // Creation has already succeeded. Email failures stay inside the
+          // email dialog, so retrying a draft never creates a second item.
+          await showItemsTrackerEmailDialog(
+            context: context,
+            repository: widget.repository,
+            itemIds: [itemId],
+          );
+        }
       } else {
         await widget.repository.updateInventoryFields(
           UpdateItemsTrackerRecord(
@@ -287,6 +302,10 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
       if (!mounted) return;
+      if (_added) {
+        Navigator.pop(context, true);
+        return;
+      }
       setState(() {
         _saving = false;
         _error = _friendlyError(error);
@@ -393,33 +412,36 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
                                 const Divider(height: 1),
                             itemBuilder: (context, index) {
                               final product = _suggestions[index];
-                              return ListTile(
-                                dense: true,
-                                leading: const CircleAvatar(
-                                  backgroundColor: Color(0xffe8f5fb),
-                                  child: Icon(
-                                    Icons.inventory_2_outlined,
-                                    color: AppColors.secondaryColor,
-                                    size: 19,
+                              return Material(
+                                color: Colors.white,
+                                child: ListTile(
+                                  dense: true,
+                                  leading: const CircleAvatar(
+                                    backgroundColor: Color(0xffe8f5fb),
+                                    child: Icon(
+                                      Icons.inventory_2_outlined,
+                                      color: AppColors.secondaryColor,
+                                      size: 19,
+                                    ),
                                   ),
-                                ),
-                                title: Text(
-                                  product.itemName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
+                                  title: Text(
+                                    product.itemName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                    ),
                                   ),
+                                  subtitle: Text(
+                                    '${product.itemCode}  •  ${product.category}  •  ${product.supplier}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  trailing: const Icon(
+                                    Icons.arrow_forward_rounded,
+                                  ),
+                                  onTap: () => _selectProduct(product),
                                 ),
-                                subtitle: Text(
-                                  '${product.itemCode}  •  ${product.category}  •  ${product.supplier}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                trailing: const Icon(
-                                  Icons.arrow_forward_rounded,
-                                ),
-                                onTap: () => _selectProduct(product),
                               );
                             },
                           ),
@@ -648,15 +670,35 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
                       const SizedBox(height: 16),
                       _ErrorBanner(message: _error!),
                     ],
+                    if (!_isEditing)
+                      CheckboxListTile(
+                        key: const ValueKey('itemEmailOnAdd'),
+                        value: _emailOnAdd,
+                        onChanged: _saving
+                            ? null
+                            : (value) =>
+                                  setState(() => _emailOnAdd = value ?? false),
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        title: const Text(
+                          'Prepare Outlook email after adding',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        subtitle: const Text(
+                          'Recipients are selected from the follow-up department. Confirm sent after sending in Outlook.',
+                        ),
+                      ),
                   ],
                 ),
               ),
             ),
             _DialogFooter(
               saving: _saving,
-              saveLabel: _isEditing ? 'Save changes' : 'Add item',
+              saveLabel: _isEditing
+                  ? 'Save changes'
+                  : (_emailOnAdd ? 'Add & email' : 'Add item'),
               onCancel: _saving ? null : () => Navigator.pop(context),
-              onSave: _saving ? null : _save,
+              onSave: _saving || _added ? null : _save,
             ),
           ],
         ),

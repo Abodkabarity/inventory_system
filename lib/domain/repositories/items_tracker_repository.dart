@@ -1,11 +1,17 @@
 import 'dart:typed_data';
 
 import '../entities/items_tracker_record.dart';
+import '../entities/items_tracker_action_import.dart';
+import '../entities/items_tracker_email.dart';
 
 abstract class ItemsTrackerRepository {
   Future<List<ItemsTrackerRecord>> fetchRecords();
 
   Future<List<ItemsTrackerProduct>> searchProducts(String query);
+
+  Future<List<ItemsTrackerCompany>> searchCompanies(String query);
+
+  Future<List<ItemsTrackerProduct>> fetchCompanyProducts(String company);
 
   /// Returns the distinct canonical values of item_report.item_status.
   Future<List<String>> fetchItemStatuses();
@@ -16,7 +22,27 @@ abstract class ItemsTrackerRepository {
 
   Future<void> markAllNotificationsRead();
 
-  Future<void> createRecord(CreateItemsTrackerRecord input);
+  Future<String> createRecord(CreateItemsTrackerRecord input);
+
+  /// Creates the selected products together in one database transaction.
+  Future<List<String>> createRecords(List<CreateItemsTrackerRecord> inputs);
+
+  /// Inventory only. Reserves one persistent Outlook draft per item/team.
+  Future<List<ItemsTrackerEmailDraft>> prepareEmails(
+    List<String> itemIds, {
+    String? company,
+  });
+
+  Future<bool> openEmailDraft(String emailId, {bool reopen = false});
+  Future<void> releaseEmailDraft(String emailId);
+  Future<void> confirmEmailSent(String emailId);
+  Future<void> cancelEmailDraft(String emailId);
+
+  Future<List<ItemsTrackerActionImportResult>> importActions(
+    List<ItemsTrackerActionImport> rows, {
+    required String fileName,
+    bool apply = false,
+  });
 
   Future<void> updateInventoryFields(UpdateItemsTrackerRecord input);
 
@@ -65,6 +91,9 @@ class CreateItemsTrackerRecord {
   final String statusUpdatedTo;
   final String followUpRole;
 
+  /// A tracker-only product that is absent from Item Report.
+  final ItemsTrackerProduct? manualProduct;
+
   const CreateItemsTrackerRecord({
     required this.escalatedDate,
     required this.itemCode,
@@ -73,7 +102,15 @@ class CreateItemsTrackerRecord {
     required this.requiredQty,
     required this.statusUpdatedTo,
     required this.followUpRole,
+    this.manualProduct,
   });
+}
+
+class ItemsTrackerCompany {
+  final String name;
+  final int productCount;
+
+  const ItemsTrackerCompany({required this.name, required this.productCount});
 }
 
 class UpdateItemsTrackerRecord {
