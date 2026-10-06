@@ -366,6 +366,7 @@ class _ItemsTrackerImportDialogState extends State<ItemsTrackerImportDialog> {
       'imported' => 'Imported',
       'already_imported' => 'Already imported',
       'conflict' => 'System changed',
+      'not_pending' => 'Already done',
       'not_assigned' => 'Different department',
       'missing' => 'Product missing',
       _ => 'Needs review',

@@ -6,17 +6,37 @@ import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
 
 import '../../domain/entities/items_tracker_record.dart';
 
-/// Creates an Item Tracker workbook containing the user's assigned products.
+/// Creates a full report and a pending-action queue for the user's department.
 class ItemsTrackerExcelWorkbook {
   static Future<Uint8List> build(
     List<ItemsTrackerRecord> sourceRecords, {
     required String role,
   }) async {
-    final records = sourceRecords
-        .where((record) => record.canAct(role))
+    final reportRecords = <ItemsTrackerRecord>[
+      for (final department in [
+        ItemsTrackerRoles.normalize(role),
+        ...ItemsTrackerRoles.allowed.where(
+          (department) => department != ItemsTrackerRoles.normalize(role),
+        ),
+      ])
+        ...sourceRecords.where(
+          (record) =>
+              ItemsTrackerRoles.normalize(record.followUpRole) == department,
+        ),
+      ...sourceRecords.where(
+        (record) => !ItemsTrackerRoles.isAllowed(record.followUpRole),
+      ),
+    ];
+    final actionRecords = reportRecords
+        .where(
+          (record) =>
+              record.canAct(role) &&
+              ItemsTrackerRoles.normalize(record.caseStatus) ==
+                  ItemsTrackerCaseStatuses.pending,
+        )
         .toList(growable: false);
     final workbook = xlsio.Workbook(2);
-    _writeActionSheet(workbook.worksheets[0], records, role);
+    _writeActionSheet(workbook.worksheets[0], actionRecords, role);
     final sheet = workbook.worksheets[1]..name = 'Items Tracker';
     const headerRow = 4;
     final columns = _columns;
@@ -34,7 +54,7 @@ class ItemsTrackerExcelWorkbook {
 
     final subtitle = sheet.getRangeByIndex(2, 1, 2, columns.length)..merge();
     subtitle.setText(
-      'Exported ${DateFormat('dd MMM yyyy, HH:mm').format(DateTime.now())}  •  ${records.length} tracked records',
+      'Exported ${DateFormat('dd MMM yyyy, HH:mm').format(DateTime.now())}  •  ${reportRecords.length} tracked records',
     );
     subtitle.cellStyle
       ..backColor = '#E7F3F5'
@@ -64,8 +84,8 @@ class ItemsTrackerExcelWorkbook {
     sheet.getRangeByIndex(headerRow, 1, headerRow, columns.length).rowHeight =
         32;
 
-    for (var index = 0; index < records.length; index++) {
-      final record = records[index];
+    for (var index = 0; index < reportRecords.length; index++) {
+      final record = reportRecords[index];
       final row = headerRow + index + 1;
       final values = _values(record, index + 1);
 
@@ -107,11 +127,11 @@ class ItemsTrackerExcelWorkbook {
       }
     }
 
-    if (records.isNotEmpty) {
+    if (reportRecords.isNotEmpty) {
       sheet.autoFilters.filterRange = sheet.getRangeByIndex(
         headerRow,
         1,
-        headerRow + records.length,
+        headerRow + reportRecords.length,
         columns.length,
       );
     }
@@ -181,7 +201,7 @@ class ItemsTrackerExcelWorkbook {
       ..fontSize = 11;
     final context = sheet.getRangeByIndex(3, 1, 3, 10)..merge();
     context.setText(
-      'Exported ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())} · ${records.length} products assigned to your department · Conflicting system changes will be skipped.',
+      'Exported ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())} · ${records.length} pending products assigned to your department · Conflicting system changes will be skipped.',
     );
     context.rowHeight = 24;
     context.cellStyle

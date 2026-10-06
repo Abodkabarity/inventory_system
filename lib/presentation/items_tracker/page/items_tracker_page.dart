@@ -594,14 +594,9 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
 
   Future<void> _exportRecords() async {
     if (_exporting) return;
-    final records = _visibleRecords
-        .where((record) => record.canAct(_role))
-        .toList(growable: false);
+    final records = _records;
     if (records.isEmpty) {
-      _showMessage(
-        'No products assigned to your department match the current filters.',
-        isError: true,
-      );
+      _showMessage('There are no tracked products to export.', isError: true);
       return;
     }
 
@@ -609,7 +604,7 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
     try {
       await ItemsTrackerExcelExporter.export(records, role: _role);
       _showMessage(
-        '${records.length} products assigned to your department exported. Write your actions in the Action updates sheet.',
+        '${records.length} tracked products exported. Write actions for your pending products in the Action updates sheet.',
       );
     } catch (error) {
       _showMessage(
