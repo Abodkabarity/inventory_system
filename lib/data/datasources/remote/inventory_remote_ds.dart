@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../domain/entities/branch_setting.dart';
+import '../../../core/utils/purchase_shortage_report.dart';
 
 class InventoryRemoteDs {
   final SupabaseClient client;
@@ -1761,6 +1762,34 @@ end_date
         'Please run supabase/sql/purchase_shortage_rpc.sql in Supabase, '
         'especially get_purchase_shortage. Details: $e',
       );
+    }
+  }
+
+  Future<String> fetchPurchaseShortageExportUrl({
+    required String runDate,
+  }) async {
+    try {
+      final url = await client.storage
+          .from(PurchaseShortageReport.bucket)
+          .createSignedUrl(PurchaseShortageReport.storagePath(runDate), 60);
+      final uri = Uri.parse(url);
+      return uri
+          .replace(
+            queryParameters: {
+              ...uri.queryParameters,
+              'download': PurchaseShortageReport.fileName(runDate),
+            },
+          )
+          .toString();
+    } on StorageException catch (error) {
+      if (error.statusCode == '404' ||
+          error.message.toLowerCase().contains('not found')) {
+        throw Exception(
+          'Today\'s Purchase Shortage report ($runDate) is not ready yet. '
+          'Please try again after the scheduled export finishes.',
+        );
+      }
+      rethrow;
     }
   }
 

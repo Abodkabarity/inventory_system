@@ -572,14 +572,7 @@ class LoadPurchaseShortage extends InventoryEvent {
   List<Object?> get props => [runDate];
 }
 
-class ExportPurchaseShortage extends InventoryEvent {
-  final String runDate;
-
-  ExportPurchaseShortage(this.runDate);
-
-  @override
-  List<Object?> get props => [runDate];
-}
+class ExportPurchaseShortage extends InventoryEvent {}
 
 class LoadBranchSettings extends InventoryEvent {}
 

@@ -1159,6 +1159,11 @@ class InventoryRepositoryImpl implements InventoryRepository {
   }
 
   @override
+  Future<String> fetchPurchaseShortageExportUrl({required String runDate}) {
+    return remote.fetchPurchaseShortageExportUrl(runDate: runDate);
+  }
+
+  @override
   Future<int> forEachPurchaseShortageBranchStock({
     required String runDate,
     required FutureOr<void> Function(Map<String, dynamic> row) onRow,

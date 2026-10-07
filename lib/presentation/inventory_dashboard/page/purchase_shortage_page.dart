@@ -84,11 +84,8 @@ class _PurchaseShortagePageState extends State<PurchaseShortagePage> {
                 exportMessage: state.exportMessage,
                 rowsCount: rows.length,
                 onRefresh: _load,
-                onExport: state.purchaseShortageRows.isEmpty
-                    ? null
-                    : () => context.read<InventoryBloc>().add(
-                        ExportPurchaseShortage(widget.runDate),
-                      ),
+                onExport: () =>
+                    context.read<InventoryBloc>().add(ExportPurchaseShortage()),
               ),
               Expanded(
                 child: ListView(

@@ -14,7 +14,7 @@ import '../../../core/utils/assortment_export.dart';
 import '../../../core/utils/formulary_export.dart';
 import '../../../core/utils/max_adj_export.dart';
 import '../../../core/utils/mismatch_export.dart';
-import '../../../core/utils/purchase_shortage_excel_exporter.dart';
+import '../../../core/utils/purchase_shortage_report.dart';
 import '../../../core/utils/tma_export.dart';
 import '../../../core/utils/web_notification.dart';
 import '../../../domain/entities/additional_request_group.dart';
@@ -1797,40 +1797,32 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     ExportPurchaseShortage event,
     Emitter<InventoryState> emit,
   ) async {
-    if (state.purchaseShortageRows.isEmpty) return;
     if (state.isExporting) return;
 
     emit(
       state.copyWith(
         isExporting: true,
         purchaseShortageError: '',
-        exportMessage: 'Preparing export...',
+        exportMessage: 'Fetching today\'s report...',
       ),
     );
 
     try {
-      emit(state.copyWith(exportMessage: 'Generating shortage Excel...'));
-
-      await PurchaseShortageExcelExporter.export(
-        rows: state.purchaseShortageRows,
-        loadBranchStockRows: (onRow) {
-          return repo.forEachPurchaseShortageBranchStock(
-            runDate: event.runDate,
-            onRow: onRow,
-          );
-        },
-        onBranchStockProgress: (written, total) {
-          final message = total > 0
-              ? 'Writing branches stock CSV: $written / $total'
-              : 'Writing branches stock CSV: $written rows...';
-          emit(state.copyWith(exportMessage: message));
-        },
-      );
+      final today = PurchaseShortageReport.today();
+      final url = await repo.fetchPurchaseShortageExportUrl(runDate: today);
+      if (PurchaseShortageReport.today() != today) {
+        throw Exception(
+          'The date changed. Press Export again for today\'s report.',
+        );
+      }
+      html.AnchorElement(href: url)
+        ..setAttribute('download', PurchaseShortageReport.fileName(today))
+        ..click();
 
       emit(
         state.copyWith(
           isExporting: false,
-          exportMessage: 'Export completed: Shortage XLSX + Branches Stock CSV',
+          exportMessage: 'Download started: Purchase Shortage ($today)',
         ),
       );
     } catch (e) {

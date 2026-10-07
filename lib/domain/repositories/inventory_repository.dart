@@ -226,6 +226,7 @@ abstract class InventoryRepository {
   Future<List<Map<String, dynamic>>> fetchPurchaseShortage({
     required String runDate,
   });
+  Future<String> fetchPurchaseShortageExportUrl({required String runDate});
   Future<int> forEachPurchaseShortageBranchStock({
     required String runDate,
     required FutureOr<void> Function(Map<String, dynamic> row) onRow,
