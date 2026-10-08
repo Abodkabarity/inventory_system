@@ -1126,7 +1126,6 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     final branch = _text(record['branch_name']);
     if (branch.isEmpty ||
         !_zoneActivityBranchKeys.contains(_key(branch)) ||
-        _text(record['source']).toLowerCase() != 'inventory' ||
         !mounted) {
       return;
     }
@@ -1152,7 +1151,6 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
           await _client
               .from('stock_check_tasks')
               .select()
-              .eq('source', 'inventory')
               .neq('status', 'submitted')
               .inFilter('branch_name', chunk)
               .order('expires_at')
@@ -1252,7 +1250,6 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
             await _client
                 .from('stock_check_tasks')
                 .select()
-                .eq('source', 'inventory')
                 .inFilter('branch_name', chunk)
                 .order('sent_at', ascending: false)
                 .range(offset, offset + batchSize - 1),
@@ -1354,7 +1351,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
       return;
     }
     if (page == 6) {
-      if (_stockChecks.isEmpty) await _loadStockChecks();
+      await _loadStockChecks();
       return;
     }
     await _loadZoneReport(page);
