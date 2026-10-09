@@ -12,6 +12,7 @@ import '../../auth/bloc/auth_state.dart';
 import '../bloc/inventory_bloc.dart';
 import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
+import 'branch_tracker_badge_controller.dart';
 
 class InventoryDrawer extends StatefulWidget {
   const InventoryDrawer({super.key});
@@ -21,11 +22,11 @@ class InventoryDrawer extends StatefulWidget {
 }
 
 class _InventoryDrawerState extends State<InventoryDrawer> {
-  int _trackerCount = 0;
-  bool _trackerLoading = true;
+  late final BranchTrackerBadgeController _trackerBadge;
+  int get _trackerCount => _trackerBadge.count;
+  bool get _trackerLoading => _trackerBadge.loading;
 
   RealtimeChannel? _trackerChannel;
-  DateTime? _trackerLastSeenAt;
 
   bool _orderManagementExpanded = true;
   bool _operationsExpanded = true;
@@ -68,12 +69,29 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
   void initState() {
     super.initState();
 
+    _trackerBadge = BranchTrackerBadgeController(
+      loadCount: (since, inclusive) async {
+        final result = await Supabase.instance.client.rpc(
+          'get_branch_tracker_badge_count',
+          params: {
+            'p_since': since.toIso8601String(),
+            'p_inclusive': inclusive,
+          },
+        );
+        return (result as num).toInt();
+      },
+    )..addListener(_onTrackerBadgeChanged);
     _initTrackerBadge();
     _startTrackerRealtime();
   }
 
+  void _onTrackerBadgeChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    _trackerBadge.dispose();
     if (_trackerChannel != null) {
       Supabase.instance.client.removeChannel(_trackerChannel!);
     }
@@ -85,11 +103,11 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
     final preferences = await SharedPreferences.getInstance();
     final savedValue = preferences.getString(_trackerLastSeenKey);
 
-    _trackerLastSeenAt = savedValue == null
+    final lastSeenAt = savedValue == null
         ? null
         : DateTime.tryParse(savedValue);
 
-    await _loadTrackerCount();
+    await _trackerBadge.initialize(lastSeenAt);
   }
 
   Future<void> _markTrackerAsSeen() async {
@@ -100,50 +118,7 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
 
     if (!mounted) return;
 
-    setState(() {
-      _trackerLastSeenAt = now;
-      _trackerCount = 0;
-    });
-  }
-
-  Future<void> _loadTrackerCount() async {
-    try {
-      final since = _trackerLastSeenAt;
-
-      var query = Supabase.instance.client
-          .from('branch_change_tracker')
-          .select('source_id');
-
-      if (since != null) {
-        query = query.gt('changed_at', since.toIso8601String());
-      } else {
-        final now = DateTime.now();
-
-        final fromDate = DateTime(
-          now.year,
-          now.month,
-          now.day,
-        ).subtract(const Duration(days: 29));
-
-        query = query.gte('changed_at', fromDate.toIso8601String());
-      }
-
-      final response = await query;
-
-      if (!mounted) return;
-
-      setState(() {
-        _trackerCount = (response as List).length;
-        _trackerLoading = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-
-      setState(() {
-        _trackerCount = 0;
-        _trackerLoading = false;
-      });
-    }
+    _trackerBadge.markSeen(now);
   }
 
   void _startTrackerRealtime() {
@@ -155,33 +130,37 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'order_edits',
-          callback: (_) => _loadTrackerCount(),
+          callback: (_) => _trackerBadge.scheduleRefresh(),
         )
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'max_adj',
-          callback: (_) => _loadTrackerCount(),
+          callback: (_) => _trackerBadge.scheduleRefresh(),
         )
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'max_adj_log',
-          callback: (_) => _loadTrackerCount(),
+          callback: (_) => _trackerBadge.scheduleRefresh(),
         )
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'mismatch_log',
-          callback: (_) => _loadTrackerCount(),
+          callback: (_) => _trackerBadge.scheduleRefresh(),
         )
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'stk_mismatch',
-          callback: (_) => _loadTrackerCount(),
+          callback: (_) => _trackerBadge.scheduleRefresh(),
         )
-        .subscribe();
+        .subscribe((status, error) {
+          if (status == RealtimeSubscribeStatus.subscribed) {
+            _trackerBadge.scheduleRefresh();
+          }
+        });
   }
 
   @override
