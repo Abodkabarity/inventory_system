@@ -9,6 +9,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/fill_rate_kpi_excel_exporter_stub.dart'
     if (dart.library.html) '../../../core/utils/fill_rate_kpi_excel_exporter.dart';
 import '../../../data/datasources/remote/fill_rate_kpi_remote_ds.dart';
+import '../../widgets/app_date_range_picker_dialog.dart';
 
 class FillRateKpiPage extends StatefulWidget {
   final FillRateReport? previewReport;
@@ -177,14 +178,15 @@ class _FillRateKpiPageState extends State<FillRateKpiPage> {
   }
 
   Future<void> _pickDates() async {
-    final picked = await showDateRangePicker(
+    final picked = await showDialog<DateTimeRange>(
       context: context,
-      firstDate: DateTime(2024),
-      lastDate: DateUtils.dateOnly(
-        DateTime.now().subtract(const Duration(days: 1)),
+      builder: (_) => AppDateRangePickerDialog(
+        firstDate: DateTime(2024),
+        lastDate: DateUtils.dateOnly(
+          DateTime.now().subtract(const Duration(days: 1)),
+        ),
+        initialRange: DateTimeRange(start: _from, end: _to),
       ),
-      initialDateRange: DateTimeRange(start: _from, end: _to),
-      helpText: 'Select Fill Rate period',
     );
     if (picked == null) return;
     setState(() {

@@ -1,12 +1,11 @@
-import 'package:calendar_date_picker2/calendar_date_picker2.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 
-import '../../../core/theme/app_colors.dart';
 import '../bloc/inventory_bloc.dart';
 import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
+import '../../widgets/app_date_range_picker_dialog.dart';
 
 class MismatchTrackerDialog extends StatefulWidget {
   const MismatchTrackerDialog({super.key});
@@ -45,79 +44,22 @@ class _MismatchTrackerDialogState extends State<MismatchTrackerDialog> {
 
   /// ================= DATE PICKER =================
   Future<void> pickDateRange() async {
-    List<DateTime?> values = [from, to];
-
-    final result = await showDialog<List<DateTime?>>(
+    final result = await showDialog<DateTimeRange>(
       context: context,
-      builder: (context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: Container(
-            width: 480,
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      "Select Date Range",
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 10),
-
-                CalendarDatePicker2(
-                  config: CalendarDatePicker2Config(
-                    calendarType: CalendarDatePicker2Type.range,
-                    selectedDayHighlightColor: AppColors.primaryColor,
-                  ),
-                  value: values,
-                  onValueChanged: (dates) => values = dates,
-                ),
-
-                const SizedBox(height: 10),
-
-                ElevatedButton(
-                  onPressed: () {
-                    if (values.isNotEmpty && values.first != null) {
-                      final start = values.first!;
-                      final end = (values.length > 1 && values.last != null)
-                          ? values.last!
-                          : start;
-
-                      Navigator.pop(context, [start, end]);
-                    }
-                  },
-                  child: const Text("Apply"),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+      builder: (_) => AppDateRangePickerDialog(
+        initialRange: DateTimeRange(start: from, end: to),
+        lastDate: DateTime(9999),
+        allowSingleDay: true,
+      ),
     );
-
-    if (result != null) {
-      setState(() {
-        from = result.first!;
-        to = result.length > 1 ? result.last! : result.first!;
-      });
-
-      _load();
-    }
+    if (result == null || !mounted) return;
+    final sameRange = DateUtils.isSameDay(result.start, from) &&
+        DateUtils.isSameDay(result.end, to);
+    setState(() {
+      from = sameRange ? from : result.start;
+      to = sameRange ? to : result.end;
+    });
+    _load();
   }
 
   @override

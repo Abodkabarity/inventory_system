@@ -6,6 +6,8 @@ import 'dart:typed_data';
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
 
 import '../../domain/entities/stock_check_task.dart';
+import '../../domain/entities/stock_check_campaign.dart';
+import '../../domain/entities/stock_check_kpi_comparison.dart';
 
 const double _stockCheckAccuracyTolerance = 0.01;
 
@@ -67,6 +69,143 @@ class StockCheckProjectComparisonExportRow {
 }
 
 class StockCheckExcelExporter {
+  static Future<void> exportQuarterlyKpi({
+    required StockCheckKpiComparison comparison,
+    required StockCheckCampaign previous,
+    required StockCheckCampaign current,
+  }) async {
+    final workbook = xlsio.Workbook(2);
+    final summary = workbook.worksheets[0]..name = 'Quarterly KPI';
+    final details = workbook.worksheets[1]..name = 'All Item Pairs';
+    const summaryHeaders = [
+      'Branch',
+      'Baseline period',
+      'Baseline campaign',
+      'Baseline sender',
+      'Current period',
+      'Current campaign',
+      'Current sender',
+      'Comparable pairs',
+      'Baseline accuracy %',
+      'Current accuracy %',
+      'Change pp',
+      'Added',
+      'Removed',
+      'Awaiting counts',
+    ];
+    const detailHeaders = [
+      'Branch',
+      'Item Code',
+      'Item Name',
+      'Baseline period',
+      'Baseline system',
+      'Baseline actual',
+      'Baseline variance',
+      'Baseline status',
+      'Current period',
+      'Current system',
+      'Current actual',
+      'Current variance',
+      'Current status',
+      'Comparable',
+      'Result',
+    ];
+    _writeHeader(summary, summaryHeaders, '#142D4E');
+    _writeHeader(details, detailHeaders, '#087E8B');
+    var index = 2;
+    for (final entry in comparison.branches.entries) {
+      final r = entry.value;
+      _writeRow(
+        summary,
+        index++,
+        [
+          entry.key,
+          previous.period,
+          previous.title,
+          previous.senderLabel,
+          current.period,
+          current.title,
+          current.senderLabel,
+          r.comparable.length,
+          r.previousAccuracy ?? '',
+          r.currentAccuracy ?? '',
+          r.delta ?? '',
+          r.items.where((e) => e.previous == null).length,
+          r.items.where((e) => e.current == null).length,
+          r.items
+              .where(
+                (e) => e.previous != null && e.current != null && !e.comparable,
+              )
+              .length,
+        ],
+        leftColumns: {1, 3, 4, 6, 7},
+      );
+    }
+    index = 2;
+    for (final item in comparison.items) {
+      _writeRow(
+        details,
+        index++,
+        [
+          item.branch,
+          item.code,
+          item.name,
+          previous.period,
+          item.previous?.systemQty ?? '',
+          item.previous?.actualQty ?? '',
+          item.previous?.variance ?? '',
+          item.previous?.status ?? 'Not included',
+          current.period,
+          item.current?.systemQty ?? '',
+          item.current?.actualQty ?? '',
+          item.current?.variance ?? '',
+          item.current?.status ?? 'Not included',
+          item.comparable ? 'Yes' : 'No',
+          item.result,
+        ],
+        leftColumns: {1, 2, 3, 8, 13, 15},
+      );
+    }
+    _setColumnWidths(summary, summaryHeaders, {
+      'Branch': 28,
+      'Baseline campaign': 40,
+      'Current campaign': 40,
+      'Baseline sender': 24,
+      'Current sender': 24,
+    });
+    _setColumnWidths(details, detailHeaders, {
+      'Branch': 28,
+      'Item Code': 20,
+      'Item Name': 48,
+      'Result': 22,
+    });
+    summary.autoFilters.filterRange = summary.getRangeByIndex(
+      1,
+      1,
+      comparison.branches.length + 1,
+      summaryHeaders.length,
+    );
+    details.autoFilters.filterRange = details.getRangeByIndex(
+      1,
+      1,
+      comparison.items.length + 1,
+      detailHeaders.length,
+    );
+    summary.getRangeByName('A2').freezePanes();
+    details.getRangeByName('A2').freezePanes();
+    final bytes = workbook.saveAsStream();
+    workbook.dispose();
+    final blob = html.Blob([Uint8List.fromList(bytes)]);
+    final url = html.Url.createObjectUrlFromBlob(blob);
+    html.AnchorElement(href: url)
+      ..setAttribute(
+        'download',
+        'KPI_${_safe(previous.period)}_vs_${_safe(current.period)}.xlsx',
+      )
+      ..click();
+    html.Url.revokeObjectUrl(url);
+  }
+
   static Future<void> export({
     required List<StockCheckTask> rows,
     required String title,

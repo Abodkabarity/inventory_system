@@ -17,7 +17,10 @@ import 'package:xml/xml.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/stock_check_excel_exporter.dart';
 import '../../../domain/entities/stock_check_task.dart';
+import '../../../domain/entities/stock_check_campaign.dart';
+import '../../../data/datasources/remote/stock_check_workspace_remote_ds.dart';
 import '../../orders/widgets/branch_stock_check_page.dart';
+import '../../widgets/app_date_range_picker_dialog.dart';
 
 const _storeStockCheckDestination = 'STORE';
 const double _stockCheckAccuracyTolerance = 0.01;
@@ -36,6 +39,7 @@ class _BranchEmailContact {
 
 class StockCheckPage extends StatefulWidget {
   final String runDate;
+  final SupabaseClient? client;
   final String source;
   final String sourceTitle;
   final int storeInboxPendingCount;
@@ -45,6 +49,7 @@ class StockCheckPage extends StatefulWidget {
   const StockCheckPage({
     super.key,
     required this.runDate,
+    this.client,
     this.source = 'inventory',
     this.sourceTitle = 'Stock Check',
     this.storeInboxPendingCount = 0,
@@ -57,17 +62,23 @@ class StockCheckPage extends StatefulWidget {
 }
 
 class _StockCheckPageState extends State<StockCheckPage> {
-  final _client = Supabase.instance.client;
+  late final _client = widget.client ?? Supabase.instance.client;
+  late final _workspace = StockCheckWorkspaceRemoteDs(_client);
   final _titleController = TextEditingController();
 
   final _items = <_StockCheckItem>[];
   final _importRows = <_StockCheckDraftRow>[];
   final _selectedBranches = <String>{};
   bool _showStoreInbox = false;
+  bool _showComposer = false;
   String _sentSourceFilter = 'inventory';
   List<String> _branches = [];
   Map<String, _BranchEmailContact> _branchContacts = {};
-  List<StockCheckTask> _sentRows = [];
+  List<StockCheckCampaign> _campaigns = [];
+  final Map<String, List<StockCheckTask>> _detailRows = {};
+  String? _loadingBatchId;
+  String _detailError = '';
+  bool _analysisLoading = false;
   List<StockCheckTask> _visibleDetailRows = [];
   int _sentRowsVersion = 0;
   int? _batchesCacheKey;
@@ -81,6 +92,8 @@ class _StockCheckPageState extends State<StockCheckPage> {
   late DateTime _deadlineTo;
   bool _loading = true;
   bool _sending = false;
+  bool _refreshing = false;
+  String? _editingBatchId;
   bool _exporting = false;
   String? _deletingBatchId;
   bool _includeBarcodeStickerCheck = false;
@@ -109,7 +122,11 @@ class _StockCheckPageState extends State<StockCheckPage> {
     ).add(const Duration(days: 1));
     _showStoreInbox = _hasStoreInbox && widget.initialShowStoreInbox;
     _sentSourceFilter = widget.source.trim().toLowerCase();
-    _titleController.text = '${widget.sourceTitle} ${widget.runDate}';
+    final titleDate = DateTime.tryParse(widget.runDate);
+    final formattedTitleDate = titleDate == null
+        ? widget.runDate
+        : '${titleDate.day.toString().padLeft(2, '0')}-${titleDate.month.toString().padLeft(2, '0')}-${titleDate.year}';
+    _titleController.text = '${widget.sourceTitle} $formattedTitleDate';
     _load();
   }
 
@@ -131,42 +148,22 @@ class _StockCheckPageState extends State<StockCheckPage> {
 
   Future<void> _load() async {
     setState(() {
-      _loading = true;
+      _refreshing = true;
       _error = '';
     });
     try {
-      List<dynamic> branchesRes;
-      try {
-        branchesRes = await _client
-            .from('branches')
-            .select('branch_name,email,zone_manager,zone_manager_email')
-            .eq('is_active', true)
-            .order('branch_name');
-      } catch (_) {
-        branchesRes = await _client
-            .from('branches')
-            .select('branch_name,email')
-            .eq('is_active', true)
-            .order('branch_name');
-      }
-
-      var sentRows = <StockCheckTask>[];
+      final branchesFuture = _fetchBranches();
+      final campaignsFuture = _workspace.campaigns(
+        _canSendToStore ? ['inventory', 'store'] : [widget.source],
+      );
+      final branchesRes = await branchesFuture;
       String tableError = '';
+      var campaigns = <StockCheckCampaign>[];
       try {
-        final rows = await _client
-            .from('stock_check_tasks')
-            .select()
-            .inFilter(
-              'source',
-              _canSendToStore ? ['inventory', 'store'] : [widget.source],
-            )
-            .order('sent_at', ascending: false);
-        sentRows = List<Map<String, dynamic>>.from(
-          rows,
-        ).map(StockCheckTask.fromMap).toList();
+        campaigns = await campaignsFuture;
       } catch (e) {
         tableError =
-            'Stock check table is not ready. Run supabase/sql/stock_check_tasks.sql first.';
+            'Stock check summaries are not ready. Apply the stock check workspace migration first.';
       }
 
       if (!mounted) return;
@@ -200,36 +197,43 @@ class _StockCheckPageState extends State<StockCheckPage> {
         });
         _branches = destinations;
         _branchContacts = branchContacts;
-        _sentRows = sentRows;
+        _campaigns = campaigns;
+        _workspace.invalidate();
+        _detailRows.clear();
+        _loadingBatchId = null;
+        _detailError = '';
         _sentRowsVersion++;
         _batchesCacheKey = null;
         _batchesCache = null;
-        final visibleSentRows = sentRows.where((row) {
-          return row.source.trim().toLowerCase() ==
-              _sentSourceFilter.trim().toLowerCase();
-        }).toList();
-        if (_selectedBatchId == null ||
-            !visibleSentRows.any((row) => row.batchId == _selectedBatchId)) {
-          _selectedBatchId = visibleSentRows.isEmpty
-              ? null
-              : visibleSentRows.first.batchId;
-        }
-        final visibleBatchIds = visibleSentRows
-            .map((row) => row.batchId)
-            .toSet();
-        _analysisBatchIds.removeWhere((id) => !visibleBatchIds.contains(id));
-        if (_analysisBatchIds.isEmpty && _selectedBatchId != null) {
-          _analysisBatchIds.add(_selectedBatchId!);
-        }
+        _selectedBatchId = null;
+        _analysisBatchIds.clear();
         _error = tableError;
         _loading = false;
+        _refreshing = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e.toString();
         _loading = false;
+        _refreshing = false;
       });
+    }
+  }
+
+  Future<List<dynamic>> _fetchBranches() async {
+    try {
+      return await _client
+          .from('branches')
+          .select('branch_name,email,zone_manager,zone_manager_email')
+          .eq('is_active', true)
+          .order('branch_name');
+    } catch (_) {
+      return _client
+          .from('branches')
+          .select('branch_name,email')
+          .eq('is_active', true)
+          .order('branch_name');
     }
   }
 
@@ -320,12 +324,13 @@ class _StockCheckPageState extends State<StockCheckPage> {
   }
 
   Future<void> _send() async {
+    if (_sending) return;
     final title = _titleController.text.trim();
     final draftRows = _buildDraftRows();
     if (title.isEmpty || draftRows.isEmpty) {
       setState(() {
         _error =
-            'Add a title, choose destinations, and choose/import products. CSV requires item_code,item_name; branch is optional.';
+            'Add a title, choose branches, and choose/import products. CSV requires item_code,item_name; branch is optional.';
       });
       return;
     }
@@ -349,6 +354,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
       _message = '';
     });
     try {
+      final sender = await StockCheckWorkspaceRemoteDs(_client).currentSender();
       final batchId = const Uuid().v4();
       final now = DateTime.now().toIso8601String();
       final expiresAt = _deadlineTo.toIso8601String();
@@ -359,6 +365,10 @@ class _StockCheckPageState extends State<StockCheckPage> {
           'batch_id': batchId,
           'title': title,
           'source': widget.source,
+          if (sender.name.isNotEmpty) ...{
+            'sender_user_id': sender.id,
+            'sender_name': sender.name,
+          },
           'run_date': widget.runDate,
           'branch_name': row.branchName,
           'item_code': row.itemCode,
@@ -379,14 +389,38 @@ class _StockCheckPageState extends State<StockCheckPage> {
         });
       }
       await _client.from('stock_check_tasks').insert(payload);
-      _items.clear();
-      _importRows.clear();
-      await _load();
       if (!mounted) return;
       setState(() {
+        _items.clear();
+        _importRows.clear();
+        _campaigns.insert(
+          0,
+          StockCheckCampaign({
+            'batch_id': batchId,
+            'title': title,
+            'source': widget.source,
+            'sent_at': now,
+            'expires_at': expiresAt,
+            'total': draftRows.length,
+            'submitted': 0,
+            'branches': sentBranchCount,
+            'products': draftRows.map((row) => row.itemCode).toSet().length,
+            'sender_user_id': sender.id,
+            'sender_name': sender.name,
+          }),
+        );
+        _sentRowsVersion++;
+        _batchesCacheKey = null;
+        _batchesCache = null;
         _message = 'Stock check sent to $sentBranchCount branch(es).';
         _sending = false;
+        _showComposer = false;
       });
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          content: Text('Stock check sent to $sentBranchCount branch(es).'),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -432,14 +466,16 @@ class _StockCheckPageState extends State<StockCheckPage> {
       await _client.from('stock_check_tasks').delete().eq('batch_id', batch.id);
       if (!mounted) return;
       setState(() {
-        _sentRows.removeWhere((row) => row.batchId == batch.id);
+        _campaigns.removeWhere((campaign) => campaign.id == batch.id);
+        _detailRows.remove(batch.id);
+        _workspace.invalidate();
         _sentRowsVersion++;
         _batchesCacheKey = null;
         _batchesCache = null;
         if (_selectedBatchId == batch.id) {
-          final batches = _batches();
-          _selectedBatchId = batches.isEmpty ? null : batches.first.id;
+          _selectedBatchId = null;
         }
+        _analysisBatchIds.remove(batch.id);
         _message = 'Stock check "${batch.title}" deleted.';
         _deletingBatchId = null;
       });
@@ -453,6 +489,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
   }
 
   Future<void> _editBatchDeadline(_StockCheckBatch batch) async {
+    if (_editingBatchId != null) return;
     final now = DateTime.now();
     final initialStart = batch.sentAt ?? now;
     final initialEnd =
@@ -489,6 +526,10 @@ class _StockCheckPageState extends State<StockCheckPage> {
       });
       return;
     }
+    setState(() {
+      _editingBatchId = batch.id;
+      _error = '';
+    });
     try {
       await _client
           .from('stock_check_tasks')
@@ -497,9 +538,23 @@ class _StockCheckPageState extends State<StockCheckPage> {
             'updated_at': DateTime.now().toIso8601String(),
           })
           .eq('batch_id', batch.id);
-      await _load();
       if (!mounted) return;
       setState(() {
+        final index = _campaigns.indexWhere((c) => c.id == batch.id);
+        if (index >= 0) {
+          _campaigns[index] = StockCheckCampaign({
+            ..._campaigns[index].data,
+            'expires_at': expiresAt.toIso8601String(),
+          });
+        }
+        if (_detailRows.containsKey(batch.id)) {
+          _detailRows[batch.id] = _detailRows[batch.id]!
+              .map((row) => row.copyWith(expiresAt: expiresAt))
+              .toList();
+        }
+        _sentRowsVersion++;
+        _batchesCacheKey = null;
+        _batchesCache = null;
         _message =
             'Deadline updated for "${batch.title}" to ${_fmtDate(expiresAt)}.';
         _error = '';
@@ -510,6 +565,8 @@ class _StockCheckPageState extends State<StockCheckPage> {
         _error = e.toString();
         _message = '';
       });
+    } finally {
+      if (mounted) setState(() => _editingBatchId = null);
     }
   }
 
@@ -523,20 +580,11 @@ class _StockCheckPageState extends State<StockCheckPage> {
     if (_batchesCacheKey == cacheKey && _batchesCache != null) {
       return _batchesCache!;
     }
-    final byBatch = <String, List<StockCheckTask>>{};
-    for (final row in _filteredSentRows()) {
-      byBatch.putIfAbsent(row.batchId, () => []).add(row);
-    }
-    final batches = byBatch.entries
-        .map((entry) => _StockCheckBatch(id: entry.key, rows: entry.value))
+    final batches = _campaigns
+        .where((campaign) => _campaignVisible(campaign, _sentSourceFilter))
+        .map((campaign) => _StockCheckBatch(campaign))
         .toList();
     batches.sort((a, b) {
-      final pending = (b.pending > 0 ? 1 : 0).compareTo(a.pending > 0 ? 1 : 0);
-      if (pending != 0) return pending;
-      final expiredPending = (b.pending > 0 && b.isExpired ? 1 : 0).compareTo(
-        a.pending > 0 && a.isExpired ? 1 : 0,
-      );
-      if (expiredPending != 0) return expiredPending;
       final aDate = a.sentAt ?? DateTime.fromMillisecondsSinceEpoch(0);
       final bDate = b.sentAt ?? DateTime.fromMillisecondsSinceEpoch(0);
       return bDate.compareTo(aDate);
@@ -546,29 +594,19 @@ class _StockCheckPageState extends State<StockCheckPage> {
     return batches;
   }
 
-  List<StockCheckTask> _filteredSentRows() {
-    return _sentRows.where((row) {
-      if (row.source.trim().toLowerCase() !=
-          _sentSourceFilter.trim().toLowerCase()) {
-        return false;
-      }
-      final sentAt = row.sentAt;
-      if (sentAt == null) return false;
-      return !sentAt.isBefore(_sentFrom) && !sentAt.isAfter(_sentTo);
-    }).toList();
+  bool _campaignVisible(StockCheckCampaign campaign, String source) {
+    if (campaign.source.trim().toLowerCase() != source.trim().toLowerCase()) {
+      return false;
+    }
+    final sentAt = campaign.sentAt;
+    if (sentAt == null) return false;
+    return !sentAt.isBefore(_sentFrom) && !sentAt.isAfter(_sentTo);
   }
 
   List<_StockCheckBatch> _sourceBatches(String source) {
-    final byBatch = <String, List<StockCheckTask>>{};
-    for (final row in _sentRows) {
-      if (row.source.trim().toLowerCase() != source) continue;
-      final sentAt = row.sentAt;
-      if (sentAt == null) continue;
-      if (sentAt.isBefore(_sentFrom) || sentAt.isAfter(_sentTo)) continue;
-      byBatch.putIfAbsent(row.batchId, () => []).add(row);
-    }
-    return byBatch.entries
-        .map((entry) => _StockCheckBatch(id: entry.key, rows: entry.value))
+    return _campaigns
+        .where((campaign) => _campaignVisible(campaign, source))
+        .map((campaign) => _StockCheckBatch(campaign))
         .toList();
   }
 
@@ -583,30 +621,26 @@ class _StockCheckPageState extends State<StockCheckPage> {
   }
 
   List<StockCheckTask> _selectedBatchRows(List<_StockCheckBatch> batches) {
-    if (batches.isEmpty) return const [];
-    final selected = batches.where((e) => e.id == _selectedBatchId);
-    return selected.isEmpty ? batches.first.rows : selected.first.rows;
+    return _detailRows[_selectedBatchId] ?? const [];
   }
 
   List<StockCheckTask> _selectedAnalysisRows(List<_StockCheckBatch> batches) {
     if (batches.isEmpty) return const [];
-    final ids = _analysisBatchIds.isEmpty
-        ? {_selectedBatchId ?? batches.first.id}
-        : _analysisBatchIds;
-    return batches
-        .where((batch) => ids.contains(batch.id))
-        .expand((batch) => batch.rows)
+    return _analysisBatchIds
+        .expand((id) => _detailRows[id] ?? const <StockCheckTask>[])
         .toList();
   }
 
   @override
   Widget build(BuildContext context) {
-    final visibleSourceRows = _sentRows.where((row) {
-      return row.source.trim().toLowerCase() ==
-          _sentSourceFilter.trim().toLowerCase();
-    }).toList();
-    final pending = visibleSourceRows.where((e) => e.isPending).length;
-    final submitted = visibleSourceRows.where((e) => e.isSubmitted).length;
+    final visibleCampaigns = _campaigns.where(
+      (campaign) => _campaignVisible(campaign, _sentSourceFilter),
+    );
+    final pending = visibleCampaigns.fold<int>(0, (sum, c) => sum + c.pending);
+    final submitted = visibleCampaigns.fold<int>(
+      0,
+      (sum, c) => sum + c.submitted,
+    );
     final batches = _batches();
     final selectedRows = _selectedBatchRows(batches);
     final selectedAnalysisRows = _selectedAnalysisRows(batches);
@@ -617,113 +651,106 @@ class _StockCheckPageState extends State<StockCheckPage> {
         child: Stack(
           children: [
             Positioned.fill(
-              child: _loading
-                  ? const Center(
-                      child: CircularProgressIndicator(
-                        color: AppColors.primaryColor,
-                      ),
-                    )
-                  : LayoutBuilder(
-                      builder: (context, constraints) {
-                        final header = _Header(
-                          title: widget.sourceTitle,
-                          pending: pending,
-                          submitted: submitted,
-                          total: visibleSourceRows.length,
-                          onRefresh: _load,
-                          exporting: _exporting,
-                          onExport: selectedRows.isEmpty || _exporting
-                              ? null
-                              : () => _exportSelectedStockCheckRows(
-                                  selectedRows: selectedRows,
-                                  selectedAnalysisRows: selectedAnalysisRows,
-                                  analysis: _showAnalysis,
-                                ),
-                        );
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final header = _Header(
+                    title: widget.sourceTitle,
+                    pending: pending,
+                    submitted: submitted,
+                    total: pending + submitted,
+                    onCreate: _showAnalysis || _showStoreInbox
+                        ? null
+                        : () => setState(() {
+                            _showComposer = true;
+                            _message = '';
+                            _error = '';
+                          }),
+                    exporting: _exporting,
+                    onExport: selectedRows.isEmpty || _exporting
+                        ? null
+                        : () => _exportSelectedStockCheckRows(
+                            selectedRows: selectedRows,
+                            selectedAnalysisRows: selectedAnalysisRows,
+                            analysis: _showAnalysis,
+                          ),
+                  );
 
-                        if (_showStoreInbox && _hasStoreInbox) {
-                          return Padding(
-                            padding: const EdgeInsets.all(22),
-                            child: Column(
-                              children: [
-                                _StockCheckTopTabs(
-                                  analysis: _showAnalysis,
-                                  onChanged: (value) {
-                                    setState(() => _showAnalysis = value);
-                                  },
-                                ),
-                                const SizedBox(height: 16),
-                                header,
-                                const SizedBox(height: 16),
-                                _StoreStockCheckTabs(
-                                  showInbox: _showStoreInbox,
-                                  pendingCount: widget.storeInboxPendingCount,
-                                  overdueCount: widget.storeInboxOverdueCount,
-                                  onChanged: (value) {
-                                    setState(() => _showStoreInbox = value);
-                                  },
-                                ),
-                                const SizedBox(height: 10),
-                                Expanded(
-                                  child: BranchStockCheckPage(
-                                    branchName: _storeStockCheckDestination,
-                                    embedded: true,
-                                    onBack: () =>
-                                        setState(() => _showStoreInbox = false),
-                                  ),
-                                ),
-                              ],
+                  if (_showStoreInbox && _hasStoreInbox) {
+                    return Padding(
+                      padding: const EdgeInsets.all(22),
+                      child: Column(
+                        children: [
+                          _StockCheckTopTabs(
+                            analysis: _showAnalysis,
+                            onChanged: (value) {
+                              setState(() => _showAnalysis = value);
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          header,
+                          const SizedBox(height: 16),
+                          _StoreStockCheckTabs(
+                            showInbox: _showStoreInbox,
+                            pendingCount: widget.storeInboxPendingCount,
+                            overdueCount: widget.storeInboxOverdueCount,
+                            onChanged: (value) {
+                              setState(() => _showStoreInbox = value);
+                            },
+                          ),
+                          const SizedBox(height: 10),
+                          Expanded(
+                            child: BranchStockCheckPage(
+                              branchName: _storeStockCheckDestination,
+                              embedded: true,
+                              onBack: () =>
+                                  setState(() => _showStoreInbox = false),
                             ),
-                          );
-                        }
+                          ),
+                        ],
+                      ),
+                    );
+                  }
 
-                        final workspaceHeight = math.max(
-                          680.0,
-                          constraints.maxHeight * .76,
-                        );
-                        final analysisHeight = math.max(
-                          760.0,
-                          constraints.maxHeight - 150,
-                        );
-                        return SingleChildScrollView(
-                          padding: const EdgeInsets.all(22),
-                          child: Column(
-                            children: [
-                              _StockCheckTopTabs(
-                                analysis: _showAnalysis,
-                                onChanged: (value) {
-                                  setState(() {
-                                    _showAnalysis = value;
-                                    if (_showAnalysis &&
-                                        _analysisBatchIds.isEmpty &&
-                                        batches.isNotEmpty) {
-                                      _analysisBatchIds.add(
-                                        _selectedBatchId ?? batches.first.id,
-                                      );
-                                    }
-                                  });
-                                },
-                              ),
-                              const SizedBox(height: 16),
-                              if (!_showAnalysis) ...[
-                                header,
-                                const SizedBox(height: 16),
-                              ],
-                              if (_hasStoreInbox) ...[
-                                _StoreStockCheckTabs(
-                                  showInbox: _showStoreInbox,
-                                  pendingCount: widget.storeInboxPendingCount,
-                                  overdueCount: widget.storeInboxOverdueCount,
-                                  onChanged: (value) {
-                                    setState(() => _showStoreInbox = value);
-                                  },
-                                ),
-                                const SizedBox(height: 16),
-                              ],
-                              if (_showAnalysis)
-                                SizedBox(
-                                  height: analysisHeight,
-                                  child: _StockCheckAnalysisPanel(
+                  final workspaceHeight = math.max(
+                    680.0,
+                    constraints.maxHeight * .76,
+                  );
+                  final analysisHeight = math.max(
+                    760.0,
+                    constraints.maxHeight - 150,
+                  );
+                  return SingleChildScrollView(
+                    padding: const EdgeInsets.all(22),
+                    child: Column(
+                      children: [
+                        _StockCheckTopTabs(
+                          analysis: _showAnalysis,
+                          onChanged: (value) {
+                            setState(() => _showAnalysis = value);
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        if (!_showAnalysis) ...[
+                          header,
+                          const SizedBox(height: 16),
+                        ],
+                        if (_hasStoreInbox) ...[
+                          _StoreStockCheckTabs(
+                            showInbox: _showStoreInbox,
+                            pendingCount: widget.storeInboxPendingCount,
+                            overdueCount: widget.storeInboxOverdueCount,
+                            onChanged: (value) {
+                              setState(() => _showStoreInbox = value);
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                        if (_showAnalysis)
+                          SizedBox(
+                            height: analysisHeight,
+                            child: _analysisLoading
+                                ? _detailWaiting('Loading selected projects...')
+                                : _StockCheckAnalysisPanel(
                                     batches: batches,
                                     selectedBatchIds: _analysisBatchIds,
                                     rows: selectedAnalysisRows,
@@ -731,25 +758,92 @@ class _StockCheckPageState extends State<StockCheckPage> {
                                     onSelectBatches: () =>
                                         _openAnalysisBatchPicker(batches),
                                   ),
-                                )
-                              else ...[
-                                _buildComposer(),
-                                const SizedBox(height: 16),
-                                SizedBox(
-                                  height: workspaceHeight,
-                                  child: _buildWorkspace(
-                                    batches,
-                                    selectedRows,
-                                    selectedAnalysisRows,
-                                  ),
-                                ),
-                              ],
-                            ],
+                          )
+                        else ...[
+                          SizedBox(
+                            height: workspaceHeight,
+                            child: _buildWorkspace(
+                              batches,
+                              selectedRows,
+                              selectedAnalysisRows,
+                            ),
                           ),
-                        );
-                      },
+                        ],
+                      ],
                     ),
+                  );
+                },
+              ),
             ),
+            Positioned.fill(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 240),
+                reverseDuration: const Duration(milliseconds: 180),
+                transitionBuilder: (child, animation) => FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position:
+                        Tween<Offset>(
+                          begin: const Offset(.18, 0),
+                          end: Offset.zero,
+                        ).animate(
+                          CurvedAnimation(
+                            parent: animation,
+                            curve: Curves.easeOutCubic,
+                          ),
+                        ),
+                    child: child,
+                  ),
+                ),
+                child: _showComposer
+                    ? _buildComposerOverlay()
+                    : const SizedBox.shrink(key: ValueKey('composer-closed')),
+              ),
+            ),
+            if (_refreshing || _sending || _editingBatchId != null) ...[
+              const Positioned.fill(
+                child: ModalBarrier(
+                  color: Color(0x66F4F7FB),
+                  dismissible: false,
+                ),
+              ),
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 18,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x220F172A), blurRadius: 24),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2.5),
+                      ),
+                      const SizedBox(width: 14),
+                      Text(
+                        _sending
+                            ? 'Sending stock check...'
+                            : _editingBatchId != null
+                            ? 'Updating deadline...'
+                            : _loading
+                            ? 'Opening stock checks...'
+                            : 'Refreshing stock checks...',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
             if (_exporting)
               const Positioned.fill(child: _StockCheckExportOverlay()),
           ],
@@ -792,131 +886,268 @@ class _StockCheckPageState extends State<StockCheckPage> {
     }
   }
 
-  Widget _buildComposer() {
-    return _Panel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: _PanelTitle(
-                  icon: Icons.fact_check_rounded,
-                  title: 'Create Stock Check',
-                ),
-              ),
-              SizedBox(
-                width: 206,
-                child: _BarcodeStickerOption(
-                  value: _includeBarcodeStickerCheck,
-                  onChanged: (value) {
-                    setState(() => _includeBarcodeStickerCheck = value);
-                  },
-                ),
-              ),
-              const SizedBox(width: 10),
-              SizedBox(
-                width: 218,
-                child: _ItemStatusOption(
-                  enabled: _includeItemStatus,
-                  optionCount: _itemStatusOptions.length,
-                  onTap: _configureItemStatus,
-                ),
-              ),
-              const SizedBox(width: 10),
-              OutlinedButton.icon(
-                onPressed: _importProductsFile,
-                icon: const Icon(
-                  Icons.upload_file_rounded,
-                  color: AppColors.secondaryColor,
-                ),
-                label: const Text(
-                  'Import Items',
-                  style: TextStyle(
-                    color: AppColors.secondaryColor,
-                    fontWeight: FontWeight.bold,
+  Widget _buildComposerOverlay() {
+    final size = MediaQuery.sizeOf(context);
+    final panelWidth = size.width >= 1000
+        ? math.min(size.width * .52, 920.0)
+        : size.width * .94;
+    return Stack(
+      key: const ValueKey('composer-open'),
+      children: [
+        Positioned.fill(
+          child: ModalBarrier(
+            color: const Color(0x300F172A),
+            dismissible: !_sending,
+            onDismiss: _sending
+                ? null
+                : () => setState(() => _showComposer = false),
+          ),
+        ),
+        Positioned(
+          top: 0,
+          bottom: 0,
+          right: 0,
+          width: panelWidth,
+          child: Material(
+            key: const ValueKey('create-stock-check-side-panel'),
+            color: Colors.white,
+            elevation: 20,
+            clipBehavior: Clip.antiAlias,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(18),
+              bottomLeft: Radius.circular(18),
+            ),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 12, 14),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.fact_check_rounded,
+                        color: AppColors.primaryColor,
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Create New Stock Check',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                                color: Color(0xFF111827),
+                              ),
+                            ),
+                            SizedBox(height: 3),
+                            Text(
+                              'Set the branches, items and completion window.',
+                              style: TextStyle(color: Color(0xFF64748B)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Tooltip(
+                        message:
+                            'CSV or XLSX: item_code, item_name; branch is optional',
+                        child: panelWidth < 560
+                            ? IconButton.filled(
+                                tooltip: 'Import Items',
+                                onPressed: _importProductsFile,
+                                style: IconButton.styleFrom(
+                                  backgroundColor: AppColors.primaryColor,
+                                  foregroundColor: Colors.white,
+                                ),
+                                icon: const Icon(Icons.upload_file_rounded),
+                              )
+                            : FilledButton.icon(
+                                onPressed: _importProductsFile,
+                                icon: const Icon(Icons.upload_file_rounded),
+                                label: const Text('Import Items'),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: AppColors.primaryColor,
+                                  foregroundColor: Colors.white,
+                                  textStyle: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 13,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                              ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: 'Close create stock check',
+                        onPressed: _sending
+                            ? null
+                            : () => setState(() => _showComposer = false),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              FilledButton.icon(
-                onPressed: _sending ? null : _send,
-                icon: _sending
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.send_rounded),
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.primaryColor,
+                const Divider(height: 1),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(20),
+                    child: _buildComposer(),
+                  ),
                 ),
-                label: const Text('Send Stock Check'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                flex: 2,
-                child: TextField(
-                  controller: _titleController,
-                  decoration: _decoration('Stock check title'),
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                const Divider(height: 1),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: _sending
+                              ? null
+                              : () => setState(() => _showComposer = false),
+                          child: const Text(
+                            'Close',
+                            style: TextStyle(
+                              color: AppColors.secondaryColor,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: _sending ? null : _send,
+                          icon: const Icon(Icons.send_rounded),
+                          label: const Text('Send Stock Check'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.primaryColor,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _BranchPickerField(
-                  selectedCount: _selectedBranches.length,
-                  totalCount: _branches.length,
-                  preview: _branchPreviewText(),
-                  onTap: _branches.isEmpty ? () {} : _openBranchPicker,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _ProductPickerField(
-                  productCount: _items.length,
-                  importCount: _importRows.length,
-                  preview: _productPreviewText(),
-                  onTap: _openProductPicker,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _DeadlinePickerField(
-                  label:
-                      '${_fmtDate(_deadlineFrom)}  to  ${_fmtDate(_deadlineTo)}',
-                  onTap: _pickDeadlineRange,
-                ),
-              ),
-            ],
-          ),
-          if (_importRows.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            _ImportPreview(
-              rows: _importRows,
-              onClear: () => setState(() => _importRows.clear()),
+              ],
             ),
-          ],
-          if (_message.isNotEmpty || _error.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            if (_message.isNotEmpty) _Banner(message: _message, ok: true),
-            if (_error.isNotEmpty) _Banner(message: _error, ok: false),
-          ],
-          const SizedBox(height: 8),
-          const Text(
-            'Import columns: item_code, item_name. Optional column: branch. Supported: CSV, XLSX.',
-            style: TextStyle(
-              color: Color(0xFF64748B),
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildComposer() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Stock Check title',
+          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _titleController,
+          decoration: _decoration('Stock check title'),
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 22),
+        const Text(
+          'Branches and items',
+          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+        ),
+        const SizedBox(height: 10),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final destinations = KeyedSubtree(
+              key: const ValueKey('stock-check-destinations'),
+              child: _BranchPickerField(
+                selectedCount: _selectedBranches.length,
+                totalCount: _branches.length,
+                preview: _branchPreviewText(),
+                onTap: _branches.isEmpty ? () {} : _openBranchPicker,
+              ),
+            );
+            final items = KeyedSubtree(
+              key: const ValueKey('stock-check-items'),
+              child: _ProductPickerField(
+                productCount: _items.length,
+                importCount: _importRows.length,
+                preview: _productPreviewText(),
+                onTap: _openProductPicker,
+              ),
+            );
+            if (constraints.maxWidth < 560) {
+              return Column(
+                children: [destinations, const SizedBox(height: 12), items],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: destinations),
+                const SizedBox(width: 12),
+                Expanded(child: items),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+        _DeadlinePickerField(
+          label: '${_fmtDate(_deadlineFrom)}  to  ${_fmtDate(_deadlineTo)}',
+          onTap: _pickDeadlineRange,
+        ),
+        const SizedBox(height: 22),
+        const Divider(height: 1),
+        const SizedBox(height: 18),
+        const Text(
+          'Additional options',
+          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+        ),
+        const SizedBox(height: 10),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final barcode = _BarcodeStickerOption(
+              value: _includeBarcodeStickerCheck,
+              onChanged: (value) =>
+                  setState(() => _includeBarcodeStickerCheck = value),
+            );
+            final status = _ItemStatusOption(
+              enabled: _includeItemStatus,
+              optionCount: _itemStatusOptions.length,
+              onTap: _configureItemStatus,
+            );
+            if (constraints.maxWidth < 560) {
+              return Column(
+                children: [barcode, const SizedBox(height: 10), status],
+              );
+            }
+            return Row(
+              children: [
+                Expanded(child: barcode),
+                const SizedBox(width: 10),
+                Expanded(child: status),
+              ],
+            );
+          },
+        ),
+        if (_importRows.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _ImportPreview(
+            rows: _importRows,
+            onClear: () => setState(() => _importRows.clear()),
           ),
         ],
-      ),
+        if (_message.isNotEmpty || _error.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          if (_message.isNotEmpty) _Banner(message: _message, ok: true),
+          if (_error.isNotEmpty) _Banner(message: _error, ok: false),
+        ],
+      ],
     );
   }
 
@@ -935,7 +1166,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
-          width: 330,
+          width: 365,
           child: _Panel(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -956,6 +1187,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
                       setState(() {
                         _sentSourceFilter = value;
                         _selectedBatchId = null;
+                        _analysisBatchIds.clear();
                         _visibleDetailRows = [];
                       });
                     },
@@ -977,15 +1209,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
                         batch: batch,
                         selected: batch.id == effectiveSelectedBatchId,
                         deleting: _deletingBatchId == batch.id,
-                        onTap: () => setState(() {
-                          _selectedBatchId = batch.id;
-                          _visibleDetailRows = [];
-                          if (!_showAnalysis) {
-                            _analysisBatchIds
-                              ..clear()
-                              ..add(batch.id);
-                          }
-                        }),
+                        onTap: () => _selectBatch(batch),
                         canManage:
                             _sentSourceFilter == widget.source.toLowerCase(),
                         onEditDeadline: () => _editBatchDeadline(batch),
@@ -1008,6 +1232,31 @@ class _StockCheckPageState extends State<StockCheckPage> {
                   branchContacts: _branchContacts,
                   onSelectBatches: () => _openAnalysisBatchPicker(batches),
                 )
+              : _selectedBatchId == null
+              ? _detailWaiting(
+                  'Select a stock check to load its details.',
+                  loading: false,
+                )
+              : _loadingBatchId == _selectedBatchId
+              ? _detailWaiting('Loading stock check details...')
+              : _detailError.isNotEmpty
+              ? _Panel(
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(_detailError),
+                        const SizedBox(height: 12),
+                        TextButton(
+                          onPressed: () => _selectBatch(
+                            batches.firstWhere((b) => b.id == _selectedBatchId),
+                          ),
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
               : _StockCheckResultTable(
                   rows: selectedRows,
                   onFilteredRowsChanged: (rows) {
@@ -1022,14 +1271,77 @@ class _StockCheckPageState extends State<StockCheckPage> {
 
   void _replaceSentRow(StockCheckTask updated) {
     setState(() {
-      final index = _sentRows.indexWhere((row) => row.id == updated.id);
+      final rows = _detailRows[updated.batchId];
+      if (rows == null) return;
+      final index = rows.indexWhere((row) => row.id == updated.id);
       if (index >= 0) {
-        _sentRows[index] = updated;
+        rows[index] = updated;
+        final campaignIndex = _campaigns.indexWhere(
+          (c) => c.id == updated.batchId,
+        );
+        if (campaignIndex >= 0) {
+          final counted = rows.where(
+            (r) => r.isSubmitted && r.systemQty != null && r.actualQty != null,
+          );
+          _campaigns[campaignIndex] = StockCheckCampaign({
+            ..._campaigns[campaignIndex].data,
+            'submitted': rows.where((r) => r.isSubmitted).length,
+            'counted': counted.length,
+            'correct': counted
+                .where(
+                  (r) =>
+                      (r.variance ?? 0).abs() <= _stockCheckAccuracyTolerance,
+                )
+                .length,
+          });
+        }
         _sentRowsVersion++;
         _batchesCacheKey = null;
         _batchesCache = null;
       }
     });
+  }
+
+  Widget _detailWaiting(String message, {bool loading = true}) => _Panel(
+    child: Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (loading) ...[
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+          ],
+          Text(message, style: const TextStyle(fontWeight: FontWeight.w800)),
+        ],
+      ),
+    ),
+  );
+
+  Future<void> _selectBatch(_StockCheckBatch batch) async {
+    setState(() {
+      _selectedBatchId = batch.id;
+      _analysisBatchIds
+        ..clear()
+        ..add(batch.id);
+      _visibleDetailRows = [];
+      _detailError = '';
+      _loadingBatchId = _detailRows.containsKey(batch.id) ? null : batch.id;
+    });
+    if (_detailRows.containsKey(batch.id)) return;
+    try {
+      final rows = await _workspace.details(batch.id, batch.total);
+      if (!mounted) return;
+      setState(() {
+        _detailRows[batch.id] = rows;
+        if (_selectedBatchId == batch.id) _loadingBatchId = null;
+      });
+    } catch (e) {
+      if (!mounted || _selectedBatchId != batch.id) return;
+      setState(() {
+        _loadingBatchId = null;
+        _detailError = e.toString();
+      });
+    }
   }
 
   Future<void> _openAnalysisBatchPicker(List<_StockCheckBatch> batches) async {
@@ -1044,8 +1356,26 @@ class _StockCheckPageState extends State<StockCheckPage> {
     setState(() {
       _analysisBatchIds
         ..clear()
-        ..addAll(selected.isEmpty ? {batches.first.id} : selected);
+        ..addAll(selected);
+      _analysisLoading = selected.any((id) => !_detailRows.containsKey(id));
     });
+    try {
+      for (final batch in batches.where(
+        (batch) => selected.contains(batch.id),
+      )) {
+        if (_detailRows.containsKey(batch.id)) continue;
+        final rows = await _workspace.details(batch.id, batch.total);
+        if (!mounted) return;
+        _detailRows[batch.id] = rows;
+      }
+      if (mounted) setState(() => _analysisLoading = false);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _analysisLoading = false;
+        _error = e.toString();
+      });
+    }
   }
 
   InputDecoration _decoration(String hint) {
@@ -1069,9 +1399,9 @@ class _StockCheckPageState extends State<StockCheckPage> {
   }
 
   String _branchPreviewText() {
-    if (_branches.isEmpty) return 'No destinations loaded';
+    if (_branches.isEmpty) return 'No branches loaded';
     if (_selectedBranches.isEmpty) return '';
-    if (_selectedBranches.length == _branches.length) return 'All destinations';
+    if (_selectedBranches.length == _branches.length) return 'All branches';
     return _selectedBranches.take(3).join(', ') +
         (_selectedBranches.length > 3
             ? ' +${_selectedBranches.length - 3} more'
@@ -1108,7 +1438,8 @@ class _StockCheckPageState extends State<StockCheckPage> {
   Future<void> _openProductPicker() async {
     final selected = await showDialog<List<_StockCheckItem>>(
       context: context,
-      builder: (_) => _ProductPickerDialog(initiallySelected: _items),
+      builder: (_) =>
+          _ProductPickerDialog(client: _client, initiallySelected: _items),
     );
 
     if (selected == null || !mounted) return;
@@ -1143,9 +1474,10 @@ class _StockCheckPageState extends State<StockCheckPage> {
         59,
         59,
       );
-      final batches = _batches();
-      _selectedBatchId = batches.isEmpty ? null : batches.first.id;
+      _selectedBatchId = null;
+      _analysisBatchIds.clear();
     });
+    await _load();
   }
 
   Future<void> _pickDeadlineRange() async {
@@ -4949,21 +5281,25 @@ class _StockCheckDraftRow {
 }
 
 class _StockCheckBatch {
-  final String id;
-  final List<StockCheckTask> rows;
+  final StockCheckCampaign campaign;
 
-  _StockCheckBatch({required this.id, required this.rows});
+  _StockCheckBatch(this.campaign);
 
-  String get title => rows.isEmpty ? 'Stock Check' : rows.first.title;
-  DateTime? get sentAt => rows.isEmpty ? null : rows.first.sentAt;
-  DateTime? get expiresAt => rows.isEmpty ? null : rows.first.expiresAt;
+  String get id => campaign.id;
+  String get title => campaign.title;
+  String get creatorName =>
+      {'inventory', 'store'}.contains(campaign.source.trim().toLowerCase())
+      ? campaign.senderName
+      : '';
+  DateTime? get sentAt => campaign.sentAt;
+  DateTime? get expiresAt => campaign.expiresAt;
   bool get isExpired =>
       expiresAt != null && DateTime.now().isAfter(expiresAt!.toLocal());
-  int get total => rows.length;
-  late final int submitted = rows.where((row) => row.isSubmitted).length;
+  int get total => campaign.total;
+  int get submitted => campaign.submitted;
   int get pending => total - submitted;
-  late final int branches = rows.map((row) => row.branchName).toSet().length;
-  late final int products = rows.map((row) => row.itemCode).toSet().length;
+  int get branches => campaign.branches;
+  int get products => campaign.products;
 }
 
 class _StockCheckRowStats {
@@ -5553,8 +5889,8 @@ class _Header extends StatelessWidget {
   final int submitted;
   final int total;
   final bool exporting;
-  final VoidCallback onRefresh;
   final VoidCallback? onExport;
+  final VoidCallback? onCreate;
 
   const _Header({
     required this.title,
@@ -5562,8 +5898,8 @@ class _Header extends StatelessWidget {
     required this.submitted,
     required this.total,
     required this.exporting,
-    required this.onRefresh,
     required this.onExport,
+    required this.onCreate,
   });
 
   @override
@@ -5619,15 +5955,30 @@ class _Header extends StatelessWidget {
               ],
             ),
           ),
-          _Metric(label: 'Total', value: total),
-          _Metric(label: 'Pending', value: pending),
-          _Metric(label: 'Submitted', value: submitted),
-          IconButton.filledTonal(
-            tooltip: 'Refresh',
-            onPressed: onRefresh,
-            icon: const Icon(Icons.refresh_rounded),
+          _Metric(
+            label: 'Total',
+            value: total,
+            icon: Icons.layers_rounded,
+            color: const Color(0xFF2563EB),
+            background: const Color(0xFFEFF6FF),
+            border: const Color(0xFFBFDBFE),
           ),
-          const SizedBox(width: 8),
+          _Metric(
+            label: 'Pending',
+            value: pending,
+            icon: Icons.schedule_rounded,
+            color: const Color(0xFFB45309),
+            background: const Color(0xFFFFF7ED),
+            border: const Color(0xFFFED7AA),
+          ),
+          _Metric(
+            label: 'Submitted',
+            value: submitted,
+            icon: Icons.task_alt_rounded,
+            color: const Color(0xFF047857),
+            background: const Color(0xFFECFDF5),
+            border: const Color(0xFFA7F3D0),
+          ),
           FilledButton.icon(
             onPressed: exporting ? null : onExport,
             icon: exporting
@@ -5645,6 +5996,26 @@ class _Header extends StatelessWidget {
               backgroundColor: AppColors.primaryColor,
             ),
           ),
+          if (onCreate != null) ...[
+            const SizedBox(width: 8),
+            FilledButton.icon(
+              onPressed: onCreate,
+              icon: const Icon(Icons.add_circle_outline_rounded),
+              label: const Text('Create New Stock Check'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primaryColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 13,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                textStyle: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -6052,24 +6423,63 @@ class _SentSourceTab extends StatelessWidget {
 class _Metric extends StatelessWidget {
   final String label;
   final int value;
+  final IconData icon;
+  final Color color;
+  final Color background;
+  final Color border;
 
-  const _Metric({required this.label, required this.value});
+  const _Metric({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+    required this.background,
+    required this.border,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(right: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+      width: 112,
+      margin: const EdgeInsets.only(right: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: background,
         borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: border),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text('$value', style: const TextStyle(fontWeight: FontWeight.w900)),
-          Text(
-            label,
-            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 14, color: color),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 3),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              '$value',
+              maxLines: 1,
+              style: TextStyle(
+                color: color,
+                fontSize: 18,
+                height: 1.15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
           ),
         ],
       ),
@@ -6206,7 +6616,7 @@ class _DeadlinePickerField extends StatelessWidget {
 
 enum StockCheckDateRangePickerMode { history, deadline }
 
-class StockCheckDateRangePickerDialog extends StatefulWidget {
+class StockCheckDateRangePickerDialog extends StatelessWidget {
   final DateTimeRange initialRange;
   final StockCheckDateRangePickerMode mode;
 
@@ -6217,554 +6627,12 @@ class StockCheckDateRangePickerDialog extends StatefulWidget {
   });
 
   @override
-  State<StockCheckDateRangePickerDialog> createState() =>
-      StockCheckDateRangePickerDialogState();
-}
-
-class StockCheckDateRangePickerDialogState
-    extends State<StockCheckDateRangePickerDialog> {
-  late DateTime _start;
-  DateTime? _end;
-  DateTime? _hoverDay;
-  late DateTime _leftMonth;
-  bool _selectingEnd = false;
-
-  static const _accent = Color(0xff06B6D4);
-  static const _accentBg = Color(0xffCCF2F8);
-  static const _textPri = Color(0xff1E293B);
-  static const _textSec = Color(0xff64748B);
-  static const _textHint = Color(0xff94A3B8);
-  static const _border = Color(0xffE2E8F0);
-  static const _inputBg = Color(0xffF1F5F9);
-  static const _surfaceBg = Color(0xffF8FAFC);
-
-  static const _weekdays = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-  static const _months = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
-  static const _monthsShort = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    _start = _d(widget.initialRange.start);
-    _end = _d(widget.initialRange.end);
-    _leftMonth = DateTime(_start.year, _start.month);
-  }
-
-  DateTime _d(DateTime dt) => DateTime(dt.year, dt.month, dt.day);
-  DateTime get _rightMonth => DateTime(_leftMonth.year, _leftMonth.month + 1);
-
-  bool _same(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
-
-  bool _inRange(DateTime day) {
-    final endRef = _end ?? (_selectingEnd ? _hoverDay : null);
-    if (endRef == null) return false;
-    final s = _start.isBefore(endRef) ? _start : endRef;
-    final e = _start.isBefore(endRef) ? endRef : _start;
-    return day.isAfter(s) && day.isBefore(e);
-  }
-
-  bool _isStart(DateTime day) => _same(day, _start);
-  bool _isEnd(DateTime day) {
-    final endRef = _end ?? (_selectingEnd ? _hoverDay : null);
-    return endRef != null && _same(day, endRef);
-  }
-
-  void _onDayTap(DateTime day) {
-    setState(() {
-      if (!_selectingEnd) {
-        _start = day;
-        _end = null;
-        _selectingEnd = true;
-      } else {
-        if (day.isBefore(_start)) {
-          _end = _start;
-          _start = day;
-        } else {
-          _end = day;
-        }
-        _selectingEnd = false;
-        _hoverDay = null;
-      }
-    });
-  }
-
-  void _onHover(DateTime? day) {
-    if (_selectingEnd) setState(() => _hoverDay = day);
-  }
-
-  void _preset(DateTime s, DateTime e) {
-    setState(() {
-      _start = _d(s);
-      _end = _d(e);
-      _selectingEnd = false;
-      _hoverDay = null;
-      _leftMonth = DateTime(_start.year, _start.month);
-    });
-  }
-
-  String _fmt(DateTime d) => '${_monthsShort[d.month - 1]} ${d.day}, ${d.year}';
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.white,
-      elevation: 20,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: SizedBox(
-        width: 840,
-        height: 490,
-        child: Row(
-          children: [
-            _buildSidebar(),
-            Container(width: 1, color: _border),
-            Expanded(
-              child: Column(
-                children: [
-                  _buildHeader(),
-                  Expanded(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: _buildMonth(_leftMonth)),
-                        Container(width: 1, color: _border),
-                        Expanded(child: _buildMonth(_rightMonth)),
-                      ],
-                    ),
-                  ),
-                  _buildFooter(),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSidebar() {
-    final now = DateTime.now();
-    final today = _d(now);
-    final weekStart = today.subtract(Duration(days: today.weekday % 7));
-    final weekEnd = weekStart.add(const Duration(days: 6));
-    final monthStart = DateTime(now.year, now.month, 1);
-    final monthEnd = DateTime(now.year, now.month + 1, 0);
-
-    final presets = widget.mode == StockCheckDateRangePickerMode.deadline
-        ? [
-            ('Tomorrow', today, today.add(const Duration(days: 1))),
-            ('3 Days', today, today.add(const Duration(days: 3))),
-            ('1 Week', today, today.add(const Duration(days: 7))),
-            ('2 Weeks', today, today.add(const Duration(days: 14))),
-            ('1 Month', today, DateTime(now.year, now.month + 1, now.day)),
-            ('2 Months', today, DateTime(now.year, now.month + 2, now.day)),
-          ]
-        : [
-            ('Today', today, today),
-            (
-              'Yesterday',
-              today.subtract(const Duration(days: 1)),
-              today.subtract(const Duration(days: 1)),
-            ),
-            ('This Week', weekStart, weekEnd),
-            ('Last 7 Days', today.subtract(const Duration(days: 6)), today),
-            ('This Month', monthStart, monthEnd),
-            ('Last 30 Days', today.subtract(const Duration(days: 29)), today),
-            ('Last 3 Months', DateTime(now.year, now.month - 2, 1), monthEnd),
-            ('Last 6 Months', DateTime(now.year, now.month - 5, 1), monthEnd),
-          ];
-
-    return Container(
-      width: 155,
-      color: _surfaceBg,
-      padding: const EdgeInsets.fromLTRB(10, 16, 10, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(left: 6, bottom: 8),
-            child: Text(
-              widget.mode == StockCheckDateRangePickerMode.deadline
-                  ? 'DURATION'
-                  : 'QUICK SELECT',
-              style: const TextStyle(
-                color: _textHint,
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.8,
-              ),
-            ),
-          ),
-          ...presets.map((p) {
-            final active =
-                _end != null && _same(_start, p.$2) && _same(_end!, p.$3);
-            return GestureDetector(
-              onTap: () => _preset(p.$2, p.$3),
-              child: Container(
-                width: double.infinity,
-                margin: const EdgeInsets.only(bottom: 3),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 7,
-                ),
-                decoration: BoxDecoration(
-                  color: active
-                      ? _accent.withValues(alpha: 0.10)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(8),
-                  border: active
-                      ? Border.all(color: _accent.withValues(alpha: 0.3))
-                      : null,
-                ),
-                child: Text(
-                  p.$1,
-                  style: TextStyle(
-                    color: active ? _accent : _textPri,
-                    fontSize: 12,
-                    fontWeight: active ? FontWeight.w600 : FontWeight.normal,
-                  ),
-                ),
-              ),
-            );
-          }),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    final fromLabel = widget.mode == StockCheckDateRangePickerMode.deadline
-        ? 'Start'
-        : 'From';
-    final toLabel = widget.mode == StockCheckDateRangePickerMode.deadline
-        ? 'Deadline'
-        : 'To';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: _border)),
-      ),
-      child: Row(
-        children: [
-          _navBtn(
-            Icons.chevron_left,
-            () => setState(
-              () =>
-                  _leftMonth = DateTime(_leftMonth.year, _leftMonth.month - 1),
-            ),
-          ),
-          const SizedBox(width: 6),
-          _navBtn(
-            Icons.chevron_right,
-            () => setState(
-              () =>
-                  _leftMonth = DateTime(_leftMonth.year, _leftMonth.month + 1),
-            ),
-          ),
-          const SizedBox(width: 14),
-          _dateChip(fromLabel, _fmt(_start), !_selectingEnd),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 8),
-            child: Icon(
-              Icons.arrow_forward_rounded,
-              size: 14,
-              color: _textHint,
-            ),
-          ),
-          _dateChip(
-            toLabel,
-            _end != null
-                ? _fmt(_end!)
-                : _selectingEnd
-                ? 'Pick end...'
-                : 'Not selected',
-            _selectingEnd,
-            faded: _end == null,
-          ),
-          const Spacer(),
-          IconButton(
-            onPressed: () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.close_rounded, size: 18, color: _textSec),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _navBtn(IconData icon, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 28,
-        height: 28,
-        decoration: BoxDecoration(
-          color: _inputBg,
-          borderRadius: BorderRadius.circular(7),
-          border: Border.all(color: _border),
-        ),
-        child: Icon(icon, size: 16, color: _textSec),
-      ),
-    );
-  }
-
-  Widget _dateChip(
-    String label,
-    String text,
-    bool active, {
-    bool faded = false,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      decoration: BoxDecoration(
-        color: active ? _accent.withValues(alpha: 0.08) : _surfaceBg,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: active ? _accent.withValues(alpha: 0.35) : _border,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              color: active ? _accent : _textHint,
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.5,
-            ),
-          ),
-          Text(
-            text,
-            style: TextStyle(
-              color: faded
-                  ? _textHint
-                  : active
-                  ? _accent
-                  : _textPri,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMonth(DateTime month) {
-    final days = DateUtils.getDaysInMonth(month.year, month.month);
-    final offset = DateTime(month.year, month.month, 1).weekday % 7;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-      child: Column(
-        children: [
-          Text(
-            '${_months[month.month - 1]} ${month.year}',
-            style: const TextStyle(
-              color: _textPri,
-              fontWeight: FontWeight.w700,
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: _weekdays
-                .map(
-                  (w) => Expanded(
-                    child: Center(
-                      child: Text(
-                        w,
-                        style: const TextStyle(
-                          color: _textSec,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                )
-                .toList(),
-          ),
-          const SizedBox(height: 4),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 7,
-              childAspectRatio: 1.1,
-            ),
-            itemCount: offset + days,
-            itemBuilder: (_, i) {
-              if (i < offset) return const SizedBox();
-              final day = DateTime(month.year, month.month, i - offset + 1);
-              return _buildCell(day);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCell(DateTime day) {
-    final isStart = _isStart(day);
-    final isEnd = _isEnd(day);
-    final inRange = _inRange(day);
-    final isFuture = day.isAfter(DateTime.now());
-    final disabled =
-        widget.mode == StockCheckDateRangePickerMode.history && isFuture;
-    final isEdge = isStart || isEnd;
-
-    final endRef = _end ?? (_selectingEnd ? _hoverDay : null);
-    bool stripLeft = false;
-    bool stripRight = false;
-    if (endRef != null) {
-      final s = _start.isBefore(endRef) ? _start : endRef;
-      final e = _start.isBefore(endRef) ? endRef : _start;
-      if (!day.isBefore(s) && !day.isAfter(e)) {
-        stripLeft = !_same(day, s);
-        stripRight = !_same(day, e);
-      }
-    }
-
-    Color textColor = _textPri;
-    if (disabled) {
-      textColor = const Color(0xffCBD5E1);
-    }
-    if (isEdge) {
-      textColor = Colors.white;
-    } else if (inRange) {
-      textColor = _accent;
-    }
-
-    return MouseRegion(
-      onEnter: (_) => _onHover(day),
-      onExit: (_) => _onHover(null),
-      cursor: disabled
-          ? SystemMouseCursors.forbidden
-          : SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: disabled ? null : () => _onDayTap(day),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    color: stripLeft ? _accentBg : Colors.transparent,
-                  ),
-                ),
-                Expanded(
-                  child: Container(
-                    color: stripRight ? _accentBg : Colors.transparent,
-                  ),
-                ),
-              ],
-            ),
-            Container(
-              width: 28,
-              height: 28,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: isEdge ? _accent : Colors.transparent,
-                shape: BoxShape.circle,
-              ),
-              child: Text(
-                '${day.day}',
-                style: TextStyle(
-                  color: textColor,
-                  fontSize: 11,
-                  fontWeight: isEdge ? FontWeight.bold : FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFooter() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: _border)),
-      ),
-      child: Row(
-        children: [
-          if (_end != null)
-            Text(
-              '${_fmt(_start)}  to  ${_fmt(_end!)}',
-              style: const TextStyle(color: _textSec, fontSize: 11),
-            ),
-          const Spacer(),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            style: TextButton.styleFrom(foregroundColor: _textSec),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(
-                color: AppColors.secondaryColor,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          ElevatedButton(
-            onPressed: _end != null
-                ? () => Navigator.of(
-                    context,
-                  ).pop(DateTimeRange(start: _start, end: _end!))
-                : null,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _accent,
-              foregroundColor: Colors.white,
-              disabledBackgroundColor: _border,
-              elevation: 0,
-              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-            child: const Text(
-              'Apply',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => AppDateRangePickerDialog(
+    initialRange: initialRange,
+    mode: mode == StockCheckDateRangePickerMode.deadline
+        ? AppDateRangePickerMode.deadline
+        : AppDateRangePickerMode.history,
+  );
 }
 
 class _BarcodeStickerOption extends StatelessWidget {
@@ -6776,47 +6644,65 @@ class _BarcodeStickerOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: value ? const Color(0xFFEFF6FF) : Colors.white,
-      borderRadius: BorderRadius.circular(999),
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: () => onChanged(!value),
-        borderRadius: BorderRadius.circular(999),
-        child: Container(
+        borderRadius: BorderRadius.circular(16),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
           width: double.infinity,
-          height: 38,
-          padding: const EdgeInsetsDirectional.only(start: 8, end: 12),
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
+            color: value ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: value ? const Color(0xFF93C5FD) : const Color(0xFFCBD5E1),
+              color: value ? const Color(0xFF93C5FD) : const Color(0xFFD9E8F5),
             ),
           ),
           child: Row(
             children: [
-              Checkbox(
-                value: value,
-                onChanged: (checked) => onChanged(checked ?? false),
-                activeColor: const Color(0xFF2563EB),
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
-              ),
-              const Icon(
-                Icons.qr_code_2_rounded,
-                color: Color(0xFF2563EB),
-                size: 18,
-              ),
-              const SizedBox(width: 7),
-              const Expanded(
-                child: Text(
-                  'Barcode sticker',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Color(0xFF1E293B),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                  ),
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
                 ),
+                child: const Icon(
+                  Icons.qr_code_2_rounded,
+                  color: Color(0xFF2563EB),
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Barcode sticker',
+                      style: TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'Check each item sticker',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: Color(0xFF64748B), fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              Switch.adaptive(
+                value: value,
+                onChanged: onChanged,
+                activeThumbColor: Colors.white,
+                activeTrackColor: const Color(0xFF2563EB),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
             ],
           ),
@@ -6850,64 +6736,69 @@ class _ItemStatusOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: enabled
-          ? AppColors.primaryColor.withValues(alpha: .08)
-          : Colors.white,
-      borderRadius: BorderRadius.circular(999),
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
-        child: Container(
-          height: 38,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+        borderRadius: BorderRadius.circular(16),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
+            color: enabled ? const Color(0xFFF0FDFA) : const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: enabled
-                  ? AppColors.primaryColor.withValues(alpha: .55)
-                  : const Color(0xFFCBD5E1),
+                  ? const Color(0xFF99F6E4)
+                  : const Color(0xFFD9E8F5),
             ),
           ),
           child: Row(
             children: [
-              Icon(
-                enabled ? Icons.task_alt_rounded : Icons.rule_folder_outlined,
-                color: enabled
-                    ? AppColors.primaryColor
-                    : const Color(0xFF64748B),
-                size: 18,
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  enabled ? Icons.task_alt_rounded : Icons.rule_folder_outlined,
+                  color: const Color(0xFF0F766E),
+                ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
                       'Item status',
-                      maxLines: 1,
                       style: TextStyle(
                         color: Color(0xFF0F172A),
-                        fontSize: 11,
+                        fontSize: 13,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
+                    const SizedBox(height: 3),
                     Text(
-                      enabled ? '$optionCount required options' : 'Optional',
+                      enabled
+                          ? '$optionCount choices required'
+                          : 'Add optional choices',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: enabled
-                            ? AppColors.primaryColor
+                            ? const Color(0xFF0F766E)
                             : const Color(0xFF64748B),
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
                       ),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.tune_rounded, size: 17),
+              const Icon(Icons.chevron_right_rounded, color: Color(0xFF0F766E)),
             ],
           ),
         ),
@@ -7244,7 +7135,7 @@ class _BranchPickerField extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '$selectedCount of $totalCount destinations selected',
+                      '$selectedCount of $totalCount branches selected',
                       style: TextStyle(
                         color: none
                             ? const Color(0xFF9A3412)
@@ -7349,7 +7240,7 @@ class _BranchPickerDialogState extends State<_BranchPickerDialog> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Select Destinations',
+                        'Select Branches',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w900,
@@ -7605,16 +7496,20 @@ class _ProductPickerField extends StatelessWidget {
 }
 
 class _ProductPickerDialog extends StatefulWidget {
+  final SupabaseClient client;
   final List<_StockCheckItem> initiallySelected;
 
-  const _ProductPickerDialog({required this.initiallySelected});
+  const _ProductPickerDialog({
+    required this.client,
+    required this.initiallySelected,
+  });
 
   @override
   State<_ProductPickerDialog> createState() => _ProductPickerDialogState();
 }
 
 class _ProductPickerDialogState extends State<_ProductPickerDialog> {
-  final _client = Supabase.instance.client;
+  late final _client = widget.client;
   final _searchController = TextEditingController();
   late final List<_StockCheckItem> _selected = [...widget.initiallySelected];
   List<Map<String, dynamic>> _suggestions = [];
@@ -7992,6 +7887,31 @@ class _StockCheckBatchCard extends StatelessWidget {
                   ),
                 ],
               ),
+              if (batch.creatorName.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.person_outline_rounded,
+                      size: 15,
+                      color: Color(0xFF475569),
+                    ),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        'Created by ${batch.creatorName}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF475569),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 10),
               Container(
                 width: double.infinity,

@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/utils/order_edit_analysis_excel_exporter.dart';
+import '../../widgets/app_date_range_picker_dialog.dart';
 import '../bloc/inventory_bloc.dart';
 import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
@@ -51,24 +52,13 @@ class _OrderEditAnalysisPageState extends State<OrderEditAnalysisPage>
   }
 
   Future<void> _pickDateRange() async {
-    final range = await showDateRangePicker(
+    final range = await showDialog<DateTimeRange>(
       context: context,
-      firstDate: DateTime(2024),
-      lastDate: DateTime(DateTime.now().year + 2),
-      initialDateRange: DateTimeRange(start: _from, end: _to),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Color(0xff06B6D4),
-              onPrimary: Colors.white,
-              surface: Colors.white,
-              onSurface: Color(0xff0F172A),
-            ),
-          ),
-          child: child!,
-        );
-      },
+      builder: (_) => AppDateRangePickerDialog(
+        firstDate: DateTime(2024),
+        lastDate: DateTime(DateTime.now().year + 2),
+        initialRange: DateTimeRange(start: _from, end: _to),
+      ),
     );
 
     if (range == null) return;
