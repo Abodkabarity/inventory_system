@@ -21,6 +21,8 @@ import '../../../domain/entities/stock_check_campaign.dart';
 import '../../../data/datasources/remote/stock_check_workspace_remote_ds.dart';
 import '../../orders/widgets/branch_stock_check_page.dart';
 import '../../widgets/app_date_range_picker_dialog.dart';
+import '../widgets/stock_check_kpi_analysis_panel.dart';
+import '../widgets/stock_check_kind_selector.dart';
 
 const _storeStockCheckDestination = 'STORE';
 const double _stockCheckAccuracyTolerance = 0.01;
@@ -72,6 +74,11 @@ class _StockCheckPageState extends State<StockCheckPage> {
   bool _showStoreInbox = false;
   bool _showComposer = false;
   String _sentSourceFilter = 'inventory';
+  String _checkKindFilter = 'regular';
+  bool _canCreateKpi = false;
+  bool _isKpi = false;
+  late int _kpiYear;
+  late int _kpiQuarter;
   List<String> _branches = [];
   Map<String, _BranchEmailContact> _branchContacts = {};
   List<StockCheckCampaign> _campaigns = [];
@@ -79,6 +86,8 @@ class _StockCheckPageState extends State<StockCheckPage> {
   String? _loadingBatchId;
   String _detailError = '';
   bool _analysisLoading = false;
+  String _analysisError = '';
+  int _analysisRequest = 0;
   List<StockCheckTask> _visibleDetailRows = [];
   int _sentRowsVersion = 0;
   int? _batchesCacheKey;
@@ -109,6 +118,8 @@ class _StockCheckPageState extends State<StockCheckPage> {
   void initState() {
     super.initState();
     final now = DateTime.now();
+    _kpiYear = now.year;
+    _kpiQuarter = (now.month - 1) ~/ 3 + 1;
     _sentFrom = DateTime(now.year, 1, 1);
     _sentTo = DateTime(now.year, now.month, now.day, 23, 59, 59);
     _deadlineFrom = DateTime(now.year, now.month, now.day);
@@ -153,10 +164,14 @@ class _StockCheckPageState extends State<StockCheckPage> {
     });
     try {
       final branchesFuture = _fetchBranches();
+      final kpiAccessFuture = _canSendToStore
+          ? _workspace.isInventoryUser()
+          : Future<bool>.value(false);
       final campaignsFuture = _workspace.campaigns(
         _canSendToStore ? ['inventory', 'store'] : [widget.source],
       );
       final branchesRes = await branchesFuture;
+      final canCreateKpi = await kpiAccessFuture;
       String tableError = '';
       var campaigns = <StockCheckCampaign>[];
       try {
@@ -196,6 +211,11 @@ class _StockCheckPageState extends State<StockCheckPage> {
           return a.toLowerCase().compareTo(b.toLowerCase());
         });
         _branches = destinations;
+        _canCreateKpi = canCreateKpi;
+        if (!canCreateKpi) {
+          _isKpi = false;
+          _checkKindFilter = 'regular';
+        }
         _branchContacts = branchContacts;
         _campaigns = campaigns;
         _workspace.invalidate();
@@ -206,7 +226,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
         _batchesCacheKey = null;
         _batchesCache = null;
         _selectedBatchId = null;
-        _analysisBatchIds.clear();
+        _clearAnalysisSelection();
         _error = tableError;
         _loading = false;
         _refreshing = false;
@@ -325,6 +345,10 @@ class _StockCheckPageState extends State<StockCheckPage> {
 
   Future<void> _send() async {
     if (_sending) return;
+    if (_isKpi && (!_canSendToStore || !_canCreateKpi)) {
+      setState(() => _error = 'Only Inventory can create a KPI Stock Check.');
+      return;
+    }
     final title = _titleController.text.trim();
     final draftRows = _buildDraftRows();
     if (title.isEmpty || draftRows.isEmpty) {
@@ -354,6 +378,9 @@ class _StockCheckPageState extends State<StockCheckPage> {
       _message = '';
     });
     try {
+      if (_isKpi && !await _workspace.isInventoryUser()) {
+        throw StateError('Only Inventory can create a KPI Stock Check.');
+      }
       final sender = await StockCheckWorkspaceRemoteDs(_client).currentSender();
       final batchId = const Uuid().v4();
       final now = DateTime.now().toIso8601String();
@@ -365,6 +392,8 @@ class _StockCheckPageState extends State<StockCheckPage> {
           'batch_id': batchId,
           'title': title,
           'source': widget.source,
+          'check_kind': _isKpi ? 'kpi' : 'regular',
+          if (_isKpi) ...{'kpi_year': _kpiYear, 'kpi_quarter': _kpiQuarter},
           if (sender.name.isNotEmpty) ...{
             'sender_user_id': sender.id,
             'sender_name': sender.name,
@@ -399,6 +428,8 @@ class _StockCheckPageState extends State<StockCheckPage> {
             'batch_id': batchId,
             'title': title,
             'source': widget.source,
+            'check_kind': _isKpi ? 'kpi' : 'regular',
+            if (_isKpi) ...{'kpi_year': _kpiYear, 'kpi_quarter': _kpiQuarter},
             'sent_at': now,
             'expires_at': expiresAt,
             'total': draftRows.length,
@@ -410,6 +441,8 @@ class _StockCheckPageState extends State<StockCheckPage> {
           }),
         );
         _sentRowsVersion++;
+        _checkKindFilter = _isKpi ? 'kpi' : 'regular';
+        _isKpi = false;
         _batchesCacheKey = null;
         _batchesCache = null;
         _message = 'Stock check sent to $sentBranchCount branch(es).';
@@ -475,7 +508,11 @@ class _StockCheckPageState extends State<StockCheckPage> {
         if (_selectedBatchId == batch.id) {
           _selectedBatchId = null;
         }
-        _analysisBatchIds.remove(batch.id);
+        if (_analysisBatchIds.remove(batch.id)) {
+          _analysisRequest++;
+          _analysisLoading = false;
+          _analysisError = '';
+        }
         _message = 'Stock check "${batch.title}" deleted.';
         _deletingBatchId = null;
       });
@@ -574,6 +611,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
     final cacheKey = Object.hash(
       _sentRowsVersion,
       _sentSourceFilter,
+      _checkKindFilter,
       _sentFrom.millisecondsSinceEpoch,
       _sentTo.millisecondsSinceEpoch,
     );
@@ -581,7 +619,11 @@ class _StockCheckPageState extends State<StockCheckPage> {
       return _batchesCache!;
     }
     final batches = _campaigns
-        .where((campaign) => _campaignVisible(campaign, _sentSourceFilter))
+        .where(
+          (campaign) =>
+              _campaignVisible(campaign, _sentSourceFilter) &&
+              (!_canCreateKpi || campaign.kind == _checkKindFilter),
+        )
         .map((campaign) => _StockCheckBatch(campaign))
         .toList();
     batches.sort((a, b) {
@@ -601,6 +643,16 @@ class _StockCheckPageState extends State<StockCheckPage> {
     final sentAt = campaign.sentAt;
     if (sentAt == null) return false;
     return !sentAt.isBefore(_sentFrom) && !sentAt.isAfter(_sentTo);
+  }
+
+  void _selectCheckKind(String kind) {
+    if (_checkKindFilter == kind) return;
+    setState(() {
+      _checkKindFilter = kind;
+      _selectedBatchId = null;
+      _clearAnalysisSelection();
+      _visibleDetailRows = [];
+    });
   }
 
   List<_StockCheckBatch> _sourceBatches(String source) {
@@ -634,7 +686,9 @@ class _StockCheckPageState extends State<StockCheckPage> {
   @override
   Widget build(BuildContext context) {
     final visibleCampaigns = _campaigns.where(
-      (campaign) => _campaignVisible(campaign, _sentSourceFilter),
+      (campaign) =>
+          _campaignVisible(campaign, _sentSourceFilter) &&
+          (!_canCreateKpi || campaign.kind == _checkKindFilter),
     );
     final pending = visibleCampaigns.fold<int>(0, (sum, c) => sum + c.pending);
     final submitted = visibleCampaigns.fold<int>(
@@ -745,12 +799,32 @@ class _StockCheckPageState extends State<StockCheckPage> {
                           ),
                           const SizedBox(height: 16),
                         ],
+                        if (_canCreateKpi &&
+                            _sentSourceFilter == 'inventory') ...[
+                          StockCheckKindSelector(
+                            value: _checkKindFilter,
+                            onChanged: _selectCheckKind,
+                          ),
+                          const SizedBox(height: 16),
+                        ],
                         if (_showAnalysis)
                           SizedBox(
                             height: analysisHeight,
-                            child: _analysisLoading
+                            child: _analysisLoading && _checkKindFilter != 'kpi'
                                 ? _detailWaiting('Loading selected projects...')
                                 : _StockCheckAnalysisPanel(
+                                    isKpi:
+                                        _canCreateKpi &&
+                                        _checkKindFilter == 'kpi',
+                                    isLoading: _analysisLoading,
+                                    loadError: _analysisError,
+                                    loadedProjects: _analysisBatchIds
+                                        .where(_detailRows.containsKey)
+                                        .length,
+                                    onRetry: () => _loadAnalysisSelection(
+                                      batches,
+                                      Set.of(_analysisBatchIds),
+                                    ),
                                     batches: batches,
                                     selectedBatchIds: _analysisBatchIds,
                                     rows: selectedAnalysisRows,
@@ -1045,6 +1119,80 @@ class _StockCheckPageState extends State<StockCheckPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (_canCreateKpi) ...[
+          Material(
+            key: const ValueKey('stock-check-kpi-option'),
+            color: const Color(0xFFF0F7FF),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: const BorderSide(color: Color(0xFFBFDBFE)),
+            ),
+            child: Column(
+              children: [
+                CheckboxListTile(
+                  title: const Text('KPI Stock Check'),
+                  subtitle: const Text(
+                    'Track quarterly inventory accuracy separately.',
+                  ),
+                  value: _isKpi,
+                  onChanged: (value) => setState(() => _isKpi = value ?? false),
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+                if (_isKpi)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<int>(
+                            key: const ValueKey('stock-check-kpi-year'),
+                            initialValue: _kpiYear,
+                            decoration: const InputDecoration(
+                              labelText: 'KPI year',
+                            ),
+                            items: [
+                              for (
+                                var year = DateTime.now().year - 5;
+                                year <= DateTime.now().year + 2;
+                                year++
+                              )
+                                DropdownMenuItem(
+                                  value: year,
+                                  child: Text('$year'),
+                                ),
+                            ],
+                            onChanged: (value) =>
+                                setState(() => _kpiYear = value ?? _kpiYear),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<int>(
+                            key: const ValueKey('stock-check-kpi-quarter'),
+                            initialValue: _kpiQuarter,
+                            decoration: const InputDecoration(
+                              labelText: 'Quarter',
+                            ),
+                            items: [
+                              for (var quarter = 1; quarter <= 4; quarter++)
+                                DropdownMenuItem(
+                                  value: quarter,
+                                  child: Text('Q$quarter'),
+                                ),
+                            ],
+                            onChanged: (value) => setState(
+                              () => _kpiQuarter = value ?? _kpiQuarter,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+        ],
         const Text(
           'Stock Check title',
           style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
@@ -1186,8 +1334,9 @@ class _StockCheckPageState extends State<StockCheckPage> {
                     onChanged: (value) {
                       setState(() {
                         _sentSourceFilter = value;
+                        if (value != 'inventory') _checkKindFilter = 'regular';
                         _selectedBatchId = null;
-                        _analysisBatchIds.clear();
+                        _clearAnalysisSelection();
                         _visibleDetailRows = [];
                       });
                     },
@@ -1226,6 +1375,16 @@ class _StockCheckPageState extends State<StockCheckPage> {
         Expanded(
           child: _showAnalysis
               ? _StockCheckAnalysisPanel(
+                  isKpi: _canCreateKpi && _checkKindFilter == 'kpi',
+                  isLoading: _analysisLoading,
+                  loadError: _analysisError,
+                  loadedProjects: _analysisBatchIds
+                      .where(_detailRows.containsKey)
+                      .length,
+                  onRetry: () => _loadAnalysisSelection(
+                    batches,
+                    Set.of(_analysisBatchIds),
+                  ),
                   batches: batches,
                   selectedBatchIds: _analysisBatchIds,
                   rows: selectedAnalysisRows,
@@ -1320,9 +1479,8 @@ class _StockCheckPageState extends State<StockCheckPage> {
   Future<void> _selectBatch(_StockCheckBatch batch) async {
     setState(() {
       _selectedBatchId = batch.id;
-      _analysisBatchIds
-        ..clear()
-        ..add(batch.id);
+      _clearAnalysisSelection();
+      _analysisBatchIds.add(batch.id);
       _visibleDetailRows = [];
       _detailError = '';
       _loadingBatchId = _detailRows.containsKey(batch.id) ? null : batch.id;
@@ -1345,6 +1503,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
   }
 
   Future<void> _openAnalysisBatchPicker(List<_StockCheckBatch> batches) async {
+    if (_analysisLoading) return;
     final selected = await showDialog<Set<String>>(
       context: context,
       builder: (_) => _AnalysisBatchPickerDialog(
@@ -1353,11 +1512,27 @@ class _StockCheckPageState extends State<StockCheckPage> {
       ),
     );
     if (selected == null || !mounted) return;
+    await _loadAnalysisSelection(batches, selected);
+  }
+
+  void _clearAnalysisSelection() {
+    _analysisRequest++;
+    _analysisLoading = false;
+    _analysisError = '';
+    _analysisBatchIds.clear();
+  }
+
+  Future<void> _loadAnalysisSelection(
+    List<_StockCheckBatch> batches,
+    Set<String> selected,
+  ) async {
+    final request = ++_analysisRequest;
     setState(() {
       _analysisBatchIds
         ..clear()
         ..addAll(selected);
       _analysisLoading = selected.any((id) => !_detailRows.containsKey(id));
+      _analysisError = '';
     });
     try {
       for (final batch in batches.where(
@@ -1365,16 +1540,23 @@ class _StockCheckPageState extends State<StockCheckPage> {
       )) {
         if (_detailRows.containsKey(batch.id)) continue;
         final rows = await _workspace.details(batch.id, batch.total);
-        if (!mounted) return;
-        _detailRows[batch.id] = rows;
+        if (!mounted || request != _analysisRequest) return;
+        setState(() => _detailRows[batch.id] = rows);
       }
-      if (mounted) setState(() => _analysisLoading = false);
+      if (mounted && request == _analysisRequest) {
+        setState(() => _analysisLoading = false);
+      }
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || request != _analysisRequest) return;
       setState(() {
         _analysisLoading = false;
-        _error = e.toString();
+        _analysisError = e.toString();
       });
+      if (_checkKindFilter != 'kpi') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not load selected projects: $e')),
+        );
+      }
     }
   }
 
@@ -1475,7 +1657,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
         59,
       );
       _selectedBatchId = null;
-      _analysisBatchIds.clear();
+      _clearAnalysisSelection();
     });
     await _load();
   }
@@ -1527,6 +1709,11 @@ class _StockCheckResultTable extends StatefulWidget {
 }
 
 class _StockCheckAnalysisPanel extends StatefulWidget {
+  final bool isKpi;
+  final bool isLoading;
+  final String loadError;
+  final int loadedProjects;
+  final VoidCallback? onRetry;
   final List<_StockCheckBatch> batches;
   final Set<String> selectedBatchIds;
   final List<StockCheckTask> rows;
@@ -1534,6 +1721,11 @@ class _StockCheckAnalysisPanel extends StatefulWidget {
   final VoidCallback onSelectBatches;
 
   const _StockCheckAnalysisPanel({
+    this.isKpi = false,
+    this.isLoading = false,
+    this.loadError = '',
+    this.loadedProjects = 0,
+    this.onRetry,
     required this.batches,
     required this.selectedBatchIds,
     required this.rows,
@@ -1576,6 +1768,20 @@ class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.isKpi) {
+      return StockCheckKpiAnalysisPanel(
+        isLoading: widget.isLoading,
+        loadError: widget.loadError,
+        loadedProjects: widget.loadedProjects,
+        onRetry: widget.onRetry,
+        projects: widget.batches
+            .where((batch) => widget.selectedBatchIds.contains(batch.id))
+            .map((batch) => batch.campaign)
+            .toList(),
+        rows: widget.rows,
+        onSelectProjects: widget.onSelectBatches,
+      );
+    }
     final report = _reportFor(widget.rows);
     final availableBranches = report.branches.map((e) => e.branch).toList()
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
@@ -5287,6 +5493,8 @@ class _StockCheckBatch {
 
   String get id => campaign.id;
   String get title => campaign.title;
+  String get kind => campaign.kind;
+  String get period => campaign.period;
   String get creatorName =>
       {'inventory', 'store'}.contains(campaign.source.trim().toLowerCase())
       ? campaign.senderName
@@ -5811,9 +6019,12 @@ class _AnalysisBatchPickerDialogState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Select one project for branch accuracy, or multiple projects to compare accuracy changes for the same branch and repeated items.',
-              style: TextStyle(
+            Text(
+              widget.batches.isNotEmpty &&
+                      widget.batches.every((batch) => batch.kind == 'kpi')
+                  ? 'Select KPI projects. Each product is counted once per branch and earns 100% only when Difference is zero in every selected project containing it.'
+                  : 'Select one project for branch accuracy, or multiple projects to compare accuracy changes for the same branch and repeated items.',
+              style: const TextStyle(
                 color: AppColors.subText,
                 fontWeight: FontWeight.w700,
               ),
@@ -5842,7 +6053,7 @@ class _AnalysisBatchPickerDialogState
                       style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
                     subtitle: Text(
-                      '${batch.branches} branches • ${batch.products} products • ${batch.submitted}/${batch.total} submitted',
+                      '${batch.period.isEmpty ? '' : '${batch.period} • '}${batch.branches} branches • ${batch.products} products • ${batch.submitted}/${batch.total} submitted',
                     ),
                     activeColor: AppColors.primaryColor,
                     shape: RoundedRectangleBorder(
@@ -7887,6 +8098,17 @@ class _StockCheckBatchCard extends StatelessWidget {
                   ),
                 ],
               ),
+              if (batch.kind == 'kpi') ...[
+                const SizedBox(height: 8),
+                Text(
+                  'KPI  ·  ${batch.period}',
+                  style: const TextStyle(
+                    color: Color(0xFF1D4ED8),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
               if (batch.creatorName.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Row(

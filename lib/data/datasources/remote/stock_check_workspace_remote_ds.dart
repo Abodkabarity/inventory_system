@@ -10,6 +10,18 @@ class StockCheckWorkspaceRemoteDs {
 
   void invalidate() => _details.clear();
 
+  Future<bool> isInventoryUser() async {
+    final id = client.auth.currentUser?.id;
+    if (id == null) return false;
+    final profile = await client
+        .from('app_users')
+        .select('role,is_active')
+        .eq('user_id', id)
+        .maybeSingle();
+    return profile?['is_active'] == true &&
+        (profile?['role'] ?? '').toString().trim().toLowerCase() == 'inventory';
+  }
+
   Future<({String id, String name})> currentSender() async {
     final id = client.auth.currentUser?.id;
     if (id == null) throw StateError('Sign in before sending a Stock Check.');

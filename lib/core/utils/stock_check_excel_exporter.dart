@@ -8,6 +8,8 @@ import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
 import '../../domain/entities/stock_check_task.dart';
 import '../../domain/entities/stock_check_campaign.dart';
 import '../../domain/entities/stock_check_kpi_comparison.dart';
+import '../../domain/entities/stock_check_kpi_report.dart';
+import 'stock_check_kpi_export_worker.dart';
 
 const double _stockCheckAccuracyTolerance = 0.01;
 
@@ -69,6 +71,217 @@ class StockCheckProjectComparisonExportRow {
 }
 
 class StockCheckExcelExporter {
+  static Future<void> exportKpiAnalysis({
+    required StockCheckKpiReport report,
+    KpiExportJob? job,
+    void Function(KpiExportProgress)? onProgress,
+  }) async {
+    final exportJob = job ?? KpiExportJob();
+    final bytes = await buildKpiAnalysisBytes(
+      report: report,
+      job: exportJob,
+      onProgress: onProgress,
+    );
+    exportJob.checkCancelled();
+    onProgress?.call(
+      KpiExportProgress(
+        KpiExportStage.downloading,
+        processed: report.total,
+        total: report.total,
+      ),
+    );
+    final today = DateTime.now().toIso8601String().split('T').first;
+    final url = html.Url.createObjectUrlFromBlob(
+      html.Blob([
+        bytes,
+      ], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+    );
+    html.AnchorElement(href: url)
+      ..setAttribute('download', 'Stock_Check_KPI_Analysis_$today.xlsx')
+      ..click();
+    // Allow the browser to consume the blob before releasing it.
+    Future<void>.delayed(
+      const Duration(seconds: 1),
+      () => html.Url.revokeObjectUrl(url),
+    );
+  }
+
+  static const _kpiSummaryHeaders = [
+    'Branch',
+    'Unique Products',
+    'Scored',
+    '100%',
+    '0%',
+    'Shared',
+    'Single Project',
+    'Awaiting or Review',
+    'Accuracy %',
+  ];
+
+  // Header, odd-row tint, even-row tint. Keep a quarter's color stable even
+  // when only some quarters are selected or projects span multiple years.
+  static const _kpiQuarterColors = [
+    ['2563EB', 'F2F7FF', 'E7EFFC'], // Q1: blue
+    ['0F766E', 'EFFAF7', 'E0F2EC'], // Q2: teal
+    ['7C3AED', 'F8F3FF', 'F0E6FC'], // Q3: purple
+    ['B45309', 'FFF8EF', 'FFF0DB'], // Q4: amber
+  ];
+
+  static List<List<String>> _kpiProjectColors(StockCheckKpiReport report) => [
+    for (var i = 0; i < report.projects.length; i++)
+      _kpiQuarterColors[((report.projects[i].quarter ?? (i % 4 + 1)) - 1) % 4],
+  ];
+
+  static List<String> _kpiHeaders(StockCheckKpiReport report) => [
+    'Branch',
+    'Item Code',
+    'Item Name',
+    'Included Projects',
+    'Type',
+    'Result',
+    for (final project in report.projects) ...[
+      '${project.period.isEmpty ? project.title : project.period} | System Qty',
+      '${project.period.isEmpty ? project.title : project.period} | Actual Qty',
+      '${project.period.isEmpty ? project.title : project.period} | Difference',
+    ],
+    'Difference | ${report.projects.map((project) => project.period.isEmpty ? project.title : project.period).join(' vs ')}',
+    'Accuracy %',
+  ];
+
+  static List<Object> _kpiTotals(String branch, StockCheckKpiTotals totals) => [
+    branch,
+    totals.total,
+    totals.scored,
+    totals.correct,
+    totals.failed,
+    totals.shared,
+    totals.standalone,
+    totals.awaiting,
+    totals.accuracy ?? '',
+  ];
+
+  static List<Object> _kpiValues(
+    StockCheckKpiItem item,
+    StockCheckKpiReport report,
+  ) => [
+    item.branch,
+    item.code,
+    item.name,
+    item.projectCount,
+    item.shared ? 'Shared' : 'Single project',
+    item.result,
+    for (final project in report.projects) ...[
+      item.rowFor(project.id)?.systemQty ?? '',
+      item.rowFor(project.id)?.actualQty ?? '',
+      if (item.rowFor(project.id) case final row?
+          when StockCheckKpiItem.counted(row))
+        row.variance!
+      else
+        '',
+    ],
+    item.comparisonDifference ?? '',
+    item.score ?? '',
+  ];
+
+  static Future<Uint8List> buildKpiAnalysisBytes({
+    required StockCheckKpiReport report,
+    KpiExportJob? job,
+    void Function(KpiExportProgress)? onProgress,
+  }) {
+    final headers = _kpiHeaders(report);
+    return StockCheckKpiExportWorker.build(
+      summaryHeaders: _kpiSummaryHeaders,
+      detailHeaders: headers,
+      projectColors: _kpiProjectColors(report),
+      summaryWidths: [35, ...List.filled(8, 16)],
+      detailWidths: [
+        for (var i = 0; i < headers.length; i++)
+          i == 0
+              ? 35
+              : i == 2
+              ? 45
+              : i == 5
+              ? 55
+              : i == headers.length - 2
+              ? 42
+              : 16,
+      ],
+      summaryRows: [
+        _kpiTotals('ALL BRANCHES', report),
+        for (final branch in report.branches.entries)
+          _kpiTotals(branch.key, branch.value),
+      ],
+      detailRows: report.items.map((item) => _kpiValues(item, report)),
+      totalRows: report.total,
+      job: job ?? KpiExportJob(),
+      onProgress: onProgress,
+    );
+  }
+
+  static xlsio.Workbook buildKpiAnalysisWorkbook(StockCheckKpiReport report) {
+    final workbook = xlsio.Workbook(2);
+    final summary = workbook.worksheets[0]..name = 'KPI Summary';
+    final details = workbook.worksheets[1]..name = 'Product Comparison';
+    const summaryHeaders = _kpiSummaryHeaders;
+    _writeHeader(summary, summaryHeaders, '#142D4E');
+    void writeTotals(int row, String branch, StockCheckKpiTotals totals) {
+      _writeRow(summary, row, _kpiTotals(branch, totals), leftColumns: {1});
+    }
+
+    writeTotals(2, 'ALL BRANCHES', report);
+    var index = 3;
+    for (final branch in report.branches.entries) {
+      writeTotals(index++, branch.key, branch.value);
+    }
+    _setColumnWidths(summary, summaryHeaders, {'Branch': 35});
+    final headers = _kpiHeaders(report);
+    final projectColors = _kpiProjectColors(report);
+    _writeHeader(details, headers, '#087E8B');
+    for (var project = 0; project < projectColors.length; project++) {
+      details
+              .getRangeByIndex(1, 7 + project * 3, 1, 9 + project * 3)
+              .cellStyle
+              .backColor =
+          '#${projectColors[project][0]}';
+    }
+    index = 2;
+    for (final item in report.items) {
+      final values = _kpiValues(item, report);
+      _writeRow(details, index, values, leftColumns: {1, 2, 3, 6});
+      for (var project = 0; project < projectColors.length; project++) {
+        details
+                .getRangeByIndex(index, 7 + project * 3, index, 9 + project * 3)
+                .cellStyle
+                .backColor =
+            '#${projectColors[project][index.isEven ? 2 : 1]}';
+      }
+      final differenceCell = details.getRangeByIndex(index, headers.length - 1);
+      if (item.comparisonDifference != null &&
+          item.comparisonDifference!.abs() > StockCheckKpiItem.tolerance) {
+        differenceCell.cellStyle.fontColor = '#B91C1C';
+        differenceCell.cellStyle.bold = true;
+      }
+      final scoreCell = details.getRangeByIndex(index, headers.length);
+      scoreCell.numberFormat = '0"%"';
+      if (item.score != null) {
+        scoreCell.cellStyle
+          ..fontColor = item.score == 100 ? '#15803D' : '#B91C1C'
+          ..backColor = item.score == 100 ? '#DCFCE7' : '#FEE2E2'
+          ..bold = true;
+      }
+      index++;
+    }
+    _setColumnWidths(details, headers, {
+      'Branch': 35,
+      'Item Name': 45,
+      'Result': 55,
+      headers[headers.length - 2]: 42,
+    });
+    details.getRangeByIndex(1, 1, 1, headers.length).rowHeight = 60;
+    details.getRangeByIndex(1, 1, 1, headers.length).cellStyle.wrapText = true;
+    return workbook;
+  }
+
   static Future<void> exportQuarterlyKpi({
     required StockCheckKpiComparison comparison,
     required StockCheckCampaign previous,

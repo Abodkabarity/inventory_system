@@ -1,10 +1,13 @@
+param([string]$BrowserTestName = '')
 $ErrorActionPreference = 'Stop'
 $stockWorkspaceRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 Push-Location $stockWorkspaceRoot
 $stockRendererCreated = $false
 $stockRendererDirectory = Join-Path $stockWorkspaceRoot 'test/canvaskit'
+$stockWorkerDirectory = Join-Path $stockWorkspaceRoot 'test/workers'
+$stockWorkersCreated = $false
 try {
-    flutter test --no-pub test/stock_check_workspace_test.dart
+    flutter test --no-pub test/stock_check_workspace_test.dart test/stock_check_kpi_report_test.dart
     if ($LASTEXITCODE -ne 0) { throw 'Stock Check model/data tests failed.' }
 
     # Flutter 3.44's local CanvasKit handler uses a slash prefix on Windows.
@@ -22,9 +25,24 @@ try {
     }
     # Use the SDK's real text font, so fixed legacy controls are measured as in the app.
     Copy-Item -LiteralPath (Join-Path $stockFlutterRoot 'bin/cache/artifacts/material_fonts/roboto-regular.ttf') -Destination (Join-Path $stockRendererDirectory 'roboto.ttf')
-    flutter test --no-pub --platform chrome test/stock_check_workspace_widget_test.dart
+    if (Test-Path -LiteralPath $stockWorkerDirectory) { throw 'Test worker directory already exists.' }
+    New-Item -ItemType Directory -Path $stockWorkerDirectory | Out-Null
+    $stockWorkersCreated = $true
+    foreach ($stockWorkerFile in @('exceljs-4.4.0.min.js', 'stock_check_kpi_export_worker.js')) {
+        Copy-Item -LiteralPath (Join-Path $stockWorkspaceRoot "assets/workers/$stockWorkerFile") -Destination (Join-Path $stockWorkerDirectory $stockWorkerFile)
+    }
+    $stockBrowserArgs = @('test', '--no-pub', '--platform', 'chrome', 'test/stock_check_workspace_widget_test.dart')
+    if ($BrowserTestName) { $stockBrowserArgs += @('--plain-name', $BrowserTestName) }
+    & flutter @stockBrowserArgs
     if ($LASTEXITCODE -ne 0) { throw 'Stock Check browser widget tests failed.' }
 } finally {
+    if ($stockWorkersCreated) {
+        foreach ($stockWorkerFile in @('exceljs-4.4.0.min.js', 'stock_check_kpi_export_worker.js')) {
+            $stockWorkerTarget = Join-Path $stockWorkerDirectory $stockWorkerFile
+            if (Test-Path -LiteralPath $stockWorkerTarget) { Remove-Item -LiteralPath $stockWorkerTarget }
+        }
+        Remove-Item -LiteralPath $stockWorkerDirectory
+    }
     if ($stockRendererCreated) {
         # Delete only the two files created here, then the empty directories.
         foreach ($stockRendererFile in @('canvaskit.js', 'canvaskit.wasm')) {

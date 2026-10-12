@@ -16,8 +16,7 @@ class StockCheckCampaign {
       senderName.isEmpty ? 'Sender not recorded' : senderName;
   int? get year => data['kpi_year'] == null ? null : _int('kpi_year');
   int? get quarter => data['kpi_quarter'] == null ? null : _int('kpi_quarter');
-  String get period =>
-      year == null || quarter == null ? '' : '$year · Q$quarter';
+  String get period => year == null || quarter == null ? '' : 'Q$quarter $year';
   DateTime? get sentAt => _date('sent_at');
   DateTime? get expiresAt => _date('expires_at');
   int get total => _int('total');

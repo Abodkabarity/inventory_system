@@ -97,6 +97,7 @@ flutter:
     - assets/images/order_guide/
     - assets/sounds/
     - assets/icon/
+    - assets/workers/
 
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
