@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/config/supabase_config.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_colors.dart';
+import 'core/utils/store_branch_identity_registry.dart';
 import 'data/datasources/remote/supabase_auth_remote_ds.dart';
 import 'data/datasources/remote/supabase_branch_remote_ds.dart';
 import 'data/datasources/remote/supabase_item_remote_ds.dart';
@@ -33,6 +34,17 @@ Future<void> main() async {
 
     authOptions: const FlutterAuthClientOptions(autoRefreshToken: true),
   );
+  final supabase = Supabase.instance.client;
+  if (supabase.auth.currentSession != null) {
+    StoreBranchIdentityRegistry.load(supabase);
+  }
+  supabase.auth.onAuthStateChange.listen((event) {
+    if (event.session != null) {
+      StoreBranchIdentityRegistry.load(supabase);
+    } else {
+      StoreBranchIdentityRegistry.groups.value = const {};
+    }
+  });
   // DataSources
   final authDs = SupabaseAuthRemoteDs(Supabase.instance.client);
   final branchDs = SupabaseBranchRemoteDs(Supabase.instance.client);
@@ -79,31 +91,34 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ScreenUtilInit(
-      designSize: const Size(1600, 800),
-      minTextAdapt: true,
-      splitScreenMode: true,
-      builder: (context, child) {
-        return MaterialApp.router(
-          debugShowCheckedModeBanner: false,
-          routerConfig: router,
-          builder: (context, child) {
-            return _ScaledAppShell(
-              scale: _appUiScale,
-              child: child ?? const SizedBox.shrink(),
-            );
-          },
-          theme: ThemeData(
-            useMaterial3: true,
+    return ValueListenableBuilder<Map<String, String>>(
+      valueListenable: StoreBranchIdentityRegistry.groups,
+      builder: (context, _, child) => ScreenUtilInit(
+        designSize: const Size(1600, 800),
+        minTextAdapt: true,
+        splitScreenMode: true,
+        builder: (context, child) {
+          return MaterialApp.router(
+            debugShowCheckedModeBanner: false,
+            routerConfig: router,
+            builder: (context, child) {
+              return _ScaledAppShell(
+                scale: _appUiScale,
+                child: child ?? const SizedBox.shrink(),
+              );
+            },
+            theme: ThemeData(
+              useMaterial3: true,
 
-            textSelectionTheme: const TextSelectionThemeData(
-              selectionColor: AppColors.primaryColor,
-              selectionHandleColor: AppColors.primaryColor,
-              cursorColor: AppColors.primaryColor,
+              textSelectionTheme: const TextSelectionThemeData(
+                selectionColor: AppColors.primaryColor,
+                selectionHandleColor: AppColors.primaryColor,
+                cursorColor: AppColors.primaryColor,
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }

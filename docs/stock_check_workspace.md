@@ -56,6 +56,19 @@ changes still require rebuilding the served asset bundle or a Flutter restart.
 `buildKpiAnalysisWorkbook` remains available for synchronous workbook inspection;
 the production KPI download uses `buildKpiAnalysisBytes` instead.
 
+KPI Summary omits the Awaiting or Review column. Shared Items appears only
+when at least two projects are selected, with the selected quarters in its
+header (for example, `Shared Items (Q1 - Q2 - Q3)`). Summary headers, row values,
+and column widths are generated together for both workbook export paths.
+
+Branch labels in Stock Check and KPI use
+`StoreBranchIdentityRegistry.displayName`, including summary/detail exports,
+branch cards, grids, selectors, and dialogs. Group 71 displays `71 ` before the
+name. Raw names remain the keys for queries, branch/product matching and KPI
+calculations. KPI cards and product dialogs react to registry metadata updates,
+and branch search accepts the displayed prefix. This project-wide requirement
+is also recorded in the repository's `AGENTS.md` for future changes.
+
 The analysis panel paints progress before starting, shows real worksheet row
 counts and an indeterminate finishing phase, and keeps branch search, project
 selection and product details available. Cancel or leaving the page terminates

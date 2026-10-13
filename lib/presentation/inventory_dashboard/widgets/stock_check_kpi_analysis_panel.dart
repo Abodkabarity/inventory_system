@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/utils/stock_check_excel_exporter.dart';
 import '../../../core/utils/stock_check_kpi_export_worker.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../../domain/entities/stock_check_campaign.dart';
 import '../../../domain/entities/stock_check_kpi_report.dart';
 import '../../../domain/entities/stock_check_task.dart';
@@ -60,6 +61,11 @@ class _StockCheckKpiAnalysisPanelState
     super.initState();
     _report = StockCheckKpiReport(projects: const [], rows: const []);
     _refresh();
+    StoreBranchIdentityRegistry.groups.addListener(_branchDisplayChanged);
+  }
+
+  void _branchDisplayChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -140,6 +146,7 @@ class _StockCheckKpiAnalysisPanelState
 
   @override
   void dispose() {
+    StoreBranchIdentityRegistry.groups.removeListener(_branchDisplayChanged);
     _exportJob?.cancel();
     _scroll.dispose();
     super.dispose();
@@ -149,8 +156,9 @@ class _StockCheckKpiAnalysisPanelState
   Widget build(BuildContext context) {
     final branches = _report.branches.entries
         .where(
-          (branch) =>
-              branch.key.toLowerCase().contains(_search.trim().toLowerCase()),
+          (branch) => StoreBranchIdentityRegistry.displayName(
+            branch.key,
+          ).toLowerCase().contains(_search.trim().toLowerCase()),
         )
         .toList();
     return Container(
@@ -987,6 +995,7 @@ class _StockCheckKpiAnalysisPanelState
 
   Widget _branchCard(String branch, StockCheckKpiTotals totals) {
     final color = _kpiScoreColor(totals.accuracy);
+    final branchLabel = StoreBranchIdentityRegistry.displayName(branch);
     return _KpiHoverCard(
       child: Padding(
         padding: const EdgeInsets.all(18),
@@ -1012,9 +1021,9 @@ class _StockCheckKpiAnalysisPanelState
                 const SizedBox(width: 10),
                 Expanded(
                   child: Tooltip(
-                    message: branch,
+                    message: branchLabel,
                     child: Text(
-                      branch,
+                      branchLabel,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -1372,7 +1381,18 @@ class _KpiProductDialogState extends State<_KpiProductDialog> {
   String _filter = 'All products';
 
   @override
+  void initState() {
+    super.initState();
+    StoreBranchIdentityRegistry.groups.addListener(_branchDisplayChanged);
+  }
+
+  void _branchDisplayChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    StoreBranchIdentityRegistry.groups.removeListener(_branchDisplayChanged);
     _horizontal.dispose();
     super.dispose();
   }
@@ -1428,7 +1448,7 @@ class _KpiProductDialogState extends State<_KpiProductDialog> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      '${widget.branch} — ${_percent(widget.totals.accuracy)} KPI accuracy',
+                      '${StoreBranchIdentityRegistry.displayName(widget.branch)} — ${_percent(widget.totals.accuracy)} KPI accuracy',
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w700,

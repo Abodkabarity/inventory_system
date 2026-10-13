@@ -1,3 +1,4 @@
+import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -138,7 +139,12 @@ class _StockCheckPageState extends State<StockCheckPage> {
         ? widget.runDate
         : '${titleDate.day.toString().padLeft(2, '0')}-${titleDate.month.toString().padLeft(2, '0')}-${titleDate.year}';
     _titleController.text = '${widget.sourceTitle} $formattedTitleDate';
+    StoreBranchIdentityRegistry.groups.addListener(_branchDisplayChanged);
     _load();
+  }
+
+  void _branchDisplayChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -153,6 +159,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
 
   @override
   void dispose() {
+    StoreBranchIdentityRegistry.groups.removeListener(_branchDisplayChanged);
     _titleController.dispose();
     super.dispose();
   }
@@ -1584,7 +1591,10 @@ class _StockCheckPageState extends State<StockCheckPage> {
     if (_branches.isEmpty) return 'No branches loaded';
     if (_selectedBranches.isEmpty) return '';
     if (_selectedBranches.length == _branches.length) return 'All branches';
-    return _selectedBranches.take(3).join(', ') +
+    return _selectedBranches
+            .take(3)
+            .map((branch) => StoreBranchIdentityRegistry.displayName(branch))
+            .join(', ') +
         (_selectedBranches.length > 3
             ? ' +${_selectedBranches.length - 3} more'
             : '');
@@ -1805,7 +1815,10 @@ class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
         _ => true,
       };
       final searchOk =
-          needle.isEmpty || branch.branch.toLowerCase().contains(needle);
+          needle.isEmpty ||
+          StoreBranchIdentityRegistry.displayName(
+            branch.branch,
+          ).toLowerCase().contains(needle);
       return branchOk && statusOk && accuracyOk && searchOk;
     }).toList();
     branches.sort((a, b) {
@@ -2274,7 +2287,9 @@ class _AnalysisBranchPicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = value == 'ALL' ? 'All branches' : value;
+    final label = value == 'ALL'
+        ? 'All branches'
+        : StoreBranchIdentityRegistry.displayName(value);
     return InkWell(
       onTap: () async {
         final selected = await showDialog<String>(
@@ -2339,7 +2354,11 @@ class _AnalysisBranchSearchDialogState
     final options = [
       'ALL',
       ...widget.branches.where(
-        (branch) => needle.isEmpty || branch.toLowerCase().contains(needle),
+        (branch) =>
+            needle.isEmpty ||
+            StoreBranchIdentityRegistry.displayName(
+              branch,
+            ).toLowerCase().contains(needle),
       ),
     ];
     return Dialog(
@@ -2414,7 +2433,9 @@ class _AnalysisBranchSearchDialogState
                             : AppColors.subText,
                       ),
                       title: Text(
-                        branch == 'ALL' ? 'All branches' : branch,
+                        branch == 'ALL'
+                            ? 'All branches'
+                            : StoreBranchIdentityRegistry.displayName(branch),
                         style: const TextStyle(fontWeight: FontWeight.w900),
                       ),
                       onTap: () => Navigator.pop(context, branch),
@@ -2966,7 +2987,7 @@ class _ComparisonSummary extends StatelessWidget {
                   Expanded(
                     flex: 2,
                     child: Text(
-                      row.branch,
+              StoreBranchIdentityRegistry.displayName(row.branch),
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
@@ -3071,7 +3092,7 @@ class _ComparisonBranchChip extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    row.branch,
+                    StoreBranchIdentityRegistry.displayName(row.branch),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontWeight: FontWeight.w900),
@@ -3187,7 +3208,7 @@ class _ProjectComparisonDialogState extends State<_ProjectComparisonDialog> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '${comparison.branch} detailed comparison',
+                          '${StoreBranchIdentityRegistry.displayName(comparison.branch)} detailed comparison',
                           style: const TextStyle(
                             fontSize: 21,
                             fontWeight: FontWeight.w900,
@@ -3783,7 +3804,7 @@ class _BranchAccuracyCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  row.branch,
+                  StoreBranchIdentityRegistry.displayName(row.branch),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -4292,7 +4313,9 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
               (_statusFilter == 'pending' && row.isPending);
           final searchOk =
               needle.isEmpty ||
-              row.branchName.toLowerCase().contains(needle) ||
+              StoreBranchIdentityRegistry.displayName(
+                row.branchName,
+              ).toLowerCase().contains(needle) ||
               row.itemCode.toLowerCase().contains(needle) ||
               row.itemName.toLowerCase().contains(needle);
           return branchOk && statusOk && searchOk;
@@ -4521,7 +4544,11 @@ class _BranchFilterSearchDialogState extends State<_BranchFilterSearchDialog> {
     final needle = _search.trim().toLowerCase();
     final options = widget.branches
         .where(
-          (branch) => needle.isEmpty || branch.toLowerCase().contains(needle),
+          (branch) =>
+              needle.isEmpty ||
+              StoreBranchIdentityRegistry.displayName(
+                branch,
+              ).toLowerCase().contains(needle),
         )
         .toList();
     return Dialog(
@@ -4628,7 +4655,7 @@ class _BranchFilterSearchDialogState extends State<_BranchFilterSearchDialog> {
                             : AppColors.subText,
                       ),
                       title: Text(
-                        branch,
+                        StoreBranchIdentityRegistry.displayName(branch),
                         style: const TextStyle(fontWeight: FontWeight.w800),
                       ),
                       onTap: () => setState(() {
@@ -4739,7 +4766,7 @@ class _StockCheckNoteDialogState extends State<_StockCheckNoteDialog> {
             ),
             const SizedBox(height: 4),
             Text(
-              '${widget.row.branchName} - ${widget.row.itemCode}',
+              '${StoreBranchIdentityRegistry.displayName(widget.row.branchName)} - ${widget.row.itemCode}',
               style: const TextStyle(
                 color: AppColors.subText,
                 fontWeight: FontWeight.w700,
@@ -5285,7 +5312,9 @@ class _StockCheckResultsGridSource extends DataGridSource {
           );
         }
         return _StockCheckGridTextCell(
-          text: _display(cell.value),
+          text: cell.columnName == 'branch'
+              ? StoreBranchIdentityRegistry.displayName(_display(cell.value))
+              : _display(cell.value),
           strong: cell.columnName == 'branch' || cell.columnName == 'itemCode',
         );
       }).toList(),
@@ -7408,7 +7437,11 @@ class _BranchPickerDialogState extends State<_BranchPickerDialog> {
   Widget build(BuildContext context) {
     final query = _query.trim().toLowerCase();
     final visible = widget.branches
-        .where((branch) => branch.toLowerCase().contains(query))
+        .where(
+          (branch) => StoreBranchIdentityRegistry.displayName(
+            branch,
+          ).toLowerCase().contains(query),
+        )
         .toList();
 
     return Dialog(
@@ -7573,7 +7606,9 @@ class _BranchPickerDialogState extends State<_BranchPickerDialog> {
                             : const Color(0xFF2563EB),
                       ),
                       title: Text(
-                        isStore ? 'Store' : branch,
+                        isStore
+                            ? 'Store'
+                            : StoreBranchIdentityRegistry.displayName(branch),
                         style: const TextStyle(fontWeight: FontWeight.w900),
                       ),
                       subtitle: isStore
@@ -8502,7 +8537,7 @@ class _ImportPreview extends StatelessWidget {
                 (row) => Padding(
                   padding: const EdgeInsets.only(bottom: 5),
                   child: Text(
-                    '${row.branchName}  |  ${row.itemCode}  |  ${row.itemName}',
+                    '${StoreBranchIdentityRegistry.displayName(row.branchName)}  |  ${row.itemCode}  |  ${row.itemName}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(

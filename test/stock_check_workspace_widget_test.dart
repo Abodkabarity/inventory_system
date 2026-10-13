@@ -9,6 +9,7 @@ import 'package:archive/archive.dart';
 import 'package:daily_order/core/theme/app_colors.dart';
 import 'package:daily_order/core/utils/stock_check_excel_exporter.dart';
 import 'package:daily_order/core/utils/stock_check_kpi_export_worker.dart';
+import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 import 'package:daily_order/domain/entities/stock_check_campaign.dart';
 import 'package:daily_order/domain/entities/stock_check_kpi_report.dart';
 import 'package:daily_order/domain/entities/stock_check_task.dart';
@@ -25,31 +26,32 @@ import 'package:xml/xml.dart';
 
 var _workerAssetRequests = 0;
 
-StockCheckKpiReport exportFixture({int products = 4}) => StockCheckKpiReport(
-  projects: [
-    for (var q = 1; q <= 4; q++)
-      StockCheckCampaign({
-        'batch_id': 'q$q',
-        'title': 'Long project title Q$q',
-        'kpi_year': 2026,
-        'kpi_quarter': q,
-      }),
-  ],
-  rows: [
-    for (var i = 0; i < products; i++)
-      for (var q = 1; q <= (i == 1 ? 1 : 4); q++)
-        StockCheckTask.fromMap({
-          'id': '$q-$i',
-          'batch_id': 'q$q',
-          'branch_name': 'Branch A',
-          'item_code': 'P${i.toString().padLeft(5, '0')}',
-          'item_name': 'Medicine $i',
-          'system_qty': 10,
-          'actual_qty': i == 2 ? null : (i == 0 && q == 2 ? 12 : 10),
-          'status': i == 2 ? 'pending' : 'submitted',
-        }),
-  ],
-);
+StockCheckKpiReport exportFixture({int products = 4, int quarters = 4}) =>
+    StockCheckKpiReport(
+      projects: [
+        for (var q = 1; q <= quarters; q++)
+          StockCheckCampaign({
+            'batch_id': 'q$q',
+            'title': 'Long project title Q$q',
+            'kpi_year': 2026,
+            'kpi_quarter': q,
+          }),
+      ],
+      rows: [
+        for (var i = 0; i < products; i++)
+          for (var q = 1; q <= (i == 1 ? 1 : quarters); q++)
+            StockCheckTask.fromMap({
+              'id': '$q-$i',
+              'batch_id': 'q$q',
+              'branch_name': 'Branch A',
+              'item_code': 'P${i.toString().padLeft(5, '0')}',
+              'item_name': 'Medicine $i',
+              'system_qty': 10,
+              'actual_qty': i == 2 ? null : (i == 0 && q == 2 ? 12 : 10),
+              'status': i == 2 ? 'pending' : 'submitted',
+            }),
+      ],
+    );
 
 XmlDocument exportXml(Archive archive, String path) => XmlDocument.parse(
   utf8.decode(archive.findFile(path)!.content as List<int>),
@@ -355,6 +357,225 @@ void main() {
     },
   );
   test(
+    'KPI Summary shows shared items for multiple projects without review',
+    () async {
+      for (var quarters = 1; quarters <= 4; quarters++) {
+        final report = exportFixture(quarters: quarters);
+        final expectedHeaders = [
+          'Branch',
+          'Unique Products',
+          'Scored',
+          '100%',
+          '0%',
+          if (quarters > 1)
+            'Shared Items (${List.generate(quarters, (i) => 'Q${i + 1}').join(' - ')})',
+          'Single Project',
+          'Accuracy %',
+        ];
+        final expectedTotals = [
+          'ALL BRANCHES',
+          '${report.total}',
+          '${report.scored}',
+          '${report.correct}',
+          '${report.failed}',
+          if (quarters > 1) '${report.shared}',
+          '${report.standalone}',
+        ];
+        final bytes = await StockCheckExcelExporter.buildKpiAnalysisBytes(
+          report: report,
+        );
+        final archive = ZipDecoder().decodeBytes(bytes);
+        final summary = exportXml(archive, 'xl/worksheets/sheet1.xml');
+        final strings = exportXml(
+          archive,
+          'xl/sharedStrings.xml',
+        ).findAllElements('si').map((e) => e.innerText).toList();
+        final columns = List.generate(
+          expectedHeaders.length,
+          (i) => String.fromCharCode(65 + i),
+        );
+        expect([
+          for (final col in columns) exportCell(summary, '${col}1', strings),
+        ], expectedHeaders);
+        expect(
+          summary.findAllElements('row').first.findElements('c').length,
+          expectedHeaders.length,
+        );
+        expect([
+          for (final col in columns.take(columns.length - 1))
+            exportCell(summary, '${col}2', strings),
+        ], expectedTotals);
+        expect(
+          double.parse(exportCell(summary, '${columns.last}2', strings)),
+          closeTo(report.accuracy!, .001),
+        );
+        final workbook = StockCheckExcelExporter.buildKpiAnalysisWorkbook(
+          report,
+        );
+        try {
+          final sheet = workbook.worksheets[0];
+          expect([
+            for (var col = 1; col <= expectedHeaders.length; col++)
+              sheet.getRangeByIndex(1, col).getText(),
+          ], expectedHeaders);
+          expect(
+            sheet.getRangeByIndex(2, expectedHeaders.length).getNumber(),
+            report.accuracy,
+          );
+          expect(
+            sheet.getRangeByIndex(3, expectedHeaders.length).getNumber(),
+            report.branches.values.single.accuracy,
+          );
+        } finally {
+          workbook.dispose();
+        }
+      }
+    },
+  );
+  test(
+    'branch 71 prefix appears in both KPI export paths without changing identity',
+    () async {
+      final originalGroups = StoreBranchIdentityRegistry.groups.value;
+      addTearDown(
+        () => StoreBranchIdentityRegistry.groups.value = originalGroups,
+      );
+      StoreBranchIdentityRegistry.groups.value = const {
+        'BRANCH A': '71',
+        'BRANCH B': 'APG',
+      };
+      final fixture = exportFixture();
+      final report = StockCheckKpiReport(
+        projects: fixture.projects,
+        rows: [
+          for (final item in fixture.items)
+            for (final project in fixture.projects) ?item.rowFor(project.id),
+          StockCheckTask.fromMap({
+            'id': 'other-branch',
+            'batch_id': 'q1',
+            'branch_name': 'Branch B',
+            'item_code': 'P00000',
+            'item_name': 'Other branch medicine',
+            'system_qty': 10,
+            'actual_qty': 10,
+            'status': 'submitted',
+          }),
+        ],
+      );
+      final total = report.total;
+      final accuracy = report.accuracy;
+      final bytes = await StockCheckExcelExporter.buildKpiAnalysisBytes(
+        report: report,
+      );
+      final archive = ZipDecoder().decodeBytes(bytes);
+      final strings = exportXml(
+        archive,
+        'xl/sharedStrings.xml',
+      ).findAllElements('si').map((e) => e.innerText).toList();
+      final summary = exportXml(archive, 'xl/worksheets/sheet1.xml');
+      final details = exportXml(archive, 'xl/worksheets/sheet2.xml');
+      expect(exportCell(summary, 'A2', strings), 'ALL BRANCHES');
+      expect(exportCell(summary, 'A3', strings), '71 Branch A');
+      expect(exportCell(summary, 'A4', strings), 'Branch B');
+      expect(exportCell(details, 'A2', strings), '71 Branch A');
+      expect(exportCell(details, 'A6', strings), 'Branch B');
+      final workbook = StockCheckExcelExporter.buildKpiAnalysisWorkbook(report);
+      try {
+        expect(
+          workbook.worksheets[0].getRangeByIndex(3, 1).getText(),
+          '71 Branch A',
+        );
+        expect(
+          workbook.worksheets[0].getRangeByIndex(4, 1).getText(),
+          'Branch B',
+        );
+        expect(
+          workbook.worksheets[1].getRangeByIndex(2, 1).getText(),
+          '71 Branch A',
+        );
+        expect(
+          workbook.worksheets[1].getRangeByIndex(6, 1).getText(),
+          'Branch B',
+        );
+      } finally {
+        workbook.dispose();
+      }
+      expect(report.branches.keys, ['Branch A', 'Branch B']);
+      expect(report.items.first.rowFor('q1')!.branchName, 'Branch A');
+      expect(report.total, total);
+      expect(report.accuracy, accuracy);
+    },
+  );
+  testWidgets(
+    'branch 71 labels update after metadata loads and support prefixed search',
+    (tester) async {
+      final originalGroups = StoreBranchIdentityRegistry.groups.value;
+      addTearDown(
+        () => StoreBranchIdentityRegistry.groups.value = originalGroups,
+      );
+      StoreBranchIdentityRegistry.groups.value = const {};
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      await tester.binding.setSurfaceSize(const Size(1600, 1000));
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final fixture = exportFixture();
+      final rows = [
+        for (final item in fixture.items)
+          for (final project in fixture.projects) ?item.rowFor(project.id),
+        StockCheckTask.fromMap({
+          'id': 'other-branch',
+          'batch_id': 'q1',
+          'branch_name': 'Branch B',
+          'item_code': 'P00000',
+          'item_name': 'Other branch medicine',
+          'system_qty': 10,
+          'actual_qty': 10,
+          'status': 'submitted',
+        }),
+      ];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StockCheckKpiAnalysisPanel(
+              projects: fixture.projects,
+              rows: rows,
+              onSelectProjects: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Branch A'), findsOneWidget);
+      expect(find.text('Branch B'), findsOneWidget);
+      await tester.tap(find.text('Product details').first);
+      await tester.pumpAndSettle();
+      StoreBranchIdentityRegistry.groups.value = const {
+        'BRANCH A': '71',
+        'BRANCH B': 'APG',
+      };
+      await tester.pumpAndSettle();
+      expect(find.textContaining('71 Branch A —'), findsOneWidget);
+      await tester.tap(find.byTooltip('Close'));
+      await tester.pumpAndSettle();
+      expect(find.text('71 Branch A'), findsOneWidget);
+      expect(find.text('Branch B'), findsOneWidget);
+      expect(find.text('Branch A'), findsNothing);
+      final search = find.byWidgetPredicate(
+        (w) => w is TextField && w.decoration?.labelText == 'Search branch',
+      );
+      await tester.enterText(search, '71 Branch A');
+      await tester.pumpAndSettle();
+      expect(
+        find.byWidgetPredicate((w) => w is Text && w.data == '71 Branch A'),
+        findsOneWidget,
+      );
+      expect(find.text('Branch B'), findsNothing);
+      expect(rows.first.branchName, 'Branch A');
+      expect(tester.takeException(), isNull);
+    },
+  );
+  test(
     'worker Excel preserves quarter values, exclusions, final scores and colors',
     () async {
       final bytes = await StockCheckExcelExporter.buildKpiAnalysisBytes(
@@ -370,7 +591,7 @@ void main() {
       expect(exportCell(summary, 'C2', strings), '3');
       expect(exportCell(summary, 'D2', strings), '2');
       expect(
-        double.parse(exportCell(summary, 'I2', strings)),
+        double.parse(exportCell(summary, 'H2', strings)),
         closeTo(200 / 3, .001),
       );
       expect(exportCell(detail, 'R1', strings), 'Q4 2026 | Difference');
@@ -706,7 +927,7 @@ void main() {
       final details = workbook.worksheets[1];
       expect(summary.getRangeByIndex(2, 3).getNumber(), 2);
       expect(summary.getRangeByIndex(2, 4).getNumber(), 1);
-      expect(summary.getRangeByIndex(2, 9).getNumber(), 50);
+      expect(summary.getRangeByIndex(2, 8).getNumber(), 50);
       expect(details.getRangeByIndex(2, 20).getNumber(), 0);
       expect(details.getRangeByIndex(3, 20).getNumber(), 100);
       expect(details.getRangeByIndex(2, 12).getNumber(), 2);

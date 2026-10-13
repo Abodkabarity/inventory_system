@@ -9,6 +9,7 @@ import '../../domain/entities/stock_check_task.dart';
 import '../../domain/entities/stock_check_campaign.dart';
 import '../../domain/entities/stock_check_kpi_comparison.dart';
 import '../../domain/entities/stock_check_kpi_report.dart';
+import 'store_branch_identity_registry.dart';
 import 'stock_check_kpi_export_worker.dart';
 
 const double _stockCheckAccuracyTolerance = 0.01;
@@ -106,15 +107,15 @@ class StockCheckExcelExporter {
     );
   }
 
-  static const _kpiSummaryHeaders = [
+  static List<String> _kpiSummaryHeaders(StockCheckKpiReport report) => [
     'Branch',
     'Unique Products',
     'Scored',
     '100%',
     '0%',
-    'Shared',
+    if (report.projects.length > 1)
+      'Shared Items (${report.projects.map((project) => project.quarter == null ? (project.period.isEmpty ? project.title : project.period) : 'Q${project.quarter}').join(' - ')})',
     'Single Project',
-    'Awaiting or Review',
     'Accuracy %',
   ];
 
@@ -148,15 +149,18 @@ class StockCheckExcelExporter {
     'Accuracy %',
   ];
 
-  static List<Object> _kpiTotals(String branch, StockCheckKpiTotals totals) => [
-    branch,
+  static List<Object> _kpiTotals(
+    String branch,
+    StockCheckKpiTotals totals,
+    StockCheckKpiReport report,
+  ) => [
+    StoreBranchIdentityRegistry.displayName(branch),
     totals.total,
     totals.scored,
     totals.correct,
     totals.failed,
-    totals.shared,
+    if (report.projects.length > 1) totals.shared,
     totals.standalone,
-    totals.awaiting,
     totals.accuracy ?? '',
   ];
 
@@ -164,7 +168,7 @@ class StockCheckExcelExporter {
     StockCheckKpiItem item,
     StockCheckKpiReport report,
   ) => [
-    item.branch,
+    StoreBranchIdentityRegistry.displayName(item.branch),
     item.code,
     item.name,
     item.projectCount,
@@ -189,11 +193,19 @@ class StockCheckExcelExporter {
     void Function(KpiExportProgress)? onProgress,
   }) {
     final headers = _kpiHeaders(report);
+    final summaryHeaders = _kpiSummaryHeaders(report);
     return StockCheckKpiExportWorker.build(
-      summaryHeaders: _kpiSummaryHeaders,
+      summaryHeaders: summaryHeaders,
       detailHeaders: headers,
       projectColors: _kpiProjectColors(report),
-      summaryWidths: [35, ...List.filled(8, 16)],
+      summaryWidths: [
+        for (final header in summaryHeaders)
+          header == 'Branch'
+              ? 35
+              : header.startsWith('Shared Items')
+              ? 28
+              : 16,
+      ],
       detailWidths: [
         for (var i = 0; i < headers.length; i++)
           i == 0
@@ -207,9 +219,9 @@ class StockCheckExcelExporter {
               : 16,
       ],
       summaryRows: [
-        _kpiTotals('ALL BRANCHES', report),
+        _kpiTotals('ALL BRANCHES', report, report),
         for (final branch in report.branches.entries)
-          _kpiTotals(branch.key, branch.value),
+          _kpiTotals(branch.key, branch.value, report),
       ],
       detailRows: report.items.map((item) => _kpiValues(item, report)),
       totalRows: report.total,
@@ -222,10 +234,15 @@ class StockCheckExcelExporter {
     final workbook = xlsio.Workbook(2);
     final summary = workbook.worksheets[0]..name = 'KPI Summary';
     final details = workbook.worksheets[1]..name = 'Product Comparison';
-    const summaryHeaders = _kpiSummaryHeaders;
+    final summaryHeaders = _kpiSummaryHeaders(report);
     _writeHeader(summary, summaryHeaders, '#142D4E');
     void writeTotals(int row, String branch, StockCheckKpiTotals totals) {
-      _writeRow(summary, row, _kpiTotals(branch, totals), leftColumns: {1});
+      _writeRow(
+        summary,
+        row,
+        _kpiTotals(branch, totals, report),
+        leftColumns: {1},
+      );
     }
 
     writeTotals(2, 'ALL BRANCHES', report);
@@ -233,7 +250,11 @@ class StockCheckExcelExporter {
     for (final branch in report.branches.entries) {
       writeTotals(index++, branch.key, branch.value);
     }
-    _setColumnWidths(summary, summaryHeaders, {'Branch': 35});
+    _setColumnWidths(summary, summaryHeaders, {
+      'Branch': 35,
+      for (final header in summaryHeaders)
+        if (header.startsWith('Shared Items')) header: 28,
+    });
     final headers = _kpiHeaders(report);
     final projectColors = _kpiProjectColors(report);
     _writeHeader(details, headers, '#087E8B');
@@ -360,7 +381,7 @@ class StockCheckExcelExporter {
         details,
         index++,
         [
-          item.branch,
+          StoreBranchIdentityRegistry.displayName(item.branch),
           item.code,
           item.name,
           previous.period,
@@ -474,7 +495,7 @@ class StockCheckExcelExporter {
       final values = [
         r + 1,
         row.title,
-        row.branchName,
+        StoreBranchIdentityRegistry.displayName(row.branchName),
         row.itemCode,
         row.itemName,
         row.systemQty ?? '',
@@ -589,7 +610,7 @@ class StockCheckExcelExporter {
     for (var r = 0; r < sorted.length; r++) {
       final row = sorted[r];
       final values = [
-        row.branchName,
+        StoreBranchIdentityRegistry.displayName(row.branchName),
         row.itemCode,
         row.itemName,
         row.systemQty ?? '',
@@ -679,7 +700,7 @@ class StockCheckExcelExporter {
       final row = branchRows[r];
       final values = [
         r + 1,
-        row.branch,
+        StoreBranchIdentityRegistry.displayName(row.branch),
         row.projects,
         row.total,
         row.submitted,
@@ -743,7 +764,7 @@ class StockCheckExcelExporter {
     for (var r = 0; r < sortedRows.length; r++) {
       final row = sortedRows[r];
       final values = [
-        row.branchName,
+        StoreBranchIdentityRegistry.displayName(row.branchName),
         row.itemCode,
         row.itemName,
         row.systemQty ?? '',
@@ -852,7 +873,7 @@ class StockCheckExcelExporter {
       final rate = total == 0 ? 100.0 : matching * 100 / total;
       final values = [
         index + 1,
-        branches[index],
+        StoreBranchIdentityRegistry.displayName(branches[index]),
         branchRows.first.firstProject,
         branchRows.first.secondProject,
         total,
@@ -896,7 +917,7 @@ class StockCheckExcelExporter {
         details,
         index + 2,
         [
-          row.branch,
+          StoreBranchIdentityRegistry.displayName(row.branch),
           row.itemCode,
           row.itemName,
           row.firstProject,

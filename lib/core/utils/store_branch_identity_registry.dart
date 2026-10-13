@@ -1,12 +1,29 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Store-only display metadata for branches.
+/// App-wide display metadata for branches.
 ///
-/// Branch names remain untouched for queries, matching, exports, and writes.
+/// Raw branch names remain untouched for queries, matching, and writes.
+/// Labels and exported branch cells use [displayName].
 /// This registry only decorates names whose authoritative `branch_group` is 71.
 class StoreBranchIdentityRegistry {
   StoreBranchIdentityRegistry._();
+
+  static const _branchExportColumns = <String>{
+    'branch',
+    'branch_name',
+    'BRANCH',
+    'Branch',
+    'Branch Name',
+    'from_branch',
+    'to_branch',
+    'source_branch',
+    'destination_branch',
+    'From Branch',
+    'To Branch',
+    'Source Branch',
+    'Destination Branch',
+  };
 
   static final ValueNotifier<Map<String, String>> groups =
       ValueNotifier<Map<String, String>>(const {});
@@ -39,7 +56,9 @@ class StoreBranchIdentityRegistry {
         if (name.isEmpty) continue;
         next[_key(name)] = (raw['branch_group'] ?? '').toString().trim();
       }
-      groups.value = Map<String, String>.unmodifiable(next);
+      if (client.auth.currentSession != null) {
+        groups.value = Map<String, String>.unmodifiable(next);
+      }
     } catch (_) {
       // Display metadata must never block Store workflows or printing.
     }
@@ -48,5 +67,21 @@ class StoreBranchIdentityRegistry {
   static bool isSeventyOne(String? branchName, [Map<String, String>? source]) {
     final group = (source ?? groups.value)[_key(branchName)];
     return group?.trim() == '71';
+  }
+
+  /// Use only for labels and exported cells. Keep the original name for
+  /// database filters, grouping, imports, and file paths.
+  static String displayName(String? branchName, [Map<String, String>? source]) {
+    final name = (branchName ?? '').trim();
+    if (name.isEmpty || !isSeventyOne(name, source)) return name;
+    if (name.startsWith('71 ')) return name;
+    return '71 $name';
+  }
+
+  static Object? exportValue(String column, Object? value) {
+    if (_branchExportColumns.contains(column)) {
+      return displayName(value?.toString());
+    }
+    return value;
   }
 }
