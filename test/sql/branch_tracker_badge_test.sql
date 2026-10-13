@@ -1,4 +1,4 @@
--- Read-only regression against the unchanged tracker view, under the app role.
+-- Read-only regression against the visible tracker sources, under the app role.
 begin transaction isolation level repeatable read read only;
 set local role authenticated;
 
@@ -28,7 +28,8 @@ begin
   loop
     select least(1000, count(*))::integer into v_expected
     from public.branch_change_tracker
-    where changed_at >= v_case.cutoff
+    where source_table <> 'stk_mismatch'
+      and changed_at >= v_case.cutoff
       and (v_case.inclusive or changed_at > v_case.cutoff);
     v_actual := public.get_branch_tracker_badge_count(v_case.cutoff, v_case.inclusive);
     if v_actual is distinct from v_expected then

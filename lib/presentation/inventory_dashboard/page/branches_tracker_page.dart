@@ -13,6 +13,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 
 import '../widgets/additional_analysis/glass_container.dart';
 import '../widgets/branches_tracker_timeline_tab.dart';
@@ -99,12 +100,6 @@ class _BranchesTrackerPageState extends State<BranchesTrackerPage>
           table: 'mismatch_log',
           callback: (_) => _reloadFromRealtime(),
         )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'stk_mismatch',
-          callback: (_) => _reloadFromRealtime(),
-        )
         .subscribe();
   }
 
@@ -140,9 +135,14 @@ class _BranchesTrackerPageState extends State<BranchesTrackerPage>
     }
 
     try {
-      final data = await Supabase.instance.client
+      final client = Supabase.instance.client;
+      // Refresh display metadata when opening/reloading this page, including
+      // sessions that started before branch group metadata was available.
+      await StoreBranchIdentityRegistry.load(client, force: !silent);
+      final data = await client
           .from('branch_change_tracker')
           .select()
+          .neq('source_table', 'stk_mismatch')
           .gte('changed_at', _from.toIso8601String())
           .lte('changed_at', _to.toIso8601String())
           .order('changed_at', ascending: false)
@@ -173,13 +173,8 @@ class _BranchesTrackerPageState extends State<BranchesTrackerPage>
   int get _maxAdjTotal => _rows
       .where((r) => (r['source_table'] as String? ?? '').contains('max_adj'))
       .length;
-  int get _mismatchTotal => _rows.where((r) {
-    final t = (r['source_table'] as String? ?? '');
-    return t.contains('mismatch') || t == 'stk_mismatch';
-  }).length;
-
-  int get _activeMismatch =>
-      _rows.where((r) => r['source_table'] == 'stk_mismatch').length;
+  int get _mismatchTotal =>
+      _rows.where((r) => r['source_table'] == 'mismatch_log').length;
   int get _activeMaxAdj =>
       _rows.where((r) => r['source_table'] == 'max_adj').length;
 
@@ -460,7 +455,6 @@ class _BranchesTrackerPageState extends State<BranchesTrackerPage>
             orderEdits: _orderEdits,
             maxAdjTotal: _maxAdjTotal,
             mismatchTotal: _mismatchTotal,
-            activeMismatch: _activeMismatch,
             activeMaxAdj: _activeMaxAdj,
             uniqueBranches: _uniqueBranches.length,
             uniqueItems: _uniqueItems.length,
@@ -491,19 +485,18 @@ class _BranchesTrackerPageState extends State<BranchesTrackerPage>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// KPI CARDS  (2 rows × 4)
+// KPI CARDS
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _TrackerKpiCards extends StatelessWidget {
   final int total, orderEdits, maxAdjTotal, mismatchTotal;
-  final int activeMismatch, activeMaxAdj, uniqueBranches, uniqueItems;
+  final int activeMaxAdj, uniqueBranches, uniqueItems;
 
   const _TrackerKpiCards({
     required this.total,
     required this.orderEdits,
     required this.maxAdjTotal,
     required this.mismatchTotal,
-    required this.activeMismatch,
     required this.activeMaxAdj,
     required this.uniqueBranches,
     required this.uniqueItems,
@@ -547,13 +540,6 @@ class _TrackerKpiCards extends StatelessWidget {
         const SizedBox(height: 16),
         Row(
           children: [
-            _kpi(
-              'Active Mismatches',
-              '$activeMismatch',
-              const Color(0xffF59E0B),
-              Icons.report_problem_outlined,
-            ),
-            const SizedBox(width: 16),
             _kpi(
               'Active Max Adj',
               '$activeMaxAdj',
@@ -641,12 +627,27 @@ class _TopBranchesCardState extends State<_TopBranchesCard> {
   String _search = '';
   bool _asc = false;
 
+  @override
+  void initState() {
+    super.initState();
+    StoreBranchIdentityRegistry.groups.addListener(_onBranchIdentityChanged);
+  }
+
+  void _onBranchIdentityChanged() => setState(() {});
+
+  @override
+  void dispose() {
+    StoreBranchIdentityRegistry.groups.removeListener(_onBranchIdentityChanged);
+    super.dispose();
+  }
+
   List<Map<String, dynamic>> get _filtered {
     var list = widget.branches
         .where(
-          (b) => (b['branch_name'] as String).toLowerCase().contains(
-            _search.toLowerCase(),
-          ),
+          (b) =>
+              '${b['branch_name']} ${StoreBranchIdentityRegistry.displayName(b['branch_name']?.toString())}'
+                  .toLowerCase()
+                  .contains(_search.toLowerCase()),
         )
         .toList();
     if (_asc) list = list.reversed.toList();
@@ -700,7 +701,9 @@ class _TopBranchesCardState extends State<_TopBranchesCard> {
                       final count = row['count'] as int;
                       return _barRow(
                         rank: i + 1,
-                        label: row['branch_name'].toString(),
+                        label: StoreBranchIdentityRegistry.displayName(
+                          row['branch_name']?.toString(),
+                        ),
                         count: count,
                         max: maxCount,
                         color: const Color(0xff06B6D4),
@@ -905,11 +908,6 @@ class _TypeDistributionCard extends StatelessWidget {
       'Mismatch (History)',
       Color(0xffEF4444),
       Icons.warning_amber_rounded,
-    ),
-    'stk_mismatch': _TypeMeta(
-      'Mismatch (Active)',
-      Color(0xffDC2626),
-      Icons.report_problem_rounded,
     ),
   };
 

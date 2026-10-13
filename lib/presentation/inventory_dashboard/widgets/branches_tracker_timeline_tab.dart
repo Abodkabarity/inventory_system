@@ -1,5 +1,7 @@
+import '../../widgets/inventory_dropdown.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 
 import '../widgets/additional_analysis/glass_container.dart';
 
@@ -32,11 +34,6 @@ const _sourceMeta = <String, _SourceMeta>{
     Color(0xffEF4444),
     Icons.warning_amber_rounded,
   ),
-  'stk_mismatch': _SourceMeta(
-    'Mismatch Active',
-    Color(0xffDC2626),
-    Icons.report_problem_rounded,
-  ),
 };
 
 _SourceMeta _meta(String? table) {
@@ -68,6 +65,20 @@ class _BranchesTrackerTimelineTabState
 
   static const int _pageSize = 50;
 
+  @override
+  void initState() {
+    super.initState();
+    StoreBranchIdentityRegistry.groups.addListener(_onBranchIdentityChanged);
+  }
+
+  void _onBranchIdentityChanged() => setState(() {});
+
+  @override
+  void dispose() {
+    StoreBranchIdentityRegistry.groups.removeListener(_onBranchIdentityChanged);
+    super.dispose();
+  }
+
   List<String> get _branches {
     final list =
         widget.rows
@@ -92,6 +103,7 @@ class _BranchesTrackerTimelineTabState
 
       final text = [
         r['branch_name'],
+        StoreBranchIdentityRegistry.displayName(branch),
         r['item_code'],
         r['item_name'],
         r['reason'],
@@ -217,7 +229,6 @@ class _BranchesTrackerTimelineTabState
                       'max_adj',
                       'max_adj_log',
                       'mismatch_log',
-                      'stk_mismatch',
                     ].map((t) {
                       final m = _meta(t);
                       final count = widget.rows
@@ -370,7 +381,9 @@ class _ChangeRowState extends State<_ChangeRow> {
                   Expanded(
                     flex: 2,
                     child: Text(
-                      (r['branch_name'] ?? '-').toString(),
+                      StoreBranchIdentityRegistry.displayName(
+                        (r['branch_name'] ?? '-').toString(),
+                      ),
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         color: Color(0xff1E293B),
@@ -382,21 +395,23 @@ class _ChangeRowState extends State<_ChangeRow> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
+                        SelectableText(
                           (r['item_name'] ?? '-').toString(),
                           maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 13,
                             color: Color(0xff1E293B),
                           ),
                         ),
-                        Text(
+                        const SizedBox(height: 3),
+                        SelectableText(
                           (r['item_code'] ?? '').toString(),
+                          maxLines: 1,
                           style: const TextStyle(
-                            fontSize: 11,
-                            color: Color(0xff94A3B8),
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xff1E293B),
                           ),
                         ),
                       ],
@@ -815,15 +830,17 @@ class _MiniValue extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 42,
+      constraints: const BoxConstraints(minWidth: 42),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(8),
       ),
-      alignment: Alignment.center,
       child: Text(
         _fmt(value),
+        maxLines: 1,
+        softWrap: false,
+        textAlign: TextAlign.center,
         style: TextStyle(
           color: color,
           fontWeight: FontWeight.bold,
@@ -920,7 +937,9 @@ class _BranchDropdown extends StatelessWidget {
         border: Border.all(color: const Color(0xffE2E8F0)),
       ),
       child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
+        child: InventoryDropdown<String>(
+          label: 'Branch',
+          branchNames: true,
           value: value,
           icon: const Icon(
             Icons.keyboard_arrow_down,
@@ -936,7 +955,11 @@ class _BranchDropdown extends StatelessWidget {
               .map(
                 (e) => DropdownMenuItem(
                   value: e,
-                  child: Text(e == 'ALL' ? 'All Branches' : e),
+                  child: Text(
+                    e == 'ALL'
+                        ? 'All Branches'
+                        : StoreBranchIdentityRegistry.displayName(e),
+                  ),
                 ),
               )
               .toList(),

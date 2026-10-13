@@ -150,12 +150,6 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
           table: 'mismatch_log',
           callback: (_) => _trackerBadge.scheduleRefresh(),
         )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'stk_mismatch',
-          callback: (_) => _trackerBadge.scheduleRefresh(),
-        )
         .subscribe((status, error) {
           if (status == RealtimeSubscribeStatus.subscribed) {
             _trackerBadge.scheduleRefresh();
