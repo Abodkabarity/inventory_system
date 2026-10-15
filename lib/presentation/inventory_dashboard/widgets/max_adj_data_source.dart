@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/max_adjustment_expiry.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 
 class MaxAdjDataSource extends DataGridSource {
   List<DataGridRow> _rows = [];
@@ -13,24 +15,40 @@ class MaxAdjDataSource extends DataGridSource {
     required List<Map<String, dynamic>> data,
     required this.onHistory,
     this.pageOffset = 0,
+    DateTime? now,
   }) {
+    final snapshot = now ?? DateTime.now();
     _rows = data.asMap().entries.map<DataGridRow>((entry) {
       final index = entry.key;
       final e = entry.value;
+      final expiry = MaxAdjustmentExpiry(e, now: snapshot);
 
       return DataGridRow(
         cells: [
           DataGridCell(columnName: 'index', value: pageOffset + index + 1),
 
-          DataGridCell(columnName: 'branch', value: e['branch_name']),
+          DataGridCell(
+            columnName: 'branch',
+            value: StoreBranchIdentityRegistry.displayName(
+              e['branch_name']?.toString(),
+            ),
+          ),
           DataGridCell(columnName: 'code', value: e['item_code']),
           DataGridCell(columnName: 'name', value: e['item_name']),
           DataGridCell(columnName: 'demand', value: e['current_demand_30d']),
           DataGridCell(columnName: 'max', value: e['max_adjustment_30d']),
+          DataGridCell<int>(
+            columnName: 'remaining_days',
+            value: expiry.daysRemaining,
+          ),
           DataGridCell(columnName: 'type', value: e['adjustment_type']),
           DataGridCell(columnName: 'qty', value: e['qty']),
           DataGridCell(columnName: 'reason', value: e['reason']),
           DataGridCell(columnName: 'date', value: e['update_date']),
+          DataGridCell(
+            columnName: 'expiry_date',
+            value: expiry.deadline == null ? null : expiry.dateLabel,
+          ),
           DataGridCell(columnName: 'added_by', value: e['added_by']),
           DataGridCell(columnName: 'action', value: e),
         ],
@@ -43,7 +61,13 @@ class MaxAdjDataSource extends DataGridSource {
 
   @override
   DataGridRowAdapter buildRow(DataGridRow row) {
-    final type = row.getCells()[6].value;
+    final type =
+        row
+            .getCells()
+            .firstWhere((cell) => cell.columnName == 'type')
+            .value
+            ?.toString() ??
+        '';
 
     return DataGridRowAdapter(
       color: AppColors.card,
@@ -56,6 +80,7 @@ class MaxAdjDataSource extends DataGridSource {
           'type',
           'added_by',
           'date',
+          'expiry_date',
         ].contains(cell.columnName);
 
         if (cell.columnName == 'action') {
@@ -63,8 +88,39 @@ class MaxAdjDataSource extends DataGridSource {
 
           return Center(
             child: IconButton(
+              tooltip: 'View adjustment history',
               icon: const Icon(Icons.history),
               onPressed: () => onHistory(data),
+            ),
+          );
+        }
+
+        if (cell.columnName == 'remaining_days') {
+          final data =
+              row.getCells().firstWhere((c) => c.columnName == 'action').value
+                  as Map<String, dynamic>;
+          final expiry = MaxAdjustmentExpiry(data);
+          final days = cell.value as int?;
+          // Use the source snapshot so labels and numeric sorting agree.
+          final label = MaxAdjustmentExpiry.labelForDays(days);
+          final color = days == null
+              ? AppColors.subText
+              : days <= 0
+              ? const Color(0xFFDC2626)
+              : days <= 7
+              ? const Color(0xFFB45309)
+              : const Color(0xFF15803D);
+          return Tooltip(
+            message: expiry.tooltip,
+            child: Center(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: color,
+                ),
+              ),
             ),
           );
         }

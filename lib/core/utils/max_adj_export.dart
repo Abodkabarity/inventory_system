@@ -2,6 +2,8 @@ import 'dart:html' as html;
 import 'dart:typed_data';
 
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
+import 'store_branch_identity_registry.dart';
+import 'max_adj_export_rows.dart';
 
 class MaxAdjExcelExporter {
   static Future<void> export({
@@ -15,6 +17,7 @@ class MaxAdjExcelExporter {
     /// 🔥 DETECT MODE
     /// =========================
     final isCompare = rows.isNotEmpty && rows.first.containsKey('old_max_adj');
+    final displayRows = isCompare ? rows : maxAdjExportRows(rows);
 
     /// =========================
     /// HEADERS
@@ -55,6 +58,8 @@ class MaxAdjExcelExporter {
             'qty',
             'added_by',
             'end_date',
+            'expiry_date',
+            'remaining_days',
           ];
 
     if (!isCompare && includeHistory) {
@@ -78,6 +83,8 @@ class MaxAdjExcelExporter {
       'qty': 'Qty',
       'added_by': 'Added By',
       'end_date': 'End Date',
+      'expiry_date': 'Effective Expiry Date',
+      'remaining_days': 'Days Remaining (at export)',
 
       /// OLD
       'old_current_demand': 'Old Demand',
@@ -123,11 +130,11 @@ class MaxAdjExcelExporter {
     /// DATA
     /// =========================
     for (int r = 0; r < rows.length; r++) {
-      final row = rows[r];
+      final row = displayRows[r];
 
       for (int c = 0; c < headers.length; c++) {
         final key = headers[c];
-        final value = row[key];
+        final value = StoreBranchIdentityRegistry.exportValue(key, row[key]);
 
         final cell = sheet.getRangeByIndex(r + 2, c + 1);
 

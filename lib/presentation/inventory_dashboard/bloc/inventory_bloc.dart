@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:html' as html;
 import 'dart:typed_data';
@@ -10,9 +11,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/cache/daily_order_cache_service.dart';
 import '../../../core/utils/allocation_excel_exporter.dart';
+import '../../../core/utils/branch_csv_display.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../../core/utils/assortment_export.dart';
 import '../../../core/utils/formulary_export.dart';
 import '../../../core/utils/max_adj_export.dart';
+import '../../../core/utils/max_adjustment_import.dart';
+import '../../../core/utils/max_adjustment_refresh_coordinator.dart';
+import '../../../core/utils/max_adjustment_rows_loader.dart';
 import '../../../core/utils/mismatch_export.dart';
 import '../../../core/utils/purchase_shortage_report.dart';
 import '../../../core/utils/tma_export.dart';
@@ -33,14 +39,23 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   final InventoryRepository repo;
   late final RealtimeChannel additionalChannel;
   final AudioPlayer _player = AudioPlayer();
-  late final RealtimeChannel maxAdjChannel;
-  late final RealtimeChannel assortmentChannel;
-  late final RealtimeChannel formularyChannel;
+  RealtimeChannel? maxAdjChannel;
+  RealtimeChannel? assortmentChannel;
+  RealtimeChannel? formularyChannel;
   static final Map<String, List<DailyOrderRow>> ordersCache = {};
   String? _ordersLoadingRunDate;
   int _ordersLoadToken = 0;
   int _formularyLoadToken = 0;
   int _maxAdjLoadToken = 0;
+  bool _maxAdjImportRunning = false;
+  List<List<dynamic>>? _pendingMaxAdjCsvRows;
+  late final _maxAdjRefresh = MaxAdjustmentRefreshCoordinator(
+    onRefresh: () {
+      if (!isClosed) {
+        add(LoadMaxAdjustment(query: state.maxAdjSearch, silent: true));
+      }
+    },
+  );
   int _mismatchLoadToken = 0;
   int _assortmentLoadToken = 0;
   int _tmaLoadToken = 0;
@@ -253,6 +268,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
       );
     });
     on<ResetImportState>((event, emit) {
+      if (state.isImporting) return;
+      _pendingMaxAdjCsvRows = null;
       _pendingImportBytes = null;
       _pendingImportSource = null;
       _pendingImportDuplicates = const [];
@@ -326,48 +343,47 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     });
 
     on<LoadMaxAdjustment>((event, emit) async {
-      // Avoid building thousands of web grid cells at once.
-      const pageSize = 500;
+      if (_maxAdjImportRunning) {
+        emit(state.copyWith(maxAdjSearch: event.query));
+        return;
+      }
       final requestToken = ++_maxAdjLoadToken;
+      _maxAdjRefresh.beginLoad();
 
       if (!event.silent) {
         emit(
           state.copyWith(
             isLoading: true,
             isMaxAdjLoading: true,
+            maxAdjLoadError: '',
+            maxAdjSearch: event.query,
             importMessage: state.importMessage,
           ),
         );
       } else {
-        emit(state.copyWith(isMaxAdjLoading: true));
+        emit(
+          state.copyWith(
+            isMaxAdjLoading: true,
+            maxAdjSearch: event.query,
+            maxAdjLoadError: '',
+          ),
+        );
       }
 
       try {
-        final page = event.page < 0 ? 0 : event.page;
-        final from = page * pageSize;
-        final to = from + pageSize - 1;
-
-        final result = await repo.fetchMaxAdjustmentPage(
-          from: from,
-          to: to,
+        final rows = await _readMaxAdjustmentRows(
           query: event.query,
+          isCancelled: () => requestToken != _maxAdjLoadToken || isClosed,
         );
 
-        if (requestToken != _maxAdjLoadToken) return;
-
-        final rows = List<Map<String, dynamic>>.from(result['rows'] ?? []);
-        final total = (result['total'] ?? 0) as int;
-        final totalPages = total == 0 ? 1 : (total / pageSize).ceil();
+        if (rows == null || requestToken != _maxAdjLoadToken) return;
 
         emit(
           state.copyWith(
             maxAdjustment: rows,
             filteredMaxAdjustment: rows,
             maxAdjSearch: event.query,
-            maxAdjPage: page,
-            maxAdjPageSize: pageSize,
-            maxAdjTotalRows: total,
-            maxAdjHasMore: page < totalPages - 1,
+            maxAdjTotalRows: rows.length,
             isLoading: false,
             isMaxAdjLoading: false,
             importMessage: state.importMessage,
@@ -375,10 +391,19 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         );
       } catch (e) {
         if (requestToken != _maxAdjLoadToken) return;
-        emit(state.copyWith(isLoading: false, isMaxAdjLoading: false));
+        emit(
+          state.copyWith(
+            isLoading: false,
+            isMaxAdjLoading: false,
+            maxAdjLoadError: 'Could not refresh max adjustments. Please retry.',
+          ),
+        );
+      } finally {
+        if (requestToken == _maxAdjLoadToken) _maxAdjRefresh.endLoad();
       }
     });
     on<StartMaxAdjRealtime>((event, emit) {
+      if (maxAdjChannel != null) return;
       maxAdjChannel = Supabase.instance.client
           .channel('max_adj_live')
           .onPostgresChanges(
@@ -386,15 +411,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
             schema: 'public',
             table: 'max_adj',
             callback: (payload) {
-              if (!state.isImporting) {
-                add(
-                  LoadMaxAdjustment(
-                    page: state.maxAdjPage,
-                    query: state.maxAdjSearch,
-                    silent: true,
-                  ),
-                );
-              }
+              _maxAdjRefresh.changed();
             },
           )
           .subscribe();
@@ -449,7 +466,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           .subscribe();
     });
     on<SearchMaxAdjustment>((event, emit) {
-      add(LoadMaxAdjustment(page: 0, query: event.query));
+      add(LoadMaxAdjustment(query: event.query));
     });
     on<LoadMaxAdjustmentHistory>((event, emit) async {
       emit(state.copyWith(isHistoryLoading: true, maxAdjHistory: []));
@@ -1270,13 +1287,19 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
   @override
   Future<void> close() {
+    _maxAdjRefresh.dispose();
+    ++_maxAdjLoadToken;
     final channel = mismatchChannel;
     if (channel != null) {
       Supabase.instance.client.removeChannel(channel);
     }
-    Supabase.instance.client.removeChannel(maxAdjChannel);
-    Supabase.instance.client.removeChannel(assortmentChannel);
-    Supabase.instance.client.removeChannel(formularyChannel);
+    for (final channel in [
+      maxAdjChannel,
+      assortmentChannel,
+      formularyChannel,
+    ]) {
+      if (channel != null) Supabase.instance.client.removeChannel(channel);
+    }
 
     return super.close();
   }
@@ -2180,6 +2203,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     ResolveImportDuplicates event,
     Emitter<InventoryState> emit,
   ) async {
+    if (state.isImporting || state.isExporting) return;
     final source = _pendingImportSource;
     if (source == null || _pendingImportBytes == null) {
       emit(
@@ -2194,6 +2218,25 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     }
 
     if (event.action == ImportDuplicateAction.download) {
+      if (source == 'max_adjustment') {
+        emit(state.copyWith(isExporting: true));
+        try {
+          await _downloadMaxAdjustmentCsv(
+            _pendingImportDuplicates,
+            'max_adjustment_duplicates.csv',
+          );
+          emit(state.copyWith(importMessage: 'Duplicate report downloaded.'));
+        } catch (error) {
+          emit(
+            state.copyWith(
+              importMessage: 'Could not download duplicate report: $error',
+            ),
+          );
+        } finally {
+          emit(state.copyWith(isExporting: false));
+        }
+        return;
+      }
       switch (source) {
         case 'max_adjustment':
           await MaxAdjExcelExporter.export(
@@ -2258,6 +2301,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   }
 
   void _cachePendingImport(String source, Uint8List bytes) {
+    _pendingMaxAdjCsvRows = null;
     _pendingImportSource = source;
     _pendingImportBytes = bytes;
     _pendingImportDuplicates = const [];
@@ -2268,365 +2312,303 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     _pendingImportDuplicates = List<Map<String, dynamic>>.from(rows);
   }
 
+  Future<List<Map<String, dynamic>>?> _readMaxAdjustmentRows({
+    required String query,
+    bool Function()? isCancelled,
+    void Function(int loaded, int total)? onProgress,
+  }) => loadMaxAdjustmentRows(
+    fetchRange: (from, to) => repo
+        .fetchMaxAdjustmentPage(from: from, to: to, query: query)
+        .timeout(const Duration(seconds: 45)),
+    isCancelled: () => isClosed || (isCancelled?.call() ?? false),
+    onProgress: onProgress,
+  );
+
+  Future<void> _downloadMaxAdjustmentCsv(
+    List<Map<String, dynamic>> rows,
+    String filename,
+  ) async {
+    final csv = await maxAdjustmentImportReportCsv(rows);
+    final url = html.Url.createObjectUrlFromBlob(
+      html.Blob([utf8.encode(csv)], 'text/csv;charset=utf-8'),
+    );
+    try {
+      html.AnchorElement(href: url)
+        ..setAttribute('download', filename)
+        ..click();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    } finally {
+      html.Url.revokeObjectUrl(url);
+    }
+  }
+
+  Future<void> _refreshAfterMaxAdjustmentImport(
+    Emitter<InventoryState> emit,
+  ) async {
+    // Search may change while a large file is being imported. Only publish
+    // server rows for the latest search, never a client-patched partial list.
+    while (!isClosed && !emit.isDone) {
+      // Earlier notifications are covered by this read. Preserve notifications
+      // arriving during it so resume can request one coalesced follow-up.
+      _maxAdjRefresh.beginLoad();
+      final query = state.maxAdjSearch;
+      final rows = await _readMaxAdjustmentRows(
+        query: query,
+        isCancelled: () => query != state.maxAdjSearch,
+        onProgress: (loaded, total) {
+          if (!emit.isDone) {
+            emit(
+              state.copyWith(
+                importProgress: .92 + (total == 0 ? 0 : loaded / total) * .07,
+                importMessage: 'Refreshing records: $loaded of $total...',
+              ),
+            );
+          }
+        },
+      );
+      if (rows == null || query != state.maxAdjSearch) continue;
+      emit(
+        state.copyWith(
+          maxAdjustment: rows,
+          filteredMaxAdjustment: rows,
+          maxAdjTotalRows: rows.length,
+          isMaxAdjLoading: false,
+          isLoading: false,
+          maxAdjLoadError: '',
+        ),
+      );
+      return;
+    }
+  }
+
   Future<void> _onImportExcel(
     ImportMaxAdjExcel event,
     Emitter<InventoryState> emit,
   ) async {
+    if (_maxAdjImportRunning || state.isImporting) return;
+    _maxAdjImportRunning = true;
+    ++_maxAdjLoadToken; // Invalidate any read that started before the import.
+    _maxAdjRefresh.pause();
+    var writesAttempted = false;
+    var refreshRequested = false;
+    var refreshed = false;
+    var confirmed = 0;
     try {
       emit(
         state.copyWith(
           isImporting: true,
           importProgress: 0,
-          importMessage: "Picking file...",
+          isMaxAdjLoading: false,
+          importMessage: 'Picking file...',
           importSuccess: false,
           importDuplicateCount: 0,
+          maxAdjLoadError: '',
         ),
       );
-
       Uint8List? bytes;
-      if (event.reusePickedFile) {
+      if (event.reusePickedFile && _pendingImportSource == 'max_adjustment') {
         bytes = _pendingImportBytes;
-      } else {
+      } else if (!event.reusePickedFile) {
         final result = await FilePicker.platform.pickFiles(
           type: FileType.custom,
           allowedExtensions: ['csv'],
           withData: true,
         );
         if (result == null) {
-          emit(state.copyWith(isImporting: false));
+          emit(
+            state.copyWith(
+              isImporting: false,
+              importMessage: 'No file selected.',
+            ),
+          );
           return;
         }
         bytes = result.files.single.bytes;
         if (bytes != null) _cachePendingImport('max_adjustment', bytes);
       }
       if (bytes == null) {
-        emit(
-          state.copyWith(
-            isImporting: false,
-            importSuccess: false,
-            importMessage:
-                'Import file is unavailable. Please upload it again.',
-          ),
+        throw const FormatException(
+          'Import file is unavailable. Please upload it again.',
         );
-        return;
       }
-
-      // Give the web renderer one frame to show the progress UI first.
-      await Future<void>.delayed(Duration.zero);
-
-      String csvText;
-      try {
-        csvText = utf8.decode(bytes);
-      } catch (_) {
-        csvText = latin1.decode(bytes);
-      }
-
-      final rows = const CsvToListConverter().convert(csvText);
-
-      if (rows.isEmpty) {
-        emit(
-          state.copyWith(isImporting: false, importMessage: "CSV is empty ❌"),
-        );
-        return;
-      }
-
-      // ===============================
-      // HEADER VALIDATION
-      // ===============================
-      final header = rows.first.map((e) => e.toString().trim()).toList();
-
-      const expected = [
-        "action",
-        "branch_name",
-        "item_code",
-        "item_name",
-        "current_demand_30d",
-        "max_adjustment_30d",
-        "reason",
-        "update_date",
-        "end_date",
-      ];
-
-      if (header.length < expected.length ||
-          !List.generate(
-            expected.length,
-            (i) => expected[i] == header[i],
-          ).every((e) => e)) {
-        emit(
-          state.copyWith(
-            isImporting: false,
-            importMessage: "❌ Please use the template for import",
-            importSuccess: false,
-          ),
-        );
-        return;
-      }
-
-      // ===============================
-      // FAST FETCH — branches + existing data at the same time
-      // ===============================
       emit(
         state.copyWith(
-          importProgress: 0.05,
-          importMessage: 'Validating branches and existing adjustments...',
+          importMessage: 'Reading CSV file...',
+          importProgress: .01,
         ),
       );
-
-      final fetchResults = await Future.wait([
-        Supabase.instance.client
-            .from('branches')
-            .select('branch_name')
-            .eq('is_active', true),
-        Supabase.instance.client
-            .from('max_adj')
-            .select(
-              'branch_name, item_code, item_name, '
-              'current_demand_30d, max_adjustment_30d, '
-              'adjustment_type, reason, update_date, end_date, added_by',
-            ),
-      ]);
-
-      final branchesResult = fetchResults[0] as List;
-      final existingRaw = fetchResults[1] as List;
-
-      await Future<void>.delayed(Duration.zero);
-
-      // ===============================
-      // BRANCH VALIDATION (memory only — instant)
-      // ===============================
-      final validBranches = branchesResult
-          .map((e) => (e['branch_name'] ?? '').toString().trim().toUpperCase())
-          .toSet();
-
-      final invalidBranches = <Map<String, dynamic>>[];
-
-      for (int r = 1; r < rows.length; r++) {
-        final row = rows[r];
-        if (row.length < 2) continue;
-        final branch = (row[1] ?? '').toString().trim();
-        if (!validBranches.contains(branch.toUpperCase())) {
-          invalidBranches.add({
-            'branch_name': branch,
-            'error': 'Branch not found',
-          });
-        }
-      }
-
-      if (invalidBranches.isNotEmpty) {
-        final exportRows = [
-          ['branch_name', 'error'],
-        ];
-        for (final e in invalidBranches) {
-          exportRows.add([e['branch_name'], e['error']]);
-        }
-        final csv = const ListToCsvConverter().convert(exportRows);
-        final bytes = Uint8List.fromList(utf8.encode(csv));
-        final blob = html.Blob([bytes]);
-        final url = html.Url.createObjectUrlFromBlob(blob);
-        html.AnchorElement(href: url)
-          ..setAttribute("download", "invalid_branches.csv")
-          ..click();
-        html.Url.revokeObjectUrl(url);
-
-        emit(
-          state.copyWith(
-            isImporting: false,
-            importSuccess: false,
-            importMessage: "${invalidBranches.length} invalid branches found",
-          ),
-        );
-        return;
-      }
-
-      // ===============================
-      // BUILD EXISTING MAP (existingRaw already in memory — no wait)
-      // ===============================
-      final Map<String, Map<String, dynamic>> existingMap = {
-        for (final e in existingRaw)
-          '${e['branch_name']}|${e['item_code']}': Map<String, dynamic>.from(e),
-      };
-
-      // ===============================
-      // BUILD LISTS
-      // ===============================
-      final rowsToImport = <Map<String, dynamic>>[];
-      final rowsToDelete = <Map<String, dynamic>>[];
-      final conflicts = <Map<String, dynamic>>[];
-      final errors = <Map<String, dynamic>>[];
-      final updatedList = List<Map<String, dynamic>>.from(state.maxAdjustment);
-      final total = rows.length - 1;
-
-      for (int i = 1; i < rows.length; i++) {
-        final row = rows[i];
-
-        try {
-          if (row.length < 9) {
-            errors.add({"row": row, "error": "Invalid columns count"});
-            continue;
-          }
-
-          final action = (row[0] ?? '').toString().trim().toUpperCase();
-
-          if (!['ADD', 'UPDATE', 'DELETE'].contains(action)) {
-            errors.add({"row": row, "error": "Invalid action: $action"});
-            continue;
-          }
-
-          final branch = (row[1] ?? '').toString().trim();
-          final itemCode = (row[2] ?? '').toString().trim();
-          final key = '$branch|$itemCode';
-
-          if (action == 'DELETE') {
-            rowsToDelete.add({'branch_name': branch, 'item_code': itemCode});
-            updatedList.removeWhere(
-              (e) => e['item_code'] == itemCode && e['branch_name'] == branch,
+      final rows = _pendingMaxAdjCsvRows ??= await parseMaxAdjustmentCsv(
+        bytes,
+        onProgress: (fraction) {
+          if (!emit.isDone) {
+            emit(
+              state.copyWith(
+                importProgress: .01 + .14 * fraction,
+                importMessage:
+                    'Reading CSV file: ${(fraction * 100).floor()}%...',
+              ),
             );
-            continue;
           }
-
-          final current = num.tryParse("${row[4]}") ?? 0;
-          final max = num.tryParse("${row[5]}") ?? 0;
-          final type = max <= current ? 'DECREASE' : 'INCREASE';
-
-          final data = {
-            'branch_name': branch,
-            'item_code': itemCode,
-            'item_name': row[3]?.toString() ?? '',
-            'current_demand_30d': current,
-            'max_adjustment_30d': max,
-            'adjustment_type': type,
-            'reason': row[6]?.toString() ?? '',
-            'update_date': _parseDate(row[7]),
-            'end_date': _parseDate(row[8]),
-            'qty': max,
-            'added_by': 'inventory',
-          };
-
-          final existing = existingMap[key];
-
-          if (existing != null && !event.forceApply) {
-            conflicts.add({
-              'branch_name': branch,
-              'item_code': itemCode,
-              'item_name': data['item_name'],
-              'old_current_demand': existing['current_demand_30d'],
-              'old_max_adj': existing['max_adjustment_30d'],
-              'old_reason': existing['reason'],
-              'old_adjustment_type': existing['adjustment_type'],
-              'old_update_date': existing['update_date'],
-              'old_added_by': existing['added_by'],
-              'old_end_date': existing['end_date'],
-              'new_current_demand': data['current_demand_30d'],
-              'new_max_adj': data['max_adjustment_30d'],
-              'new_reason': data['reason'],
-              'new_adjustment_type': data['adjustment_type'],
-              'new_update_date': data['update_date'],
-              'new_added_by': data['added_by'],
-              'new_end_date': data['end_date'],
-            });
-            continue;
+        },
+      );
+      if (isClosed || emit.isDone) return;
+      emit(
+        state.copyWith(
+          importProgress: .15,
+          importMessage: 'Loading branch and adjustment records...',
+        ),
+      );
+      final branches = await Supabase.instance.client
+          .from('branches')
+          .select('branch_name')
+          .eq('is_active', true)
+          .timeout(const Duration(seconds: 45));
+      final existing = event.forceApply
+          ? <Map<String, dynamic>>[]
+          : await _readMaxAdjustmentRows(
+              query: '',
+              onProgress: (loaded, total) {
+                if (!emit.isDone) {
+                  emit(
+                    state.copyWith(
+                      importProgress:
+                          .16 + .14 * (total == 0 ? 1 : loaded / total),
+                      importMessage:
+                          'Checking existing adjustments: $loaded of $total...',
+                    ),
+                  );
+                }
+              },
+            );
+      if (existing == null || isClosed || emit.isDone) return;
+      final plan = await prepareMaxAdjustmentImport(
+        rows: rows,
+        activeBranches: branches
+            .map((b) => b['branch_name'].toString())
+            .toList(),
+        existing: existing,
+        overwrite: event.forceApply,
+        onProgress: (processed, total) {
+          if (!emit.isDone) {
+            emit(
+              state.copyWith(
+                importProgress:
+                    .30 + .15 * (total == 0 ? 1 : processed / total),
+                importMessage: 'Validating records: $processed of $total...',
+              ),
+            );
           }
-
-          rowsToImport.add(data);
-
-          final index = updatedList.indexWhere(
-            (e) => e['item_code'] == itemCode && e['branch_name'] == branch,
-          );
-          if (index != -1) {
-            updatedList[index] = {...updatedList[index], ...data};
-          } else {
-            updatedList.add(data);
-          }
-        } catch (e) {
-          errors.add({"row": row, "error": e.toString()});
-        }
-
-        if (i % 100 == 0) {
-          emit(state.copyWith(importProgress: i / total));
-          await Future<void>.delayed(Duration.zero);
-        }
-      }
-
-      // ===============================
-      // EXPORT DUPLICATES
-      // ===============================
-      if (conflicts.isNotEmpty && !event.forceApply && !event.skipDuplicates) {
-        _cacheImportDuplicates('max_adjustment', conflicts);
+        },
+      );
+      if (plan.issues.isNotEmpty) {
+        await _downloadMaxAdjustmentCsv(
+          plan.issues,
+          'max_adjustment_import_errors.csv',
+        );
         emit(
           state.copyWith(
             isImporting: false,
             importSuccess: false,
             importMessage:
-                'Found ${conflicts.length} duplicate item(s). Choose how to continue.',
-            importDuplicateCount: conflicts.length,
+                '${plan.issues.length} invalid record(s). No changes were sent. Error report downloaded.',
+          ),
+        );
+        return;
+      }
+      if (plan.conflicts.isNotEmpty &&
+          !event.forceApply &&
+          !event.skipDuplicates) {
+        _cacheImportDuplicates('max_adjustment', plan.conflicts);
+        emit(
+          state.copyWith(
+            isImporting: false,
+            importSuccess: false,
+            importMessage:
+                'Found ${plan.conflicts.length} duplicate item(s). Choose how to continue.',
+            importDuplicateCount: plan.conflicts.length,
             importDuplicateSource: 'max_adjustment',
           ),
         );
         return;
       }
-
-      if (conflicts.isNotEmpty && !event.forceApply && !event.skipDuplicates) {
-        await MaxAdjExcelExporter.export(
-          rows: conflicts,
-          includeHistory: false,
-        );
-
-        emit(
-          state.copyWith(
-            isImporting: false,
-            importMessage:
-                "Found ${conflicts.length} duplicates ⚠️ (file downloaded)",
-            importSuccess: false,
-          ),
-        );
-        return;
-      }
-
-      // ===============================
-      // EXPORT ERRORS
-      // ===============================
-      if (errors.isNotEmpty) {
-        await MaxAdjExcelExporter.export(rows: errors, includeHistory: false);
-      }
-
-      // ===============================
-      // FAST UPLOAD — delete + import at the same time
-      // ===============================
       emit(
         state.copyWith(
-          importProgress: .96,
-          importMessage: 'Uploading changes...',
+          importProgress: .45,
+          importMessage: 'Saving ${plan.writeCount} records...',
         ),
       );
-
-      await Future.wait([
-        if (rowsToDelete.isNotEmpty) repo.deleteMaxAdjBulk(rowsToDelete),
-        if (rowsToImport.isNotEmpty) repo.importMaxAdjBulk(rowsToImport),
-      ]);
-
-      // ===============================
-      // FINISH
-      // ===============================
+      writesAttempted = plan.writeCount > 0;
+      confirmed = await writeMaxAdjustmentImport(
+        plan: plan,
+        upsert: repo.importMaxAdjBulk,
+        delete: repo.deleteMaxAdjBulk,
+        onProgress: (completed, total) {
+          confirmed = completed;
+          if (!emit.isDone) {
+            emit(
+              state.copyWith(
+                importProgress: .45 + .45 * completed / total,
+                importMessage: 'Saved $completed of $total records...',
+              ),
+            );
+          }
+        },
+      );
+      emit(
+        state.copyWith(
+          importProgress: .92,
+          importMessage: 'Refreshing saved records...',
+        ),
+      );
+      refreshRequested = true;
+      await _refreshAfterMaxAdjustmentImport(emit);
+      refreshed = true;
+      if (isClosed || emit.isDone) return;
+      final skipped = event.skipDuplicates ? plan.conflicts.length : 0;
       emit(
         state.copyWith(
           isImporting: false,
           importProgress: 1,
-          importSuccess: errors.isEmpty,
-          importMessage: errors.isEmpty
-              ? "Import completed successfully ✅"
-              : "Completed with ${errors.length} errors ❌",
-          maxAdjustment: updatedList,
-          filteredMaxAdjustment: updatedList,
+          importSuccess: true,
+          importMessage:
+              'Import completed. $confirmed records saved'
+              '${skipped == 0 ? '' : ', $skipped duplicates skipped'}. Table refreshed.',
+          importDuplicateCount: 0,
         ),
       );
-    } catch (e) {
+      _pendingImportBytes = null;
+      _pendingMaxAdjCsvRows = null;
+      _pendingImportDuplicates = const [];
+    } catch (error) {
+      if (isClosed || emit.isDone) return;
+      String? refreshError;
+      if ((writesAttempted || refreshRequested) && !refreshed) {
+        try {
+          await _refreshAfterMaxAdjustmentImport(emit);
+          refreshed = true;
+        } catch (_) {
+          refreshError = 'Could not refresh max adjustments. Please retry.';
+        }
+      }
+      if (isClosed || emit.isDone) return;
+      final message = error is MaxAdjustmentImportWriteFailure
+          ? error.toString()
+          : writesAttempted
+          ? '$confirmed records confirmed saved. $error'
+          : 'Import was not applied. $error';
       emit(
         state.copyWith(
           isImporting: false,
-          importMessage: "Error: $e",
           importSuccess: false,
+          isMaxAdjLoading: false,
+          maxAdjLoadError: refreshError ?? '',
+          importMessage:
+              '$message${refreshError == null ? '' : ' $refreshError'}',
         ),
       );
+    } finally {
+      _maxAdjImportRunning = false;
+      _maxAdjRefresh.resume();
     }
   }
 
@@ -2902,7 +2884,12 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         ];
 
         for (final e in invalidBranches) {
-          exportRows.add([e['branch_name'], e['error']]);
+          exportRows.add([
+            StoreBranchIdentityRegistry.displayName(
+              e['branch_name']?.toString(),
+            ),
+            e['error'],
+          ]);
         }
 
         final csv = const ListToCsvConverter().convert(exportRows);
@@ -3351,7 +3338,12 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           ['branch_name', 'error'],
         ];
         for (final e in invalidBranches) {
-          exportRows.add([e['branch_name'], e['error']]);
+          exportRows.add([
+            StoreBranchIdentityRegistry.displayName(
+              e['branch_name']?.toString(),
+            ),
+            e['error'],
+          ]);
         }
 
         final csv = const ListToCsvConverter().convert(exportRows);
@@ -3962,6 +3954,9 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           })
           .whereType<String>()
           .toList();
+      final branchColumnIndex = dbColumns.indexWhere(
+        (column) => column == 'branch' || column == 'branch_name',
+      );
 
       /// =========================
       /// HEADERS
@@ -4016,6 +4011,15 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
         if (lines.length <= 1) {
           break;
+        }
+
+        if (branchColumnIndex >= 0) {
+          for (var index = 1; index < lines.length; index++) {
+            lines[index] = decorateBranchCsvField(
+              lines[index],
+              branchColumnIndex,
+            );
+          }
         }
 
         /// =========================

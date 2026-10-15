@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../domain/entities/branch_setting.dart';
 import '../../../core/utils/purchase_shortage_report.dart';
+import '../../../core/utils/max_adj_search.dart';
 
 class InventoryRemoteDs {
   final SupabaseClient client;
@@ -1412,11 +1413,9 @@ end_date
 
     final search = query.trim();
     final hasSearch = search.isNotEmpty;
-    final safe = search.replaceAll(',', ' ');
 
     if (hasSearch) {
-      final filter =
-          'item_code.ilike.%$safe%,item_name.ilike.%$safe%,branch_name.ilike.%$safe%,adjustment_type.ilike.%$safe%,reason.ilike.%$safe%';
+      final filter = maxAdjSearchFilter(search);
 
       final response = await client
           .from('max_adj')
@@ -1424,6 +1423,7 @@ end_date
           .or(filter)
           .order('created_at', ascending: false)
           .order('item_code', ascending: true)
+          .order('id', ascending: true)
           .range(from, to)
           .count(CountOption.exact);
 
@@ -1438,6 +1438,7 @@ end_date
         .select(cols)
         .order('created_at', ascending: false)
         .order('item_code', ascending: true)
+        .order('id', ascending: true)
         .range(from, to)
         .count(CountOption.exact);
 

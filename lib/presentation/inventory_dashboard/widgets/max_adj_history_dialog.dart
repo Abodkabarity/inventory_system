@@ -4,6 +4,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 import '../bloc/inventory_bloc.dart';
 import '../bloc/inventory_state.dart';
 
@@ -12,6 +13,13 @@ class MaxAdjHistoryDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return ValueListenableBuilder<Map<String, String>>(
+      valueListenable: StoreBranchIdentityRegistry.groups,
+      builder: (context, _, child) => _buildDialog(context),
+    );
+  }
+
+  Widget _buildDialog(BuildContext context) {
     return Dialog(
       backgroundColor: Colors.white,
       child: BlocBuilder<InventoryBloc, InventoryState>(
@@ -97,7 +105,12 @@ class _HistoryDataSource extends DataGridSource {
     _rows = data.map((e) {
       return DataGridRow(
         cells: [
-          DataGridCell(columnName: 'branch', value: e['branch_name']),
+          DataGridCell(
+            columnName: 'branch',
+            value: StoreBranchIdentityRegistry.displayName(
+              e['branch_name']?.toString(),
+            ),
+          ),
           DataGridCell(columnName: 'code', value: e['item_code']),
           DataGridCell(columnName: 'name', value: e['item_name']),
           DataGridCell(columnName: 'demand', value: e['current_demand_30d']),

@@ -135,15 +135,10 @@ class InventoryState extends Equatable {
 
   final List<Map<String, dynamic>> maxAdjHistory;
 
-  final int maxAdjPage;
-
-  final int maxAdjPageSize;
-
   final int maxAdjTotalRows;
 
-  final bool maxAdjHasMore;
-
   final bool isMaxAdjLoading;
+  final String maxAdjLoadError;
 
   final int additionalMonthCount;
 
@@ -262,11 +257,9 @@ class InventoryState extends Equatable {
     required this.filteredMaxAdjustment,
     required this.maxAdjSearch,
     required this.maxAdjHistory,
-    required this.maxAdjPage,
-    required this.maxAdjPageSize,
     required this.maxAdjTotalRows,
-    required this.maxAdjHasMore,
     required this.isMaxAdjLoading,
+    this.maxAdjLoadError = '',
     required this.additionalMonthCount,
     required this.mismatchTracker,
     required this.allChanges,
@@ -399,10 +392,7 @@ class InventoryState extends Equatable {
       filteredMaxAdjustment: [],
       maxAdjSearch: '',
       maxAdjHistory: [],
-      maxAdjPage: 0,
-      maxAdjPageSize: 10000,
       maxAdjTotalRows: 0,
-      maxAdjHasMore: true,
       isMaxAdjLoading: false,
       additionalMonthCount: 0,
       mismatchTracker: [],
@@ -518,11 +508,9 @@ class InventoryState extends Equatable {
     List<Map<String, dynamic>>? filteredMaxAdjustment,
     String? maxAdjSearch,
     List<Map<String, dynamic>>? maxAdjHistory,
-    int? maxAdjPage,
-    int? maxAdjPageSize,
     int? maxAdjTotalRows,
-    bool? maxAdjHasMore,
     bool? isMaxAdjLoading,
+    String? maxAdjLoadError,
     int? additionalMonthCount,
     List<Map<String, dynamic>>? mismatchTracker,
     List<Map<String, dynamic>>? allChanges,
@@ -649,11 +637,9 @@ class InventoryState extends Equatable {
       additionalAnalysis: additionalAnalysis ?? this.additionalAnalysis,
       maxAdjSearch: maxAdjSearch ?? this.maxAdjSearch,
       maxAdjHistory: maxAdjHistory ?? this.maxAdjHistory,
-      maxAdjPage: maxAdjPage ?? this.maxAdjPage,
-      maxAdjPageSize: maxAdjPageSize ?? this.maxAdjPageSize,
       maxAdjTotalRows: maxAdjTotalRows ?? this.maxAdjTotalRows,
-      maxAdjHasMore: maxAdjHasMore ?? this.maxAdjHasMore,
       isMaxAdjLoading: isMaxAdjLoading ?? this.isMaxAdjLoading,
+      maxAdjLoadError: maxAdjLoadError ?? this.maxAdjLoadError,
       additionalMonthCount: additionalMonthCount ?? this.additionalMonthCount,
       mismatchTracker: mismatchTracker ?? this.mismatchTracker,
       allChanges: allChanges ?? this.allChanges,
@@ -772,11 +758,9 @@ class InventoryState extends Equatable {
     filteredMaxAdjustment,
     maxAdjSearch,
     maxAdjHistory,
-    maxAdjPage,
-    maxAdjPageSize,
     maxAdjTotalRows,
-    maxAdjHasMore,
     isMaxAdjLoading,
+    maxAdjLoadError,
     additionalMonthCount,
     mismatchTracker,
     allChanges,

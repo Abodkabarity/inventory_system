@@ -7,6 +7,7 @@ import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 import '../bloc/inventory_bloc.dart';
 import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
@@ -21,18 +22,66 @@ class MaxAdjustmentPage extends StatefulWidget {
   State<MaxAdjustmentPage> createState() => _MaxAdjustmentPageState();
 }
 
-class _MaxAdjustmentPageState extends State<MaxAdjustmentPage> {
+class _MaxAdjustmentPageState extends State<MaxAdjustmentPage>
+    with WidgetsBindingObserver {
   Timer? _searchDebounce;
+  Timer? _dateRefresh;
+  late final TextEditingController _searchController;
+  late DateTime _displayDay;
+  MaxAdjDataSource? _source;
+  List<Map<String, dynamic>>? _sourceData;
+  Map<String, String>? _sourceGroups;
+  DateTime? _sourceDay;
+
+  DateTime _dubaiDay() {
+    final now = DateTime.now().toUtc().add(const Duration(hours: 4));
+    return DateTime.utc(now.year, now.month, now.day);
+  }
+
+  void _refreshDay() {
+    final day = _dubaiDay();
+    if (mounted && day != _displayDay) setState(() => _displayDay = day);
+  }
+
+  void _onBranchMetadata() {
+    if (!mounted) return;
+    setState(() {});
+    if (_searchController.text.trim().isNotEmpty) {
+      _searchDebounce?.cancel();
+      context.read<InventoryBloc>().add(
+        SearchMaxAdjustment(_searchController.text),
+      );
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshDay();
+  }
 
   @override
   void initState() {
     super.initState();
-    context.read<InventoryBloc>().add(LoadMaxAdjustment());
+    final bloc = context.read<InventoryBloc>();
+    _searchController = TextEditingController(text: bloc.state.maxAdjSearch);
+    _displayDay = _dubaiDay();
+    _dateRefresh = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _refreshDay(),
+    );
+    WidgetsBinding.instance.addObserver(this);
+    StoreBranchIdentityRegistry.groups.addListener(_onBranchMetadata);
+    bloc.add(LoadMaxAdjustment(query: _searchController.text));
   }
 
   @override
   void dispose() {
     _searchDebounce?.cancel();
+    _dateRefresh?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    StoreBranchIdentityRegistry.groups.removeListener(_onBranchMetadata);
+    _searchController.dispose();
+    _source?.dispose();
     super.dispose();
   }
 
@@ -42,11 +91,9 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage> {
       buildWhen: (previous, current) =>
           previous.filteredMaxAdjustment != current.filteredMaxAdjustment ||
           previous.maxAdjSearch != current.maxAdjSearch ||
-          previous.maxAdjPage != current.maxAdjPage ||
-          previous.maxAdjPageSize != current.maxAdjPageSize ||
           previous.maxAdjTotalRows != current.maxAdjTotalRows ||
-          previous.maxAdjHasMore != current.maxAdjHasMore ||
           previous.isMaxAdjLoading != current.isMaxAdjLoading ||
+          previous.maxAdjLoadError != current.maxAdjLoadError ||
           previous.isImporting != current.isImporting ||
           previous.isExporting != current.isExporting ||
           previous.exportMessage != current.exportMessage,
@@ -62,9 +109,46 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage> {
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
                 child: Column(
                   children: [
+                    if (state.maxAdjLoadError.isNotEmpty)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              state.maxAdjLoadError,
+                              style: const TextStyle(color: Colors.red),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed:
+                                state.isImporting || state.isMaxAdjLoading
+                                ? null
+                                : () => context.read<InventoryBloc>().add(
+                                    LoadMaxAdjustment(
+                                      query: _searchController.text,
+                                    ),
+                                  ),
+                            child: const Text('Retry refresh'),
+                          ),
+                        ],
+                      ),
+                    if (state.isMaxAdjLoading &&
+                        state.filteredMaxAdjustment.isNotEmpty)
+                      const LinearProgressIndicator(
+                        color: AppColors.primaryColor,
+                      ),
                     Expanded(child: _buildTable(state)),
+                    const SizedBox(height: 6),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'All matching records are shown. Column sorting and filters apply to all loaded results.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.subText,
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 10),
-                    _buildPager(state),
                   ],
                 ),
               ),
@@ -140,7 +224,7 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage> {
               ),
               const SizedBox(width: 8),
               _HeaderMetric(
-                label: 'This page',
+                label: 'Loaded',
                 value: '${state.filteredMaxAdjustment.length}',
               ),
             ],
@@ -152,6 +236,7 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage> {
                 child: SizedBox(
                   height: 46,
                   child: TextField(
+                    controller: _searchController,
                     onChanged: (value) {
                       _searchDebounce?.cancel();
                       _searchDebounce = Timer(
@@ -266,22 +351,36 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage> {
       );
     }
 
-    final source = MaxAdjDataSource(
-      data: data,
-      pageOffset: state.maxAdjPage * state.maxAdjPageSize,
-      onHistory: (entry) {
-        context.read<InventoryBloc>().add(
-          LoadMaxAdjustmentHistory(entry['item_code'], entry['branch_name']),
+    if (_source == null ||
+        !identical(_sourceData, data) ||
+        !identical(_sourceGroups, StoreBranchIdentityRegistry.groups.value) ||
+        _sourceDay != _displayDay) {
+      final previousSource = _source;
+      _sourceData = data;
+      _sourceGroups = StoreBranchIdentityRegistry.groups.value;
+      _sourceDay = _displayDay;
+      _source = MaxAdjDataSource(
+        data: data,
+        onHistory: (entry) {
+          context.read<InventoryBloc>().add(
+            LoadMaxAdjustmentHistory(entry['item_code'], entry['branch_name']),
+          );
+          showDialog(
+            context: context,
+            builder: (_) => BlocProvider.value(
+              value: context.read<InventoryBloc>(),
+              child: const MaxAdjHistoryDialog(),
+            ),
+          );
+        },
+      );
+      if (previousSource != null) {
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => previousSource.dispose(),
         );
-        showDialog(
-          context: context,
-          builder: (_) => BlocProvider.value(
-            value: context.read<InventoryBloc>(),
-            child: const MaxAdjHistoryDialog(),
-          ),
-        );
-      },
-    );
+      }
+    }
+    final source = _source!;
 
     return Container(
       decoration: BoxDecoration(
@@ -335,85 +434,17 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage> {
               _col('name', 'Item Name', width: 400.w),
               _col('demand', 'Demand', width: 138.w, center: true),
               _col('max', 'Max Adj', width: 138.w, center: true),
+              _col('remaining_days', 'Days Left', width: 175.w, center: true),
               _col('type', 'Type', width: 120.w, center: true),
               _col('qty', 'Qty', width: 120.w, center: true),
               _col('reason', 'Reason', width: 280.w),
               _col('date', 'Date', width: 142.w, center: true),
+              _col('expiry_date', 'Expiry Date', width: 160.w, center: true),
               _col('added_by', 'Added By', width: 150.w, center: true),
               _col('action', '', width: 72.w, center: true),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildPager(InventoryState state) {
-    final totalPages = state.maxAdjTotalRows == 0
-        ? 1
-        : (state.maxAdjTotalRows / state.maxAdjPageSize).ceil();
-    final currentPage = state.maxAdjPage + 1;
-    final bloc = context.read<InventoryBloc>();
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        children: [
-          Text(
-            'Page $currentPage of $totalPages',
-            style: const TextStyle(
-              color: AppColors.text,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Text(
-            '${state.maxAdjTotalRows} total / ${state.maxAdjPageSize} per page',
-            style: const TextStyle(color: AppColors.subText),
-          ),
-          const Spacer(),
-          if (state.isMaxAdjLoading)
-            const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          const SizedBox(width: 12),
-          OutlinedButton.icon(
-            onPressed: state.maxAdjPage == 0 || state.isMaxAdjLoading
-                ? null
-                : () => bloc.add(
-                    LoadMaxAdjustment(
-                      page: state.maxAdjPage - 1,
-                      query: state.maxAdjSearch,
-                    ),
-                  ),
-            icon: const Icon(Icons.chevron_left),
-            label: const Text('Previous'),
-          ),
-          const SizedBox(width: 8),
-          ElevatedButton.icon(
-            onPressed: !state.maxAdjHasMore || state.isMaxAdjLoading
-                ? null
-                : () => bloc.add(
-                    LoadMaxAdjustment(
-                      page: state.maxAdjPage + 1,
-                      query: state.maxAdjSearch,
-                    ),
-                  ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primaryColor,
-              foregroundColor: Colors.white,
-            ),
-            icon: const Icon(Icons.chevron_right),
-            label: const Text('Next'),
-          ),
-        ],
       ),
     );
   }
@@ -426,6 +457,8 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage> {
   }) {
     return GridColumn(
       columnName: name,
+      allowSorting: name != 'action' && name != 'index',
+      allowFiltering: name != 'action' && name != 'index',
       width: width ?? double.nan,
       label: Container(
         alignment: center ? Alignment.center : Alignment.centerLeft,
@@ -559,7 +592,7 @@ class _MaxAdjExportDialog extends StatelessWidget {
                     icon: Icons.table_chart_outlined,
                     title: 'Current adjustments',
                     subtitle:
-                        'Active records with Reason, Type, Demand, Max Adjustment, and dates.',
+                        'All current records, including expiry dates and days remaining. Search and table filters are not applied.',
                     enabled: !exporting,
                     onTap: () => context.read<InventoryBloc>().add(
                       ExportMaxAdjCurrent(),

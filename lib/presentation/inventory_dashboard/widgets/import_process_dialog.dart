@@ -32,6 +32,7 @@ class _ImportProgressDialogState extends State<ImportProgressDialog> {
         return previous.importMessage != current.importMessage ||
             previous.importProgress != current.importProgress ||
             previous.isImporting != current.isImporting ||
+            previous.isExporting != current.isExporting ||
             previous.importDuplicateCount != current.importDuplicateCount ||
             previous.importDuplicateSource != current.importDuplicateSource;
       },
@@ -39,83 +40,93 @@ class _ImportProgressDialogState extends State<ImportProgressDialog> {
         final hasDuplicates =
             state.importDuplicateCount > 0 &&
             state.importDuplicateSource == _duplicateSource;
-        return AlertDialog(
-          backgroundColor: Colors.white,
+        return PopScope(
+          canPop: !state.isImporting,
+          child: AlertDialog(
+            backgroundColor: Colors.white,
 
-          /// 🔥 TITLE DYNAMIC
-          title: Text(_getTitle()),
+            /// 🔥 TITLE DYNAMIC
+            title: Text(_getTitle()),
 
-          content: SizedBox(
-            width: 400.w,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                /// 🔥 FORCE APPLY
-                if (hasDuplicates) _duplicateDecision(state),
+            content: SizedBox(
+              width: 400.w,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  /// 🔥 FORCE APPLY
+                  if (hasDuplicates) _duplicateDecision(state),
 
-                /// 🔥 PROGRESS
-                if (state.isImporting) ...[
-                  LinearProgressIndicator(
-                    value: state.importProgress,
-                    color: AppColors.primaryColor,
+                  /// 🔥 PROGRESS
+                  if (state.isImporting) ...[
+                    LinearProgressIndicator(
+                      value: state.importProgress,
+                      color: AppColors.primaryColor,
+                      backgroundColor: AppColors.primaryColor.withValues(
+                        alpha: .15,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text("${(state.importProgress * 100).toStringAsFixed(0)}%"),
+                    const SizedBox(height: 10),
+                  ],
+
+                  /// 🔥 MESSAGE
+                  if (state.importMessage != null)
+                    Text(
+                      state.importMessage!,
+                      style: TextStyle(
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w500,
+                        color: _getMessageColor(state),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                ],
+              ),
+            ),
+
+            actions: [
+              /// 🔥 TEMPLATE
+              if (!hasDuplicates)
+                TextButton(
+                  onPressed: state.isImporting
+                      ? null
+                      : () => _onDownloadTemplate(context),
+                  child: const Text(
+                    "Download Template",
+                    style: TextStyle(color: AppColors.secondaryColor),
+                  ),
+                ),
+
+              /// 🔥 UPLOAD
+              if (!hasDuplicates)
+                ElevatedButton(
+                  onPressed: state.isImporting
+                      ? null
+                      : () => _onUpload(context),
+                  style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primaryColor,
                   ),
-                  const SizedBox(height: 10),
-                  Text("${(state.importProgress * 100).toStringAsFixed(0)}%"),
-                  const SizedBox(height: 10),
-                ],
-
-                /// 🔥 MESSAGE
-                if (state.importMessage != null)
-                  Text(
-                    state.importMessage!,
-                    style: TextStyle(
-                      fontSize: 14.sp,
-                      fontWeight: FontWeight.w500,
-                      color: _getMessageColor(state),
-                    ),
-                    textAlign: TextAlign.center,
+                  child: const Text(
+                    "Upload",
+                    style: TextStyle(color: Colors.white),
                   ),
-              ],
-            ),
+                ),
+
+              /// 🔥 CLOSE
+              if (!state.isImporting)
+                TextButton(
+                  onPressed: () {
+                    context.read<InventoryBloc>().add(ResetImportState());
+                    Navigator.pop(context);
+                  },
+                  child: const Text(
+                    "Close",
+                    style: TextStyle(color: Colors.red),
+                  ),
+                ),
+            ],
           ),
-
-          actions: [
-            /// 🔥 TEMPLATE
-            if (!hasDuplicates)
-              TextButton(
-                onPressed: state.isImporting
-                    ? null
-                    : () => _onDownloadTemplate(context),
-                child: const Text(
-                  "Download Template",
-                  style: TextStyle(color: AppColors.secondaryColor),
-                ),
-              ),
-
-            /// 🔥 UPLOAD
-            if (!hasDuplicates)
-              ElevatedButton(
-                onPressed: state.isImporting ? null : () => _onUpload(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryColor,
-                ),
-                child: const Text(
-                  "Upload",
-                  style: TextStyle(color: Colors.white),
-                ),
-              ),
-
-            /// 🔥 CLOSE
-            if (!state.isImporting)
-              TextButton(
-                onPressed: () {
-                  context.read<InventoryBloc>().add(ResetImportState());
-                  Navigator.pop(context);
-                },
-                child: const Text("Close", style: TextStyle(color: Colors.red)),
-              ),
-          ],
         );
       },
     );
@@ -189,6 +200,9 @@ class _ImportProgressDialogState extends State<ImportProgressDialog> {
   /// 🔥 MESSAGE COLOR
   /// ===============================
   Color _getMessageColor(InventoryState state) {
+    if (state.isImporting || state.importDuplicateCount > 0) {
+      return AppColors.subText;
+    }
     if (state.importSuccess == true) {
       return Colors.green;
     } else if (state.importSuccess == false) {
@@ -245,11 +259,13 @@ class _ImportProgressDialogState extends State<ImportProgressDialog> {
             runSpacing: 8,
             children: [
               OutlinedButton(
-                onPressed: () => bloc.add(
-                  ResolveImportDuplicates(
-                    ImportDuplicateAction.applyWithoutDuplicates,
-                  ),
-                ),
+                onPressed: state.isImporting || state.isExporting
+                    ? null
+                    : () => bloc.add(
+                        ResolveImportDuplicates(
+                          ImportDuplicateAction.applyWithoutDuplicates,
+                        ),
+                      ),
                 style: OutlinedButton.styleFrom(
                   backgroundColor: AppColors.secondaryColor,
                 ),
@@ -259,11 +275,13 @@ class _ImportProgressDialogState extends State<ImportProgressDialog> {
                 ),
               ),
               ElevatedButton(
-                onPressed: () => bloc.add(
-                  ResolveImportDuplicates(
-                    ImportDuplicateAction.applyWithDuplicates,
-                  ),
-                ),
+                onPressed: state.isImporting || state.isExporting
+                    ? null
+                    : () => bloc.add(
+                        ResolveImportDuplicates(
+                          ImportDuplicateAction.applyWithDuplicates,
+                        ),
+                      ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primaryColor,
                   foregroundColor: Colors.white,
@@ -271,9 +289,11 @@ class _ImportProgressDialogState extends State<ImportProgressDialog> {
                 child: const Text('Apply with duplicates'),
               ),
               TextButton.icon(
-                onPressed: () => bloc.add(
-                  ResolveImportDuplicates(ImportDuplicateAction.download),
-                ),
+                onPressed: state.isImporting || state.isExporting
+                    ? null
+                    : () => bloc.add(
+                        ResolveImportDuplicates(ImportDuplicateAction.download),
+                      ),
                 icon: const Icon(
                   Icons.download_rounded,
                   color: AppColors.secondaryColor,
