@@ -7,6 +7,8 @@ import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/mismatch_report_date.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../../domain/entities/mismatch_item.dart';
 import '../bloc/inventory_bloc.dart';
 import '../bloc/inventory_event.dart';
@@ -24,9 +26,15 @@ class _MismatchPageState extends State<MismatchPage> {
   Timer? _initialLoadFallback;
   final _searchController = TextEditingController();
 
+  void _onBranchMetadata() {
+    if (!mounted || _searchController.text.trim().isEmpty) return;
+    context.read<InventoryBloc>().add(SearchMismatch(_searchController.text));
+  }
+
   @override
   void initState() {
     super.initState();
+    StoreBranchIdentityRegistry.groups.addListener(_onBranchMetadata);
     final bloc = context.read<InventoryBloc>();
     bloc.add(StartMismatchRealtime());
     bloc.add(LoadMismatch());
@@ -39,6 +47,7 @@ class _MismatchPageState extends State<MismatchPage> {
 
   @override
   void dispose() {
+    StoreBranchIdentityRegistry.groups.removeListener(_onBranchMetadata);
     _initialLoadFallback?.cancel();
     _searchController.dispose();
     super.dispose();
@@ -46,6 +55,13 @@ class _MismatchPageState extends State<MismatchPage> {
 
   @override
   Widget build(BuildContext context) {
+    return ValueListenableBuilder<Map<String, String>>(
+      valueListenable: StoreBranchIdentityRegistry.groups,
+      builder: (context, _, child) => _buildReport(context),
+    );
+  }
+
+  Widget _buildReport(BuildContext context) {
     return BlocListener<InventoryBloc, InventoryState>(
       listenWhen: (previous, current) =>
           previous.filteredMismatch != current.filteredMismatch ||
@@ -182,6 +198,7 @@ class _MismatchPageState extends State<MismatchPage> {
                                       _col("system", "System", widths),
                                       _col("actual", "Actual", widths),
                                       _col("diff", "Diff", widths),
+                                      _col("report_date", "Date", widths),
                                       _col("history", "History", widths),
                                     ],
                                   ),
@@ -537,7 +554,9 @@ class _MismatchPageState extends State<MismatchPage> {
                   child: Text(
                     state.mismatchBranch == 'ALL'
                         ? 'All branches'
-                        : state.mismatchBranch,
+                        : StoreBranchIdentityRegistry.displayName(
+                            state.mismatchBranch,
+                          ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -565,116 +584,129 @@ class _MismatchPageState extends State<MismatchPage> {
     final branches = state.branches.toSet().toList()..sort();
     final selected = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          final visible = [
-            'ALL',
-            ...branches.where(
-              (branch) => branch.toLowerCase().contains(query.toLowerCase()),
-            ),
-          ];
-          return Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 460, maxHeight: 560),
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(9),
-                          decoration: BoxDecoration(
-                            color: AppColors.blueSoft,
-                            borderRadius: BorderRadius.circular(11),
-                          ),
-                          child: const Icon(
-                            Icons.storefront_outlined,
-                            color: AppColors.primaryColor,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        const Expanded(
-                          child: Text(
-                            'Select branch',
-                            style: TextStyle(
-                              fontSize: 19,
-                              fontWeight: FontWeight.w800,
+      builder: (dialogContext) => ValueListenableBuilder<Map<String, String>>(
+        valueListenable: StoreBranchIdentityRegistry.groups,
+        builder: (context, _, child) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            final visible = [
+              'ALL',
+              ...branches.where(
+                (branch) => StoreBranchIdentityRegistry.displayName(
+                  branch,
+                ).toLowerCase().contains(query.toLowerCase()),
+              ),
+            ];
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: 460,
+                  maxHeight: 560,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(9),
+                            decoration: BoxDecoration(
+                              color: AppColors.blueSoft,
+                              borderRadius: BorderRadius.circular(11),
+                            ),
+                            child: const Icon(
+                              Icons.storefront_outlined,
+                              color: AppColors.primaryColor,
                             ),
                           ),
-                        ),
-                        IconButton(
-                          onPressed: () => Navigator.pop(dialogContext),
-                          icon: const Icon(Icons.close_rounded),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: searchController,
-                      autofocus: true,
-                      onChanged: (value) => setDialogState(() => query = value),
-                      decoration: InputDecoration(
-                        hintText: 'Search branch',
-                        prefixIcon: const Icon(Icons.search_rounded),
-                        filled: true,
-                        fillColor: AppColors.bg,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: AppColors.primaryColor,
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Text(
+                              'Select branch',
+                              style: TextStyle(
+                                fontSize: 19,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
                           ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: AppColors.primaryColor,
-                            width: 1.5,
+                          IconButton(
+                            onPressed: () => Navigator.pop(dialogContext),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: searchController,
+                        autofocus: true,
+                        onChanged: (value) =>
+                            setDialogState(() => query = value),
+                        decoration: InputDecoration(
+                          hintText: 'Search branch',
+                          prefixIcon: const Icon(Icons.search_rounded),
+                          filled: true,
+                          fillColor: AppColors.bg,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: AppColors.primaryColor,
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: AppColors.primaryColor,
+                              width: 1.5,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    Expanded(
-                      child: ListView.separated(
-                        itemCount: visible.length,
-                        separatorBuilder: (_, _) => const Divider(height: 1),
-                        itemBuilder: (_, index) {
-                          final branch = visible[index];
-                          final isSelected = branch == state.mismatchBranch;
-                          return ListTile(
-                            dense: true,
-                            leading: Icon(
-                              branch == 'ALL'
-                                  ? Icons.apps_rounded
-                                  : Icons.storefront_outlined,
-                              color: isSelected
-                                  ? AppColors.primaryColor
-                                  : AppColors.subText,
-                            ),
-                            title: Text(
-                              branch == 'ALL' ? 'All branches' : branch,
-                            ),
-                            trailing: isSelected
-                                ? const Icon(
-                                    Icons.check_circle_rounded,
-                                    color: AppColors.primaryColor,
-                                  )
-                                : null,
-                            onTap: () => Navigator.pop(dialogContext, branch),
-                          );
-                        },
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: ListView.separated(
+                          itemCount: visible.length,
+                          separatorBuilder: (_, _) => const Divider(height: 1),
+                          itemBuilder: (_, index) {
+                            final branch = visible[index];
+                            final isSelected = branch == state.mismatchBranch;
+                            return ListTile(
+                              dense: true,
+                              leading: Icon(
+                                branch == 'ALL'
+                                    ? Icons.apps_rounded
+                                    : Icons.storefront_outlined,
+                                color: isSelected
+                                    ? AppColors.primaryColor
+                                    : AppColors.subText,
+                              ),
+                              title: Text(
+                                branch == 'ALL'
+                                    ? 'All branches'
+                                    : StoreBranchIdentityRegistry.displayName(
+                                        branch,
+                                      ),
+                              ),
+                              trailing: isSelected
+                                  ? const Icon(
+                                      Icons.check_circle_rounded,
+                                      color: AppColors.primaryColor,
+                                    )
+                                  : null,
+                              onTap: () => Navigator.pop(dialogContext, branch),
+                            );
+                          },
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
     searchController.dispose();
@@ -928,12 +960,19 @@ class _MismatchDataSource extends DataGridSource {
       return DataGridRow(
         cells: [
           DataGridCell(columnName: 'index', value: index + 1),
-          DataGridCell(columnName: 'branch', value: e.branchName),
+          DataGridCell(
+            columnName: 'branch',
+            value: StoreBranchIdentityRegistry.displayName(e.branchName),
+          ),
           DataGridCell(columnName: 'code', value: e.itemCode),
           DataGridCell(columnName: 'name', value: e.itemName),
           DataGridCell(columnName: 'system', value: e.systemStock),
           DataGridCell(columnName: 'actual', value: e.actualStock),
           DataGridCell(columnName: 'diff', value: e.diff),
+          DataGridCell<DateTime>(
+            columnName: 'report_date',
+            value: e.reportDate,
+          ),
           DataGridCell(columnName: 'history', value: e),
         ],
       );
@@ -950,6 +989,12 @@ class _MismatchDataSource extends DataGridSource {
     return DataGridRowAdapter(
       color: rowNo.isOdd ? Colors.white : const Color(0xFFFFFBFC),
       cells: row.getCells().map((c) {
+        if (c.columnName == 'report_date') {
+          return Center(
+            child: SelectableText(mismatchDateLabel(c.value as DateTime?)),
+          );
+        }
+
         /// 🔥 DIFF STYLE
         if (c.columnName == 'diff') {
           final val = num.tryParse(c.value.toString()) ?? 0;
@@ -1051,6 +1096,13 @@ class _MismatchHistoryDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return ValueListenableBuilder<Map<String, String>>(
+      valueListenable: StoreBranchIdentityRegistry.groups,
+      builder: (context, _, child) => _buildDialog(context),
+    );
+  }
+
+  Widget _buildDialog(BuildContext context) {
     return Dialog(
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
@@ -1108,7 +1160,7 @@ class _MismatchHistoryDialog extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${item.branchName} • ${item.itemCode}',
+                          '${StoreBranchIdentityRegistry.displayName(item.branchName)} • ${item.itemCode}',
                           style: const TextStyle(
                             color: Color(0xFF6B7A90),
                             fontWeight: FontWeight.w600,

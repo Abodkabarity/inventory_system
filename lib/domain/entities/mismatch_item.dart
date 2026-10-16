@@ -8,6 +8,7 @@ class MismatchItem extends Equatable {
   final num actualStock;
   final num diff;
   final DateTime updateDate;
+  final DateTime? reportDate;
 
   final bool hasHistory;
 
@@ -19,6 +20,7 @@ class MismatchItem extends Equatable {
     required this.actualStock,
     required this.diff,
     required this.updateDate,
+    this.reportDate,
     required this.hasHistory,
   });
 
@@ -31,6 +33,7 @@ class MismatchItem extends Equatable {
     actualStock,
     diff,
     updateDate,
+    reportDate,
     hasHistory,
   ];
 }

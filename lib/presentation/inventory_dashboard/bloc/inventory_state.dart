@@ -330,6 +330,7 @@ class InventoryState extends Equatable {
 
         'actual': 130,
         'diff': 130,
+        'report_date': 160,
         'history': 150,
       },
       submittedCount: 0,

@@ -2,6 +2,8 @@ import 'dart:html' as html;
 import 'dart:typed_data';
 
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
+import 'mismatch_report_date.dart';
+import 'store_branch_identity_registry.dart';
 
 class MismatchExcelExporter {
   static Future<void> export({
@@ -42,7 +44,7 @@ class MismatchExcelExporter {
             'system_stock',
             'actual_stock',
             'diff',
-            'update_date',
+            'report_date',
           ];
 
     /// =========================
@@ -56,7 +58,7 @@ class MismatchExcelExporter {
       'system_stock': 'System',
       'actual_stock': 'Actual',
       'diff': 'Diff',
-      'update_date': 'Date',
+      'report_date': 'Date (Added / Updated)',
 
       'old_system_stock': 'Old System',
       'old_actual_stock': 'Old Actual',
@@ -98,7 +100,9 @@ class MismatchExcelExporter {
 
       for (int c = 0; c < headers.length; c++) {
         final key = headers[c];
-        final value = row[key];
+        final value = key == 'report_date'
+            ? mismatchDateLabel(mismatchTimestamp(row[key]))
+            : StoreBranchIdentityRegistry.exportValue(key, row[key]);
 
         final cell = sheet.getRangeByIndex(r + 2, c + 1);
 

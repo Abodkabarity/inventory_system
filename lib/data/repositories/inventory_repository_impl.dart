@@ -180,18 +180,7 @@ class InventoryRepositoryImpl implements InventoryRepository {
   Future<List<MismatchItem>> fetchMismatch() async {
     final rows = await remote.fetchMismatch();
 
-    final logs = await remote.client
-        .from('mismatch_log')
-        .select('branch_name,item_code')
-        .or('action.eq.update,action.eq.delete');
-
-    final logSet = logs
-        .map((e) => "${e['branch_name']}_${e['item_code']}")
-        .toSet();
-
     return rows.map((e) {
-      final key = "${e['branch_name']}_${e['item_code']}";
-
       return MismatchItem(
         branchName: e['branch_name'] ?? '',
         itemCode: e['item_code'] ?? '',
@@ -201,7 +190,8 @@ class InventoryRepositoryImpl implements InventoryRepository {
         diff: e['diff'] ?? 0,
         updateDate:
             DateTime.tryParse(e['update_date'].toString()) ?? DateTime.now(),
-        hasHistory: logSet.contains(key),
+        reportDate: DateTime.tryParse(e['report_date']?.toString() ?? ''),
+        hasHistory: e['has_history'] == true,
       );
     }).toList();
   }
@@ -864,37 +854,7 @@ class InventoryRepositoryImpl implements InventoryRepository {
   @override
   Future<List<Map<String, dynamic>>> fetchMismatchExport({
     Function(double progress)? onProgress,
-  }) async {
-    final List<Map<String, dynamic>> all = [];
-
-    int from = 0;
-    const int batch = 5000;
-
-    while (true) {
-      final res = await remote.client
-          .from('stk_mismatch')
-          .select()
-          .range(from, from + batch - 1);
-
-      final data = List<Map<String, dynamic>>.from(res);
-
-      if (data.isEmpty) break;
-
-      all.addAll(data);
-
-      /// 🔥 progress
-      final percent = all.length / 20000;
-      onProgress?.call(percent.clamp(0, 1));
-
-      if (data.length < batch) break;
-
-      from += batch;
-
-      await Future.delayed(const Duration(milliseconds: 1)); // يمنع freeze
-    }
-
-    return all;
-  }
+  }) => remote.fetchMismatch(onProgress: onProgress);
 
   @override
   Future<List<Map<String, dynamic>>> fetchMismatchLogExport() async {
