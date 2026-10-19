@@ -1,3 +1,4 @@
+import '../../widgets/inventory_dropdown.dart';
 import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 import 'dart:convert';
 import 'dart:math' as math;
@@ -1151,7 +1152,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
                     child: Row(
                       children: [
                         Expanded(
-                          child: DropdownButtonFormField<int>(
+                          child: InventoryDropdownFormField<int>(
                             key: const ValueKey('stock-check-kpi-year'),
                             initialValue: _kpiYear,
                             decoration: const InputDecoration(
@@ -1174,7 +1175,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: DropdownButtonFormField<int>(
+                          child: InventoryDropdownFormField<int>(
                             key: const ValueKey('stock-check-kpi-quarter'),
                             initialValue: _kpiQuarter,
                             decoration: const InputDecoration(
@@ -4174,7 +4175,7 @@ class _StockCheckResultTableState extends State<_StockCheckResultTable> {
                 const SizedBox(width: 12),
                 SizedBox(
                   width: 180,
-                  child: DropdownButtonFormField<String>(
+                  child: InventoryDropdownFormField<String>(
                     initialValue: _statusFilter,
                     decoration: _filterDecoration('Status'),
                     items: const [

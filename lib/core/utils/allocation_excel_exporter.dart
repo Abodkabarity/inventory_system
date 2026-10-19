@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
 
 import '../../domain/entities/allocation_result_row.dart';
+import 'store_branch_identity_registry.dart';
 
 class AllocationShortageExportRow {
   final String branch;
@@ -48,11 +49,11 @@ class AllocationExcelExporter {
     for (var r = 0; r < rows.length; r++) {
       final row = rows[r];
       final values = [
-        row.fromBranch,
+        StoreBranchIdentityRegistry.displayName(row.fromBranch),
         row.itemCode,
         row.itemName,
         row.qty,
-        row.toBranch,
+        StoreBranchIdentityRegistry.displayName(row.toBranch),
       ];
 
       for (var c = 0; c < values.length; c++) {
@@ -123,7 +124,12 @@ class AllocationExcelExporter {
 
     for (var r = 0; r < rows.length; r++) {
       final row = rows[r];
-      final values = [row.branch, row.itemCode, row.itemName, row.shortageQty];
+      final values = [
+        StoreBranchIdentityRegistry.displayName(row.branch),
+        row.itemCode,
+        row.itemName,
+        row.shortageQty,
+      ];
 
       for (var c = 0; c < values.length; c++) {
         final cell = sheet.getRangeByIndex(r + 2, c + 1);

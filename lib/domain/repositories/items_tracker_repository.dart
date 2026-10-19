@@ -31,6 +31,7 @@ abstract class ItemsTrackerRepository {
   Future<List<ItemsTrackerEmailDraft>> prepareEmails(
     List<String> itemIds, {
     String? company,
+    bool exactSelection = false,
   });
 
   Future<bool> openEmailDraft(String emailId, {bool reopen = false});

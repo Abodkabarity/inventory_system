@@ -13,7 +13,7 @@ current and saved product facts from Item Report without changing receipt/review
 fingerprints or historical quantities.
 The existing MRN and expiry tables, refreshes and review notes are unchanged.
 
-The complete product register loads in background batches of up to 4,000 products
+The complete product register loads in background batches of up to 5,000 products
 and rejects changes of snapshot version/count or duplicate codes between batches.
 There is one continuous table with no visible pagination. Search, Status, Item Status,
 category, supplier and sorting operate locally on the complete loaded catalog. Rows are

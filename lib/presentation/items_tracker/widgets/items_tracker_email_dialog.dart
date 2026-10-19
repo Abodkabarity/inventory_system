@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/items_tracker_email_file.dart';
 import '../../../domain/entities/items_tracker_email.dart';
 import '../../../domain/entities/items_tracker_record.dart';
 import '../../../domain/repositories/items_tracker_repository.dart';
@@ -13,6 +14,7 @@ Future<void> showItemsTrackerEmailDialog({
   required List<String> itemIds,
   String? company,
   Future<bool> Function(Uri)? outlookLauncher,
+  bool exactSelection = false,
 }) async {
   await showDialog<void>(
     context: context,
@@ -22,6 +24,7 @@ Future<void> showItemsTrackerEmailDialog({
       itemIds: itemIds,
       company: company,
       outlookLauncher: outlookLauncher,
+      exactSelection: exactSelection,
     ),
   );
 }
@@ -33,12 +36,16 @@ class ItemsTrackerEmailDialog extends StatefulWidget {
   final List<String> itemIds;
   final String? company;
   final Future<bool> Function(Uri)? outlookLauncher;
+  final Future<bool> Function(ItemsTrackerEmailDraft)? draftDownloader;
+  final bool exactSelection;
   const ItemsTrackerEmailDialog({
     super.key,
     required this.repository,
     required this.itemIds,
     this.company,
     this.outlookLauncher,
+    this.draftDownloader,
+    this.exactSelection = false,
   });
 
   @override
@@ -73,6 +80,7 @@ class _ItemsTrackerEmailDialogState extends State<ItemsTrackerEmailDialog> {
       final drafts = await widget.repository.prepareEmails(
         widget.itemIds,
         company: widget.company,
+        exactSelection: widget.exactSelection,
       );
       if (!mounted) return;
       setState(() {
@@ -127,6 +135,7 @@ class _ItemsTrackerEmailDialogState extends State<ItemsTrackerEmailDialog> {
   Future<void> _open(
     ItemsTrackerEmailDraft draft, {
     bool reopen = false,
+    bool formatted = false,
   }) async {
     if (_busy || _sent.contains(draft.id) || _cancelled.contains(draft.id)) {
       return;
@@ -162,6 +171,26 @@ class _ItemsTrackerEmailDialogState extends State<ItemsTrackerEmailDialog> {
         }
         return;
       }
+      if (formatted) {
+        handedOff =
+            await (widget.draftDownloader?.call(draft) ??
+                saveTrackerEmail(
+                  draft.eml,
+                  'Items_Tracker_${draft.id.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')}.eml',
+                ));
+        if (!handedOff) {
+          if (!reopen) await widget.repository.releaseEmailDraft(draft.id);
+          return;
+        }
+        if (mounted) {
+          setState(() {
+            _opened.add(draft.id);
+            _notice =
+                'Outlook draft downloaded with the full table. Open the .eml file in Outlook, send, then confirm below.';
+          });
+        }
+        return;
+      }
       // Long company emails can exceed Windows mailto limits. Copy the complete
       // body and open recipients/subject only, with an explicit paste instruction.
       final fullUri = draft.outlookUri();
@@ -185,7 +214,7 @@ class _ItemsTrackerEmailDialogState extends State<ItemsTrackerEmailDialog> {
         });
       }
     } catch (error) {
-      if (reserved && !handedOff) {
+      if (reserved && !handedOff && !reopen) {
         try {
           await widget.repository.releaseEmailDraft(draft.id);
         } catch (_) {
@@ -251,15 +280,21 @@ class _ItemsTrackerEmailDialogState extends State<ItemsTrackerEmailDialog> {
     canPop: !_busy,
     child: Dialog(
       backgroundColor: Colors.white,
+      clipBehavior: Clip.antiAlias,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 820, maxHeight: 800),
+        constraints: const BoxConstraints(maxWidth: 1120, maxHeight: 800),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Padding(
+            Container(
               padding: const EdgeInsets.fromLTRB(24, 20, 12, 16),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [AppColors.secondaryColor, Color(0xFF245E77)],
+                ),
+              ),
               child: Row(
                 children: [
                   const Icon(Icons.outgoing_mail, color: _accent),
@@ -273,15 +308,15 @@ class _ItemsTrackerEmailDialogState extends State<ItemsTrackerEmailDialog> {
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w800,
-                            color: _ink,
+                            color: Colors.white,
                           ),
                         ),
                         SizedBox(height: 4),
                         Text(
-                          '1. Open Outlook  ·  2. Send the email  ·  3. Confirm sent',
+                          'Preview · Open in Outlook · Send · Confirm sent',
                           style: TextStyle(
                             fontSize: 12,
-                            color: Color(0xff748494),
+                            color: Color(0xFFBAD8E8),
                           ),
                         ),
                       ],
@@ -289,7 +324,7 @@ class _ItemsTrackerEmailDialogState extends State<ItemsTrackerEmailDialog> {
                   ),
                   IconButton(
                     onPressed: _busy ? null : () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
+                    icon: const Icon(Icons.close, color: Colors.white),
                   ),
                 ],
               ),
@@ -312,7 +347,7 @@ class _ItemsTrackerEmailDialogState extends State<ItemsTrackerEmailDialog> {
                             const Padding(
                               padding: EdgeInsets.only(bottom: 14),
                               child: Text(
-                                'Each department receives its own email. Products already sent are excluded from new messages.',
+                                'One email for one follow-up department. Products already sent are excluded from new messages.',
                                 style: TextStyle(color: _ink),
                               ),
                             ),
@@ -337,6 +372,14 @@ class _ItemsTrackerEmailDialogState extends State<ItemsTrackerEmailDialog> {
                               ),
                             ),
                           for (final draft in _drafts) _draftCard(draft),
+                          if (_drafts.isEmpty && _error == null)
+                            const Padding(
+                              padding: EdgeInsets.all(20),
+                              child: Text(
+                                'No email draft is available for these products.',
+                                style: TextStyle(color: _ink),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -438,24 +481,39 @@ class _ItemsTrackerEmailDialogState extends State<ItemsTrackerEmailDialog> {
             style: const TextStyle(color: _ink, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xfff5f8fb),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 260),
-              child: SingleChildScrollView(
-                child: SelectableText(
-                  draft.body,
-                  style: const TextStyle(
-                    color: _ink,
-                    fontSize: 12,
-                    height: 1.6,
-                  ),
+          _productTable(draft),
+          if (!sent && draft.products.any((p) => p.quantity == null))
+            const Padding(
+              padding: EdgeInsets.only(top: 10),
+              child: Text(
+                'This saved draft uses the previous email format. Discard it and prepare a new email to include current quantities and prices.',
+                style: TextStyle(
+                  color: AppColors.subText,
+                  fontSize: 12,
+                  height: 1.5,
                 ),
               ),
+            ),
+          if (draft.products.length > 50)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                'Preview shows the first 50 products. The downloaded email and copied table include every selected product.',
+                style: TextStyle(color: AppColors.subText, fontSize: 11),
+              ),
+            ),
+          const SizedBox(height: 10),
+          Text(
+            draft.totalLabel,
+            style: const TextStyle(color: _ink, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Download Outlook draft keeps the formatted table. Open in Outlook uses a plain-text email.',
+            style: TextStyle(
+              color: AppColors.subText,
+              fontSize: 11,
+              height: 1.5,
             ),
           ),
           if (!sent && !cancelled) ...[
@@ -464,12 +522,28 @@ class _ItemsTrackerEmailDialogState extends State<ItemsTrackerEmailDialog> {
               spacing: 10,
               runSpacing: 8,
               children: [
+                FilledButton.icon(
+                  key: ValueKey('downloadEmail:${draft.id}'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _accent,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: _busy
+                      ? null
+                      : () => _open(draft, reopen: opened, formatted: true),
+                  icon: const Icon(Icons.download_rounded, size: 18),
+                  label: Text(
+                    opened
+                        ? 'Download unsent draft again'
+                        : 'Download Outlook draft',
+                  ),
+                ),
                 if (!opened)
-                  FilledButton.icon(
+                  OutlinedButton.icon(
                     key: ValueKey('openEmail:${draft.id}'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.primaryColor,
-                      foregroundColor: Colors.white,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primaryColor,
+                      side: const BorderSide(color: AppColors.primaryColor),
                     ),
                     onPressed: _busy ? null : () => _open(draft),
                     icon: const Icon(Icons.open_in_new, size: 17),
@@ -495,6 +569,37 @@ class _ItemsTrackerEmailDialogState extends State<ItemsTrackerEmailDialog> {
                     child: const Text('Reopen unsent draft'),
                   ),
                 ],
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.primaryColor,
+                  ),
+                  onPressed: _busy
+                      ? null
+                      : () async {
+                          try {
+                            final rich = await copyTrackerEmailTable(
+                              draft.htmlBody,
+                              draft.body,
+                            );
+                            if (mounted) {
+                              setState(
+                                () => _notice = rich
+                                    ? 'Formatted table copied. Paste it into your Outlook message.'
+                                    : 'This browser could copy text only. Use Download Outlook draft to keep the formatted table.',
+                              );
+                            }
+                          } catch (_) {
+                            if (mounted) {
+                              setState(
+                                () => _error =
+                                    'Clipboard unavailable. Use Download Outlook draft instead.',
+                              );
+                            }
+                          }
+                        },
+                  icon: const Icon(Icons.table_chart_outlined, size: 17),
+                  label: const Text('Copy table'),
+                ),
                 TextButton.icon(
                   style: TextButton.styleFrom(
                     foregroundColor: AppColors.secondaryColor,
@@ -550,6 +655,86 @@ class _ItemsTrackerEmailDialogState extends State<ItemsTrackerEmailDialog> {
         ),
       ],
     ),
+  );
+
+  Widget _productTable(ItemsTrackerEmailDraft draft) => LayoutBuilder(
+    builder: (context, constraints) {
+      final scale = constraints.maxWidth >= 850
+          ? constraints.maxWidth / 975
+          : 1.0;
+      return Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: AppColors.border),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 320),
+          child: Scrollbar(
+            child: SingleChildScrollView(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Table(
+                  defaultVerticalAlignment: TableCellVerticalAlignment.top,
+                  border: const TableBorder(
+                    horizontalInside: BorderSide(color: AppColors.border),
+                  ),
+                  columnWidths: {
+                    0: FixedColumnWidth(240 * scale),
+                    1: FixedColumnWidth(75 * scale),
+                    2: FixedColumnWidth(110 * scale),
+                    3: FixedColumnWidth(110 * scale),
+                    4: FixedColumnWidth(180 * scale),
+                    5: FixedColumnWidth(260 * scale),
+                  },
+                  children: [
+                    TableRow(
+                      decoration: const BoxDecoration(color: Color(0xFFEAF5FB)),
+                      children: [
+                        for (final label in ItemsTrackerEmailDraft.columns)
+                          Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Text(
+                              label,
+                              style: const TextStyle(
+                                color: _ink,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    for (var i = 0; i < draft.products.length && i < 50; i++)
+                      TableRow(
+                        decoration: BoxDecoration(
+                          color: i.isEven
+                              ? Colors.white
+                              : const Color(0xFFF7FAFD),
+                        ),
+                        children: [
+                          for (final cell in draft.products[i].cells)
+                            Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: SelectableText(
+                                cell,
+                                style: const TextStyle(
+                                  color: _ink,
+                                  fontSize: 12,
+                                  height: 1.5,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    },
   );
 
   String _errorText(Object error) {

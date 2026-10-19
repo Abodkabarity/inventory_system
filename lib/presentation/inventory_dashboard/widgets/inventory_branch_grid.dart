@@ -1,3 +1,4 @@
+import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -538,7 +539,9 @@ class _AnimatedBranchCardState extends State<_AnimatedBranchCard> {
                             ),
                             const SizedBox(height: 10),
                             Text(
-                              widget.branch,
+                              StoreBranchIdentityRegistry.displayName(
+                                widget.branch,
+                              ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
@@ -1291,7 +1294,7 @@ class _BranchDialogInformation extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            branch,
+            StoreBranchIdentityRegistry.displayName(branch),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(

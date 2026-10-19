@@ -191,6 +191,7 @@ class ItemsTrackerRecord {
   final String emailStatus;
   final DateTime? emailSentAt;
   final String emailScope;
+  final DateTime? emailQueuedAt;
 
   const ItemsTrackerRecord({
     this.isBlocked = false,
@@ -238,6 +239,7 @@ class ItemsTrackerRecord {
     this.emailStatus = '',
     this.emailSentAt,
     this.emailScope = '',
+    this.emailQueuedAt,
   });
 
   bool canAct(String role) =>
@@ -246,6 +248,11 @@ class ItemsTrackerRecord {
 
   bool get emailSent => emailStatus == 'sent';
   bool get canSendEmail => !emailSent;
+
+  bool get isNewEmail =>
+      emailQueuedAt != null &&
+      !emailSent &&
+      caseStatus == ItemsTrackerCaseStatuses.pending;
 
   bool get canGroupByCompany =>
       company.trim().isNotEmpty && category.trim().toUpperCase() != 'MEDICINE';
@@ -353,6 +360,7 @@ class ItemsTrackerRecord {
       emailStatus: (map['email_status'] ?? '').toString(),
       emailSentAt: _asDateTime(map['email_sent_at']),
       emailScope: (map['email_scope'] ?? '').toString(),
+      emailQueuedAt: _asDateTime(map['email_queued_at']),
     );
   }
 }

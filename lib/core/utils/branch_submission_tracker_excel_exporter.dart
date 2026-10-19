@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
 
 import '../../domain/entities/branch_submission_miss.dart';
+import 'store_branch_identity_registry.dart';
 
 class BranchSubmissionTrackerExcelExporter {
   static Future<void> export({
@@ -132,7 +133,7 @@ class BranchSubmissionTrackerExcelExporter {
       _writeRow(sheet, i + 2, [
         i + 1,
         _date(row.runDate),
-        row.branchName,
+        StoreBranchIdentityRegistry.displayName(row.branchName),
         row.zone,
         row.zoneManager,
         row.zoneManagerEmail,

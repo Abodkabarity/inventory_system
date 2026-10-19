@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' hide Column;
 
 import '../../presentation/orders/widgets/orders_table.dart';
+import 'store_branch_identity_registry.dart';
 
 class InventoryOrdersExporter {
   static Future<void> export({
@@ -53,7 +54,12 @@ class InventoryOrdersExporter {
       for (int c = 0; c < visibleColumns.length; c++) {
         final key = visibleColumns[c];
 
-        final value = row[key]?.toString() ?? '';
+        final value =
+            StoreBranchIdentityRegistry.exportValue(
+              key,
+              row[key],
+            )?.toString() ??
+            '';
 
         final cell = sheet.getRangeByIndex(r + 2, c + 1);
 

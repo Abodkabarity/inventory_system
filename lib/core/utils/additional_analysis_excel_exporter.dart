@@ -2,6 +2,7 @@ import 'dart:html' as html;
 import 'dart:typed_data';
 
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
+import 'store_branch_identity_registry.dart';
 
 class AdditionalAnalysisExcelExporter {
   static Future<void> exportOverview({
@@ -307,7 +308,18 @@ class AdditionalAnalysisExcelExporter {
 
     final table = <List<Object?>>[
       columns.map((e) => e.title).toList(),
-      ...rows.map((row) => columns.map((col) => row[col.key] ?? '').toList()),
+      ...rows.map(
+        (row) => columns
+            .map(
+              (col) =>
+                  StoreBranchIdentityRegistry.exportValue(
+                    col.key,
+                    row[col.key],
+                  ) ??
+                  '',
+            )
+            .toList(),
+      ),
     ];
 
     _writeTable(sheet, 6, table);

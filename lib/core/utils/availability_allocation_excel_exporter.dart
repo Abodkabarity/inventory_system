@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
 
 import '../../data/datasources/remote/availability_kpi_remote_ds.dart';
+import 'store_branch_identity_registry.dart';
 
 class AvailabilityAllocationExcelExporter {
   static Future<void> export({
@@ -64,11 +65,11 @@ class AvailabilityAllocationExcelExporter {
       final allocation = rows[index];
       final row = headerRow + index + 1;
       final values = <Object>[
-        allocation.fromBranch,
+        StoreBranchIdentityRegistry.displayName(allocation.fromBranch),
         allocation.itemCode,
         allocation.itemName,
         allocation.qty,
-        allocation.toBranch,
+        StoreBranchIdentityRegistry.displayName(allocation.toBranch),
       ];
       for (var column = 1; column <= columnCount; column++) {
         final cell = sheet.getRangeByIndex(row, column);

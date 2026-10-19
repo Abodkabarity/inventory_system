@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../../domain/entities/allocation_result_row.dart';
 import '../../../domain/entities/branch_allocation_task.dart';
 import '../bloc/inventory_bloc.dart';
@@ -2038,7 +2039,7 @@ class _SelectedBranchesPreview extends StatelessWidget {
             children: [
               ...visible.map(
                 (branch) => InputChip(
-                  label: Text(branch),
+                  label: Text(StoreBranchIdentityRegistry.displayName(branch)),
                   onDeleted: () => onRemove(branch),
                   deleteIcon: const Icon(Icons.close_rounded, size: 16),
                   labelStyle: TextStyle(
@@ -2686,8 +2687,8 @@ class _AllocationDetailsTable extends StatelessWidget {
           rows: rows.map((row) {
             return DataRow(
               cells: [
-                DataCell(Text(row.fromBranch)),
-                DataCell(Text(row.toBranch)),
+                DataCell(Text(StoreBranchIdentityRegistry.displayName(row.fromBranch))),
+                DataCell(Text(StoreBranchIdentityRegistry.displayName(row.toBranch))),
                 DataCell(Text('${row.itemCode}\n${row.itemName}')),
                 DataCell(Text(row.qty.toString())),
                 DataCell(Text(row.qtySend.toString())),
@@ -2949,7 +2950,7 @@ class _ResultsTable extends StatelessWidget {
                               DataCell(
                                 SizedBox(
                                   width: fromBranchWidth,
-                                  child: Text(row.fromBranch),
+                                  child: Text(StoreBranchIdentityRegistry.displayName(row.fromBranch)),
                                 ),
                               ),
                               DataCell(
@@ -2980,7 +2981,7 @@ class _ResultsTable extends StatelessWidget {
                               DataCell(
                                 SizedBox(
                                   width: toBranchWidth,
-                                  child: Text(row.toBranch),
+                                  child: Text(StoreBranchIdentityRegistry.displayName(row.toBranch)),
                                 ),
                               ),
                             ],

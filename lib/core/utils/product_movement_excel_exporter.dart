@@ -2,6 +2,7 @@ import 'dart:html' as html;
 import 'dart:typed_data';
 
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
+import 'store_branch_identity_registry.dart';
 
 import '../../domain/entities/product_movement.dart';
 
@@ -28,7 +29,9 @@ class ProductMovementExcelExporter {
     sheet.getRangeByIndex(2, 1).setText('Product');
     sheet.getRangeByIndex(2, 2).setText(itemLabel);
     sheet.getRangeByIndex(2, 4).setText('Branch');
-    sheet.getRangeByIndex(2, 5).setText(branchLabel);
+    sheet
+        .getRangeByIndex(2, 5)
+        .setText(StoreBranchIdentityRegistry.displayName(branchLabel));
     sheet.getRangeByIndex(3, 1).setText('Date Range');
     sheet
         .getRangeByIndex(3, 2)
@@ -74,7 +77,7 @@ class ProductMovementExcelExporter {
       final row = rows[r];
       final values = [
         r + 1,
-        row.branch,
+        StoreBranchIdentityRegistry.displayName(row.branch),
         row.itemCode,
         row.itemName,
         _movementTitle(row.movementType),

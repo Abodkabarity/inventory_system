@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:html' as html;
 
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
+import 'store_branch_identity_registry.dart';
 
 class PurchaseShortageExcelExporter {
   static Future<void> export({
@@ -97,7 +98,11 @@ class PurchaseShortageExcelExporter {
 
     await loadBranchStockRows((row) async {
       buffer
-        ..write(_csv(row['branch']))
+        ..write(
+          _csv(
+            StoreBranchIdentityRegistry.displayName(row['branch']?.toString()),
+          ),
+        )
         ..write(',')
         ..write(_csv(row['item_code']))
         ..write(',')

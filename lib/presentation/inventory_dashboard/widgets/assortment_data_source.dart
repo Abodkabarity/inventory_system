@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 
 class AssortmentDataSource extends DataGridSource {
   List<DataGridRow> _rows = [];
@@ -19,7 +20,12 @@ class AssortmentDataSource extends DataGridSource {
       return DataGridRow(
         cells: [
           DataGridCell(columnName: 'index', value: index + 1),
-          DataGridCell(columnName: 'branch', value: e['branch_name']),
+          DataGridCell(
+            columnName: 'branch',
+            value: StoreBranchIdentityRegistry.displayName(
+              e['branch_name']?.toString(),
+            ),
+          ),
           DataGridCell(columnName: 'code', value: e['item_code']),
           DataGridCell(columnName: 'name', value: e['item_name']),
           DataGridCell(columnName: 'qty', value: e['assortment_qty']),

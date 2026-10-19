@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 
 class ProductBranchDialog extends StatelessWidget {
   final String itemName;
@@ -145,7 +146,7 @@ class ProductBranchDialog extends StatelessWidget {
                               ),
                               DataCell(
                                 Text(
-                                  e['branch_name']?.toString() ?? '',
+                                  StoreBranchIdentityRegistry.displayName(e['branch_name']?.toString()),
                                   style: const TextStyle(
                                     color: Color(0xff1E293B),
                                     fontWeight: FontWeight.w500,

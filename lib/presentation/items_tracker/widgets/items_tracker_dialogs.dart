@@ -1,3 +1,4 @@
+import '../../widgets/inventory_dropdown.dart';
 import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
@@ -562,7 +563,7 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
                         ),
                         _FieldBox(
                           width: 330,
-                          child: DropdownButtonFormField<String>(
+                          child: InventoryDropdownFormField<String>(
                             key: ValueKey(
                               'itemsTrackerStatus-${_statusUpdatedTo ?? ''}',
                             ),
@@ -609,7 +610,7 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
                         ),
                         _FieldBox(
                           width: 245,
-                          child: DropdownButtonFormField<String>(
+                          child: InventoryDropdownFormField<String>(
                             key: ValueKey(
                               'itemsTrackerFollowUp-$_followUpRole',
                             ),
@@ -696,11 +697,11 @@ class _ItemsTrackerEditorDialogState extends State<ItemsTrackerEditorDialog> {
                         contentPadding: EdgeInsets.zero,
                         controlAffinity: ListTileControlAffinity.leading,
                         title: const Text(
-                          'Prepare Outlook email after adding',
+                          'Prepare email now',
                           style: TextStyle(fontWeight: FontWeight.w700),
                         ),
                         subtitle: const Text(
-                          'Recipients are selected from the follow-up department. Confirm sent after sending in Outlook.',
+                          'Leave off to add more products first. They stay in New emails until sent together by department.',
                         ),
                       ),
                   ],

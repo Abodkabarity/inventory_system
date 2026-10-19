@@ -1,6 +1,8 @@
+import '../../widgets/inventory_dropdown.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
+import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 
 import '../bloc/inventory_bloc.dart';
 import '../bloc/inventory_event.dart';
@@ -53,7 +55,8 @@ class _MismatchTrackerDialogState extends State<MismatchTrackerDialog> {
       ),
     );
     if (result == null || !mounted) return;
-    final sameRange = DateUtils.isSameDay(result.start, from) &&
+    final sameRange =
+        DateUtils.isSameDay(result.start, from) &&
         DateUtils.isSameDay(result.end, to);
     setState(() {
       from = sameRange ? from : result.start;
@@ -141,12 +144,20 @@ class _MismatchTrackerDialogState extends State<MismatchTrackerDialog> {
         const SizedBox(width: 10),
 
         /// 🏢 Branch Filter
-        DropdownButton<String>(
+        InventoryDropdown<String>(
+          label: 'Branch',
+          branchNames: true,
           value: branch,
-          items: [
-            "ALL",
-            ...branches,
-          ].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+          items: ["ALL", ...branches]
+              .map(
+                (e) => DropdownMenuItem(
+                  value: e,
+                  child: Text(
+                    e == 'ALL' ? e : StoreBranchIdentityRegistry.displayName(e),
+                  ),
+                ),
+              )
+              .toList(),
           onChanged: (v) {
             setState(() => branch = v!);
             _load();
@@ -188,7 +199,9 @@ class _MismatchTrackerDialogState extends State<MismatchTrackerDialog> {
                       e['item_name'],
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    Text("Branch: ${e['branch_name']}"),
+                    Text(
+                      "Branch: ${StoreBranchIdentityRegistry.displayName(e['branch_name']?.toString())}",
+                    ),
 
                     const SizedBox(height: 6),
 

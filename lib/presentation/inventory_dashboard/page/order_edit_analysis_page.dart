@@ -1,3 +1,5 @@
+import '../../widgets/inventory_dropdown.dart';
+import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
@@ -411,7 +413,9 @@ class _OrderEditAnalysisPageState extends State<OrderEditAnalysisPage>
                 border: Border.all(color: const Color(0xffE2E8F0)),
               ),
               child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
+                child: InventoryDropdown<String>(
+                  label: 'Branch',
+                  branchNames: true,
                   value: _branch,
                   isExpanded: true,
                   icon: const Icon(
@@ -423,7 +427,7 @@ class _OrderEditAnalysisPageState extends State<OrderEditAnalysisPage>
                         (branch) => DropdownMenuItem<String>(
                           value: branch,
                           child: Text(
-                            branch,
+                            StoreBranchIdentityRegistry.displayName(branch),
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: Color(0xff0F172A),

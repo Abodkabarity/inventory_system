@@ -1,3 +1,4 @@
+import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -1490,7 +1491,7 @@ class _Header extends StatelessWidget {
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
                   ),
                   Text(
-                    branchName,
+                    StoreBranchIdentityRegistry.displayName(branchName),
                     style: const TextStyle(
                       color: Color(0xFF64748B),
                       fontSize: 12,
@@ -2808,7 +2809,7 @@ class _BatchEditorState extends State<_BatchEditor> {
               style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold),
             ),
             pw.Text(
-              widget.rows.first.branchName,
+              StoreBranchIdentityRegistry.displayName(widget.rows.first.branchName),
               style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
             ),
             pw.SizedBox(height: 8),

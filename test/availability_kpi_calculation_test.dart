@@ -45,7 +45,7 @@ void main() {
     expect(summary.fullyAvailableItems, 1);
   });
 
-  test('configured purchase status overrides zero stock to full coverage', () {
+  test('configured purchase status is excluded from branch KPI summary', () {
     final item = AvailabilityKpiItem.fromMasterMap(
       _masterRow(itemCode: 'A', weeklyNeed: 5),
       branchStock: 0,
@@ -59,8 +59,9 @@ void main() {
     expect(item.stockShortage, 0);
 
     final summary = AvailabilityBranchSummary.fromItems('Branch', [item]);
-    expect(summary.availabilityRate, 100);
-    expect(summary.fullyAvailableItems, 1);
+    expect(summary.masterItems, 0);
+    expect(summary.availabilityRate, 0);
+    expect(summary.fullyAvailableItems, 0);
     expect(summary.shortageItems, 0);
   });
 

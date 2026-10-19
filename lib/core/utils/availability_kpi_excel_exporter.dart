@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
 
 import '../../data/datasources/remote/availability_kpi_remote_ds.dart';
+import 'store_branch_identity_registry.dart';
 
 class AvailabilityKpiExcelExporter {
   static Future<void> export({
@@ -86,7 +87,7 @@ class AvailabilityKpiExcelExporter {
       final item = items[index];
       final row = headerRow + index + 1;
       final values = <Object?>[
-        item.branchName,
+        StoreBranchIdentityRegistry.displayName(item.branchName),
         item.itemCode,
         item.itemName,
         _selectionReason(item),

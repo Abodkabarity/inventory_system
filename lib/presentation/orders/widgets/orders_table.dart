@@ -9,6 +9,7 @@ import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../../domain/entities/daily_order_row.dart';
 import '../bloc/order_bloc/orders_state.dart';
 import 'orders_grid_controller.dart';
@@ -850,8 +851,9 @@ class _OrdersDataSource extends DataGridSource {
       cells: row.getCells().map((c) {
         final key = c.columnName;
         final raw = c.value;
-        final text =
-            {'qty_30_days_from_last_45d', 'demand_for_30_days'}.contains(key)
+        final text = key == 'branch'
+            ? StoreBranchIdentityRegistry.displayName(raw?.toString())
+            : {'qty_30_days_from_last_45d', 'demand_for_30_days'}.contains(key)
             ? _formatNumber(raw)
             : (raw ?? '').toString().trim();
 

@@ -5,6 +5,10 @@ import 'package:daily_order/presentation/items_tracker/widgets/items_tracker_ema
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:ui' as ui;
+import 'package:flutter/rendering.dart';
 
 ItemsTrackerEmailDraft draft({
   String status = 'draft',
@@ -25,6 +29,13 @@ ItemsTrackerEmailDraft draft({
       name: 'Product #1 + cream',
       reason: reason ?? 'Slow moving & near expiry\nReturn 12 pcs',
       followUpRole: role,
+      code: 'P001',
+      company: 'Company & Co',
+      supplier: 'Supplier',
+      quantity: 12,
+      cost: 3.5,
+      total: 42,
+      status: '1#NORMAL PURCHASE',
     ),
   ],
 );
@@ -40,6 +51,7 @@ class _EmailRepository implements ItemsTrackerRepository {
   Future<List<ItemsTrackerEmailDraft>> prepareEmails(
     List<String> itemIds, {
     String? company,
+    bool exactSelection = false,
   }) async {
     requestedIds = itemIds;
     requestedCompany = company;
@@ -69,6 +81,84 @@ class _EmailRepository implements ItemsTrackerRepository {
 }
 
 void main() {
+  setUpAll(() async {
+    final root = Platform.environment['TRACKER_FONT_ROOT'];
+    if (root == null) return;
+    final font = FontLoader('Roboto');
+    for (final name in ['roboto-regular.ttf', 'roboto-bold.ttf']) {
+      font.addFont(
+        Future.value(
+          ByteData.sublistView(File('$root/$name').readAsBytesSync()),
+        ),
+      );
+    }
+    await font.load();
+    await (FontLoader('MaterialIcons')..addFont(
+          Future.value(
+            ByteData.sublistView(
+              File('$root/MaterialIcons-Regular.otf').readAsBytesSync(),
+            ),
+          ),
+        ))
+        .load();
+  });
+  test('formatted table includes prices and escapes product data', () {
+    final email = draft(reason: '<script>bad()</script> & سبب\nSecond line');
+    expect(email.htmlBody, contains('<table'));
+    expect(email.htmlBody, contains('Cost (AED)'));
+    expect(email.htmlBody, contains('42.00'));
+    expect(email.htmlBody, contains('Qty'));
+    expect(email.htmlBody, contains('&lt;script&gt;bad()&lt;&#47;script&gt;'));
+    expect(email.htmlBody, isNot(contains('<script>')));
+    expect(email.body, contains('Qty: 12'));
+    expect(email.body, contains('Cost (AED): 3.50'));
+    expect(email.totalLabel, 'Total: AED 42.00');
+  });
+
+  test(
+    'EML preserves UTF-8 table, plain fallback and folded header limits',
+    () {
+      final email = draft(reason: 'تفاصيل المنتج & السعر');
+      final eml = email.eml;
+      expect(eml, contains('X-Unsent: 1\r\n'));
+      final encodedWords = RegExp(
+        r'=\?UTF-8\?B\?([^?]+)\?=',
+      ).allMatches(eml).toList();
+      expect(
+        encodedWords.map((m) => utf8.decode(base64.decode(m[1]!))).join(),
+        email.subject,
+      );
+      expect(encodedWords.every((m) => m[0]!.length <= 75), isTrue);
+      final payloads = RegExp(
+        r'Content-Transfer-Encoding: base64\r\n\r\n([\s\S]*?)\r\n--',
+      ).allMatches(eml).toList();
+      expect(payloads, hasLength(2));
+      final decoded = payloads
+          .map(
+            (m) =>
+                utf8.decode(base64.decode(m[1]!.replaceAll(RegExp(r'\s'), ''))),
+          )
+          .toList();
+      expect(decoded, [email.body, email.htmlBody]);
+    },
+  );
+
+  test('legacy draft costs remain unavailable instead of invented', () {
+    final email = ItemsTrackerEmailDraft.fromMap({
+      'id': 'old',
+      'status': 'draft',
+      'scope': 'product',
+      'follow_up_role': 'purchase',
+      'products': [
+        {'id': 'old-item', 'name': 'Old product', 'reason': 'Review'},
+      ],
+    });
+    expect(email.products.single.quantity, isNull);
+    expect(email.products.single.cost, isNull);
+    expect(email.products.single.cells, contains('—'));
+    expect(email.hasCompleteTotal, isFalse);
+    expect(email.body, contains('some costs are unavailable'));
+  });
   test('exact To and CC department routing', () {
     final category = ItemsTrackerEmailRecipients.forRole(' CATEGORY ');
     expect(category.to, [
@@ -135,19 +225,31 @@ void main() {
     _EmailRepository repository,
     Future<bool> Function(Uri) launcher, {
     String? company,
+    Future<bool> Function(ItemsTrackerEmailDraft)? downloader,
+    GlobalKey? boundary,
   }) async {
     tester.view.physicalSize = const Size(1100, 1050);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: ItemsTrackerEmailDialog(
-            repository: repository,
-            itemIds: const ['item-1'],
-            company: company,
-            outlookLauncher: launcher,
+      RepaintBoundary(
+        key: boundary,
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            fontFamily: Platform.environment['TRACKER_FONT_ROOT'] == null
+                ? null
+                : 'Roboto',
+          ),
+          home: Scaffold(
+            body: ItemsTrackerEmailDialog(
+              repository: repository,
+              itemIds: const ['item-1'],
+              company: company,
+              outlookLauncher: launcher,
+              draftDownloader: downloader,
+            ),
           ),
         ),
       ),
@@ -180,6 +282,51 @@ void main() {
     expect(find.byKey(const ValueKey('openEmail:email-1')), findsNothing);
     expect(find.byKey(const ValueKey('confirmEmail:email-1')), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+  testWidgets(
+    'formatted download reserves the full draft and never marks it sent',
+    (tester) async {
+      final repository = _EmailRepository([draft()]);
+      ItemsTrackerEmailDraft? downloaded;
+      await pumpEmail(
+        tester,
+        repository,
+        (_) async => throw StateError('No mailto launch'),
+        downloader: (email) async {
+          downloaded = email;
+          return true;
+        },
+      );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('downloadEmail:email-1')),
+      );
+      await tester.tap(find.byKey(const ValueKey('downloadEmail:email-1')));
+      await tester.pumpAndSettle();
+      expect(downloaded!.eml, contains('multipart/alternative'));
+      expect(repository.opens, 1);
+      expect(repository.confirms, 0);
+      expect(find.text('Confirm sent'), findsOneWidget);
+      expect(find.textContaining('Outlook draft downloaded'), findsOneWidget);
+    },
+  );
+  testWidgets('cancelled draft download releases the reservation', (
+    tester,
+  ) async {
+    final repository = _EmailRepository([draft()]);
+    await pumpEmail(
+      tester,
+      repository,
+      (_) async => true,
+      downloader: (_) async => false,
+    );
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('downloadEmail:email-1')),
+    );
+    await tester.tap(find.byKey(const ValueKey('downloadEmail:email-1')));
+    await tester.pumpAndSettle();
+    expect(repository.releases, 1);
+    expect(repository.confirms, 0);
+    expect(find.text('Confirm sent'), findsNothing);
   });
   testWidgets(
     'failed Outlook launch releases handoff and retains unsent state',
@@ -305,4 +452,88 @@ void main() {
     expect(repository.confirms, 0);
     expect(find.text('Confirm sent'), findsOneWidget);
   });
+
+  testWidgets(
+    'formatted preview is responsive and includes the full email table',
+    (tester) async {
+      final email = ItemsTrackerEmailDraft(
+        id: 'preview-1',
+        status: 'draft',
+        scope: 'company',
+        company: 'Example Healthcare',
+        followUpRole: 'category',
+        products: [
+          const ItemsTrackerEmailProduct(
+            id: 'p1',
+            name: 'Hydrating Cream 100 ML',
+            code: '16-01-00123',
+            company: 'Example Healthcare',
+            supplier: 'Example Supplier',
+            category: 'COSMETICS',
+            reason: 'Review excess stock and arrange supplier return.',
+            followUpRole: 'category',
+            quantity: 24,
+            cost: 18.5,
+            total: 444,
+            status: '1#NORMAL PURCHASE',
+          ),
+          const ItemsTrackerEmailProduct(
+            id: 'p2',
+            name: 'Daily Face Wash 150 ML',
+            code: '16-01-00456',
+            company: 'Example Healthcare',
+            reason: 'Confirm the next delivery date and update availability.',
+            followUpRole: 'category',
+            quantity: 12,
+            cost: 22,
+            total: 264,
+            status: '2#PR',
+          ),
+        ],
+      );
+      final boundary = GlobalKey();
+      await pumpEmail(
+        tester,
+        _EmailRepository([email]),
+        (_) async => true,
+        company: email.company,
+        boundary: boundary,
+      );
+      expect(find.text('Total: AED 708.00'), findsOneWidget);
+      expect(find.text('Cost (AED)'), findsOneWidget);
+      Future<void> capture(String name) async {
+        if (Platform.environment['UPDATE_TRACKER_EMAIL_PREVIEW'] != '1') return;
+        await tester.runAsync(() async {
+          final render =
+              boundary.currentContext!.findRenderObject()!
+                  as RenderRepaintBoundary;
+          final picture = await render.toImage();
+          final bytes = await picture.toByteData(
+            format: ui.ImageByteFormat.png,
+          );
+          await Directory('validation').create();
+          await File(
+            'validation/$name.png',
+          ).writeAsBytes(bytes!.buffer.asUint8List());
+          picture.dispose();
+        });
+      }
+
+      await capture('items_tracker_email_preview');
+      tester.view.physicalSize = const Size(430, 800);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await capture('items_tracker_email_compact');
+      if (Platform.environment['UPDATE_TRACKER_EMAIL_PREVIEW'] == '1') {
+        await tester.runAsync(() async {
+          await File(
+            'validation/items_tracker_email_example.html',
+          ).writeAsString(email.htmlBody);
+          await File(
+            'validation/items_tracker_email_example.eml',
+          ).writeAsString(email.eml);
+        });
+      }
+    },
+  );
 }

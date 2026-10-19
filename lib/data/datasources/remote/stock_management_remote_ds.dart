@@ -11,7 +11,12 @@ abstract class StockManagementDataSource {
     return StockManagementRegisterBatch(
       rows: page.rows,
       total: page.total,
-      snapshotAt: page.meta['stock_updated_at']?.toString() ?? '',
+      snapshotAt:
+          (page.meta['snapshot_at'] ??
+                  page.meta['refreshed_at'] ??
+                  page.meta['stock_updated_at'])
+              ?.toString() ??
+          '',
     );
   }
 
@@ -92,7 +97,9 @@ extension StockManagementCompleteRegister on StockManagementDataSource {
       );
     }
     final overviewVersion = DateTime.tryParse(
-      overview.meta['refreshed_at']?.toString() ?? '',
+      (overview.meta['snapshot_at'] ?? overview.meta['refreshed_at'])
+              ?.toString() ??
+          '',
     );
     final batchVersion = DateTime.tryParse(snapshotAt);
     if (overviewVersion != null &&

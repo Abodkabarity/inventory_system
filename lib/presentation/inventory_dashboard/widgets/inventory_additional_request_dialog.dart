@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 
 class InventoryAdditionalRequestDialog extends StatefulWidget {
   final String groupId;
@@ -165,7 +166,7 @@ class _InventoryAdditionalRequestDialogState
             Row(
               children: [
                 Text(
-                  "${widget.branch} Additional Request",
+                  "${StoreBranchIdentityRegistry.displayName(widget.branch)} Additional Request",
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,

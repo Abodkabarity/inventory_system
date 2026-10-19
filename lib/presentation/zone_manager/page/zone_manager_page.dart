@@ -1,3 +1,4 @@
+import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 // ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use, unused_element
 
 import 'dart:async';
@@ -1540,7 +1541,10 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
       }
       for (var rowIndex = 0; rowIndex < rows.length; rowIndex++) {
         for (var col = 0; col < columns.length; col++) {
-          final value = rows[rowIndex][columns[col].key];
+          final value = StoreBranchIdentityRegistry.exportValue(
+            columns[col].key,
+            rows[rowIndex][columns[col].key],
+          );
           final cell = sheet.getRangeByIndex(rowIndex + 4, col + 1);
           if (value is num) {
             cell.setNumber(value.toDouble());
@@ -2108,7 +2112,9 @@ class _ZoneHeader extends StatelessWidget {
                     (branch) => DropdownMenuItem(
                       value: branch,
                       child: Text(
-                        branch == 'ALL' ? 'All Branches' : branch,
+                        branch == 'ALL'
+                            ? 'All Branches'
+                            : StoreBranchIdentityRegistry.displayName(branch),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -2209,7 +2215,7 @@ class _ZoneActiveFilterBanner extends StatelessWidget {
                   const Icon(Icons.storefront_rounded, color: accent, size: 16),
                   const SizedBox(width: 7),
                   Text(
-                    branchName,
+                    StoreBranchIdentityRegistry.displayName(branchName),
                     style: const TextStyle(
                       color: AppColors.secondaryColor,
                       fontSize: 12.5,
@@ -2624,7 +2630,9 @@ class _DailyPagination extends StatelessWidget {
                 ),
                 const SizedBox(width: 7),
                 Text(
-                  branch == 'ALL' ? 'All Zone Branches' : branch,
+                  branch == 'ALL'
+                      ? 'All Zone Branches'
+                      : StoreBranchIdentityRegistry.displayName(branch),
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ],
@@ -3074,7 +3082,7 @@ class _ExportList extends StatelessWidget {
               ),
             ),
             title: Text(
-              _text(row['branch_name']),
+              StoreBranchIdentityRegistry.displayName(_text(row['branch_name'])),
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
             subtitle: Text('Run date: ${_text(row['run_date'])}'),
@@ -3142,7 +3150,7 @@ class _BranchDetailsDialog extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          branch,
+                          StoreBranchIdentityRegistry.displayName(branch),
                           style: const TextStyle(
                             fontSize: 21,
                             fontWeight: FontWeight.bold,
@@ -3478,7 +3486,11 @@ class _DownloadCenterState extends State<_DownloadCenter> {
                         (branch) => DropdownMenuItem<String>(
                           value: branch,
                           child: Text(
-                            branch == 'ALL' ? 'All Zone Branches' : branch,
+                            branch == 'ALL'
+                                ? 'All Zone Branches'
+                                : StoreBranchIdentityRegistry.displayName(
+                                    branch,
+                                  ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -3878,7 +3890,9 @@ class _DcDownloadRowState extends State<_DcDownloadRow> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        widget.branchName,
+                        StoreBranchIdentityRegistry.displayName(
+                          widget.branchName,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -4242,7 +4256,7 @@ class _BranchQuickView extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                branch,
+                StoreBranchIdentityRegistry.displayName(branch),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -5371,6 +5385,10 @@ String _displayDate(String value) {
 }
 
 String _displayValue(String key, dynamic value) {
+  if (key == 'branch' || key == 'branch_name') {
+    final name = StoreBranchIdentityRegistry.displayName(_text(value));
+    return name.isEmpty ? '—' : name;
+  }
   if (key.contains('date') || key.contains('created')) {
     final date = DateTime.tryParse(_text(value));
     if (date != null) {
@@ -5976,7 +5994,7 @@ class _BranchCard extends StatelessWidget {
 
             // Branch name
             Text(
-              branch,
+              StoreBranchIdentityRegistry.displayName(branch),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -6262,7 +6280,7 @@ class _AdditionalRequestCard extends StatelessWidget {
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
-                            _text(row['branch_name']),
+                            StoreBranchIdentityRegistry.displayName(_text(row['branch_name'])),
                             style: const TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,

@@ -2,6 +2,7 @@ import 'dart:html' as html;
 import 'dart:typed_data';
 
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
+import 'store_branch_identity_registry.dart';
 
 class BranchOrderExcelExporter {
   static Future<void> export({
@@ -39,7 +40,9 @@ class BranchOrderExcelExporter {
       final qty = num.tryParse((row['qty'] ?? '0').toString()) ?? 0;
       final values = [
         r + 1,
-        row['branch'] ?? branch,
+        StoreBranchIdentityRegistry.displayName(
+          (row['branch'] ?? branch).toString(),
+        ),
         row['item_code'] ?? '',
         row['item_name'] ?? '',
         qty,

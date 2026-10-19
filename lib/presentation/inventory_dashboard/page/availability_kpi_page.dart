@@ -1,3 +1,4 @@
+import '../../widgets/inventory_dropdown.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -7,6 +8,7 @@ import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../../core/utils/availability_allocation_excel_exporter.dart';
 import '../../../core/utils/availability_branch_report_excel_exporter.dart';
 import '../../../core/utils/availability_kpi_excel_exporter.dart';
@@ -1411,7 +1413,9 @@ class _BranchTile extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      summary.branchName,
+                      StoreBranchIdentityRegistry.displayName(
+                        summary.branchName,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -1496,7 +1500,9 @@ class _CompactBranchPicker extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       decoration: _cardDecoration(),
       child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
+        child: InventoryDropdown<String>(
+          label: 'Branch',
+          branchNames: true,
           isExpanded: true,
           value: selectedBranch,
           icon: const Icon(Icons.expand_more_rounded),
@@ -1701,7 +1707,7 @@ class _Filters extends StatelessWidget {
           ),
           SizedBox(
             width: 245,
-            child: DropdownButtonFormField<String>(
+            child: InventoryDropdownFormField<String>(
               initialValue: source,
               isExpanded: true,
               decoration: _inputDecoration(
@@ -2475,7 +2481,9 @@ class _BranchReportGridSource extends DataGridSource {
                       const SizedBox(width: 8),
                       Expanded(
                         child: SelectableText(
-                          summary.branchName,
+                          StoreBranchIdentityRegistry.displayName(
+                            summary.branchName,
+                          ),
                           maxLines: 2,
                           style: const TextStyle(
                             color: AppColors.secondaryColor,
@@ -2695,7 +2703,7 @@ class _MasterTableState extends State<_MasterTable> {
                     SizedBox(
                       width: 470,
                       child: SelectableText(
-                        '${widget.branch} • Items included in Availability KPI',
+                        '${StoreBranchIdentityRegistry.displayName(widget.branch)} • Items included in Availability KPI',
                         maxLines: 1,
                         style: const TextStyle(
                           color: Color(0xff0F172A),

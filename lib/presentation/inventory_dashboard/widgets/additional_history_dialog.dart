@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../widgets/app_date_range_picker_dialog.dart';
 import '../../inventory_dashboard/bloc/inventory_bloc.dart';
 import '../../inventory_dashboard/bloc/inventory_state.dart';
@@ -75,7 +76,7 @@ class _InventoryAdditionalHistoryDialogState
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  "${widget.branch} Additional History",
+                  "${StoreBranchIdentityRegistry.displayName(widget.branch)} Additional History",
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -250,7 +251,7 @@ class _InventoryAdditionalHistoryDialogState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  "${r.branchName} Additional Order",
+                  "${StoreBranchIdentityRegistry.displayName(r.branchName)} Additional Order",
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 4),

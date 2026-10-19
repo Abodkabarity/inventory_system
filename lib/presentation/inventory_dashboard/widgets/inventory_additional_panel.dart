@@ -1,3 +1,4 @@
+import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 import 'package:daily_order/core/theme/app_colors.dart';
 import 'package:daily_order/presentation/inventory_dashboard/bloc/inventory_state.dart';
 import 'package:flutter/material.dart';
@@ -1303,7 +1304,7 @@ class _BranchIdentity extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          request.branchName,
+          StoreBranchIdentityRegistry.displayName(request.branchName),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(

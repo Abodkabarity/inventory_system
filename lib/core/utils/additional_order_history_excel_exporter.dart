@@ -2,6 +2,7 @@ import 'dart:html' as html;
 import 'dart:typed_data';
 
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
+import 'store_branch_identity_registry.dart';
 
 class AdditionalOrderHistoryExcelExporter {
   static Future<void> export({
@@ -77,7 +78,7 @@ class AdditionalOrderHistoryExcelExporter {
       final values = [
         r + 1,
         _statusLabel(_text(row, 'status')),
-        _text(row, 'branch_name'),
+        StoreBranchIdentityRegistry.displayName(_text(row, 'branch_name')),
         _text(row, 'item_code'),
         _text(row, 'item_name'),
         _num(row['request_qty']),

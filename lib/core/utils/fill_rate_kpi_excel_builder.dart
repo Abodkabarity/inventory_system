@@ -2,6 +2,7 @@ import 'package:intl/intl.dart';
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
 
 import '../../data/datasources/remote/fill_rate_kpi_remote_ds.dart';
+import 'store_branch_identity_registry.dart';
 
 class FillRateKpiExcelBuilder {
   static List<int> build({
@@ -178,7 +179,7 @@ class FillRateKpiExcelBuilder {
         sheet,
         i + 6,
         [
-          value.branchName,
+          StoreBranchIdentityRegistry.displayName(value.branchName),
           _date(value.date),
           value.itemCode,
           value.itemName,

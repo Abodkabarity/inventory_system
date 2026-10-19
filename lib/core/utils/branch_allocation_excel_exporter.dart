@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
 
 import '../../domain/entities/branch_allocation_task.dart';
+import 'store_branch_identity_registry.dart';
 
 class BranchAllocationExcelExporter {
   static Future<void> export({
@@ -74,7 +75,7 @@ class BranchAllocationExcelExporter {
               r + 1,
               row.batchId,
               row.runDate,
-              row.fromBranch,
+              StoreBranchIdentityRegistry.displayName(row.fromBranch),
               row.itemCode,
               row.itemName,
               row.qty,
@@ -87,7 +88,7 @@ class BranchAllocationExcelExporter {
               r + 1,
               row.batchId,
               row.runDate,
-              row.toBranch,
+              StoreBranchIdentityRegistry.displayName(row.toBranch),
               row.itemCode,
               row.itemName,
               row.qty,

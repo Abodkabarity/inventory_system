@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 
 import 'glass_container.dart';
 
@@ -193,7 +194,7 @@ class _TopBranchesCardState extends State<TopBranchesCard> {
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: Text(
-                                    row['branch_name']?.toString() ?? '',
+                                    StoreBranchIdentityRegistry.displayName(row['branch_name']?.toString()),
                                     style: TextStyle(
                                       color: hasRequests
                                           ? const Color(0xff1E293B)

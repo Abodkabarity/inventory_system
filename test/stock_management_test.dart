@@ -131,13 +131,18 @@ class FakeStockSource extends StockManagementDataSource {
 class PagedStockSource extends FakeStockSource {
   final offsets = <int>[];
   bool changeSnapshot = false;
+  String? canonicalSnapshot;
+  String refreshedAt = '2026-10-07T15:42:00+04:00';
 
   @override
   Future<StockManagementResult> fetchPage(StockManagementQuery query) async =>
-      const StockManagementResult(
+      StockManagementResult(
         rows: [],
         summary: {'items': 3},
-        meta: {'refreshed_at': '2026-10-07T15:42:00+04:00'},
+        meta: {
+          'refreshed_at': refreshedAt,
+          if (canonicalSnapshot != null) 'snapshot_at': canonicalSnapshot,
+        },
       );
 
   @override
@@ -366,6 +371,23 @@ void main() {
       await expectLater(source.fetchAll(), throwsStateError);
     },
   );
+
+  test('canonical snapshot permits stale source refresh metadata', () async {
+    final source = PagedStockSource()
+      ..refreshedAt = '2026-10-06T15:42:00+04:00'
+      ..canonicalSnapshot = '2026-10-07T11:42:00Z';
+    final complete = await source.fetchAll();
+    expect(complete.rows.map((row) => row.code), ['A', 'B', 'C']);
+    source.offsets.clear();
+    source.changeSnapshot = true;
+    await expectLater(source.fetchAll(), throwsStateError);
+  });
+
+  test('canonical snapshot rejects batches from another version', () async {
+    final source = PagedStockSource()
+      ..canonicalSnapshot = '2026-10-08T15:42:00+04:00';
+    await expectLater(source.fetchAll(), throwsStateError);
+  });
 
   testWidgets('desktop grid shows expiry, filters locally and opens details', (
     tester,

@@ -96,7 +96,7 @@ class StockCatalogRemoteDs implements StockCatalogDataSource {
         stockMap(
           await client.rpc(
             'get_stock_catalog_register_batch',
-            params: {'p_offset': offset, 'p_limit': 4000},
+            params: {'p_offset': offset, 'p_limit': 5000},
           ),
         ),
       );

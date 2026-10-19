@@ -1140,7 +1140,7 @@ class _ZoneMaxSessionBanner extends StatelessWidget {
                 if (saves.isNotEmpty) ...[
                   const SizedBox(height: 3),
                   Text(
-                    '${saves.first['branch']} • ${saves.first['item_code']} • ${saves.first['item_name']}',
+                    '${StoreBranchIdentityRegistry.displayName(saves.first['branch']?.toString())} • ${saves.first['item_code']} • ${saves.first['item_name']}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -1358,7 +1358,7 @@ class _ZoneMaxCreditRow extends StatelessWidget {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      branch,
+              StoreBranchIdentityRegistry.displayName(branch),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -1449,7 +1449,7 @@ class _ZoneMaxCreditSummary extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '$branch • $remaining increase credits remaining',
+                  '${StoreBranchIdentityRegistry.displayName(branch)} • $remaining increase credits remaining',
                   style: const TextStyle(
                     color: Color(0xff0F2942),
                     fontSize: 14,

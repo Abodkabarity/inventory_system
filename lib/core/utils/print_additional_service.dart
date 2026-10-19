@@ -318,7 +318,6 @@ class PrintAdditionalService {
   }
 
   static pw.Widget _branchCell(String branchName) {
-    final is71 = StoreBranchIdentityRegistry.isSeventyOne(branchName);
     return pw.Padding(
       padding: const pw.EdgeInsets.all(6),
       child: pw.Row(
@@ -326,33 +325,13 @@ class PrintAdditionalService {
         children: [
           pw.Expanded(
             child: pw.Text(
-              branchName,
+              StoreBranchIdentityRegistry.displayName(branchName),
               maxLines: 2,
               overflow: pw.TextOverflow.clip,
               style: const pw.TextStyle(fontSize: 10),
             ),
           ),
-          if (is71) ...[pw.SizedBox(width: 5), _printed71Badge()],
         ],
-      ),
-    );
-  }
-
-  static pw.Widget _printed71Badge() {
-    return pw.Container(
-      padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-      decoration: pw.BoxDecoration(
-        color: PdfColors.orange100,
-        border: pw.Border.all(color: PdfColors.deepOrange400, width: 0.7),
-        borderRadius: pw.BorderRadius.circular(3),
-      ),
-      child: pw.Text(
-        '71',
-        style: pw.TextStyle(
-          color: PdfColors.deepOrange800,
-          fontSize: 8,
-          fontWeight: pw.FontWeight.bold,
-        ),
       ),
     );
   }

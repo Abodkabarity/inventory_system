@@ -1,3 +1,5 @@
+import '../../widgets/inventory_dropdown.dart';
+import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 // lib/presentation/inventory/pages/additional_order_analysis_page.dart
 
 import 'package:flutter/material.dart';
@@ -732,7 +734,9 @@ class _AdditionalOrderAnalysisPageState
                 border: Border.all(color: const Color(0xffE2E8F0)),
               ),
               child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
+                child: InventoryDropdown<String>(
+                  label: 'Branch',
+                  branchNames: true,
                   value: _historyBranch,
                   isExpanded: true,
                   icon: const Icon(
@@ -744,7 +748,7 @@ class _AdditionalOrderAnalysisPageState
                         (branch) => DropdownMenuItem<String>(
                           value: branch,
                           child: Text(
-                            branch,
+                            StoreBranchIdentityRegistry.displayName(branch),
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: Color(0xff0F172A),
@@ -993,7 +997,9 @@ class _AdditionalOrderAnalysisPageState
           Expanded(
             flex: 3,
             child: Text(
-              _historyText(row, 'branch_name'),
+              StoreBranchIdentityRegistry.displayName(
+                _historyText(row, 'branch_name'),
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(

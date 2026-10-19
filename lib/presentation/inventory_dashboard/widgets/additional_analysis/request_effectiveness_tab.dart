@@ -1,3 +1,5 @@
+import '../../../widgets/inventory_dropdown.dart';
+import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 // lib/presentation/inventory/widgets/additional_analysis/request_effectiveness_tab.dart
 
 import 'package:daily_order/presentation/inventory_dashboard/widgets/additional_analysis/product_effectiveness_card.dart';
@@ -787,7 +789,9 @@ class _BranchEffCard extends StatelessWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    b['branch_name']?.toString() ?? '',
+                                    StoreBranchIdentityRegistry.displayName(
+                                      b['branch_name']?.toString(),
+                                    ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
@@ -912,7 +916,9 @@ class _OrderEditBranchMonitorCard extends StatelessWidget {
                           children: [
                             Expanded(
                               child: Text(
-                                row['branch_name']?.toString() ?? '',
+                                StoreBranchIdentityRegistry.displayName(
+                                  row['branch_name']?.toString(),
+                                ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
@@ -1347,7 +1353,9 @@ class _TableCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: const Color(0xffE2E8F0)),
                 ),
-                child: DropdownButton<String?>(
+                child: InventoryDropdown<String?>(
+                  label: 'Branch',
+                  branchNames: true,
                   value: selectedBranch,
                   underline: const SizedBox(),
                   isDense: true,
@@ -1499,7 +1507,9 @@ class _TableCard extends StatelessWidget {
                           ),
                           DataCell(
                             Text(
-                              r.branchName,
+                              StoreBranchIdentityRegistry.displayName(
+                                r.branchName,
+                              ),
                               style: const TextStyle(
                                 color: Color(0xff1E293B),
                                 fontWeight: FontWeight.w500,

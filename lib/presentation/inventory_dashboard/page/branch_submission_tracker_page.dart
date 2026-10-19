@@ -1,3 +1,4 @@
+import '../../widgets/inventory_dropdown.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -5,6 +6,7 @@ import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../../core/utils/branch_submission_tracker_excel_exporter.dart';
 import '../../../core/utils/branch_submission_tracker_rules.dart';
 import '../../../domain/entities/branch_setting.dart';
@@ -385,6 +387,9 @@ class _BranchSubmissionTrackerPageState
       final matchesSearch =
           q.isEmpty ||
           row.branchName.toLowerCase().contains(q) ||
+          StoreBranchIdentityRegistry.displayName(
+            row.branchName,
+          ).toLowerCase().contains(q) ||
           row.zone.toLowerCase().contains(q) ||
           row.area.toLowerCase().contains(q) ||
           row.branchType.toLowerCase().contains(q);
@@ -433,6 +438,13 @@ class _BranchSubmissionTrackerPageState
 
   @override
   Widget build(BuildContext context) {
+    return ValueListenableBuilder<Map<String, String>>(
+      valueListenable: StoreBranchIdentityRegistry.groups,
+      builder: (context, _, _) => _buildContent(context),
+    );
+  }
+
+  Widget _buildContent(BuildContext context) {
     final rows = _filteredRows;
     final notSubmitted = rows.where((row) => row.isNotSubmitted).length;
     final lateSubmitted = rows.where((row) => row.isLateSubmitted).length;
@@ -1117,7 +1129,7 @@ class _FilterDropDown extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: width,
-      child: DropdownButtonFormField<String>(
+      child: InventoryDropdownFormField<String>(
         initialValue: value,
         items: items,
         onChanged: onChanged,
@@ -1150,7 +1162,9 @@ class _SubmissionTrackerGridSource extends DataGridSource {
                 ),
                 DataGridCell<String>(
                   columnName: 'branch',
-                  value: row.branchName,
+                  value: StoreBranchIdentityRegistry.displayName(
+                    row.branchName,
+                  ),
                 ),
                 DataGridCell<String>(columnName: 'zone', value: row.zone),
                 DataGridCell<String>(columnName: 'area', value: row.area),

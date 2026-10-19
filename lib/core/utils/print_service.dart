@@ -131,33 +131,13 @@ class PrintService {
   }
 
   static pw.Widget _printedBranchHeading(String branch) {
-    final is71 = StoreBranchIdentityRegistry.isSeventyOne(branch);
     return pw.Row(
       mainAxisSize: pw.MainAxisSize.min,
       children: [
         pw.Text(
-          branch,
+          StoreBranchIdentityRegistry.displayName(branch),
           style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
         ),
-        if (is71) ...[
-          pw.SizedBox(width: 7),
-          pw.Container(
-            padding: const pw.EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-            decoration: pw.BoxDecoration(
-              color: PdfColors.orange100,
-              border: pw.Border.all(color: PdfColors.deepOrange400, width: 0.8),
-              borderRadius: pw.BorderRadius.circular(4),
-            ),
-            child: pw.Text(
-              '71 BRANCH',
-              style: pw.TextStyle(
-                color: PdfColors.deepOrange800,
-                fontSize: 9,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
       ],
     );
   }

@@ -31,27 +31,24 @@ class StoreBranchLabel extends StatelessWidget {
     return ValueListenableBuilder<Map<String, String>>(
       valueListenable: StoreBranchIdentityRegistry.groups,
       builder: (context, groups, _) {
-        final is71 = StoreBranchIdentityRegistry.isSeventyOne(
-          branchName,
-          groups,
-        );
         return Row(
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: mainAxisAlignment,
           children: [
             Flexible(
               child: Text(
-                suffix == null ? branchName : '$branchName $suffix',
+                suffix == null
+                    ? StoreBranchIdentityRegistry.displayName(
+                        branchName,
+                        groups,
+                      )
+                    : '${StoreBranchIdentityRegistry.displayName(branchName, groups)} $suffix',
                 style: style,
                 maxLines: maxLines,
                 overflow: overflow,
                 textAlign: textAlign,
               ),
             ),
-            if (is71) ...[
-              const SizedBox(width: 7),
-              StoreBranchBadge(compact: compactBadge),
-            ],
           ],
         );
       },

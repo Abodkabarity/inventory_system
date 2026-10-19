@@ -6,6 +6,7 @@ import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../../core/utils/fill_rate_kpi_excel_exporter_stub.dart'
     if (dart.library.html) '../../../core/utils/fill_rate_kpi_excel_exporter.dart';
 import '../../../data/datasources/remote/fill_rate_kpi_remote_ds.dart';
@@ -846,7 +847,9 @@ class _BranchCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      summary.branchName,
+                      StoreBranchIdentityRegistry.displayName(
+                        summary.branchName,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -1027,7 +1030,7 @@ class _RateSummaryCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            branch,
+            StoreBranchIdentityRegistry.displayName(branch),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
@@ -1315,7 +1318,7 @@ class _ProductTableState extends State<_ProductTable> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '${widget.branch} • Refill Products',
+                            '${StoreBranchIdentityRegistry.displayName(widget.branch)} • Refill Products',
                             style: const TextStyle(
                               color: Color(0xff0F172A),
                               fontSize: 16,
@@ -2034,7 +2037,9 @@ class _BranchGridSource extends DataGridSource {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          summary.branchName,
+                          StoreBranchIdentityRegistry.displayName(
+                            summary.branchName,
+                          ),
                           maxLines: 2,
                           style: TextStyle(
                             color: const Color(0xff0F172A),

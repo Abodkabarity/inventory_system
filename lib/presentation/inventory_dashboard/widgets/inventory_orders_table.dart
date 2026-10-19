@@ -4,6 +4,7 @@ import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../../domain/entities/daily_order_row.dart';
 import '../../orders/widgets/orders_grid_controller.dart';
 import '../../orders/widgets/orders_table.dart';
@@ -607,7 +608,9 @@ class _InventoryOrdersDataSource extends DataGridSource {
       cells: row.getCells().map((cell) {
         final key = cell.columnName;
         final raw = cell.value;
-        final text = (raw ?? '').toString().trim();
+        final text = key == 'branch'
+            ? StoreBranchIdentityRegistry.displayName(raw?.toString())
+            : (raw ?? '').toString().trim();
 
         final align = key == 'item_name'
             ? Alignment.centerLeft

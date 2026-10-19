@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
 
 import '../../data/models/transfer_report_row.dart';
+import 'store_branch_identity_registry.dart';
 
 class TransferReportExcelExporter {
   static Future<void> export(List<TransferReportRow> rows) async {
@@ -122,7 +123,7 @@ class TransferReportExcelExporter {
 
       final values = [
         status,
-        item.branch,
+        StoreBranchIdentityRegistry.displayName(item.branch),
         item.runDate,
         item.itemCode,
         item.itemName,

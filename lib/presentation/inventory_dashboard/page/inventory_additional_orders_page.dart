@@ -1,3 +1,4 @@
+import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 import 'dart:convert';
 import 'dart:html' as html;
 import 'dart:typed_data';
@@ -466,7 +467,7 @@ class _InventoryAdditionalOrdersPageState
             : line.destinations;
         for (final branch in branches) {
           final values = [
-            branch,
+            StoreBranchIdentityRegistry.displayName(branch),
             line.itemCode,
             line.itemName,
             line.qty,
@@ -1556,7 +1557,7 @@ class _InventoryAdditionalOrdersPageState
                   const SizedBox(width: 9),
                   Expanded(
                     child: SelectableText(
-                      row.branch,
+                      StoreBranchIdentityRegistry.displayName(row.branch),
                       style: const TextStyle(
                         color: AppColors.secondaryColor,
                         fontWeight: FontWeight.w800,
@@ -2101,7 +2102,7 @@ class _BranchPickerDialogState extends State<_BranchPickerDialog> {
                         color: AppColors.primaryColor,
                       ),
                       title: Text(
-                        branch,
+                        StoreBranchIdentityRegistry.displayName(branch),
                         style: const TextStyle(fontWeight: FontWeight.w800),
                       ),
                       onChanged: (value) => setState(

@@ -103,22 +103,35 @@ void main() {
     final workbook = entry('xl/workbook.xml');
     final sharedStrings = entry('xl/sharedStrings.xml');
 
-    expect(workbook, contains('Management Overview'));
-    expect(workbook, contains('Branch Summary'));
-    expect(workbook, contains('Purchase Status'));
-    expect(workbook, contains('Daily Trend'));
+    expect(workbook, contains('Fill Rate Gap Analysis'));
     expect(workbook, contains('Item Details'));
+    expect(workbook, isNot(contains('Branch Summary')));
+    expect(workbook, isNot(contains('Purchase Status')));
+    expect(workbook, isNot(contains('Daily Trend')));
     expect(
       sharedStrings,
-      contains('Fill Rate Comparison for Every Purchase Status'),
+      contains('Unfulfilled Gap Breakdown by Purchase Status'),
     );
-    expect(sharedStrings, contains('AVAILABLE + AVAILABLE N.E + NOT ASSIGNED'));
-    expect(sharedStrings, contains('COMBINED FILL RATE — QUANTITY RECEIVED'));
+    expect(sharedStrings, contains('Unfulfilled Gap'));
+    expect(sharedStrings, contains('Share of Unfulfilled Gap %'));
+    expect(sharedStrings, contains('Of All Reorder Qty %'));
     expect(sharedStrings, isNot(contains('Unit Fill Rate')));
     expect(sharedStrings, isNot(contains('Line Fill Rate')));
     expect(sharedStrings, isNot(contains('Average Product Supply')));
     expect(sharedStrings, isNot(contains('Included in Main Result')));
     expect(sharedStrings, isNot(contains('Management Interpretation')));
     expect(sharedStrings, isNot(contains('Simple Calculation Rules')));
+    expect(
+      sharedStrings,
+      isNot(contains('COMBINED FILL RATE — QUANTITY RECEIVED')),
+    );
+    expect(sharedStrings, contains('Reorder Qty'));
+    expect(sharedStrings, contains('Transfer from Store'));
+    expect(sharedStrings, contains('Fill Rate'));
+    expect(sharedStrings, isNot(contains('Original Reorder Qty')));
+    expect(sharedStrings, isNot(contains('Effective Required Qty')));
+    expect(sharedStrings, isNot(contains('Edited Order?')));
+    expect(sharedStrings, isNot(contains('Approved Transfer Qty')));
+    expect(sharedStrings, isNot(contains('Qty Counted')));
   });
 }

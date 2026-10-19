@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 
 class FormularyDataSource extends DataGridSource {
   final List<Map<String, dynamic>> data;
@@ -20,7 +21,12 @@ class FormularyDataSource extends DataGridSource {
       return DataGridRow(
         cells: [
           DataGridCell(columnName: 'index', value: index + 1),
-          DataGridCell(columnName: 'branch', value: e['branch_name']),
+          DataGridCell(
+            columnName: 'branch',
+            value: StoreBranchIdentityRegistry.displayName(
+              e['branch_name']?.toString(),
+            ),
+          ),
           DataGridCell(columnName: 'code', value: e['item_code']),
           DataGridCell(columnName: 'name', value: e['item_name']),
           DataGridCell(

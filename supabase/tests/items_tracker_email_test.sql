@@ -38,7 +38,9 @@ begin
     v_input || '{"follow_up_role":"purchase"}'::jsonb));
   select row_version into v_version from public.items_tracker_items where id=v_ids[1];
   select count(*) into v_events from public.items_tracker_events where item_id=any(v_ids);
-  v_drafts := public.item_tracker_prepare_emails(v_ids,'Email rollback company');
+  v_drafts := public.item_tracker_prepare_emails(array[v_ids[1],v_ids[2]],'Email rollback company')
+    || public.item_tracker_prepare_emails(array[v_ids[3]],'Email rollback company')
+    || public.item_tracker_prepare_emails(array[v_ids[4]],'Email rollback company');
   if jsonb_array_length(v_drafts) <> 3 then raise exception 'Company email did not split departments: %',v_drafts; end if;
   select (d->>'id')::uuid into v_category_job from jsonb_array_elements(v_drafts) d where d->>'follow_up_role'='category';
   select (d->>'id')::uuid into v_purchase_job from jsonb_array_elements(v_drafts) d where d->>'follow_up_role'='purchase';
@@ -50,7 +52,9 @@ begin
     raise exception 'Grid did not expose pending drafts';
   end if;
   -- Repeated requests and individual requests reuse exactly the same drafts.
-  v_drafts_again := public.item_tracker_prepare_emails(v_ids,'Email rollback company');
+  v_drafts_again := public.item_tracker_prepare_emails(array[v_ids[1],v_ids[2]],'Email rollback company')
+    || public.item_tracker_prepare_emails(array[v_ids[3]],'Email rollback company')
+    || public.item_tracker_prepare_emails(array[v_ids[4]],'Email rollback company');
   if v_drafts_again <> v_drafts then raise exception 'Repeat preparation created duplicate emails'; end if;
   v_drafts_again := public.item_tracker_prepare_emails(array[v_ids[1]],null);
   if jsonb_array_length(v_drafts_again) <> 1 or (v_drafts_again->0->>'id')::uuid <> v_category_job then
@@ -80,7 +84,7 @@ begin
   end if;
   -- A later company addition emails only new products, not previous sent items.
   v_ids := array_append(v_ids,(public.item_tracker_create_batch(jsonb_build_array(v_input)))[1]);
-  v_drafts_again := public.item_tracker_prepare_emails(v_ids,'Email rollback company');
+  v_drafts_again := public.item_tracker_prepare_emails(array[v_ids[5]],'Email rollback company');
   select (d->>'id')::uuid into v_new_job from jsonb_array_elements(v_drafts_again) d
     where d->>'follow_up_role'='category' and d->>'status'='draft';
   if v_new_job is null or (select jsonb_array_length(products) from public.items_tracker_emails where id=v_new_job) <> 1 then

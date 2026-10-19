@@ -1,3 +1,4 @@
+import '../../widgets/inventory_dropdown.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -1480,7 +1481,8 @@ class _KpiProductDialogState extends State<_KpiProductDialog> {
                     ),
                   ),
                   const SizedBox(width: 16),
-                  DropdownButton<String>(
+                  InventoryDropdown<String>(
+                    label: 'Products',
                     borderRadius: BorderRadius.circular(14),
                     dropdownColor: Colors.white,
                     style: const TextStyle(color: _kpiInk, fontSize: 13),

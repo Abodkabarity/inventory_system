@@ -207,10 +207,15 @@ class ItemsTrackerRemoteDs implements ItemsTrackerRepository {
   Future<List<ItemsTrackerEmailDraft>> prepareEmails(
     List<String> itemIds, {
     String? company,
+    bool exactSelection = false,
   }) async {
     final response = await client.rpc(
       'item_tracker_prepare_emails',
-      params: {'p_item_ids': itemIds, 'p_company': company},
+      params: {
+        'p_item_ids': itemIds,
+        'p_company': company,
+        'p_exact_selection': exactSelection,
+      },
     );
     return (response as List)
         .map(

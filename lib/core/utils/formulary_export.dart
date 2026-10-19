@@ -2,6 +2,7 @@ import 'dart:html' as html;
 import 'dart:typed_data';
 
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
+import 'store_branch_identity_registry.dart';
 
 class FormularyExcelExporter {
   static Future<void> export({
@@ -102,7 +103,7 @@ class FormularyExcelExporter {
 
       for (int c = 0; c < headers.length; c++) {
         final key = headers[c];
-        final value = row[key];
+        final value = StoreBranchIdentityRegistry.exportValue(key, row[key]);
 
         final cell = sheet.getRangeByIndex(r + 2, c + 1);
 

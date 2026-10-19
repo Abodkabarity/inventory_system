@@ -1,6 +1,7 @@
 // lib/core/utils/csv_exporter_web.dart
 import 'dart:convert';
 import 'dart:html' as html;
+import 'store_branch_identity_registry.dart';
 
 class CsvExporterWeb {
   static void downloadCsv({
@@ -17,7 +18,7 @@ class CsvExporterWeb {
     for (final r in rows) {
       final line = columns
           .map((c) {
-            final v = r[c];
+            final v = StoreBranchIdentityRegistry.exportValue(c, r[c]);
             return _csvEscape(v == null ? '' : v.toString());
           })
           .join(',');

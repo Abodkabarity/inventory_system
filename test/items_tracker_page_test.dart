@@ -46,6 +46,40 @@ void main() {
     expect(find.text('Start the Items Tracker'), findsOneWidget);
   });
 
+  testWidgets(
+    'new email queue excludes existing records and prepares only new products',
+    (tester) async {
+      final repository = _FakeItemsTrackerRepository(
+        records: [
+          ItemsTrackerRecord.fromMap({
+            'id': 'legacy',
+            'item_name': 'Existing product',
+            'follow_up_role': 'category',
+            'case_status': 'pending',
+            'created_at': DateTime.now().toIso8601String(),
+          }),
+          ItemsTrackerRecord.fromMap({
+            'id': 'new',
+            'item_name': 'New product',
+            'follow_up_role': 'category',
+            'case_status': 'pending',
+            'email_queued_at': '2026-10-19T09:00:00Z',
+          }),
+        ],
+      );
+      await pumpPage(tester, role: 'inventory', repository: repository);
+      expect(find.text('New emails (1)'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('newProductEmails')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('emailSelect:legacy')), findsNothing);
+      expect(find.byKey(const ValueKey('emailSelect:new')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('prepareSelectedEmail')));
+      await tester.pumpAndSettle();
+      expect(repository.emailRequests.single, ['new']);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('desktop scrolling survives hover and hot reload', (
     tester,
   ) async {
@@ -562,16 +596,15 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('companyEntrySave')));
       await tester.pumpAndSettle();
       expect(repository.batches, hasLength(1));
-      expect(repository.emailRequests.single, [
-        'new-item-0',
-        'new-item-1',
-        'new-item-2',
-      ]);
+      expect(repository.emailRequests.single, ['new-item-0', 'new-item-2']);
       expect(repository.emailCompanies.single, 'Example Company');
       expect(find.text('Send email with Outlook'), findsOneWidget);
       await tester.tap(find.text('Try again'));
       await tester.pumpAndSettle();
       expect(repository.batches, hasLength(1));
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      expect(repository.emailRequests.last, ['new-item-1']);
       await tester.tap(find.text('Close'));
       await tester.pumpAndSettle();
       expect(find.text('Add company products'), findsNothing);
@@ -1214,6 +1247,7 @@ class _FakeItemsTrackerRepository implements ItemsTrackerRepository {
   Future<List<ItemsTrackerEmailDraft>> prepareEmails(
     List<String> itemIds, {
     String? company,
+    bool exactSelection = false,
   }) async {
     emailRequests.add(itemIds);
     emailCompanies.add(company);

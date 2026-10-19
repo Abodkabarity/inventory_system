@@ -1,6 +1,7 @@
 import 'package:daily_order/core/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 
 import '../../../domain/entities/additional_request_group.dart';
 import 'inventory_additional_request_dialog.dart';
@@ -45,7 +46,7 @@ class InventoryAdditionalRequestTile extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
       child: ListTile(
         title: Text(
-          "${request.branchName} Additional Order",
+          "${StoreBranchIdentityRegistry.displayName(request.branchName)} Additional Order",
           style: const TextStyle(
             color: AppColors.secondaryColor,
             fontWeight: FontWeight.bold,

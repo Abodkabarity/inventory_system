@@ -1,3 +1,4 @@
+import '../../widgets/inventory_dropdown.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -1028,7 +1029,7 @@ class ItemsTrackerCards extends StatelessWidget {
                               const SizedBox(height: 24),
                               _section('UPDATE STATUS'),
                               const SizedBox(height: 12),
-                              DropdownButtonFormField<String>(
+                              InventoryDropdownFormField<String>(
                                 isExpanded: true,
                                 initialValue:
                                     statusOptions.contains(
@@ -1060,7 +1061,7 @@ class ItemsTrackerCards extends StatelessWidget {
                                 },
                               ),
                               const SizedBox(height: 16),
-                              DropdownButtonFormField<String>(
+                              InventoryDropdownFormField<String>(
                                 initialValue: record.caseStatus,
                                 decoration: const InputDecoration(
                                   labelText: 'Tracker status',

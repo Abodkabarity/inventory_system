@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 
 class ProductEffectivenessDialog extends StatelessWidget {
   final String itemCode;
@@ -129,7 +130,7 @@ class ProductEffectivenessDialog extends StatelessWidget {
                           return DataRow(
                             cells: [
                               DataCell(
-                                Text(b['branch_name']?.toString() ?? ''),
+                                Text(StoreBranchIdentityRegistry.displayName(b['branch_name']?.toString())),
                               ),
 
                               DataCell(Text('${b['request_qty'] ?? 0}')),

@@ -1,3 +1,4 @@
+import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -3034,7 +3035,9 @@ class _OrdersOverlayDrawer extends StatelessWidget {
                                   ),
                                   const SizedBox(height: 3),
                                   Text(
-                                    branchName,
+                                    StoreBranchIdentityRegistry.displayName(
+                                      branchName,
+                                    ),
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       color: Colors.white.withValues(

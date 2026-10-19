@@ -1,3 +1,5 @@
+import '../../widgets/inventory_dropdown.dart';
+import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 import 'package:daily_order/core/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -61,6 +63,9 @@ class _BranchSettingPageState extends State<BranchSettingPage> {
       final matchesSearch =
           q.isEmpty ||
           b.branchName.toLowerCase().contains(q) ||
+          StoreBranchIdentityRegistry.displayName(
+            b.branchName,
+          ).toLowerCase().contains(q) ||
           b.email.toLowerCase().contains(q) ||
           b.zone.toLowerCase().contains(q) ||
           b.zoneManager.toLowerCase().contains(q) ||
@@ -120,7 +125,13 @@ class _BranchSettingPageState extends State<BranchSettingPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      ValueListenableBuilder<Map<String, String>>(
+        valueListenable: StoreBranchIdentityRegistry.groups,
+        builder: (context, _, _) => _buildContent(context),
+      );
+
+  Widget _buildContent(BuildContext context) {
     return BlocConsumer<InventoryBloc, InventoryState>(
       listenWhen: (p, c) =>
           p.branchSettingsError != c.branchSettingsError ||
@@ -755,7 +766,7 @@ class _FilterDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DropdownButtonFormField<String>(
+    return InventoryDropdownFormField<String>(
       initialValue: values.contains(value) ? value : values.first,
       isExpanded: true,
       items: values
@@ -973,7 +984,7 @@ class _BranchNameCell extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: SelectableText(
-              branch.branchName,
+              StoreBranchIdentityRegistry.displayName(branch.branchName),
               maxLines: 2,
               style: const TextStyle(
                 color: Color(0xff0F172A),

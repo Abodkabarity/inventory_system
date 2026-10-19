@@ -240,7 +240,7 @@ class _DailyOrderProgressLoading extends StatelessWidget {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            '$branchName  |  $runDate',
+                            '${StoreBranchIdentityRegistry.displayName(branchName)}  |  $runDate',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(

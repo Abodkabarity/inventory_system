@@ -1,3 +1,4 @@
+import '../../widgets/inventory_dropdown.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -448,12 +449,20 @@ class _ItemsTrackerCompanyDialogState extends State<ItemsTrackerCompanyDialog> {
       _added = true;
       if (_emailOnAdd && mounted) {
         setState(() => _saving = false);
-        await showItemsTrackerEmailDialog(
-          context: context,
-          repository: widget.repository,
-          itemIds: itemIds,
-          company: _company!,
-        );
+        // Each message contains exactly one department, even when company
+        // products were added together with different follow-up assignments.
+        for (final team in selected.map((row) => row.followUp).toSet()) {
+          if (!mounted) break;
+          await showItemsTrackerEmailDialog(
+            context: context,
+            repository: widget.repository,
+            itemIds: [
+              for (var i = 0; i < selected.length; i++)
+                if (selected[i].followUp == team) itemIds[i],
+            ],
+            company: _company!,
+          );
+        }
       }
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
@@ -628,7 +637,7 @@ class _ItemsTrackerCompanyDialogState extends State<ItemsTrackerCompanyDialog> {
                                   ),
                                 ),
                                 Text(
-                                  'One email per department',
+                                  'Off: keep in New emails',
                                   style: TextStyle(fontSize: 11, color: _muted),
                                 ),
                               ],
@@ -893,7 +902,7 @@ class _ItemsTrackerCompanyDialogState extends State<ItemsTrackerCompanyDialog> {
                                 ),
                                 const SizedBox(width: 14),
                                 Expanded(
-                                  child: DropdownButtonFormField<String>(
+                                  child: InventoryDropdownFormField<String>(
                                     initialValue: _bulkFollowUp,
                                     decoration: _decoration('Follow up by'),
                                     items: [
@@ -927,7 +936,7 @@ class _ItemsTrackerCompanyDialogState extends State<ItemsTrackerCompanyDialog> {
                                 ),
                                 const SizedBox(width: 14),
                                 Expanded(
-                                  child: DropdownButtonFormField<String>(
+                                  child: InventoryDropdownFormField<String>(
                                     initialValue: _bulkStatus,
                                     decoration: _decoration(
                                       'Status for selected products',
@@ -1123,7 +1132,7 @@ class _ItemsTrackerCompanyDialogState extends State<ItemsTrackerCompanyDialog> {
           const SizedBox(width: 12),
           SizedBox(
             width: 140,
-            child: DropdownButtonFormField<String>(
+            child: InventoryDropdownFormField<String>(
               key: ValueKey('companyFollowUp:$index:${row.followUp}'),
               initialValue: row.followUp,
               decoration: _decoration('Follow up by'),
@@ -1144,7 +1153,7 @@ class _ItemsTrackerCompanyDialogState extends State<ItemsTrackerCompanyDialog> {
           const SizedBox(width: 12),
           Expanded(
             flex: 3,
-            child: DropdownButtonFormField<String>(
+            child: InventoryDropdownFormField<String>(
               key: ValueKey('companyStatus:$index:${row.status}'),
               initialValue: row.status.isEmpty ? null : row.status,
               decoration: _decoration('Status updated to'),

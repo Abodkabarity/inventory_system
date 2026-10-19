@@ -1,3 +1,4 @@
+import '../../widgets/inventory_dropdown.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:syncfusion_flutter_core/theme.dart';
@@ -1517,79 +1518,24 @@ class _TrackerStatusDropdownState extends State<_TrackerStatusDropdown> {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 12),
-      child: PopupMenuButton<String>(
-        enabled: !_saving,
-        tooltip: 'Change Tracker Status',
-        initialValue: _selected,
-        onSelected: _change,
-        itemBuilder: (context) => ItemsTrackerCaseStatuses.values
-            .map(
-              (value) => PopupMenuItem<String>(
-                value: value,
-                child: Row(
-                  children: [
-                    Icon(
-                      value == ItemsTrackerCaseStatuses.done
-                          ? Icons.check_circle_rounded
-                          : Icons.schedule_rounded,
-                      color: value == ItemsTrackerCaseStatuses.done
-                          ? const Color(0xff2f7354)
-                          : const Color(0xffa85e10),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(ItemsTrackerCaseStatuses.label(value)),
-                    const Spacer(),
-                    if (value == _selected)
-                      const Icon(Icons.check_rounded, size: 18),
-                  ],
-                ),
-              ),
-            )
-            .toList(growable: false),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          decoration: BoxDecoration(
-            color: _selected == ItemsTrackerCaseStatuses.done
-                ? const Color(0xffdff2e8)
-                : const Color(0xffffe6c4),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: _selected == ItemsTrackerCaseStatuses.done
-                  ? const Color(0xff9bcdb4)
-                  : const Color(0xffffc978),
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (_saving)
-                const SizedBox.square(
-                  dimension: 14,
-                  child: CircularProgressIndicator(strokeWidth: 1.8),
-                )
-              else
-                Icon(
-                  _selected == ItemsTrackerCaseStatuses.done
-                      ? Icons.check_circle_rounded
-                      : Icons.schedule_rounded,
-                  size: 15,
-                ),
-              const SizedBox(width: 5),
-              Flexible(
-                child: Text(
-                  ItemsTrackerCaseStatuses.label(_selected),
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 3),
-              const Icon(Icons.arrow_drop_down_rounded, size: 18),
-            ],
-          ),
+      child: InventoryDropdown<String>(
+        value: _selected,
+        label: 'Tracker status',
+        icon: Icon(
+          _saving ? Icons.hourglass_top_rounded : Icons.task_alt_rounded,
         ),
+        items: [
+          for (final value in ItemsTrackerCaseStatuses.values)
+            DropdownMenuItem(
+              value: value,
+              child: Text(ItemsTrackerCaseStatuses.label(value)),
+            ),
+        ],
+        onChanged: _saving
+            ? null
+            : (value) {
+                if (value != null) _change(value);
+              },
       ),
     );
   }
@@ -1693,106 +1639,19 @@ class _StatusUpdatedToDropdownState extends State<_StatusUpdatedToDropdown> {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      child: PopupMenuButton<String>(
-        enabled: !_saving && options.isNotEmpty,
-        tooltip: 'Change Status Updated To',
-        initialValue: selected.isEmpty ? null : selected,
-        onSelected: _change,
-        constraints: const BoxConstraints(minWidth: 280, maxWidth: 420),
-        itemBuilder: (context) {
-          return options
-              .map((value) {
-                final active = value.toLowerCase() == selected.toLowerCase();
-
-                return PopupMenuItem<String>(
-                  value: value,
-                  height: 46,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        active
-                            ? Icons.check_circle_rounded
-                            : Icons.circle_outlined,
-                        size: 18,
-                        color: active
-                            ? const Color(0xff2e766c)
-                            : const Color(0xff9aa8af),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          value,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: const Color(0xff2f4650),
-                            fontSize: 12.3,
-                            fontWeight: active
-                                ? FontWeight.w700
-                                : FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              })
-              .toList(growable: false);
-        },
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 48),
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            color: const Color(0xfffffbef),
-            borderRadius: BorderRadius.circular(11),
-            border: Border.all(color: const Color(0xffffd979), width: 1.2),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 26,
-                height: 26,
-                decoration: BoxDecoration(
-                  color: const Color(0xffffedbd),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.edit_outlined,
-                  size: 15,
-                  color: Color(0xff956414),
-                ),
-              ),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  selected.isEmpty ? 'Select status' : selected,
-                  maxLines: 2,
-                  textAlign: TextAlign.center,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xff4f421f),
-                    fontSize: 11.5,
-                    height: 1.2,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 7),
-              if (_saving)
-                const SizedBox.square(
-                  dimension: 16,
-                  child: CircularProgressIndicator(strokeWidth: 1.8),
-                )
-              else
-                const Icon(
-                  Icons.keyboard_arrow_down_rounded,
-                  size: 20,
-                  color: Color(0xff8b6a24),
-                ),
-            ],
-          ),
-        ),
+      child: InventoryDropdown<String>(
+        value: selected.isEmpty ? null : selected,
+        label: 'Updated status',
+        icon: Icon(_saving ? Icons.hourglass_top_rounded : Icons.edit_outlined),
+        items: [
+          for (final value in options)
+            DropdownMenuItem(value: value, child: Text(value)),
+        ],
+        onChanged: _saving || options.isEmpty
+            ? null
+            : (value) {
+                if (value != null) _change(value);
+              },
       ),
     );
   }

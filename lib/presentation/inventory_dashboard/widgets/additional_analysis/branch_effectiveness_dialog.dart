@@ -1,3 +1,4 @@
+import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 import 'package:flutter/material.dart';
 
 class BranchEffectivenessDialog extends StatelessWidget {
@@ -61,7 +62,7 @@ class BranchEffectivenessDialog extends StatelessWidget {
 
                   Expanded(
                     child: Text(
-                      branchName,
+                      StoreBranchIdentityRegistry.displayName(branchName),
                       style: const TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,

@@ -1,3 +1,4 @@
+import '../../widgets/inventory_dropdown.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -23,6 +24,7 @@ import '../widgets/items_tracker_import_dialog.dart';
 import '../widgets/items_tracker_cards.dart';
 import '../widgets/items_tracker_notifications.dart';
 import '../widgets/items_tracker_email_dialog.dart';
+import '../widgets/items_tracker_email_selection.dart';
 import '../widgets/items_tracker_column_filter_menu.dart';
 
 class ItemsTrackerPage extends StatefulWidget {
@@ -354,7 +356,9 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
           );
     if (changed) {
       _showMessage(
-        record == null ? 'Products added to tracker.' : 'Item updated.',
+        record == null
+            ? 'Products added. You can add more, then use New emails to send them together.'
+            : 'Item updated.',
       );
       await _load(silent: true);
     }
@@ -727,6 +731,10 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
                         totalRequiredValue: totalRequiredValue,
                       ),
                       const SizedBox(height: 14),
+                      if (_canEditInventory && _records.isNotEmpty) ...[
+                        _emailActions(),
+                        const SizedBox(height: 12),
+                      ],
                       Expanded(
                         child: _WorkspacePanel(
                           role: _role,
@@ -852,6 +860,7 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
             .where(
               (record) =>
                   record.canGroupByCompany &&
+                  record.canSendEmail &&
                   record.company.trim().toLowerCase() ==
                       company.trim().toLowerCase() &&
                   ItemsTrackerRoles.normalize(record.followUpRole) == team,
@@ -865,15 +874,78 @@ class _ItemsTrackerPageState extends State<ItemsTrackerPage> {
   Future<void> _openEmail(
     List<ItemsTrackerRecord> records, {
     String? company,
+    bool exactSelection = false,
   }) async {
     if (!_canEditInventory || records.isEmpty) return;
+    if (records.map((r) => r.followUpRole).toSet().length != 1) {
+      _showMessage(
+        'Select products with the same Follow up by department.',
+        isError: true,
+      );
+      return;
+    }
     await showItemsTrackerEmailDialog(
       context: context,
       repository: _repository,
       itemIds: records.map((record) => record.id).toList(),
       company: company,
+      exactSelection: exactSelection,
     );
     if (mounted) await _load(silent: true);
+  }
+
+  Widget _emailActions() => Align(
+    alignment: Alignment.centerLeft,
+    child: Wrap(
+      spacing: 10,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        FilledButton.icon(
+          key: const ValueKey('newProductEmails'),
+          style: FilledButton.styleFrom(
+            backgroundColor: AppColors.primaryColor,
+            foregroundColor: Colors.white,
+          ),
+          onPressed: () => _selectEmailProducts(newOnly: true),
+          icon: const Icon(Icons.mark_email_unread_outlined, size: 18),
+          label: Text(
+            'New emails (${_records.where((r) => r.isNewEmail).length})',
+          ),
+        ),
+        OutlinedButton.icon(
+          key: const ValueKey('selectProductEmails'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.primaryColor,
+            side: const BorderSide(color: AppColors.primaryColor),
+          ),
+          onPressed: () => _selectEmailProducts(newOnly: false),
+          icon: const Icon(Icons.checklist_rounded, size: 18),
+          label: const Text('Email selected products'),
+        ),
+      ],
+    ),
+  );
+
+  Future<void> _selectEmailProducts({required bool newOnly}) async {
+    final selected = await showTrackerEmailSelection(
+      context: context,
+      records: _records,
+      newOnly: newOnly,
+    );
+    if (!mounted || selected == null || selected.isEmpty) return;
+    final companies = selected.map((r) => r.company.trim()).toSet();
+    await _openEmail(
+      selected,
+      exactSelection:
+          !(selected.length == 1 && selected.single.emailStatus == 'draft'),
+      company:
+          selected.length > 1 &&
+              companies.length == 1 &&
+              companies.single.isNotEmpty
+          ? companies.single
+          : null,
+    );
   }
 }
 
@@ -1965,7 +2037,7 @@ class _FilterSelect extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: width,
-      child: DropdownButtonFormField<String>(
+      child: InventoryDropdownFormField<String>(
         key: ValueKey('$label-$value'),
         initialValue: value,
         isExpanded: true,

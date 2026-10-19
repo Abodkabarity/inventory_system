@@ -1823,7 +1823,7 @@ class _ZdStockCheckBranchChip extends StatelessWidget {
               children: [
                 Flexible(
                   child: Text(
-                    branch.branchName,
+              StoreBranchIdentityRegistry.displayName(branch.branchName),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -2490,7 +2490,7 @@ class _ZdLiveActivityTileState extends State<_ZdLiveActivityTile> {
                           const SizedBox(width: 5),
                           Expanded(
                             child: Text(
-                              activity.branchName,
+              StoreBranchIdentityRegistry.displayName(activity.branchName),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
@@ -3776,7 +3776,7 @@ class _ZdBranchCardState extends State<_ZdBranchCard> {
                             ),
                             const SizedBox(height: 10),
                             Text(
-                              widget.branch,
+              StoreBranchIdentityRegistry.displayName(widget.branch),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
@@ -4323,7 +4323,7 @@ class _ZdAdditionalRequestCardState extends State<_ZdAdditionalRequestCard> {
                               const SizedBox(width: 7),
                               Expanded(
                                 child: Text(
-                                  _zdString(row['branch_name']),
+                                  StoreBranchIdentityRegistry.displayName(_zdString(row['branch_name'])),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(

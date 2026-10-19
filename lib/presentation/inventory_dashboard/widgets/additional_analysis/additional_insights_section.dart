@@ -1,5 +1,7 @@
+import '../../../widgets/inventory_dropdown.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 
 import 'glass_container.dart';
 
@@ -698,7 +700,8 @@ class _BranchPerformanceCardState extends State<_BranchPerformanceCard> {
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: const Color(0xffE2E8F0)), // added
                 ),
-                child: DropdownButton<String>(
+                child: InventoryDropdown<String>(
+                  label: 'Sort',
                   value: _sortBy,
                   dropdownColor: Colors.white, // was: Color(0xff1F2937)
                   underline: const SizedBox(),
@@ -826,7 +829,9 @@ class _BranchPerformanceCardState extends State<_BranchPerformanceCard> {
                       cells: [
                         DataCell(
                           Text(
-                            b['branch_name']?.toString() ?? '',
+                            StoreBranchIdentityRegistry.displayName(
+                              b['branch_name']?.toString(),
+                            ),
                             style: const TextStyle(
                               color: Color(0xff1E293B), // was: Colors.white
                               fontWeight: FontWeight.w500,

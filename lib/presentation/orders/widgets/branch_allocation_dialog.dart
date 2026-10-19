@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../core/utils/branch_allocation_excel_exporter.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../../domain/entities/branch_allocation_task.dart';
 import '../bloc/order_bloc/orders_bloc.dart';
 import '../bloc/order_bloc/orders_event.dart';
@@ -478,7 +479,7 @@ class _PageHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '$branchName Allocation',
+                  '${StoreBranchIdentityRegistry.displayName(branchName)} Allocation',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 26,
@@ -1504,7 +1505,7 @@ class _OutgoingTableRowState extends State<_OutgoingTableRow> {
             width: 190,
             color: widget.branchColor,
             child: Text(
-              task.toBranch,
+              StoreBranchIdentityRegistry.displayName(task.toBranch),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
@@ -1978,7 +1979,7 @@ class _IncomingTable extends StatelessWidget {
                         width: 190,
                         color: const Color(0xffEFF6FF),
                         child: Text(
-                          task.fromBranch,
+                          StoreBranchIdentityRegistry.displayName(task.fromBranch),
                           style: const TextStyle(fontWeight: FontWeight.w900),
                         ),
                       ),
@@ -2381,7 +2382,7 @@ class _BranchFilterDropdown extends StatelessWidget {
           return DropdownMenuItem<String>(
             value: branch,
             child: Text(
-              branch == 'all' ? 'All Branches' : branch,
+              branch == 'all' ? 'All Branches' : StoreBranchIdentityRegistry.displayName(branch),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontWeight: FontWeight.w800),
