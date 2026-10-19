@@ -1,4 +1,4 @@
-import '../../widgets/inventory_dropdown.dart';
+import 'tracker_branch_dropdown.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../core/utils/store_branch_identity_registry.dart';
@@ -176,15 +176,18 @@ class _BranchesTrackerTimelineTabState
                       ),
                     ),
                     const SizedBox(width: 12),
-                    _BranchDropdown(
-                      value: _branchFilter,
-                      items: _branches,
-                      onChanged: (v) {
-                        setState(() {
-                          _branchFilter = v;
-                          _page = 0;
-                        });
-                      },
+                    SizedBox(
+                      width: 280,
+                      child: TrackerBranchDropdown(
+                        value: _branchFilter,
+                        items: _branches,
+                        onChanged: (v) {
+                          setState(() {
+                            _branchFilter = v;
+                            _page = 0;
+                          });
+                        },
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Container(
@@ -910,62 +913,6 @@ class _TypeChip extends StatelessWidget {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _BranchDropdown extends StatelessWidget {
-  final String value;
-  final List<String> items;
-  final ValueChanged<String> onChanged;
-
-  const _BranchDropdown({
-    required this.value,
-    required this.items,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
-      decoration: BoxDecoration(
-        color: const Color(0xffF1F5F9),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xffE2E8F0)),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: InventoryDropdown<String>(
-          label: 'Branch',
-          branchNames: true,
-          value: value,
-          icon: const Icon(
-            Icons.keyboard_arrow_down,
-            color: Color(0xff64748B),
-            size: 18,
-          ),
-          style: const TextStyle(
-            color: Color(0xff1E293B),
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-          ),
-          items: items
-              .map(
-                (e) => DropdownMenuItem(
-                  value: e,
-                  child: Text(
-                    e == 'ALL'
-                        ? 'All Branches'
-                        : StoreBranchIdentityRegistry.displayName(e),
-                  ),
-                ),
-              )
-              .toList(),
-          onChanged: (v) {
-            if (v != null) onChanged(v);
-          },
         ),
       ),
     );

@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/config/stock_management_load_config.dart';
 import '../../../domain/entities/stock_expiry.dart';
 import '../../../domain/entities/stock_management.dart';
 
@@ -12,8 +13,7 @@ abstract class StockExpiryDataSource {
   });
 }
 
-/// UI pagination is unnecessary for this register, but the existing RPC caps
-/// each response at 100 rows. Assemble every batch before exposing a result so
+/// Assemble every shared-size batch before exposing a result so
 /// Excel-style column filters never silently operate on an incomplete register.
 extension StockExpiryCompleteRegister on StockExpiryDataSource {
   Future<StockExpiryResult> fetchAll(
@@ -32,7 +32,7 @@ extension StockExpiryCompleteRegister on StockExpiryDataSource {
           reviewState: query.reviewState,
           urgency: query.urgency,
           offset: rows.length,
-          limit: 100,
+          limit: StockManagementLoadConfig.batchSize,
         ),
       );
       if (isCancelled?.call() ?? false) throw const StockExpiryLoadCancelled();

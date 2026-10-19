@@ -37,6 +37,8 @@ class KpiExportJob {
 class StockCheckKpiExportWorker {
   static const _libraryAsset = 'assets/workers/exceljs-4.4.0.min.js';
   static const _workerAsset = 'assets/workers/stock_check_kpi_export_worker.js';
+  static const _stockReportWorkerAsset =
+      'assets/workers/stock_report_export_worker.js';
 
   static Future<Uint8List> build({
     required List<String> summaryHeaders,
@@ -64,7 +66,12 @@ class StockCheckKpiExportWorker {
     final scriptLoad =
         Future.wait([
           rootBundle.loadString(_libraryAsset),
-          rootBundle.loadString(_workerAsset, cache: false),
+          // A separate asset also avoids cached KPI scripts being reused for
+          // stock reports after an app update. This worker has no summary tab.
+          rootBundle.loadString(
+            singleReport ? _stockReportWorkerAsset : _workerAsset,
+            cache: false,
+          ),
         ]).timeout(const Duration(minutes: 5)).catchError((Object error) {
           rootBundle.evict(_libraryAsset); // Failed loads must be retryable.
           throw error;

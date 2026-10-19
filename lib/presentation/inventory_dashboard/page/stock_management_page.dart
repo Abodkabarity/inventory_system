@@ -649,34 +649,53 @@ class _StockManagementPageState extends State<StockManagementPage> {
     bool compact,
   ) => StockWorkspaceFilterSurface(
     child: Padding(
-      padding: const EdgeInsets.all(6),
+      padding: const EdgeInsets.all(8),
       child: LayoutBuilder(
-        builder: (context, size) => Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            SizedBox(
-              width: math.min(
-                size.maxWidth,
-                math.max(240, size.maxWidth * .20),
-              ),
-              height: 46,
-              child: TextField(
-                controller: _search,
-                decoration: _input(
-                  'Search product, code, company…',
-                  icon: Icons.search_rounded,
-                ),
-                onChanged: (_) {
-                  _debounce?.cancel();
-                  _debounce = Timer(
-                    const Duration(milliseconds: 200),
-                    _applyFilters,
-                  );
-                },
-              ),
+        builder: (context, size) {
+          final hasFilters =
+              _received != null ||
+              _search.text.isNotEmpty ||
+              _status.isNotEmpty ||
+              _category.isNotEmpty ||
+              _supplier.isNotEmpty ||
+              _gridFiltered;
+          final search = SizedBox(
+            height: 46,
+            child: TextField(
+              key: const ValueKey('mrn-search'),
+              controller: _search,
+              decoration: _input('Search product, code, supplier or company…')
+                  .copyWith(
+                    fillColor: const Color(0xFFF5FAFE),
+                    prefixIcon: const Icon(
+                      Icons.search_rounded,
+                      size: 21,
+                      color: AppColors.primaryColor,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: AppColors.primaryColor.withValues(alpha: .18),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: AppColors.primaryColor,
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+              onChanged: (_) {
+                _debounce?.cancel();
+                _debounce = Timer(
+                  const Duration(milliseconds: 200),
+                  _applyFilters,
+                );
+              },
             ),
+          );
+          final controls = <SizedBox>[
             _dropdown('Stock status', _status, const {
               '': 'All stock',
               'no_stock': 'No Stock',
@@ -699,15 +718,20 @@ class _StockManagementPageState extends State<StockManagementPage> {
               'sales_high': 'Highest 2026 sales',
             }, (v) => _sort = v),
             SizedBox(
-              width: 180,
+              key: const ValueKey('mrn-date-filter'),
+              width: 168,
               height: 46,
               child: OutlinedButton.icon(
                 onPressed: _chooseDates,
                 style: OutlinedButton.styleFrom(
-                  backgroundColor: AppColors.primaryColor,
-                  foregroundColor: AppColors.white,
-                  side: const BorderSide(color: AppColors.primaryColor),
-                  iconColor: Colors.white,
+                  backgroundColor: AppColors.primaryColor.withValues(
+                    alpha: .08,
+                  ),
+                  foregroundColor: AppColors.primaryColor,
+                  side: BorderSide(
+                    color: AppColors.primaryColor.withValues(alpha: .2),
+                  ),
+                  iconColor: AppColors.primaryColor,
                   textStyle: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -716,54 +740,125 @@ class _StockManagementPageState extends State<StockManagementPage> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                icon: const Icon(Icons.date_range_rounded, size: 17),
+                icon: const Icon(Icons.date_range_rounded, size: 18),
                 label: Text(
                   _received == null
                       ? 'MRN Date Range'
                       : '${DateFormat('dd MMM').format(_received!.start)} – ${DateFormat('dd MMM').format(_received!.end)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ),
-            if (_received != null ||
-                _search.text.isNotEmpty ||
-                _status.isNotEmpty ||
-                _category.isNotEmpty ||
-                _supplier.isNotEmpty ||
-                _gridFiltered)
-              TextButton.icon(
-                onPressed: () {
-                  _search.clear();
-                  _debounce?.cancel();
-                  _gridKey.currentState?.clearFilters();
-                  setState(() {
-                    _status = '';
-                    _category = '';
-                    _supplier = '';
-                    _received = null;
-                  });
-                  _applyFilters();
-                },
-                icon: const Icon(Icons.filter_alt_off_outlined, size: 16),
-                label: const Text('Clear filters'),
+            SizedBox(
+              width: 46,
+              height: 46,
+              child: IconButton.filledTonal(
+                key: const ValueKey('mrn-clear-filters'),
+                tooltip: 'Clear filters',
+                onPressed: hasFilters
+                    ? () {
+                        _search.clear();
+                        _debounce?.cancel();
+                        _gridKey.currentState?.clearFilters();
+                        setState(() {
+                          _status = '';
+                          _category = '';
+                          _supplier = '';
+                          _received = null;
+                        });
+                        _applyFilters();
+                      }
+                    : null,
+                style: IconButton.styleFrom(
+                  backgroundColor: AppColors.primaryColor.withValues(
+                    alpha: .08,
+                  ),
+                  foregroundColor: AppColors.primaryColor,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(Icons.filter_alt_off_outlined, size: 20),
               ),
-            StockWorkspaceExportButton(
+            ),
+          ];
+          final export = SizedBox(
+            width: 160,
+            child: StockWorkspaceExportButton(
               key: const ValueKey('mrn-export'),
               busy: _exporting,
               onPressed: _loading || _result == null ? null : _export,
             ),
-          ],
-        ),
+          );
+          final fixedWidth =
+              controls.fold<double>(0, (sum, control) => sum + control.width!) +
+              160 +
+              10 * (controls.length + 1);
+          if (size.maxWidth >= fixedWidth + 320) {
+            return Row(
+              children: [
+                Expanded(child: search),
+                for (final control in controls) ...[
+                  const SizedBox(width: 10),
+                  control,
+                ],
+                const SizedBox(width: 10),
+                export,
+              ],
+            );
+          }
+          // Fill the final wrap line so Export remains at the right edge.
+          var used = 0.0;
+          for (final control in controls) {
+            final width = math.min(control.width!, size.maxWidth);
+            final next = used == 0 ? width : used + 10 + width;
+            used = next > size.maxWidth ? width : next;
+          }
+          final remaining = size.maxWidth - used - 10;
+          final exportSlot = remaining >= 160 ? remaining : size.maxWidth;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              search,
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  for (final control in controls)
+                    SizedBox(
+                      width: math.min(control.width!, size.maxWidth),
+                      child: control,
+                    ),
+                  SizedBox(
+                    width: exportSlot,
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: export,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
       ),
     ),
   );
-
-  Widget _dropdown(
+  SizedBox _dropdown(
     String label,
     String value,
     Map<String, String> options,
     ValueChanged<String> change,
   ) => SizedBox(
-    width: label == 'Supplier' ? 170 : 140,
+    width: switch (label) {
+      'Supplier' => 184,
+      'Sort' => 164,
+      'Stock status' => 154,
+      _ => 156,
+    },
     height: 46,
     child: InventoryDropdownFormField<String>(
       key: ValueKey('$label:$value:${options.length}'),

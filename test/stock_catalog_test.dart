@@ -289,7 +289,7 @@ void main() {
       expect(find.text('Overview'), findsOneWidget);
       expect(source.detailCalls, 0);
       expect(source.queries.first.limit, 1);
-      expect(source.queries.last.limit, 100);
+      expect(source.queries.last.limit, 5000);
       expect(find.byTooltip('Next page'), findsNothing);
       expect(find.byTooltip('Previous page'), findsNothing);
       expect(find.text('Page 1'), findsNothing);

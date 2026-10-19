@@ -196,7 +196,16 @@ class _BrokenExpiryBatchSource extends FakeExpirySource {
   @override
   Future<StockExpiryResult> fetchPage(StockExpiryQuery query) async {
     final result = await super.fetchPage(query);
-    if (query.offset == 0) return result;
+    // An older backend may return fewer rows than requested. Keep exercising
+    // partial-response failures independently of the configured batch size.
+    if (query.offset == 0) {
+      return StockExpiryResult(
+        rows: result.rows.take(100).toList(),
+        total: result.total,
+        summary: result.summary,
+        meta: result.meta,
+      );
+    }
     if (mode == 'error') throw StateError('Second batch failed');
     return StockExpiryResult(
       rows: mode == 'empty' ? [] : [items.first],
@@ -341,7 +350,7 @@ void main() {
   test('complete register loads all batches and keeps query filters', () async {
     final source = FakeExpirySource()
       ..items = List.generate(
-        205,
+        10005,
         (i) => expiryAlert(code: 'ITEM-$i', days: 70),
       );
     final progress = <int>[];
@@ -349,16 +358,17 @@ void main() {
       const StockExpiryQuery(search: 'ITEM', urgency: 'soon'),
       onProgress: (loaded, total) => progress.add(loaded),
     );
-    expect(result.total, 205);
-    expect(result.rows.length, 205);
-    expect(source.queries.map((q) => q.offset), [0, 100, 200]);
+    expect(result.total, 10005);
+    expect(result.rows.length, 10005);
+    expect(result.rows.map((row) => row.key).toSet().length, 10005);
+    expect(source.queries.map((q) => q.offset), [0, 5000, 10000]);
     expect(
       source.queries.every(
-        (q) => q.limit == 100 && q.search == 'ITEM' && q.urgency == 'soon',
+        (q) => q.limit == 5000 && q.search == 'ITEM' && q.urgency == 'soon',
       ),
       isTrue,
     );
-    expect(progress, [100, 200, 205]);
+    expect(progress, [5000, 10000, 10005]);
   });
   for (final mode in ['error', 'empty', 'duplicate', 'count']) {
     test('complete register refuses a partial $mode response', () async {
@@ -898,7 +908,7 @@ void main() {
       tester.widget<SfDataGrid>(find.byType(SfDataGrid)).source.rows.length,
       31,
     );
-    expect(source.queries.single.limit, 100);
+    expect(source.queries.single.limit, 5000);
     await tester.enterText(find.byType(TextField), 'ITEM-3');
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();

@@ -1,5 +1,16 @@
 # Project instructions
 
+## Bulk loading
+
+- Use 5,000 rows as the default batch size for bulk data loading in new or
+  modified features. Keep server RPC limits aligned with the client request.
+- Stock Management's Overview, MRN Overview and Near Expiry must use
+  `StockManagementLoadConfig.batchSize` from
+  `lib/core/config/stock_management_load_config.dart` rather than separate sizes.
+- Metadata-only requests, explicit small-page requests, writes and export-worker
+  processing chunks are separate from bulk loading and retain suitable limits.
+- Preserve completeness, duplicate and snapshot checks when changing batch sizes.
+
 ## Branch 71 names
 
 For every new or modified feature in this repository, display branches whose

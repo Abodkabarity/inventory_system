@@ -3,12 +3,13 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const ExcelJS = require('../assets/workers/exceljs-4.4.0.min.js');
-const script = fs.readFileSync('assets/workers/stock_check_kpi_export_worker.js', 'utf8');
+const script = fs.readFileSync('assets/workers/stock_report_export_worker.js', 'utf8');
+const kpiScript = fs.readFileSync('assets/workers/stock_check_kpi_export_worker.js', 'utf8');
 
-async function build(start, rows) {
+async function build(start, rows, workerScript = script) {
   const messages = [];
   const context = {ExcelJS, Date, self: {postMessage: message => messages.push(message)}};
-  vm.runInNewContext(script, context);
+  vm.runInNewContext(workerScript, context);
   const send = async data => {
     await context.self.onmessage({data});
     const last = messages.at(-1);
@@ -28,6 +29,7 @@ async function build(start, rows) {
   const fixture = JSON.parse(fs.readFileSync('validation/stock_excel_fixture.json'));
   const native = new ExcelJS.Workbook();
   await native.xlsx.load(fs.readFileSync('validation/stock_excel_native.xlsx'));
+  assert.equal(native.worksheets.length, 1);
   const nativeSheet = native.worksheets[0];
   assert.equal(nativeSheet.getCell('A1').fill.fgColor.argb, 'FF4EB0DE');
   assert.equal(nativeSheet.getCell('I2').border.bottom.style, 'thin');
@@ -60,10 +62,22 @@ async function build(start, rows) {
   assert.equal(sheet.views[0].xSplit, 1);
   assert.ok(sheet.autoFilter);
 
+  // Every Stock Management report stays single-sheet, even if legacy summary
+  // options accidentally reach the dedicated worker.
+  for (const name of ['Stock Overview', 'MRN Overview', 'Near Expiry', 'Monthly Sales', 'Branch Stock']) {
+    const report = new ExcelJS.Workbook();
+    await report.xlsx.load(await build({singleReport: false, sheetName: name,
+      summaryHeaders: ['Unused summary'], summaryWidths: [20], summaryRows: [['Unused']],
+      detailHeaders: fixture.headers, detailWidths: fixture.widths, columnTypes: fixture.types}, fixture.rows));
+    assert.deepEqual(report.worksheets.map(tab => tab.name), [name]);
+    assert.equal(report.worksheets[0].rowCount, fixture.rows.length + 1);
+    assert.equal(report.worksheets[0].getCell('A2').value, '00123');
+  }
+
   // Existing KPI clients retain both sheets and the original score format.
   const kpi = await build({summaryHeaders: ['Branch'], summaryWidths: [20], summaryRows: [['A']],
     detailHeaders: ['Branch', 'Item', 'Name', 'A', 'B', 'C', 'Difference', 'Score'],
-    detailWidths: Array(8).fill(20)}, [['A', '001', 'Product', 1, 2, 3, 0, 100]]);
+    detailWidths: Array(8).fill(20)}, [['A', '001', 'Product', 1, 2, 3, 0, 100]], kpiScript);
   const legacy = new ExcelJS.Workbook();
   await legacy.xlsx.load(kpi);
   assert.equal(legacy.worksheets.length, 2);

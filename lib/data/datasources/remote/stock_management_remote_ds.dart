@@ -1,12 +1,16 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/config/stock_management_load_config.dart';
 import '../../../domain/entities/stock_management.dart';
 
 abstract class StockManagementDataSource {
   Future<StockManagementResult> fetchPage(StockManagementQuery query);
   Future<StockManagementRegisterBatch> fetchRegisterBatch(int offset) async {
     final page = await fetchPage(
-      StockManagementQuery(offset: offset, limit: 100),
+      StockManagementQuery(
+        offset: offset,
+        limit: StockManagementLoadConfig.batchSize,
+      ),
     );
     return StockManagementRegisterBatch(
       rows: page.rows,
@@ -138,7 +142,10 @@ class StockManagementRemoteDs implements StockManagementDataSource {
   Future<StockManagementRegisterBatch> fetchRegisterBatch(int offset) async {
     final data = await client.rpc(
       'get_stock_management_register_batch',
-      params: {'p_offset': offset, 'p_limit': 4000},
+      params: {
+        'p_offset': offset,
+        'p_limit': StockManagementLoadConfig.batchSize,
+      },
     );
     return StockManagementRegisterBatch.fromMap(stockMap(data));
   }

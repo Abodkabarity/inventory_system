@@ -4,3 +4,5 @@ Verified npm SHA-512 integrity: sha512-XctvKaEMaj1Ii9oDOqbW/6e1gXknSY4g/aLCDicOX
 Used inside the KPI and Stock Management Excel export Web Worker. No runtime CDN requests.
 Stock reports use a single sheet with brand-coloured headers, borders, alternating
 rows, frozen headers, filters and typed dates, numbers and percentages.
+Stock Management uses stock_report_export_worker.js, which only creates the report
+sheet. The separate KPI worker retains its own summary and comparison sheets.
