@@ -1,0 +1,2 @@
+create index stock_expiry_reviews_reviewed_by_idx on public.stock_expiry_reviews(reviewed_by);
+create index stock_expiry_reviews_updated_by_idx on public.stock_expiry_reviews(updated_by);

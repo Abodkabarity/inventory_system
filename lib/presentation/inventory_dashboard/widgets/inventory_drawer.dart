@@ -13,6 +13,7 @@ import '../bloc/inventory_bloc.dart';
 import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
 import 'branch_tracker_badge_controller.dart';
+import 'stock_management_navigation.dart';
 
 class InventoryDrawer extends StatefulWidget {
   const InventoryDrawer({super.key});
@@ -162,7 +163,6 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
     return BlocBuilder<InventoryBloc, InventoryState>(
       builder: (context, state) {
         final currentPage = state.currentPage;
-
         return Container(
           width: 290,
           decoration: BoxDecoration(
@@ -307,6 +307,15 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
                             nested: true,
                           ),
                         ],
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      StockManagementNavigation(
+                        selectedPage: currentPage,
+                        onSelected: (page) => context.read<InventoryBloc>().add(
+                          ChangeInventoryPage(page),
+                        ),
                       ),
 
                       const SizedBox(height: 12),

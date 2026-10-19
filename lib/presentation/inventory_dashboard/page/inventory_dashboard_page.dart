@@ -30,6 +30,10 @@ import 'mismatch_page.dart';
 import 'order_edit_analysis_page.dart';
 import 'purchase_shortage_page.dart';
 import 'stock_check_page.dart';
+import 'stock_management_page.dart';
+import 'stock_catalog_page.dart';
+import 'stock_expiry_page.dart';
+import '../../../data/datasources/remote/stock_expiry_remote_ds.dart';
 
 class InventoryDashboardPage extends StatelessWidget {
   final String runDate;
@@ -161,7 +165,12 @@ class _InventoryDashboardViewState extends State<InventoryDashboardView> {
                     ),
 
                     Expanded(
-                      child: _buildPage(state, isSubmitted, widget.runDate),
+                      child: _buildPage(
+                        context,
+                        state,
+                        isSubmitted,
+                        widget.runDate,
+                      ),
                     ),
                   ],
                 ),
@@ -236,7 +245,12 @@ class _DrawerToggleButton extends StatelessWidget {
   }
 }
 
-Widget _buildPage(InventoryState state, bool isSubmitted, String runDate) {
+Widget _buildPage(
+  BuildContext context,
+  InventoryState state,
+  bool isSubmitted,
+  String runDate,
+) {
   switch (state.currentPage) {
     case InventoryPageType.dashboard:
       return InventoryDashboardBody(
@@ -278,6 +292,19 @@ Widget _buildPage(InventoryState state, bool isSubmitted, String runDate) {
       return AllocationPage(runDate: runDate);
     case InventoryPageType.stockCheck:
       return StockCheckPage(runDate: runDate);
+    case InventoryPageType.stockManagement:
+      return const StockCatalogPage();
+    case InventoryPageType.mrnOverview:
+      return StockManagementPage(
+        onOpenExpiry: () => context.read<InventoryBloc>().add(
+          ChangeInventoryPage(InventoryPageType.nearExpiry),
+        ),
+      );
+    case InventoryPageType.nearExpiry:
+      return StockExpiryPage(
+        dataSource: StockExpiryRemoteDs(Supabase.instance.client),
+        embedded: true,
+      );
     case InventoryPageType.shortage:
       return PurchaseShortagePage(runDate: runDate);
     case InventoryPageType.availabilityKpi:

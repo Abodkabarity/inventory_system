@@ -1,0 +1,774 @@
+{
+  "meta": {
+    "scope": "Stock balances use STORE and active registered branches. Annual sales include all source branches.",
+    "demand_days": 45,
+    "demand_from": "2026-08-28",
+    "recent_days": 3,
+    "recent_from": "2026-10-09",
+    "refreshed_at": "2026-10-13T11:46:00.024359+04:00",
+    "baseline_days": 42,
+    "demand_through": "2026-10-11",
+    "surge_multiple": 2,
+    "surge_min_units": 3,
+    "baseline_through": "2026-10-08",
+    "stock_updated_at": "2026-10-12T19:49:37.530064+04:00",
+    "catalog_updated_at": "2026-10-12T20:09:41.31345+04:00",
+    "sales_2026_through": "2026-10-01"
+  },
+  "brand": "",
+  "years": {
+    "2025": {
+      "cash": 147,
+      "total": 1484,
+      "online": 0,
+      "best_qty": 832,
+      "insurance": 1337,
+      "best_month": "11/2025"
+    },
+    "2026": {
+      "cash": 126,
+      "total": 1023,
+      "online": 3,
+      "best_qty": 446,
+      "insurance": 894,
+      "best_month": "10/2026"
+    }
+  },
+  "is_upp": "Checked",
+  "retail": 101,
+  "status": "active",
+  "barcode": "6294010003234",
+  "company": "LIFE PHARMA",
+  "branches": [
+    {
+      "stock": 22,
+      "branch": "OASIS Alain",
+      "sales_2025": 847,
+      "sales_2026": 566,
+      "branch_group": "APG",
+      "last_3_sales": 36,
+      "recent_sales": 479,
+      "baseline_sales": 443
+    },
+    {
+      "stock": 8,
+      "branch": "Arabian M.C.",
+      "sales_2025": 30,
+      "sales_2026": 52,
+      "branch_group": "APG",
+      "last_3_sales": 4,
+      "recent_sales": 54,
+      "baseline_sales": 50
+    },
+    {
+      "stock": 7,
+      "branch": "ASHAREJ",
+      "sales_2025": 55,
+      "sales_2026": 44,
+      "branch_group": "APG",
+      "last_3_sales": 6,
+      "recent_sales": 50,
+      "baseline_sales": 44
+    },
+    {
+      "stock": 1,
+      "branch": "Bateen",
+      "sales_2025": 39,
+      "sales_2026": 50,
+      "branch_group": "APG",
+      "last_3_sales": 10,
+      "recent_sales": 49,
+      "baseline_sales": 39
+    },
+    {
+      "stock": 0,
+      "branch": "Elegance",
+      "sales_2025": 110,
+      "sales_2026": 48,
+      "branch_group": "APG",
+      "last_3_sales": 9,
+      "recent_sales": 49,
+      "baseline_sales": 40
+    },
+    {
+      "stock": 4,
+      "branch": "COOP",
+      "sales_2025": 34,
+      "sales_2026": 29,
+      "branch_group": "APG",
+      "last_3_sales": 5,
+      "recent_sales": 24,
+      "baseline_sales": 19
+    },
+    {
+      "stock": 8,
+      "branch": "Mnaizlah",
+      "sales_2025": 18,
+      "sales_2026": 19,
+      "branch_group": "APG",
+      "last_3_sales": 2,
+      "recent_sales": 18,
+      "baseline_sales": 16
+    },
+    {
+      "stock": 4,
+      "branch": "NATIONAL",
+      "sales_2025": 2,
+      "sales_2026": 18,
+      "branch_group": "APG",
+      "last_3_sales": 1,
+      "recent_sales": 18,
+      "baseline_sales": 17
+    },
+    {
+      "stock": 13,
+      "branch": "AL AIN MAIN",
+      "sales_2025": 108,
+      "sales_2026": 25,
+      "branch_group": "APG",
+      "last_3_sales": 3,
+      "recent_sales": 16,
+      "baseline_sales": 13
+    },
+    {
+      "stock": 0,
+      "branch": "ZAKHER",
+      "sales_2025": 32,
+      "sales_2026": 12,
+      "branch_group": "APG",
+      "last_3_sales": 5,
+      "recent_sales": 16,
+      "baseline_sales": 11
+    },
+    {
+      "stock": 3,
+      "branch": "AL DHAHER",
+      "sales_2025": 6,
+      "sales_2026": 14,
+      "branch_group": "APG",
+      "last_3_sales": 2,
+      "recent_sales": 14,
+      "baseline_sales": 12
+    },
+    {
+      "stock": 7,
+      "branch": "MODERN",
+      "sales_2025": 10,
+      "sales_2026": 13,
+      "branch_group": "APG",
+      "last_3_sales": 1,
+      "recent_sales": 12,
+      "baseline_sales": 11
+    },
+    {
+      "stock": 1,
+      "branch": "Riyad City",
+      "sales_2025": 0,
+      "sales_2026": 12,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 12,
+      "baseline_sales": 12
+    },
+    {
+      "stock": 19,
+      "branch": "Farabi MC",
+      "sales_2025": 0,
+      "sales_2026": 9,
+      "branch_group": null,
+      "last_3_sales": 2,
+      "recent_sales": 11,
+      "baseline_sales": 9
+    },
+    {
+      "stock": 7,
+      "branch": "NEW ALAIN",
+      "sales_2025": 40,
+      "sales_2026": 16,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 11,
+      "baseline_sales": 11
+    },
+    {
+      "stock": 7,
+      "branch": "MAKANI",
+      "sales_2025": 13,
+      "sales_2026": 4,
+      "branch_group": "APG",
+      "last_3_sales": 7,
+      "recent_sales": 9,
+      "baseline_sales": 2
+    },
+    {
+      "stock": 3,
+      "branch": "RAWDAH",
+      "sales_2025": 27,
+      "sales_2026": 12,
+      "branch_group": "APG",
+      "last_3_sales": 1,
+      "recent_sales": 9,
+      "baseline_sales": 8
+    },
+    {
+      "stock": 10,
+      "branch": "SOFITEL",
+      "sales_2025": 0,
+      "sales_2026": 10,
+      "branch_group": "APG",
+      "last_3_sales": 2,
+      "recent_sales": 8,
+      "baseline_sales": 6
+    },
+    {
+      "stock": 4,
+      "branch": "GRAND",
+      "sales_2025": 0,
+      "sales_2026": 6,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 6,
+      "baseline_sales": 6
+    },
+    {
+      "stock": 4,
+      "branch": "Khalifa City 1-AD",
+      "sales_2025": 0,
+      "sales_2026": 6,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 6,
+      "baseline_sales": 6
+    },
+    {
+      "stock": 7,
+      "branch": "SAMA",
+      "sales_2025": 53,
+      "sales_2026": 8,
+      "branch_group": "APG",
+      "last_3_sales": 1,
+      "recent_sales": 6,
+      "baseline_sales": 5
+    },
+    {
+      "stock": 4,
+      "branch": "ETIHAD",
+      "sales_2025": 0,
+      "sales_2026": 6,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 5,
+      "baseline_sales": 5
+    },
+    {
+      "stock": 0,
+      "branch": "FALAJ",
+      "sales_2025": 15,
+      "sales_2026": 5,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 5,
+      "baseline_sales": 5
+    },
+    {
+      "stock": 6,
+      "branch": "BAWADI",
+      "sales_2025": 11,
+      "sales_2026": 6,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 4,
+      "baseline_sales": 4
+    },
+    {
+      "stock": 2,
+      "branch": "MUGHAFA",
+      "sales_2025": 0,
+      "sales_2026": 4,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 4,
+      "baseline_sales": 4
+    },
+    {
+      "stock": 3,
+      "branch": "NOYA-AD",
+      "sales_2025": 0,
+      "sales_2026": 4,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 4,
+      "baseline_sales": 4
+    },
+    {
+      "stock": 0,
+      "branch": "HEKMAT",
+      "sales_2025": 0,
+      "sales_2026": 2,
+      "branch_group": "APG",
+      "last_3_sales": 1,
+      "recent_sales": 3,
+      "baseline_sales": 2
+    },
+    {
+      "stock": 1,
+      "branch": "Rawdhat-AD",
+      "sales_2025": 0,
+      "sales_2026": 1,
+      "branch_group": "APG",
+      "last_3_sales": 2,
+      "recent_sales": 3,
+      "baseline_sales": 1
+    },
+    {
+      "stock": 2,
+      "branch": "AlainMall",
+      "sales_2025": 7,
+      "sales_2026": 4,
+      "branch_group": "APG",
+      "last_3_sales": 1,
+      "recent_sales": 2,
+      "baseline_sales": 1
+    },
+    {
+      "stock": 2,
+      "branch": "HRT Center",
+      "sales_2025": 0,
+      "sales_2026": 2,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 2,
+      "baseline_sales": 2
+    },
+    {
+      "stock": 5,
+      "branch": "SHABAHAT",
+      "sales_2025": 2,
+      "sales_2026": 4,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 2,
+      "baseline_sales": 2
+    },
+    {
+      "stock": 2,
+      "branch": "Zakher Branch",
+      "sales_2025": 2,
+      "sales_2026": 3,
+      "branch_group": "71",
+      "last_3_sales": 0,
+      "recent_sales": 2,
+      "baseline_sales": 2
+    },
+    {
+      "stock": 0,
+      "branch": "ZEINA - AD",
+      "sales_2025": 0,
+      "sales_2026": 2,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 2,
+      "baseline_sales": 2
+    },
+    {
+      "stock": 3,
+      "branch": "AL WUTAH - AIN",
+      "sales_2025": 1,
+      "sales_2026": 1,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 1,
+      "baseline_sales": 1
+    },
+    {
+      "stock": 4,
+      "branch": "CITY CENTER",
+      "sales_2025": 0,
+      "sales_2026": 1,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 1,
+      "baseline_sales": 1
+    },
+    {
+      "stock": 3,
+      "branch": "Jimi Square - Ain",
+      "sales_2025": 3,
+      "sales_2026": 3,
+      "branch_group": "APG",
+      "last_3_sales": 1,
+      "recent_sales": 1,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 1,
+      "branch": "Rabdan2-AD",
+      "sales_2025": 0,
+      "sales_2026": 1,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 1,
+      "baseline_sales": 1
+    },
+    {
+      "stock": 0,
+      "branch": "ADNOC999-AD",
+      "sales_2025": 0,
+      "sales_2026": 0,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 0,
+      "branch": "AIN - (Br 02) - Falaj Hazza 02",
+      "sales_2025": 0,
+      "sales_2026": 0,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 2,
+      "branch": "AIN-(Br 02)-Zakher 02",
+      "sales_2025": 0,
+      "sales_2026": 0,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 0,
+      "branch": "AIN-(Br02)-Bateen 02",
+      "sales_2025": 0,
+      "sales_2026": 0,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 1,
+      "branch": "Al Noud - Ain",
+      "sales_2025": 0,
+      "sales_2026": 0,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 0,
+      "branch": "ALC AL AIN",
+      "sales_2025": 0,
+      "sales_2026": 0,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 7,
+      "branch": "Asharej Branch",
+      "sales_2025": 0,
+      "sales_2026": 0,
+      "branch_group": "71",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 1,
+      "branch": "Ayla Branch",
+      "sales_2025": 0,
+      "sales_2026": 0,
+      "branch_group": "71",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 1,
+      "branch": "Damac Hills - DXB",
+      "sales_2025": 0,
+      "sales_2026": 0,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 0,
+      "branch": "Danat square - AD",
+      "sales_2025": 0,
+      "sales_2026": 0,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 0,
+      "branch": "Dhafra Walk - AD",
+      "sales_2025": 0,
+      "sales_2026": 0,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 0,
+      "branch": "FOAH",
+      "sales_2025": 0,
+      "sales_2026": 0,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 0,
+      "branch": "HBZS Alain",
+      "sales_2025": 0,
+      "sales_2026": 0,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 0,
+      "branch": "JIMI Mall",
+      "sales_2025": 0,
+      "sales_2026": 0,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 1,
+      "branch": "Khalidiya",
+      "sales_2025": 18,
+      "sales_2026": 0,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 5,
+      "branch": "Nadd Al Hamar - DXB",
+      "sales_2025": 0,
+      "sales_2026": 0,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 0,
+      "branch": "Rwais2",
+      "sales_2025": 0,
+      "sales_2026": 0,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 0,
+      "branch": "Salamat",
+      "sales_2025": 1,
+      "sales_2026": 0,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 1,
+      "branch": "Souq Extra-DXB",
+      "sales_2025": 0,
+      "sales_2026": 1,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 0,
+      "branch": "SPANISH",
+      "sales_2025": 0,
+      "sales_2026": 0,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 0,
+      "branch": "SZR Ph.",
+      "sales_2025": 0,
+      "sales_2026": 0,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 0,
+      "branch": "YAHAR 2",
+      "sales_2025": 0,
+      "sales_2026": 0,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    },
+    {
+      "stock": 0,
+      "branch": "YAHAR MAIN",
+      "sales_2025": 0,
+      "sales_2026": 0,
+      "branch_group": "APG",
+      "last_3_sales": 0,
+      "recent_sales": 0,
+      "baseline_sales": 0
+    }
+  ],
+  "category": "MEDICINE",
+  "is_block": "unchecked",
+  "stock_71": 10,
+  "supplier": "UNICARE MEDICAL TRADING L.L.C",
+  "apg_stock": 192,
+  "added_date_time": "2025-01-01T00:00:00+04:00",
+  "haad_code": "H95-7408-04201-01",
+  "item_code": "16-01-06440",
+  "item_name": "SELTAFLU 75 MG CAPS 10 S",
+  "unit_type": "BOX 10 CAPSULE",
+  "indication": "ANTIVIRAL",
+  "new_demand": false,
+  "daily_sales": 20.42222222222222,
+  "item_status": "1#NORMAL PURCHASE",
+  "store_stock": 15,
+  "tax_percent": 0,
+  "total_stock": 211,
+  "days_on_hand": 10.331882480957562,
+  "demand_surge": false,
+  "last_3_sales": 102,
+  "product_type": "CAPSULES",
+  "recent_daily": 34,
+  "recent_sales": 919,
+  "stock_status": "low_cover",
+  "sub_category": "POM MEDICINE",
+  "concentration": "75 MG",
+  "item_priority": "B",
+  "monthly_sales": [
+    {
+      "cash": 54,
+      "month": "10/2025",
+      "total": 575,
+      "online": 0,
+      "insurance": 521
+    },
+    {
+      "cash": 82,
+      "month": "11/2025",
+      "total": 832,
+      "online": 0,
+      "insurance": 750
+    },
+    {
+      "cash": 11,
+      "month": "12/2025",
+      "total": 77,
+      "online": 0,
+      "insurance": 66
+    },
+    {
+      "cash": 8,
+      "month": "01/2026",
+      "total": 41,
+      "online": 0,
+      "insurance": 33
+    },
+    {
+      "cash": 6,
+      "month": "02/2026",
+      "total": 36,
+      "online": 0,
+      "insurance": 30
+    },
+    {
+      "cash": 0,
+      "month": "03/2026",
+      "total": 12,
+      "online": 0,
+      "insurance": 12
+    },
+    {
+      "cash": 1,
+      "month": "04/2026",
+      "total": 9,
+      "online": 0,
+      "insurance": 8
+    },
+    {
+      "cash": 3,
+      "month": "05/2026",
+      "total": 14,
+      "online": 0,
+      "insurance": 11
+    },
+    {
+      "cash": 4,
+      "month": "06/2026",
+      "total": 22,
+      "online": 0,
+      "insurance": 18
+    },
+    {
+      "cash": 5,
+      "month": "07/2026",
+      "total": 14,
+      "online": 0,
+      "insurance": 9
+    },
+    {
+      "cash": 3,
+      "month": "08/2026",
+      "total": 25,
+      "online": 1,
+      "insurance": 21
+    },
+    {
+      "cash": 37,
+      "month": "09/2026",
+      "total": 404,
+      "online": 2,
+      "insurance": 365
+    },
+    {
+      "cash": 59,
+      "month": "10/2026",
+      "total": 446,
+      "online": 0,
+      "insurance": 387
+    }
+  ],
+  "baseline_daily": 19.452380952380953,
+  "baseline_sales": 817,
+  "branches_stock": 196,
+  "growth_percent": 74.7858017135863,
+  "insurance_tier": "Tier 4",
+  "min_order_unit": 1,
+  "main_ingredient": "OSELTAMIVIR",
+  "pack_size_volume": "10 S",
+  "apg_branches_stock": 167,
+  "store_classification": "01Medicine"
+}

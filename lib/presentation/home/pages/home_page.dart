@@ -4,6 +4,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/csv_exporter_web.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 import '../bloc/branch_bloc.dart';
 import '../bloc/branch_rules_bloc.dart';
 import '../bloc/branch_rules_bloc_factory.dart';
@@ -233,7 +234,7 @@ class _HomeViewState extends State<_HomeView> {
                     ),
                   ] else ...[
                     Text(
-                      'Branch: ${branchName ?? "NULL"}',
+                      'Branch: ${StoreBranchIdentityRegistry.displayName(branchName ?? "NULL")}',
                       style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                   ],

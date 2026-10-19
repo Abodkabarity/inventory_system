@@ -4,6 +4,7 @@ import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 
 class ItemsTable extends StatefulWidget {
   final List<Map<String, dynamic>> rows;
@@ -268,7 +269,7 @@ class _ItemsTableState extends State<ItemsTable> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide:  BorderSide(
+                  borderSide: BorderSide(
                     color: AppColors.secondaryColor,
                     width: 1.4.w,
                   ),
@@ -714,7 +715,9 @@ class ItemsDataSource extends DataGridSource {
     return DataGridRowAdapter(
       cells: row.getCells().map((cell) {
         final key = cell.columnName;
-        final v = _formatCell(key, cell.value);
+        final v = key == 'branch'
+            ? StoreBranchIdentityRegistry.displayName(cell.value?.toString())
+            : _formatCell(key, cell.value);
         final align = _isNumberLike(key)
             ? Alignment.centerRight
             : Alignment.centerLeft;

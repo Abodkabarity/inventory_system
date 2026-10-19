@@ -109,6 +109,16 @@ class MyApp extends StatelessWidget {
             },
             theme: ThemeData(
               useMaterial3: true,
+              colorScheme: ColorScheme.fromSeed(
+                seedColor: AppColors.primaryColor,
+              ).copyWith(
+                primary: AppColors.primaryColor,
+                secondary: AppColors.primaryColor,
+                tertiary: AppColors.primaryColor,
+                onPrimary: AppColors.secondaryColor,
+                onSecondary: AppColors.secondaryColor,
+                onTertiary: AppColors.secondaryColor,
+              ),
 
               textSelectionTheme: const TextSelectionThemeData(
                 selectionColor: AppColors.primaryColor,
