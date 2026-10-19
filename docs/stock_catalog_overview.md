@@ -36,7 +36,7 @@ and preserves the selected filters and order.
 Every table header also offers the Daily Order grid's Excel-style menu: search
 and select text values, numeric comparisons/ranges, and ascending/descending
 sorting. Item Status is a separate column. Cells carry their actual text/numeric
-values rather than item codes; cover conditions use days and ratio/growth use
+values rather than item codes; cover conditions use days and stock ratios use
 percentages. Undefined numeric values remain blank. Column filters combine with
 toolbar filters and persist through search/sort changes, including zero matches.
 Summary cards reflect column-filtered rows, and CSV uses the grid's effective
@@ -120,9 +120,29 @@ The existing daily/manual catalog rebuild updates all facts atomically.
 - Cover days = total stock / average daily 45-day net units. Non-positive stock
   has zero cover; positive stock without positive net demand has no numeric
   coverage. Months use 30 days. Returns are not converted into positive demand.
-- Branches / STORE % = branches / STORE ×100; null when STORE ≤0. Can exceed 100%.
+- STORE / Total Stock % = STORE / total stock ×100; blank when total stock ≤0.
+- Stock / Sales % = current stock / 45-day net sales ×100. The displayed value is
+  uncapped; the animated gauge stops at 100%. Non-positive net sales have no
+  percentage. Overview, MRN Overview and Near Expiry product details share it.
 - Sales > stock compares 45-day net demand to current stock, with the shortfall
   shown in product details. It is a period comparison, not unfulfilled orders.
+
+The main Overview table replaces the 42-day average, growth, distribution,
+STORE MRN date, days in STORE and stocked-branch columns with Sales 45D. The
+removed information remains available inside product details.
+
+Reorder and Final Order columns show branch counts with total Qty beneath them.
+They use each branch's `reorder_qty_num` and numeric final reorder quantity,
+never the repeated product-wide daily totals. All active participating branches
+remain included, including Online branches in APG and group 71. Online-only
+branches absent from Daily Order do not make an otherwise complete run fail.
+Fresh partial data shows its actual counts and Qty with a partial label, while
+new-product distribution recommendations still require complete data.
+
+MRN Overview and Near Expiry provide Export CSV using the table's effective
+rows after search, toolbar filters, Excel column filters and sorting. Expiry
+exports preserve the alert's MRN/expiry dates, ordered/received Qty, review state
+and note. Missing live stock remains blank rather than becoming zero.
 
 Monthly bars preserve negative quantities. The trailing 3-month mean requires
 3 calendar months; missing months within the uploaded span are zero. The current

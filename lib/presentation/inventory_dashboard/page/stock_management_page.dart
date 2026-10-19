@@ -8,6 +8,8 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/stock_register_export.dart';
+import '../../../core/utils/stock_catalog_export.dart';
 import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../../data/datasources/remote/stock_management_remote_ds.dart';
 import '../../../data/datasources/remote/stock_expiry_remote_ds.dart';
@@ -17,6 +19,7 @@ import '../../widgets/app_date_range_picker_dialog.dart';
 import '../widgets/stock_management_formatters.dart';
 import '../widgets/stock_management_grid.dart';
 import '../widgets/stock_sales_summary.dart';
+import '../widgets/stock_catalog_visuals.dart';
 import '../widgets/stock_workspace_style.dart';
 import 'stock_expiry_page.dart';
 
@@ -73,11 +76,13 @@ class StockManagementPage extends StatefulWidget {
   final StockManagementDataSource? dataSource;
   final StockExpiryDataSource? expiryDataSource;
   final VoidCallback? onOpenExpiry;
+  final StockRegisterExporter? exporter;
   const StockManagementPage({
     super.key,
     this.dataSource,
     this.expiryDataSource,
     this.onOpenExpiry,
+    this.exporter,
   });
   @override
   State<StockManagementPage> createState() => _StockManagementPageState();
@@ -104,6 +109,7 @@ class _StockManagementPageState extends State<StockManagementPage> {
   int _gridVisible = 0;
   bool _gridFiltered = false;
   bool _loading = true, _refreshing = false, _focusView = false;
+  bool _exporting = false;
   String? _error;
 
   @override
@@ -195,6 +201,36 @@ class _StockManagementPageState extends State<StockManagementPage> {
       _gridVisible = rows.length;
       _gridFiltered = false;
     });
+  }
+
+  Future<void> _export() async {
+    if (_exporting || _loading || _result == null) return;
+    setState(() => _exporting = true);
+    try {
+      _debounce?.cancel();
+      _applyFilters();
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+      final rows = [
+        for (final item in _gridKey.currentState?.visibleItems ?? _filtered)
+          stockRegisterExportRow(item),
+      ];
+      if (rows.isEmpty) throw StateError('No matching products to export.');
+      await (widget.exporter ?? saveCatalogCsv)(rows, 'mrn_overview.csv');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Exported ${rows.length} matching products')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
   }
 
   Future<void> _load() async {
@@ -623,7 +659,7 @@ class _StockManagementPageState extends State<StockManagementPage> {
             SizedBox(
               width: math.min(
                 size.maxWidth,
-                math.max(compact ? 240 : 280, size.maxWidth * .25),
+                math.max(240, size.maxWidth * .20),
               ),
               height: 46,
               child: TextField(
@@ -662,18 +698,30 @@ class _StockManagementPageState extends State<StockManagementPage> {
               'stock_high': 'Highest stock',
               'sales_high': 'Highest 2026 sales',
             }, (v) => _sort = v),
-            OutlinedButton.icon(
-              onPressed: _chooseDates,
-              style: OutlinedButton.styleFrom(
-                backgroundColor: AppColors.primaryColor,
-                foregroundColor: AppColors.white,
-                side: const BorderSide(color: AppColors.primaryColor),
-              ),
-              icon: const Icon(Icons.date_range_rounded, size: 17),
-              label: Text(
-                _received == null
-                    ? 'MRN Date Range'
-                    : '${DateFormat('dd MMM').format(_received!.start)} – ${DateFormat('dd MMM').format(_received!.end)}',
+            SizedBox(
+              width: 180,
+              height: 46,
+              child: OutlinedButton.icon(
+                onPressed: _chooseDates,
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: AppColors.primaryColor,
+                  foregroundColor: AppColors.white,
+                  side: const BorderSide(color: AppColors.primaryColor),
+                  iconColor: Colors.white,
+                  textStyle: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(Icons.date_range_rounded, size: 17),
+                label: Text(
+                  _received == null
+                      ? 'MRN Date Range'
+                      : '${DateFormat('dd MMM').format(_received!.start)} – ${DateFormat('dd MMM').format(_received!.end)}',
+                ),
               ),
             ),
             if (_received != null ||
@@ -698,6 +746,11 @@ class _StockManagementPageState extends State<StockManagementPage> {
                 icon: const Icon(Icons.filter_alt_off_outlined, size: 16),
                 label: const Text('Clear filters'),
               ),
+            StockWorkspaceExportButton(
+              key: const ValueKey('mrn-export'),
+              busy: _exporting,
+              onPressed: _loading || _result == null ? null : _export,
+            ),
           ],
         ),
       ),
@@ -710,7 +763,7 @@ class _StockManagementPageState extends State<StockManagementPage> {
     Map<String, String> options,
     ValueChanged<String> change,
   ) => SizedBox(
-    width: label == 'Supplier' ? 190 : 160,
+    width: label == 'Supplier' ? 170 : 140,
     height: 46,
     child: InventoryDropdownFormField<String>(
       key: ValueKey('$label:$value:${options.length}'),
@@ -1746,6 +1799,23 @@ class _ProductDialogState extends State<StockManagementProductDialog> {
                           spacing: 14,
                           runSpacing: 14,
                           children: [
+                            SizedBox(
+                              width: size.maxWidth,
+                              child: CatalogPanel(
+                                title: 'Stock / Sales',
+                                subtitle:
+                                    'Current stock against 45-day net sales',
+                                child: Align(
+                                  alignment: Alignment.center,
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      maxWidth: 600,
+                                    ),
+                                    child: CatalogStockChart(item: item),
+                                  ),
+                                ),
+                              ),
+                            ),
                             for (final year in [2025, 2026])
                               SizedBox(
                                 width: size.maxWidth < 700

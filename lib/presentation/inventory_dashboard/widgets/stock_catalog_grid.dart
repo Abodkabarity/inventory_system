@@ -220,12 +220,7 @@ class _CatalogGridSource extends DataGridSource {
       175.0,
       'Filter in days: total stock ÷ 45-day daily net sales. Months use 30 days.',
     ),
-    (
-      'ratio',
-      'BRANCHES / STORE',
-      180.0,
-      'Branches stock ÷ STORE stock × 100. Can exceed 100%.',
-    ),
+    ('ratio', 'STORE / TOTAL STOCK', 180.0, 'STORE stock ÷ total stock × 100.'),
     (
       'sales_2025',
       'SALES 2025',
@@ -245,40 +240,10 @@ class _CatalogGridSource extends DataGridSource {
       'Net Qty in the latest three calendar days ending on uploaded sales date.',
     ),
     (
-      'baseline_daily',
-      '42D DAILY AVG',
-      145.0,
-      'Daily net Qty during the preceding 42 calendar days. Source dates shown below.',
-    ),
-    (
-      'growth',
-      'GROWTH',
-      140.0,
-      '(3-day daily average ÷ preceding 42-day daily average − 1) × 100.',
-    ),
-    (
-      'distribution',
-      'DISTRIBUTION',
-      215.0,
-      'Unique eligible branches with stock or a final order. Reorder demand is separate.',
-    ),
-    (
-      'store_receipt_date',
-      'STORE MRN DATE',
-      175.0,
-      'First approved positive STORE receipt on or after Created date. Same-day receipts qualify.',
-    ),
-    (
-      'days_in_store',
-      'DAYS IN STORE',
+      'recent_sales',
+      'SALES 45D',
       155.0,
-      'Calendar days since the first qualifying STORE MRN; later receipts do not reset this age.',
-    ),
-    (
-      'stocked_branches',
-      'STOCKED BRANCHES',
-      165.0,
-      'Eligible active branches with positive current stock.',
+      'Total net Qty across the latest 45-day sales window, including returns.',
     ),
     (
       'reorder_branches',
@@ -306,24 +271,17 @@ class _CatalogGridSource extends DataGridSource {
     'product' => item.name,
     'item_status' => item.itemStatus,
     'added_date_time' => stockItemAddedDate(item.data['added_date_time']),
-    'distribution' =>
-      item.distributionStatus.known
-          ? item.distributionStatus.coverage
-          : 'Order data unavailable',
-    'store_receipt_date' => item.distributionStatus.firstReceivedDate,
-    'days_in_store' => item.distributionStatus.daysInStore,
-    'stocked_branches' =>
-      item.distributionStatus.known ? item.distributionStatus.stocked : null,
     'reorder_branches' =>
-      item.distributionStatus.known ? item.distributionStatus.reorder : null,
+      item.distributionStatus.orderDataAvailable
+          ? item.distributionStatus.reorder
+          : null,
     'final_order_branches' =>
-      item.distributionStatus.known
+      item.distributionStatus.orderDataAvailable
           ? item.distributionStatus.finalOrders
           : null,
     'status' => item.signal,
     'cover' => item.days,
-    'ratio' => item.branchesStorePercent,
-    'growth' => item.growth,
+    'ratio' => item.storeTotalPercent,
     'sales_2025' || 'sales_2026' => stockNumber(
       item.year(column == 'sales_2025' ? 2025 : 2026)['total'],
     ),
@@ -443,51 +401,34 @@ class _CatalogGridSource extends DataGridSource {
                     ),
                 ],
               ),
-              'store_receipt_date' => Text(
-                formatStockItemAddedDate(
-                  item.distributionStatus.firstReceivedDate,
-                ),
-                style: const TextStyle(
-                  color: catalogInk,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              'days_in_store' => Text(
-                '${item.distributionStatus.daysInStore ?? '—'}',
-                style: const TextStyle(
-                  color: catalogInk,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 16,
-                ),
-              ),
-              'distribution' => Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    item.distributionStatus.coverage,
-                    style: const TextStyle(
-                      color: catalogInk,
-                      fontWeight: FontWeight.w700,
+              'reorder_branches' || 'final_order_branches' => Tooltip(
+                message: item.distributionStatus.orderDataAvailable
+                    ? '${item.distributionStatus.known ? 'Complete' : 'Partial'} Daily Order data • ${stockMap(item.data['distribution'])['run_date']}'
+                    : 'Current Daily Order data unavailable',
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      _value(item, c.$1) == null
+                          ? '—'
+                          : '${_value(item, c.$1)}',
+                      style: const TextStyle(
+                        color: catalogInk,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    item.distributionStatus.isNew
-                        ? '${item.distributionStatus.ageDays} days old'
-                        : 'Stock or final order',
-                    style: const TextStyle(color: catalogMuted, fontSize: 11),
-                  ),
-                ],
-              ),
-              'stocked_branches' ||
-              'reorder_branches' ||
-              'final_order_branches' => Text(
-                _value(item, c.$1) == null ? '—' : '${_value(item, c.$1)}',
-                style: const TextStyle(
-                  color: catalogInk,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 16,
+                    if (item.distributionStatus.orderDataAvailable) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Qty ${catalogQty(c.$1 == 'reorder_branches' ? item.distributionStatus.reorderQuantity : item.distributionStatus.finalQuantity)}${item.distributionStatus.known ? '' : ' · partial'}',
+                        style: const TextStyle(
+                          color: catalogMuted,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
               'added_date_time' => Text(
@@ -547,9 +488,9 @@ class _CatalogGridSource extends DataGridSource {
                 ],
               ),
               'ratio' => Text(
-                item.branchesStorePercent == null
+                item.storeTotalPercent == null
                     ? '—'
-                    : '${item.branchesStorePercent!.toStringAsFixed(1)}%',
+                    : '${item.storeTotalPercent!.toStringAsFixed(1)}%',
                 style: const TextStyle(
                   color: catalogBlue,
                   fontSize: 17,
@@ -563,20 +504,6 @@ class _CatalogGridSource extends DataGridSource {
               'sales_2026' => StockSalesSummary(
                 data: item.year(2026),
                 totalColor: catalogTeal,
-              ),
-              'growth' => Text(
-                item.newDemand
-                    ? 'New demand'
-                    : item.growth == null
-                    ? '—'
-                    : '${item.growth! >= 0 ? '+' : ''}${item.growth!.toStringAsFixed(1)}%',
-                style: TextStyle(
-                  color: item.surge || item.newDemand
-                      ? catalogPurple
-                      : catalogMuted,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                ),
               ),
               _ => Text(
                 catalogQty(item.number(c.$1)),

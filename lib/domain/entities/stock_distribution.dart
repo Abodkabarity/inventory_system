@@ -48,11 +48,10 @@ class StockDistributionRules {
     final runAge = run == null
         ? null
         : date.difference(DateTime.utc(run.year, run.month, run.day)).inDays;
-    final known =
-        facts['complete'] == true &&
-        runAge != null &&
-        runAge >= 0 &&
-        runAge <= 1;
+    final fresh = runAge != null && runAge >= 0 && runAge <= 1;
+    final known = facts['complete'] == true && fresh;
+    final orderDataAvailable =
+        fresh && (known || stockNumber(facts['observed']) > 0);
     final isNew = age != null && age >= 0 && age <= maxAgeDays;
     final eligible = stockNumber(facts['eligible']).toInt();
     final covered = stockNumber(facts['covered']).toInt();
@@ -68,6 +67,9 @@ class StockDistributionRules {
       ageDays: age,
       isNew: isNew,
       known: known,
+      orderDataAvailable: orderDataAvailable,
+      reorderQuantity: stockNumber(facts['reorder_qty']),
+      finalQuantity: stockNumber(facts['final_qty']),
       eligible: eligible,
       stocked: stockNumber(facts['stocked']).toInt(),
       reorder: stockNumber(facts['reorder']).toInt(),
@@ -94,6 +96,8 @@ class StockDistributionRules {
 class StockDistribution {
   final int? ageDays;
   final bool isNew, known, needsDistribution;
+  final bool orderDataAvailable;
+  final double reorderQuantity, finalQuantity;
   final int eligible, stocked, reorder, finalOrders, covered;
   final double availableStore;
   final bool receiptKnown, receivedAfterCreation;
@@ -103,6 +107,9 @@ class StockDistribution {
     required this.ageDays,
     required this.isNew,
     required this.known,
+    required this.orderDataAvailable,
+    required this.reorderQuantity,
+    required this.finalQuantity,
     required this.needsDistribution,
     required this.eligible,
     required this.stocked,

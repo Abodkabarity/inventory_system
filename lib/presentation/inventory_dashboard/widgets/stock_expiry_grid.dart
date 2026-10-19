@@ -77,6 +77,9 @@ class StockExpiryGrid extends StatefulWidget {
 
 class StockExpiryGridState extends State<StockExpiryGrid> {
   late final StockExpiryGridSource source;
+  List<StockExpiryAlert> get visibleAlerts => [
+    for (final row in source.effectiveRows) source.alertFor(row),
+  ];
   final _widths = <String, double>{};
   @override
   void initState() {

@@ -422,11 +422,11 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
         Icons.hourglass_bottom_rounded,
       ),
       (
-        'BRANCHES / STORE',
-        item.branchesStorePercent == null
+        'STORE / TOTAL STOCK',
+        item.storeTotalPercent == null
             ? '—'
-            : '${item.branchesStorePercent!.toStringAsFixed(1)}%',
-        'Ratio of balances; may exceed 100%',
+            : '${item.storeTotalPercent!.toStringAsFixed(1)}%',
+        'STORE share of total stock',
         catalogBlue,
         Icons.compare_arrows_rounded,
       ),
@@ -469,7 +469,7 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
     child: CatalogMonthlyChart(item: item),
   );
   Widget _stock(StockCatalogItem item) => CatalogPanel(
-    title: 'Available vs sold',
+    title: 'Stock / Sales',
     subtitle: 'Current stock against 45-day net sales',
     child: Column(
       children: [

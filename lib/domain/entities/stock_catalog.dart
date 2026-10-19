@@ -19,9 +19,6 @@ class StockCatalogItem extends StockManagementItem {
   bool get salesExceedStock => number('recent_sales') > number('total_stock');
   double? get growth =>
       data['growth_percent'] == null ? null : number('growth_percent');
-  double? get branchesStorePercent => number('store_stock') > 0
-      ? number('branches_stock') / number('store_stock') * 100
-      : null;
   String get signal => distributionStatus.needsDistribution
       ? 'New · Needs distribution'
       : surge

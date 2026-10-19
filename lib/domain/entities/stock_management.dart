@@ -42,6 +42,14 @@ class StockManagementItem {
   String get name => text('item_name');
   String get status => text('stock_status');
   bool get stockAvailable => data['stock_unavailable'] != true;
+  double? get storeTotalPercent => stockAvailable && number('total_stock') > 0
+      ? number('store_stock') / number('total_stock') * 100
+      : null;
+  double? get stockSalesPercent => stockAvailable && number('recent_sales') > 0
+      ? number('total_stock').clamp(0, double.infinity) /
+            number('recent_sales') *
+            100
+      : null;
   double? get days =>
       data['days_on_hand'] == null ? null : number('days_on_hand');
   double? get ratio => data['store_branches_ratio'] == null

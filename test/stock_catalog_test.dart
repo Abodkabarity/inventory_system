@@ -215,10 +215,10 @@ void main() {
         'days_on_hand': 45,
         'growth_percent': null,
       });
-      expect(item.branchesStorePercent, 300);
+      expect(item.storeTotalPercent, 25);
       expect(item.salesExceedStock, isTrue);
       expect(item.growth, isNull);
-      expect(StockCatalogItem({'store_stock': 0}).branchesStorePercent, isNull);
+      expect(StockCatalogItem({'store_stock': 0}).storeTotalPercent, isNull);
       final branches = catalogBranchRows(
         StockCatalogItem({
           'meta': {'baseline_days': 42, 'recent_days': 3},
@@ -496,19 +496,19 @@ void main() {
           'item_code': '900',
           'item_name': 'ALPHA',
           'total_stock': 2,
-          'growth_percent': 3,
+          'days_on_hand': 3,
         }),
         const StockCatalogItem({
           'item_code': '1',
           'item_name': 'BETA',
           'total_stock': 10,
-          'growth_percent': 5,
+          'days_on_hand': 5,
         }),
         const StockCatalogItem({
           'item_code': '5',
           'item_name': 'GAMMA',
           'total_stock': 100,
-          'growth_percent': null,
+          'days_on_hand': null,
         }),
       ];
       StockCatalogItem? opened;
@@ -586,7 +586,7 @@ void main() {
       expect(opened?.code, '8');
       key.currentState!.clearFilters();
       updatedGrid.source.addFilter(
-        'growth',
+        'cover',
         const FilterCondition(type: FilterType.equals, value: null),
       );
       await tester.pumpAndSettle();

@@ -3,6 +3,8 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../../../core/utils/stock_register_export.dart';
+import '../../../core/utils/stock_catalog_export.dart';
 import '../../../data/datasources/remote/stock_expiry_remote_ds.dart';
 import '../../../domain/entities/stock_expiry.dart';
 import '../../../domain/entities/stock_management.dart';
@@ -48,12 +50,14 @@ class StockExpiryPage extends StatefulWidget {
   final ValueChanged<StockManagementItem>? onOpenProduct;
   final bool embedded;
   final StockManagementDataSource? productDataSource;
+  final StockRegisterExporter? exporter;
   const StockExpiryPage({
     super.key,
     required this.dataSource,
     this.onOpenProduct,
     this.embedded = false,
     this.productDataSource,
+    this.exporter,
   });
   @override
   State<StockExpiryPage> createState() => _StockExpiryPageState();
@@ -68,6 +72,7 @@ class _StockExpiryPageState extends State<StockExpiryPage> {
   final _busy = <String>{}, _fading = <String>{};
   Timer? _debounce;
   StockExpiryResult? _result;
+  bool _exporting = false;
   String _state = 'pending', _urgency = '';
   String? _error;
   int _request = 0;
@@ -85,6 +90,46 @@ class _StockExpiryPageState extends State<StockExpiryPage> {
     _search.dispose();
     _horizontal.dispose();
     super.dispose();
+  }
+
+  Future<void> _export() async {
+    if (_exporting || _loading || _result == null) return;
+    setState(() => _exporting = true);
+    try {
+      if (_debounce?.isActive ?? false) {
+        _debounce?.cancel();
+        await _load();
+      }
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+      if (_error != null) {
+        throw StateError('Reload the current filters before exporting.');
+      }
+      final rows = [
+        for (final alert
+            in _gridKey.currentState?.visibleAlerts ?? _result!.rows)
+          stockExpiryExportRow(alert),
+      ];
+      if (rows.isEmpty) {
+        throw StateError('No matching expiry alerts to export.');
+      }
+      await (widget.exporter ?? saveCatalogCsv)(rows, 'near_expiry.csv');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Exported ${rows.length} matching expiry alerts'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
   }
 
   Future<void> _load() async {
@@ -656,6 +701,11 @@ class _StockExpiryPageState extends State<StockExpiryPage> {
                 icon: const Icon(Icons.filter_alt_off_outlined, size: 17),
                 label: const Text('Clear filters'),
               ),
+            StockWorkspaceExportButton(
+              key: const ValueKey('expiry-export'),
+              busy: _exporting,
+              onPressed: _loading || _result == null ? null : _export,
+            ),
           ],
         ),
       ),

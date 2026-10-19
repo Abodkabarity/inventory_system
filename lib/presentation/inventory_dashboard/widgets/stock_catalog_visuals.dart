@@ -714,48 +714,53 @@ class _MonthlyPainter extends CustomPainter {
 }
 
 class CatalogStockChart extends StatelessWidget {
-  final StockCatalogItem item;
+  final StockManagementItem item;
   const CatalogStockChart({super.key, required this.item});
   @override
   Widget build(BuildContext context) {
     final stock = math.max(0.0, item.number('total_stock'));
     final sold = math.max(0.0, item.number('recent_sales'));
-    final percent = stock > 0 ? sold / stock * 100 : null;
+    final percent = item.stockSalesPercent;
+    final colour = stock < sold ? catalogRose : catalogTeal;
     return Column(
       children: [
         Semantics(
           label:
-              '45-day sales divided by current stock: ${percent == null ? 'unavailable' : '${percent.toStringAsFixed(1)} percent'}',
+              'Current stock divided by 45-day sales: ${percent == null ? 'unavailable' : '${percent.toStringAsFixed(1)} percent'}',
           child: CatalogMotion(
             builder: (p) => CustomPaint(
               size: const Size(280, 145),
               painter: _GaugePainter(
                 percent == null ? 0 : (percent / 100).clamp(0, 1),
                 p,
-                item.salesExceedStock ? catalogRose : catalogTeal,
+                colour,
               ),
             ),
           ),
         ),
         Text(
           percent == null
-              ? 'No stock available'
-              : '${percent.toStringAsFixed(1)}% sales / stock',
+              ? (item.stockAvailable ? 'No recent sales' : 'Stock unavailable')
+              : '${percent.toStringAsFixed(1)}% stock / sales',
           style: TextStyle(
-            color: item.salesExceedStock ? catalogRose : catalogTeal,
+            color: colour,
             fontSize: 22,
             fontWeight: FontWeight.w900,
           ),
         ),
         const SizedBox(height: 8),
         const Text(
-          '45-day net Qty ÷ current stock • Gauge capped at 100%',
+          'Current stock ÷ 45-day net Qty • Gauge capped at 100%',
           style: TextStyle(color: catalogMuted, fontSize: 11),
         ),
         const SizedBox(height: 24),
         for (final entry in [
-          ('Available', item.number('total_stock'), catalogBlue),
-          ('Sold (45D)', item.number('recent_sales'), catalogOrange),
+          (
+            'Stock',
+            item.stockAvailable ? item.number('total_stock') : 0.0,
+            catalogBlue,
+          ),
+          ('Sales (45D)', item.number('recent_sales'), catalogOrange),
         ])
           Padding(
             padding: const EdgeInsets.only(bottom: 14),
@@ -788,7 +793,9 @@ class CatalogStockChart extends StatelessWidget {
                 SizedBox(
                   width: 75,
                   child: Text(
-                    catalogQty(entry.$2),
+                    entry.$1 == 'Stock' && !item.stockAvailable
+                        ? '—'
+                        : catalogQty(entry.$2),
                     textAlign: TextAlign.end,
                     style: const TextStyle(
                       color: catalogInk,

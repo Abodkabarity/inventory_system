@@ -1,5 +1,41 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../../../core/theme/app_colors.dart';
+
+class StockWorkspaceExportButton extends StatelessWidget {
+  final bool busy;
+  final VoidCallback? onPressed;
+  const StockWorkspaceExportButton({
+    super.key,
+    required this.busy,
+    this.onPressed,
+  });
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: 'Export matching rows in the current table order',
+    child: SizedBox(
+      height: 46,
+      child: FilledButton.icon(
+        onPressed: busy ? null : onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.primaryColor,
+          foregroundColor: Colors.white,
+          iconColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+        ),
+        icon: Icon(
+          busy ? Icons.hourglass_top_rounded : Icons.download_rounded,
+          size: 18,
+        ),
+        label: Text(busy ? 'Exporting…' : 'Export CSV'),
+      ),
+    ),
+  );
+}
 
 /// Visual building blocks shared by Stock Management workspaces.
 class StockWorkspaceStyle {

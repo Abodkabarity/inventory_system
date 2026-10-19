@@ -70,6 +70,9 @@ class StockManagementGrid extends StatefulWidget {
 
 class StockManagementGridState extends State<StockManagementGrid> {
   late final StockManagementGridSource source;
+  List<StockManagementItem> get visibleItems => [
+    for (final row in source.effectiveRows) source.itemFor(row),
+  ];
   final _widths = <String, double>{};
   @override
   void initState() {
