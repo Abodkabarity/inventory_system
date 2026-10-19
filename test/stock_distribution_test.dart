@@ -1,4 +1,5 @@
 import 'package:daily_order/core/utils/stock_catalog_export.dart';
+import 'package:daily_order/core/utils/stock_excel_report.dart';
 import 'package:daily_order/domain/entities/stock_catalog.dart';
 import 'package:daily_order/domain/entities/stock_distribution.dart';
 import 'package:daily_order/presentation/inventory_dashboard/page/stock_catalog_page.dart';
@@ -379,9 +380,9 @@ void main() {
       expect(find.text('CITY'), findsNothing);
       expect(find.text('EXCLUDED'), findsNothing);
       expect(
-        catalogCsv([
+        StockExcelReport([
           {'branch': 'AL AIN', 'reorder_qty': 3},
-        ]),
+        ], 'branches.xlsx').values.single,
         contains('71 AL AIN'),
       );
       expect(tester.takeException(), isNull);

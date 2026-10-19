@@ -31,7 +31,7 @@ class StockWorkspaceExportButton extends StatelessWidget {
           busy ? Icons.hourglass_top_rounded : Icons.download_rounded,
           size: 18,
         ),
-        label: Text(busy ? 'Exporting…' : 'Export CSV'),
+        label: Text(busy ? 'Exporting…' : 'Export Excel'),
       ),
     ),
   );

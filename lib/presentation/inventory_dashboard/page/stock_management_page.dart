@@ -9,7 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/stock_register_export.dart';
-import '../../../core/utils/stock_catalog_export.dart';
+import '../../../core/utils/stock_excel_export.dart';
 import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../../data/datasources/remote/stock_management_remote_ds.dart';
 import '../../../data/datasources/remote/stock_expiry_remote_ds.dart';
@@ -216,7 +216,7 @@ class _StockManagementPageState extends State<StockManagementPage> {
           stockRegisterExportRow(item),
       ];
       if (rows.isEmpty) throw StateError('No matching products to export.');
-      await (widget.exporter ?? saveCatalogCsv)(rows, 'mrn_overview.csv');
+      await (widget.exporter ?? saveStockExcel)(rows, 'mrn_overview.xlsx');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Exported ${rows.length} matching products')),

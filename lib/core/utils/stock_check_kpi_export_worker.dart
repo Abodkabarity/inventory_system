@@ -48,6 +48,9 @@ class StockCheckKpiExportWorker {
     required Iterable<List<Object>> detailRows,
     required int totalRows,
     required KpiExportJob job,
+    bool singleReport = false,
+    String sheetName = 'Stock Overview',
+    List<String> columnTypes = const [],
     void Function(KpiExportProgress)? onProgress,
   }) async {
     job.checkCancelled();
@@ -160,6 +163,9 @@ class StockCheckKpiExportWorker {
       resetTimeout();
       await send({
         'type': 'start',
+        'singleReport': singleReport,
+        'sheetName': sheetName,
+        'columnTypes': columnTypes,
         'summaryHeaders': summaryHeaders,
         'detailHeaders': detailHeaders,
         'projectColors': projectColors,

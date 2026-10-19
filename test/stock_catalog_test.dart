@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:daily_order/core/utils/stock_catalog_export.dart';
+import 'package:daily_order/core/utils/stock_excel_report.dart';
 import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 import 'package:daily_order/data/datasources/remote/stock_catalog_remote_ds.dart';
 import 'package:daily_order/domain/entities/stock_catalog.dart';
@@ -254,7 +255,7 @@ void main() {
     },
   );
   test(
-    'CSV decorates only authoritative 71 branches, preserves identities and totals',
+    'Excel decorates only authoritative 71 branches, preserves identities and totals',
     () {
       StoreBranchIdentityRegistry.groups.value = {
         'AL AIN': '71',
@@ -264,10 +265,9 @@ void main() {
         {'branch': 'AL AIN', 'stock': 23.5},
         {'branch': 'CITY', 'stock': 8.0},
       ];
-      final csv = catalogCsv(raw);
-      expect(csv, contains('71 AL AIN'));
-      expect(csv, contains('CITY'));
-      expect(csv, contains('23.5'));
+      final excel = StockExcelReport(raw, 'branches.xlsx').values.toList();
+      expect(excel.first, ['71 AL AIN', 23.5]);
+      expect(excel.last, ['CITY', 8.0]);
       expect(raw.first['branch'], 'AL AIN');
       final exported = catalogExportRow(fixture());
       expect(exported['Item status'], fixture().itemStatus);
@@ -456,11 +456,12 @@ void main() {
       await tester.tap(find.text('Highest growth'));
       await tester.pumpAndSettle();
       expect(state().visibleItems.length, 2);
-      final csv = catalogCsv(
+      final excel = StockExcelReport(
         state().visibleItems.map(catalogExportRow).toList(),
-      );
-      expect(csv, contains('AZI-ONCE'));
-      expect(csv, isNot(contains('ARTELAC')));
+        'stock_overview.xlsx',
+      ).values.toString();
+      expect(excel, contains('AZI-ONCE'));
+      expect(excel, isNot(contains('ARTELAC')));
       await tester.tap(find.byTooltip('Clear filters'));
       await tester.pumpAndSettle();
       expect(state().visibleItems.length, 8);

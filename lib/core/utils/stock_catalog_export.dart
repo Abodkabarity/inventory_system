@@ -1,11 +1,6 @@
-import 'package:csv/csv.dart';
 import '../../domain/entities/stock_catalog.dart';
 import '../../domain/entities/stock_management.dart';
-import 'store_branch_identity_registry.dart';
 import 'stock_item_added_date.dart';
-import 'stock_catalog_export_stub.dart'
-    if (dart.library.html) 'stock_catalog_export_web.dart'
-    as platform;
 
 Map<String, dynamic> catalogExportRow(StockCatalogItem item) => {
   'Item code': item.code,
@@ -89,16 +84,3 @@ Map<String, dynamic> catalogExportRow(StockCatalogItem item) => {
   'Distribution maximum covered branches':
       item.distributionRules.maxCoveredBranches,
 };
-
-String catalogCsv(List<Map<String, dynamic>> rows) {
-  if (rows.isEmpty) return '';
-  final columns = rows.first.keys.toList();
-  // Display values are decorated before they reach the CSV encoder/download.
-  return '\uFEFF${const ListToCsvConverter().convert([
-    columns,
-    for (final r in rows) [for (final c in columns) StoreBranchIdentityRegistry.exportValue(c, r[c]) ?? ''],
-  ])}';
-}
-
-Future<void> saveCatalogCsv(List<Map<String, dynamic>> rows, String fileName) =>
-    platform.saveCsv(catalogCsv(rows), fileName);

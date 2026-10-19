@@ -1,6 +1,7 @@
 /* ExcelJS is loaded into this dedicated worker before this script. */
 'use strict';
 let workbook, details, totalRows, received = 0;
+let singleReport = false, columnTypes = [], reportStyles = [];
 let projectStyles = [];
 const quarterColors = [
   ['2563EB', 'F2F7FF', 'E7EFFC'],
@@ -62,16 +63,45 @@ function addRow(sheet, values, leftColumns, detail) {
       : {...rowStyles[even][0], numFmt: '0"%"'};
   }
 }
+function addReportRow(values) {
+  const row = details.addRow(values.map((value, i) => {
+    if (columnTypes[i] === 'percent' && typeof value === 'number') return value / 100;
+    if (columnTypes[i] === 'date' && typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)) {
+      const date = new Date(value);
+      if (!Number.isNaN(date.getTime())) return date;
+    }
+    return value;
+  }));
+  row.height = 24;
+  for (let col = 1; col <= columnTypes.length; col++) {
+    row.getCell(col).style = reportStyles[row.number % 2 === 0 ? 1 : 0][col - 1];
+  }
+}
 self.onmessage = async event => {
   try {
     const data = event.data;
     if (data.type === 'start') {
       workbook = new ExcelJS.Workbook();
       workbook.creator = 'Inventory System';
-      const summary = workbook.addWorksheet('KPI Summary');
-      details = workbook.addWorksheet('Product Comparison');
+      singleReport = data.singleReport === true;
+      const summary = singleReport ? null : workbook.addWorksheet('KPI Summary');
+      details = workbook.addWorksheet(singleReport ? data.sheetName : 'Product Comparison');
       totalRows = data.totalRows;
       received = 0;
+      if (singleReport) {
+        columnTypes = data.columnTypes;
+        if (columnTypes.length !== data.detailHeaders.length) throw new Error('Invalid report columns');
+        reportStyles = [0, 1].map(even => columnTypes.map(type => ({
+          font: {name: 'Calibri', size: 11, color: {argb: 'FF142C40'}}, border,
+          fill: {type: 'pattern', pattern: 'solid', fgColor: {argb: even ? 'FFF3F9FD' : 'FFFFFFFF'}},
+          alignment: {horizontal: type === 'number' || type === 'percent' ? 'right' : 'left', vertical: 'middle'},
+          ...(type === 'percent' ? {numFmt: '0.0%'} : type === 'date' ? {numFmt: 'dd/mm/yyyy'} : type === 'number' ? {numFmt: '#,##0.##'} : {})
+        })));
+        addHeader(details, data.detailHeaders, 'FF4EB0DE', 36, data.detailWidths);
+        details.views = [{state: 'frozen', ySplit: 1, xSplit: 1, showGridLines: false}];
+        self.postMessage({type: 'ready'});
+        return;
+      }
       // Older open clients do not send projectColors. They still export the
       // same quarter-labelled columns, so retain colors during app updates.
       const projectColors = data.projectColors && data.projectColors.length
@@ -85,11 +115,17 @@ self.onmessage = async event => {
       for (const values of data.summaryRows) addRow(summary, values, [1], false);
       self.postMessage({type: 'ready'});
     } else if (data.type === 'rows') {
-      for (const values of data.rows) addRow(details, values, [1, 2, 3, 6], true);
+      for (const values of data.rows) {
+        if (singleReport) addReportRow(values);
+        else addRow(details, values, [1, 2, 3, 6], true);
+      }
       received += data.rows.length;
       self.postMessage({type: 'written', processed: received, total: totalRows});
     } else if (data.type === 'finish') {
       if (received !== totalRows) throw new Error('Incomplete export data. Please retry.');
+      if (singleReport) details.autoFilter = {
+        from: {row: 1, column: 1}, to: {row: received + 1, column: columnTypes.length}
+      };
       self.postMessage({type: 'packaging', processed: received, total: totalRows});
       const bytes = await workbook.xlsx.writeBuffer({useStyles: true, useSharedStrings: true,
         zip: {compression: 'DEFLATE', compressionOptions: {level: 6}}});

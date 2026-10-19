@@ -1,14 +1,15 @@
-import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
+import 'stock_excel_report.dart';
 
-Future<void> saveCsv(String content, String fileName) async {
-  final bytes = utf8.encode(content);
+Future<void> saveExcel(StockExcelReport report, String fileName) async {
+  final bytes = Uint8List.fromList(report.buildNative());
   final path = await FilePicker.platform.saveFile(
-    dialogTitle: 'Save stock report',
+    dialogTitle: 'Save Excel stock report',
     fileName: fileName,
     type: FileType.custom,
-    allowedExtensions: ['csv'],
+    allowedExtensions: ['xlsx'],
     bytes: bytes,
   );
   if (path != null &&

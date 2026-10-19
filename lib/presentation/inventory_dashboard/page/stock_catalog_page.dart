@@ -1,3 +1,4 @@
+import '../../../core/utils/stock_excel_export.dart';
 import '../../widgets/inventory_dropdown.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -305,7 +306,7 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
           },
       ];
       if (rows.isEmpty) throw StateError('No matching products to export.');
-      await saveCatalogCsv(rows, 'stock_overview.csv');
+      await saveStockExcel(rows, 'stock_overview.xlsx');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Exported ${rows.length} matching products')),
@@ -809,7 +810,7 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
                     : Icons.download_rounded,
                 size: 18,
               ),
-              label: Text(_exporting ? 'Exporting…' : 'Export CSV'),
+              label: Text(_exporting ? 'Exporting…' : 'Export Excel'),
             ),
           ),
         ),

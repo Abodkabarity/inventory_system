@@ -4,7 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../core/utils/stock_register_export.dart';
-import '../../../core/utils/stock_catalog_export.dart';
+import '../../../core/utils/stock_excel_export.dart';
 import '../../../data/datasources/remote/stock_expiry_remote_ds.dart';
 import '../../../domain/entities/stock_expiry.dart';
 import '../../../domain/entities/stock_management.dart';
@@ -113,7 +113,7 @@ class _StockExpiryPageState extends State<StockExpiryPage> {
       if (rows.isEmpty) {
         throw StateError('No matching expiry alerts to export.');
       }
-      await (widget.exporter ?? saveCatalogCsv)(rows, 'near_expiry.csv');
+      await (widget.exporter ?? saveStockExcel)(rows, 'near_expiry.xlsx');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

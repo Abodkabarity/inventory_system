@@ -201,7 +201,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('mrn-export')));
     await tester.pumpAndSettle();
-    expect(fileName, 'mrn_overview.csv');
+    expect(fileName, 'mrn_overview.xlsx');
     expect(exported!.map((r) => r['Item code']), ['B', 'C']);
     expect(exported!.first['Created date'], '01/01/2025');
     expect(tester.takeException(), isNull);
@@ -228,7 +228,7 @@ void main() {
           dataSource: source,
           exporter: (rows, file) async {
             exported = rows;
-            expect(file, 'near_expiry.csv');
+            expect(file, 'near_expiry.xlsx');
           },
         ),
       );

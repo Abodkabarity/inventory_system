@@ -6,7 +6,7 @@ All three Stock Management registers and product details show Created date from
 `item_report.added_date_time` as `dd/MM/yyyy`, without a time. Timestamp values
 are converted to the Asia/Dubai calendar day; date-only values stay unchanged.
 Headers filter/sort actual dates. Missing Item Report identities/dates show —;
-they are never replaced with MRN dates or import `created_at`. Catalog CSV uses
+they are never replaced with MRN dates or import `created_at`. Catalog Excel uses
 the same date-only formatting (empty cell for missing dates). The catalog/MRN
 snapshot writers preserve this field on rebuild; expiry readers enrich both
 current and saved product facts from Item Report without changing receipt/review
@@ -18,7 +18,7 @@ and rejects changes of snapshot version/count or duplicate codes between batches
 There is one continuous table with no visible pagination. Search, Status, Item Status,
 category, supplier and sorting operate locally on the complete loaded catalog. Rows are
 virtualized; monthly charts and branch details load only when opening a product.
-CSV exports use the same filtered snapshot as the table and include all matching
+Excel exports use the same filtered snapshot as the table and include all matching
 products without additional page requests. Compact summary cards and a shorter
 banner give the table more height. The footer and its pagination/source text are
 removed; source dates and formula explanations remain in product details/exports.
@@ -31,7 +31,7 @@ the calculated stock Status. Choices come from the complete register and include
 Not specified for blank values. Status sorting supports A–Z and Z–A, keeps blank
 statuses last in both directions, and orders products by name/code within each
 status. The default is Item status A–Z, so `1#NORMAL PURCHASE` products appear
-first on opening the page and after clearing filters. CSV includes Item status
+first on opening the page and after clearing filters. Excel includes Item status
 and preserves the selected filters and order.
 Every table header also offers the Daily Order grid's Excel-style menu: search
 and select text values, numeric comparisons/ranges, and ascending/descending
@@ -39,7 +39,7 @@ sorting. Item Status is a separate column. Cells carry their actual text/numeric
 values rather than item codes; cover conditions use days and stock ratios use
 percentages. Undefined numeric values remain blank. Column filters combine with
 toolbar filters and persist through search/sort changes, including zero matches.
-Summary cards reflect column-filtered rows, and CSV uses the grid's effective
+Summary cards reflect column-filtered rows, and Excel uses the grid's effective
 rows in displayed order. Clear filters resets both column filters and sorting.
 Opening a filtered/sorted row resolves its product identity from the effective
 row rather than its original position. Filtering controls use AppColors.primaryColor.
@@ -49,7 +49,7 @@ labels repaint when authoritative group metadata arrives.
 ## New product distribution
 
 Overview has a Needs distribution card, Status option, priority sort, column
-filters and CSV fields. Default rules are age 0–30 Dubai calendar days, STORE
+filters and Excel fields. Default rules are age 0–30 Dubai calendar days, STORE
 stock ≥50, and at most six covered branches, with at least one eligible branch
 still uncovered. MRN is not a condition for the distribution alert.
 Rules can be changed via Distribution rules and are remembered
@@ -61,7 +61,7 @@ net-negative receipts, future receipts, receipts before creation, and virtual or
 other warehouses do not qualify. `mrn_date` has no time, so same-day receipt and
 creation qualify without claiming a precise intraday order. First/latest dates
 and total qualified received units are preserved in the snapshot, table/detail
-and CSV. Days in STORE starts at the first qualifying receipt and is not reset
+and Excel. Days in STORE starts at the first qualifying receipt and is not reset
 by later deliveries. Receipt facts are informational only: missing, unapproved,
 or out-of-range MRNs do not suppress the distribution alert or change its status.
 The partial-distribution limit remains.
@@ -86,7 +86,7 @@ already-allocated stock cannot produce an actionable distribution flag.
 
 Product details show age, stocked/reorder/final-order/eligible counts, available
 STORE stock, an explanation, source dates, and a filter for uncovered eligible
-branches. Branch labels/search/CSV use StoreBranchIdentityRegistry. Final orders
+branches. Branch labels/search/Excel use StoreBranchIdentityRegistry. Final orders
 are planned allocation, not proof of delivery. Counts and order details share
 the stock snapshot: Rebuild data after order edits/imports to recalculate them.
 List RPCs omit the branch-order map to keep the virtualized register lightweight.
@@ -139,7 +139,7 @@ branches absent from Daily Order do not make an otherwise complete run fail.
 Fresh partial data shows its actual counts and Qty with a partial label, while
 new-product distribution recommendations still require complete data.
 
-MRN Overview and Near Expiry provide Export CSV using the table's effective
+MRN Overview and Near Expiry provide Export Excel using the table's effective
 rows after search, toolbar filters, Excel column filters and sorting. Expiry
 exports preserve the alert's MRN/expiry dates, ordered/received Qty, review state
 and note. Missing live stock remains blank rather than becoming zero.
@@ -172,5 +172,10 @@ flutter build web --release --no-pub
 Visual previews can be regenerated with UPDATE_CATALOG_PREVIEW=1 and optionally
 CATALOG_FONT_ROOT set to the Flutter SDK material_fonts directory. Tests exercise
 complete-register loading, search, filters, on-demand details, metadata-driven branch names,
-CSV formatting, moving averages, partial/negative demand, responsive layout,
+Excel formatting, moving averages, partial/negative demand, responsive layout,
 refresh failure/retry and distinct sidebar routes.
+
+Excel exports use .xlsx files with brand-coloured white-text headers, thin cell borders,
+blue/white alternating rows, fixed column widths, frozen headers and Excel filters.
+Dates use dd/mm/yyyy and quantities/percentages remain numeric. Browser exports
+reuse the pinned local ExcelJS worker in bounded batches; no CDN is required.

@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import '../../../core/utils/stock_catalog_export.dart';
+import '../../../core/utils/stock_excel_export.dart';
 import '../../../core/utils/stock_item_added_date.dart';
 import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../../data/datasources/remote/stock_catalog_remote_ds.dart';
@@ -61,7 +61,7 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
           );
         }
       }
-      await saveCatalogCsv(rows, name);
+      await saveStockExcel(rows, name);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -462,7 +462,7 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
         '2025 to 2026 • All source branches • Hover or tap a month for exact values',
     trailing: IconButton(
       onPressed: () =>
-          _save(item.list('monthly_sales'), '${item.code}_monthly_sales.csv'),
+          _save(item.list('monthly_sales'), '${item.code}_monthly_sales.xlsx'),
       tooltip: 'Export monthly sales',
       icon: const Icon(Icons.download_rounded, size: 19, color: catalogBlue),
     ),
@@ -770,7 +770,7 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                   ? stockNumber(r['baseline_sales']) / baselineDays
                   : null,
             },
-        ], '${item.code}_branches.csv'),
+        ], '${item.code}_branches.xlsx'),
         tooltip: 'Export visible branches',
         icon: const Icon(Icons.download_rounded, color: catalogBlue),
       ),
