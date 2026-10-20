@@ -150,6 +150,42 @@ uploaded month may be partial. There is no revenue or margin source in these
 tables, so monetary totals are not invented. Branch recent/stock data share the
 snapshot; branch annual totals load live for one product using existing indexes.
 
+## Validated memory reuse
+
+Overview keeps one complete register in session memory. Reopening still makes the
+existing metadata request and checks its inventory RLS, row count and transactional
+`catalog_cache_version` before reusing rows. The normal 5,000-row loader and its
+snapshot/duplicate checks run whenever the version changes. No partial or cancelled
+register is saved. This does not introduce pagination or change filter calculations.
+
+Product details retain at most 24 recently used products per Supabase client.
+The first open uses the existing detail RPC, which normalizes active branch names
+once and joins each annual sales aggregate once. Reopening sends the saved revision
+to `get_stock_catalog_item_if_changed`; unchanged results avoid reaggregating and
+transferring the detail body. Otherwise the server returns a current full result.
+Every cache hit is validated remotely; failures never fall back to old quantities.
+Concurrent requests for the same product share one request.
+
+Revisions are committed with writes to the catalog snapshot, both annual sales
+tables and branches. Triggers run once per statement, including bulk loads and
+TRUNCATE, using separate revision rows per source rather than a shared refresh-job
+lock. Sales corrections therefore invalidate details without requiring a snapshot
+rebuild. Existing RLS and SELECT privileges still apply to conditional reads.
+Rebuild requests, sign-out, account changes and token changes clear memory; late
+requests cannot populate a new session. Nothing is persisted to browser storage.
+
+Deploy `20261019125348_stock_catalog_fast_details_and_validated_memory_cache.sql`
+with these client changes to enable revision-based reuse. Older servers remain
+compatible: missing revision metadata keeps the original loading path, without an
+extra request on the first product open. A removed conditional RPC falls back to
+the original detail RPC, while permission errors are surfaced.
+
+Verification includes `test/stock_catalog_memory_cache_test.dart` and the local
+PostgreSQL regression suite `supabase/tests/stock_catalog_read_cache_test.cjs`.
+The latter uses an isolated `@electric-sql/pglite` installation supplied through
+`STOCK_CACHE_PGLITE_MODULE` and checks full payload equality, signed quantities,
+rollback, bulk-write revisions, deletion, RLS and privilege revocation.
+
 ## Refresh, permissions and verification
 
 stock_catalog_snapshot and stock_catalog_refresh_state have inventory-only RLS.

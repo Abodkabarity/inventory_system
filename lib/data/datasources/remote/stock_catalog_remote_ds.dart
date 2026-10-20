@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/config/stock_management_load_config.dart';
 import '../../../domain/entities/stock_catalog.dart';
 import '../../../domain/entities/stock_management.dart';
+import 'stock_catalog_memory_cache.dart';
 
 abstract class StockCatalogDataSource {
   Future<StockCatalogResult> fetchPage(StockCatalogQuery query);
@@ -48,7 +49,20 @@ extension StockCatalogCompleteRegister on StockCatalogDataSource {
     bool Function()? isCancelled,
     void Function(int loaded, int total)? onProgress,
   }) async {
+    final remote = this is StockCatalogRemoteDs
+        ? this as StockCatalogRemoteDs
+        : null;
+    final generation = remote?._memory.generation;
     final overview = await fetchPage(const StockCatalogQuery(limit: 1));
+    if (isCancelled?.call() ?? false) throw StateError('Stock load cancelled');
+    if (remote != null) {
+      remote._memory.checkGeneration(generation!);
+      final cached = remote._memory.reuseRegister(overview);
+      if (cached != null) {
+        onProgress?.call(cached.rows.length, cached.total);
+        return cached;
+      }
+    }
     final rows = <StockCatalogItem>[];
     final codes = <String>{};
     String? version;
@@ -83,19 +97,52 @@ extension StockCatalogCompleteRegister on StockCatalogDataSource {
       }
       onProgress?.call(rows.length, overview.total);
     } while (rows.length < overview.total);
-    return StockCatalogResult(
+    final result = StockCatalogResult(
       rows: List.unmodifiable(rows),
       summary: overview.summary,
       meta: overview.meta,
       categories: overview.categories,
       suppliers: overview.suppliers,
     );
+    remote?._memory.rememberRegister(result, generation!);
+    return result;
+  }
+}
+
+class _CatalogClientMemory {
+  final cache = StockCatalogMemoryCache();
+  String? _scope;
+  _CatalogClientMemory(this._scope);
+  void synchronize(String? scope) {
+    if (scope == _scope) return;
+    _scope = scope;
+    cache.clear();
   }
 }
 
 class StockCatalogRemoteDs implements StockCatalogDataSource {
+  static final _memories = Expando<_CatalogClientMemory>();
   final SupabaseClient client;
   const StockCatalogRemoteDs(this.client);
+  StockCatalogMemoryCache get _memory {
+    final existing = _memories[client];
+    if (existing != null) {
+      existing.synchronize(client.auth.currentSession?.accessToken);
+      return existing.cache;
+    }
+    final memory = _CatalogClientMemory(
+      client.auth.currentSession?.accessToken,
+    );
+    _memories[client] = memory;
+    client.auth.onAuthStateChange.listen(
+      // Auth notifications may be queued. Compare the current session rather
+      // than invalidating a new request for an already-handled login event.
+      (_) => memory.synchronize(client.auth.currentSession?.accessToken),
+      onDone: memory.cache.clear,
+    );
+    return memory.cache;
+  }
+
   @override
   Future<StockCatalogRegisterBatch> fetchRegisterBatch(int offset) async =>
       StockCatalogRegisterBatch.fromMap(
@@ -110,26 +157,45 @@ class StockCatalogRemoteDs implements StockCatalogDataSource {
         ),
       );
   @override
-  Future<StockCatalogResult> fetchPage(StockCatalogQuery query) async =>
-      StockCatalogResult.fromMap(
+  Future<StockCatalogResult> fetchPage(StockCatalogQuery query) async {
+    try {
+      return StockCatalogResult.fromMap(
         stockMap(
           await client.rpc('get_stock_catalog_page', params: query.params),
         ),
       );
-  @override
-  Future<StockCatalogItem> fetchItem(String code) async {
-    final data = await client.rpc(
-      'get_stock_catalog_item',
-      params: {'p_item_code': code},
-    );
-    if (data == null) {
-      throw StateError('Product no longer available. Reload Overview.');
+    } catch (_) {
+      _memory.clear();
+      rethrow;
     }
-    return StockCatalogItem(stockMap(data));
   }
 
   @override
+  Future<StockCatalogItem> fetchItem(String code) =>
+      _memory.item(code, (version) async {
+        dynamic data;
+        if (version != null) {
+          try {
+            data = await client.rpc(
+              'get_stock_catalog_item_if_changed',
+              params: {'p_item_code': code, 'p_known_version': version},
+            );
+            return data == null ? null : stockMap(data);
+          } on PostgrestException catch (error) {
+            // Rolling back the server must remain compatible with open clients.
+            if (error.code != 'PGRST202' && error.code != '42883') rethrow;
+          }
+        }
+        data = await client.rpc(
+          'get_stock_catalog_item',
+          params: {'p_item_code': code},
+        );
+        return data == null ? null : stockMap(data);
+      });
+
+  @override
   Future<void> requestRefresh() async {
+    _memory.clear();
     await client.rpc('refresh_stock_catalog');
   }
 
