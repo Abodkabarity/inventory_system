@@ -11,8 +11,7 @@ extension _ZoneDashboardPageView on _ZoneManagerPageState {
       _selectedStockCheckBatchId = batchId;
       _page = 6;
     });
-    final hasProject = _stockChecks.any((task) => task.batchId == batchId);
-    if (!hasProject) await _loadStockChecks();
+    await _loadStockChecks();
   }
 
   Widget buildZoneDashboardPage() {
@@ -74,7 +73,10 @@ extension _ZoneDashboardPageView on _ZoneManagerPageState {
         })
         .toList(growable: false);
     final stockCheckAlerts = _ZdStockCheckAlert.fromTasks(
-      _dashboardStockChecks,
+      _dashboardStockChecks
+          .where((task) => _selectedBranch == 'ALL' ||
+              task.branchName == _selectedBranch)
+          .toList(growable: false),
     );
     final incomingHandovers = _incomingPendingHandovers;
     final activeHandovers = _activeIncomingHandovers;
@@ -152,7 +154,18 @@ extension _ZoneDashboardPageView on _ZoneManagerPageState {
                     ),
                   ],
                 ),
-                if (stockCheckAlerts.isNotEmpty) ...[
+                if (_dashboardStockCheckError != null) ...[
+                  const SizedBox(height: 12),
+                  MaterialBanner(
+                    content: const Text('Stock Check could not refresh. Retry to see current pending counts.'),
+                    actions: [
+                      TextButton(
+                        onPressed: _refreshDashboardStockChecks,
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                ] else if (stockCheckAlerts.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   _ZdStockCheckAlertStrip(
                     alerts: stockCheckAlerts,
@@ -1696,7 +1709,7 @@ class _ZdStockCheckAlertCard extends StatelessWidget {
                             const SizedBox(width: 10),
                             _ZdStockCheckSummaryBadge(
                               icon: Icons.storefront_rounded,
-                              text: '${alert.branches.length} pending',
+                              text: '${alert.branches.length} branches',
                               color: accent,
                             ),
                             const SizedBox(width: 7),

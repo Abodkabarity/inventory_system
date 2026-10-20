@@ -20,6 +20,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/stock_check_excel_exporter.dart';
 import '../../../data/datasources/remote/orders_remote_ds.dart';
+import '../../../data/datasources/remote/zone_stock_check_remote_ds.dart';
 import '../../../domain/entities/daily_order_row.dart';
 import '../../../domain/entities/stock_check_task.dart';
 import '../../auth/bloc/auth_bloc.dart';
@@ -120,6 +121,8 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
   List<StockCheckTask> _stockChecks = const [];
   List<StockCheckTask> _dashboardStockChecks = const [];
   bool _stockCheckLoading = false;
+  bool _stockCheckReloadQueued = false;
+  int _stockCheckScopeVersion = 0;
   String? _stockCheckError;
   String? _selectedStockCheckBatchId;
   Map<String, Map<String, dynamic>> _submissions = const {};
@@ -140,6 +143,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
   Timer? _delegationClock;
   StreamSubscription<html.Event>? _dashboardFocusSubscription;
   bool _dashboardStockCheckSyncing = false;
+  String? _dashboardStockCheckError;
   int _dashboardStockCheckClockMinute = -1;
   Set<String> _zoneActivityBranchKeys = const {};
   bool _liveActivityConnected = false;
@@ -171,6 +175,8 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
   @override
   void initState() {
     super.initState();
+    StoreBranchIdentityRegistry.groups.addListener(_refreshBranchLabels);
+    unawaited(StoreBranchIdentityRegistry.load(_client));
     final today = DateTime.now();
     _effectiveZones = List<String>.from(widget.zoneNames);
     _permanentZones = List<String>.from(widget.zoneNames);
@@ -196,16 +202,19 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
 
   @override
   void dispose() {
+    StoreBranchIdentityRegistry.groups.removeListener(_refreshBranchLabels);
     _dashboardClock?.cancel();
     _stockCheckRealtimeDebounce?.cancel();
     _delegationRealtimeDebounce?.cancel();
     _delegationClock?.cancel();
     _dashboardFocusSubscription?.cancel();
     final activityChannel = _zoneActivityChannel;
+    _zoneActivityChannel = null;
     if (activityChannel != null) {
       _client.removeChannel(activityChannel);
     }
     final delegationChannel = _delegationChannel;
+    _delegationChannel = null;
     if (delegationChannel != null) {
       _client.removeChannel(delegationChannel);
     }
@@ -213,7 +222,12 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     super.dispose();
   }
 
+  void _refreshBranchLabels() {
+    if (mounted) setState(() {});
+  }
+
   Future<void> _load() async {
+    final scopeVersion = ++_stockCheckScopeVersion;
     setState(() {
       _loading = true;
       _error = null;
@@ -256,9 +270,11 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
               _dateKey(_editsTo) == widget.runDate
           ? List<Map<String, dynamic>>.from(result[3])
           : await _loadEditsRange(names, _editsFrom, _editsTo);
-      if (!mounted) return;
+      if (!mounted || scopeVersion != _stockCheckScopeVersion) return;
       setState(() {
         _branches = branches;
+        _stockChecks = const [];
+        _stockCheckError = null;
         _additional = result[0];
         _dailyExports = result[1];
         _nonReceivedExports = result[2];
@@ -268,6 +284,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
         _liveActivities = result[5];
         _maxCredits = result[6];
         _dashboardStockChecks = result[7];
+        _dashboardStockCheckError = null;
         _additionalReport = result[8];
         _effectiveZones = activeZones;
         _permanentZones = zoneContext.permanentZones;
@@ -288,7 +305,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
         await _loadZoneReport(_page, force: true);
       }
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || scopeVersion != _stockCheckScopeVersion) return;
       setState(() {
         _loading = false;
         _error = error.toString();
@@ -966,6 +983,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
 
   void _subscribeToZoneActivity(List<String> branches) {
     final previousChannel = _zoneActivityChannel;
+    _zoneActivityChannel = null;
     if (previousChannel != null) {
       _client.removeChannel(previousChannel);
     }
@@ -1125,9 +1143,14 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     final oldRecord = Map<String, dynamic>.from(payload.oldRecord as Map);
     final record = newRecord.isNotEmpty ? newRecord : oldRecord;
     final branch = _text(record['branch_name']);
-    if (branch.isEmpty ||
-        !_zoneActivityBranchKeys.contains(_key(branch)) ||
-        !mounted) {
+    final id = _text(record['id']);
+    // DELETE events can carry only the primary key. Also refresh a known task
+    // if an update moves it out of the manager's current branch scope.
+    final knownTask = id.isNotEmpty &&
+        (_stockChecks.any((task) => task.id == id) ||
+            _dashboardStockChecks.any((task) => task.id == id));
+    if (!mounted ||
+        (!_zoneActivityBranchKeys.contains(_key(branch)) && !knownTask)) {
       return;
     }
 
@@ -1141,32 +1164,11 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
 
   Future<List<StockCheckTask>> _loadDashboardStockChecks(
     List<String> branches,
-  ) async {
-    if (branches.isEmpty) return const [];
-    final output = <StockCheckTask>[];
-    for (final chunk in _chunks(branches, 20)) {
-      var offset = 0;
-      const batchSize = _fetchBatchSize;
-      while (true) {
-        final data = List<Map<String, dynamic>>.from(
-          await _client
-              .from('stock_check_tasks')
-              .select()
-              .neq('status', 'submitted')
-              .inFilter('branch_name', chunk)
-              .order('expires_at')
-              .range(offset, offset + batchSize - 1),
-        );
-        if (data.isEmpty) break;
-        output.addAll(data.map(StockCheckTask.fromMap));
-        offset += data.length;
-      }
-    }
-    return output;
-  }
+  ) => ZoneStockCheckRemoteDs(_client).load(branches, pendingOnly: true);
 
   Future<void> _refreshDashboardStockChecks() async {
-    if (_dashboardStockCheckSyncing || !mounted) return;
+    if (_dashboardStockCheckSyncing || _loading || !mounted) return;
+    final scopeVersion = _stockCheckScopeVersion;
     final branches = _branches
         .map((row) => _text(row['branch_name']))
         .where((name) => name.isNotEmpty)
@@ -1175,7 +1177,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     _dashboardStockCheckSyncing = true;
     try {
       final latest = await _loadDashboardStockChecks(branches);
-      if (!mounted) return;
+      if (!mounted || scopeVersion != _stockCheckScopeVersion) return;
       final latestSignature = _dashboardStockCheckSignature(latest);
       final currentSignature = _dashboardStockCheckSignature(
         _dashboardStockChecks,
@@ -1183,15 +1185,19 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
       final clockMinute =
           DateTime.now().millisecondsSinceEpoch ~/
           Duration.millisecondsPerMinute;
-      if (latestSignature != currentSignature ||
+      if (_dashboardStockCheckError != null ||
+          latestSignature != currentSignature ||
           clockMinute != _dashboardStockCheckClockMinute) {
         setState(() {
           _dashboardStockChecks = latest;
+          _dashboardStockCheckError = null;
           _dashboardStockCheckClockMinute = clockMinute;
         });
       }
     } catch (error) {
-      debugPrint('Dashboard Stock Check sync skipped: $error');
+      if (mounted && scopeVersion == _stockCheckScopeVersion) {
+        setState(() => _dashboardStockCheckError = error.toString());
+      }
     } finally {
       _dashboardStockCheckSyncing = false;
     }
@@ -1231,7 +1237,12 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
   }
 
   Future<void> _loadStockChecks() async {
-    if (_stockCheckLoading) return;
+    if (_loading || !mounted) return;
+    if (_stockCheckLoading) {
+      _stockCheckReloadQueued = true;
+      return;
+    }
+    final scopeVersion = _stockCheckScopeVersion;
     final branches = _branches
         .map((row) => _text(row['branch_name']))
         .where((name) => name.isNotEmpty)
@@ -1242,24 +1253,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
       _stockCheckError = null;
     });
     try {
-      final output = <StockCheckTask>[];
-      for (final chunk in _chunks(branches, 20)) {
-        var offset = 0;
-        const batchSize = _fetchBatchSize;
-        while (true) {
-          final data = List<Map<String, dynamic>>.from(
-            await _client
-                .from('stock_check_tasks')
-                .select()
-                .inFilter('branch_name', chunk)
-                .order('sent_at', ascending: false)
-                .range(offset, offset + batchSize - 1),
-          );
-          if (data.isEmpty) break;
-          output.addAll(data.map(StockCheckTask.fromMap));
-          offset += data.length;
-        }
-      }
+      final output = await ZoneStockCheckRemoteDs(_client).load(branches);
       output.sort((left, right) {
         final byBranch = _key(
           left.branchName,
@@ -1269,13 +1263,25 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
           left.sentAt ?? DateTime(1970),
         );
       });
-      if (!mounted) return;
-      setState(() => _stockChecks = output);
+      if (!mounted || scopeVersion != _stockCheckScopeVersion) return;
+      setState(() {
+        _stockChecks = output;
+        if (_selectedStockCheckBatchId != null &&
+            !output.any((row) => row.batchId == _selectedStockCheckBatchId)) {
+          _selectedStockCheckBatchId = null;
+        }
+      });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || scopeVersion != _stockCheckScopeVersion) return;
       setState(() => _stockCheckError = error.toString());
     } finally {
-      if (mounted) setState(() => _stockCheckLoading = false);
+      if (mounted) {
+        setState(() => _stockCheckLoading = false);
+        if (_stockCheckReloadQueued) {
+          _stockCheckReloadQueued = false;
+          unawaited(_loadStockChecks());
+        }
+      }
     }
   }
 

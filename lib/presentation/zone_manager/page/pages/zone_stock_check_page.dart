@@ -20,7 +20,7 @@ extension _ZoneStockCheckPageView on _ZoneManagerPageState {
     if (_stockCheckLoading && _stockChecks.isEmpty) {
       return const _ReportLoading(label: 'Loading Stock Check results...');
     }
-    if (_stockCheckError != null && _stockChecks.isEmpty) {
+    if (_stockCheckError != null) {
       return _DailyOrderError(
         title: 'Stock Check could not be loaded',
         message: _stockCheckError!,
@@ -42,7 +42,9 @@ extension _ZoneStockCheckPageView on _ZoneManagerPageState {
           if (row.batchId != _selectedStockCheckBatchId) return false;
           if (query.isEmpty) return true;
           return row.title.toLowerCase().contains(query) ||
-              row.branchName.toLowerCase().contains(query) ||
+              StoreBranchIdentityRegistry.displayName(
+                row.branchName,
+              ).toLowerCase().contains(query) ||
               row.itemCode.toLowerCase().contains(query) ||
               row.itemName.toLowerCase().contains(query) ||
               row.status.toLowerCase().contains(query) ||
@@ -79,7 +81,7 @@ extension _ZoneStockCheckPageView on _ZoneManagerPageState {
     final submitted = rows.where((row) => row.isSubmitted).length;
     final pending = rows.length - submitted;
     final mismatches = rows
-        .where((row) => (row.variance ?? 0).abs() > .01)
+        .where((row) => row.isSubmitted && (row.variance ?? 0).abs() > .01)
         .length;
     final entireProjectRows = _stockChecks
         .where((row) => row.batchId == _selectedStockCheckBatchId)
@@ -145,7 +147,7 @@ extension _ZoneStockCheckPageView on _ZoneManagerPageState {
         rows,
         _selectedBranch == 'ALL'
             ? 'Stock_Check_${_safe(_zoneLabel)}_Visible'
-            : 'Stock_Check_${_safe(projectTitle)}_${_safe(_selectedBranch)}',
+            : 'Stock_Check_${_safe(projectTitle)}_${_safe(StoreBranchIdentityRegistry.displayName(_selectedBranch))}',
       ),
     );
   }
@@ -168,7 +170,9 @@ extension _ZoneStockCheckPageView on _ZoneManagerPageState {
               if (query.isEmpty) return true;
               return project.title.toLowerCase().contains(query) ||
                   project.branches.any(
-                    (branch) => branch.toLowerCase().contains(query),
+                    (branch) => StoreBranchIdentityRegistry.displayName(
+                      branch,
+                    ).toLowerCase().contains(query),
                   ) ||
                   project.rows.any(
                     (row) =>
@@ -184,7 +188,7 @@ extension _ZoneStockCheckPageView on _ZoneManagerPageState {
     final submitted = visibleRows.where((row) => row.isSubmitted).length;
     final pending = visibleRows.length - submitted;
     final variances = visibleRows
-        .where((row) => (row.variance ?? 0).abs() > .01)
+        .where((row) => row.isSubmitted && (row.variance ?? 0).abs() > .01)
         .length;
     return Column(
       children: [
@@ -193,7 +197,7 @@ extension _ZoneStockCheckPageView on _ZoneManagerPageState {
           eyebrow: 'STOCK CHECK CENTER',
           title: 'Stock Check Projects',
           subtitle:
-              '$_zoneLabel • ${_selectedBranch == 'ALL' ? 'All branches' : _selectedBranch} • Open a project to view its item details.',
+              '$_zoneLabel • ${_selectedBranch == 'ALL' ? 'All branches' : StoreBranchIdentityRegistry.displayName(_selectedBranch)} • Open a project to view its item details.',
           accent: const Color(0xff0EA5E9),
           metrics: const [],
           actions: const [],
@@ -274,8 +278,9 @@ class _StockCheckProjectSummary {
   Set<String> get branches => rows.map((row) => row.branchName).toSet();
   int get submitted => rows.where((row) => row.isSubmitted).length;
   int get pending => rows.length - submitted;
-  int get variances =>
-      rows.where((row) => (row.variance ?? 0).abs() > .01).length;
+  int get variances => rows
+      .where((row) => row.isSubmitted && (row.variance ?? 0).abs() > .01)
+      .length;
   double get completion => rows.isEmpty ? 0 : submitted / rows.length;
   DateTime get sentAt => rows
       .map((row) => row.sentAt ?? DateTime(1970))
