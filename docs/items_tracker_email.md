@@ -14,6 +14,10 @@ Known total. The subject names the company or product(s) and department. HTML
 escaping and UTF-8 MIME headers/bodies preserve Arabic and special characters.
 The UI previews up to 50 rows; the download and copied table include all rows.
 
+Purchase emails also include the Category addresses
+(`doaa.hassan@alain-pharmacy.com` and `Saria.Bahaa@alain-pharmacy.com`) in Cc.
+Category and Inventory routing remains unchanged.
+
 **Download Outlook draft** creates a multipart `.eml` with an HTML table, plain
 text fallback, To/Cc and `X-Unsent: 1`. Open it in desktop Outlook to review/send.
 **Copy table** writes HTML and text to the web clipboard for pasting into Outlook;

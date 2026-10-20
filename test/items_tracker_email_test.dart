@@ -175,6 +175,8 @@ void main() {
       'Inventory@alain-pharmacy.com',
       'ahmad.alkouz@alain-pharmacy.com',
       'a.bittar@alain-pharmacy.com',
+      'doaa.hassan@alain-pharmacy.com',
+      'Saria.Bahaa@alain-pharmacy.com',
     ]);
     final inventory = ItemsTrackerEmailRecipients.forRole('inventory');
     expect(inventory.to, ['Inventory@alain-pharmacy.com']);
@@ -183,6 +185,23 @@ void main() {
       () => ItemsTrackerEmailRecipients.forRole('invalid'),
       throwsArgumentError,
     );
+  });
+  test('purchase Outlook and EML handoffs copy Category recipients', () {
+    final email = draft(role: 'purchase');
+    const expectedCc = [
+      'Inventory@alain-pharmacy.com',
+      'ahmad.alkouz@alain-pharmacy.com',
+      'a.bittar@alain-pharmacy.com',
+      'doaa.hassan@alain-pharmacy.com',
+      'Saria.Bahaa@alain-pharmacy.com',
+    ];
+    for (final includeBody in [true, false]) {
+      final uri = email.outlookUri(includeBody: includeBody);
+      expect(uri.path, 'a.altamimi@alain-pharmacy.com');
+      expect(uri.queryParameters['cc'], expectedCc.join(';'));
+    }
+    expect(email.eml, startsWith('To: a.altamimi@alain-pharmacy.com\r\n'));
+    expect(email.eml, contains('Cc: ${expectedCc.join(', ')}\r\n'));
   });
   test(
     'Outlook URI preserves names, reasons, newlines and special characters',

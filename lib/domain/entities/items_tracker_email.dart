@@ -20,6 +20,8 @@ class ItemsTrackerEmailRecipients {
             'Inventory@alain-pharmacy.com',
             'ahmad.alkouz@alain-pharmacy.com',
             'a.bittar@alain-pharmacy.com',
+            'doaa.hassan@alain-pharmacy.com',
+            'Saria.Bahaa@alain-pharmacy.com',
           ],
         ),
         ItemsTrackerRoles.inventory => const ItemsTrackerEmailRecipients(
