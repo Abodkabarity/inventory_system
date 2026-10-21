@@ -9,15 +9,26 @@ import '../../../domain/entities/stock_management.dart';
 import '../widgets/stock_catalog_visuals.dart';
 import '../widgets/stock_sales_summary.dart';
 import '../widgets/stock_distribution_widgets.dart';
+import '../widgets/stock_product_image.dart';
 
 class StockCatalogProductDialog extends StatefulWidget {
   final StockCatalogItem item;
-  final StockCatalogDataSource source;
+  final StockCatalogDataSource? source;
+  final Future<StockCatalogItem> Function()? loadItem;
+  final Widget Function(StockCatalogItem)? detailsSection;
+  final VoidCallback? onClose;
+  final bool allowSavedFallback;
+  final Future<String?> Function(String)? resolveImage;
   const StockCatalogProductDialog({
     super.key,
     required this.item,
-    required this.source,
-  });
+    this.source,
+    this.loadItem,
+    this.detailsSection,
+    this.onClose,
+    this.allowSavedFallback = false,
+    this.resolveImage,
+  }) : assert(source != null || loadItem != null);
   @override
   State<StockCatalogProductDialog> createState() =>
       _StockCatalogProductDialogState();
@@ -34,8 +45,15 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
   @override
   void initState() {
     super.initState();
-    _future = widget.source.fetchItem(widget.item.code);
+    _future = _load();
+    final source = widget.source;
+    if (source is StockCatalogRemoteDs) {
+      StoreBranchIdentityRegistry.load(source.client);
+    }
   }
+
+  Future<StockCatalogItem> _load() =>
+      widget.loadItem?.call() ?? widget.source!.fetchItem(widget.item.code);
 
   @override
   void dispose() {
@@ -92,7 +110,7 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
             child: FutureBuilder<StockCatalogItem>(
               future: _future,
               builder: (context, snapshot) {
-                if (snapshot.hasError) {
+                if (snapshot.hasError && !widget.allowSavedFallback) {
                   return Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -105,11 +123,7 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                           ),
                         ),
                         FilledButton.icon(
-                          onPressed: () => setState(
-                            () => _future = widget.source.fetchItem(
-                              widget.item.code,
-                            ),
-                          ),
+                          onPressed: () => setState(() => _future = _load()),
                           icon: const Icon(Icons.refresh),
                           label: const Text('Retry'),
                         ),
@@ -117,12 +131,11 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                     ),
                   );
                 }
-                if (!snapshot.hasData) {
+                if (!snapshot.hasData && !widget.allowSavedFallback) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                final item = snapshot.data!.withDistributionRules(
-                  widget.item.distributionRules,
-                );
+                final item = (snapshot.data ?? widget.item)
+                    .withDistributionRules(widget.item.distributionRules);
                 return ValueListenableBuilder<Map<String, String>>(
                   valueListenable: StoreBranchIdentityRegistry.groups,
                   builder: (context, _, _) => Scrollbar(
@@ -137,6 +150,30 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              if (widget.detailsSection != null) ...[
+                                widget.detailsSection!(item),
+                                const SizedBox(height: 18),
+                              ],
+                              if (!snapshot.hasData) ...[
+                                if (snapshot.connectionState ==
+                                    ConnectionState.waiting)
+                                  const LinearProgressIndicator(),
+                                if (snapshot.hasError)
+                                  CatalogPanel(
+                                    title: 'Live product details unavailable',
+                                    subtitle:
+                                        'Showing saved receipt facts. ${snapshot.error}',
+                                    trailing: TextButton(
+                                      onPressed: () =>
+                                          setState(() => _future = _load()),
+                                      child: const Text('Retry'),
+                                    ),
+                                    child: const Text(
+                                      'Receipt evidence and review notes remain available.',
+                                    ),
+                                  ),
+                                const SizedBox(height: 12),
+                              ],
                               _alerts(item),
                               const SizedBox(height: 16),
                               _metrics(item, size.maxWidth),
@@ -260,6 +297,11 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
           ),
         ),
         const SizedBox(width: 14),
+        if (widget.resolveImage != null)
+          StockProductImage(
+            sku: widget.item.code,
+            resolve: widget.resolveImage!,
+          ),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -333,13 +375,41 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                       );
                     },
                   ),
+                  FutureBuilder<StockCatalogItem>(
+                    future: _future,
+                    builder: (context, snapshot) {
+                      final reference = (snapshot.data ?? widget.item)
+                          .text('reference')
+                          .trim()
+                          .toUpperCase();
+                      if (reference.isEmpty) return const SizedBox.shrink();
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: .12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: SelectableText(
+                          'Reference  $reference',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ],
               ),
             ],
           ),
         ),
         IconButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: widget.onClose ?? () => Navigator.of(context).pop(),
           tooltip: 'Close details',
           icon: const Icon(Icons.close_rounded, color: Colors.white),
         ),
@@ -347,6 +417,12 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
     ),
   );
   Widget _alerts(StockCatalogItem item) {
+    if (item.data['catalog_unavailable'] == true) {
+      return const CatalogPill(
+        'Saved product details • recent comparison unavailable',
+        color: catalogOrange,
+      );
+    }
     final meta = stockMap(item.data['meta']);
     return Wrap(
       spacing: 10,
@@ -393,7 +469,9 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
     final data = [
       (
         'LAST 3 DAYS QTY',
-        catalogQty(item.number('last_3_sales')),
+        item.data['last_3_sales'] == null
+            ? '—'
+            : catalogQty(item.number('last_3_sales')),
         '${catalogDate(meta['recent_from'])} – ${catalogDate(meta['demand_through'])}',
         catalogPurple,
         Icons.bolt_rounded,
@@ -841,6 +919,7 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                     DataColumn(
                       label: Text(
                         c.$2,
+                        key: ValueKey('branch-sort:${c.$1}'),
                         style: const TextStyle(
                           color: catalogInk,
                           fontSize: 12,

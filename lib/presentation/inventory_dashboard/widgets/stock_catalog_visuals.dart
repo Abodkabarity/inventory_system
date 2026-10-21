@@ -191,6 +191,8 @@ class CatalogMetric extends StatelessWidget {
             : const Duration(milliseconds: 240),
         height: dense
             ? null
+            : caption.isEmpty
+            ? 46 + 56 * MediaQuery.textScalerOf(context).scale(1)
             : 52 + 86 * MediaQuery.textScalerOf(context).scale(1),
         padding: EdgeInsets.all(dense ? 12 : 16),
         decoration: BoxDecoration(
@@ -299,23 +301,25 @@ class CatalogMetric extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  SizedBox(
-                    height: 30 * MediaQuery.textScalerOf(context).scale(1),
-                    child: Tooltip(
-                      message: caption,
-                      child: Text(
-                        caption,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: catalogMuted,
-                          fontSize: 11,
-                          height: 1.35,
+                  if (caption.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    SizedBox(
+                      height: 30 * MediaQuery.textScalerOf(context).scale(1),
+                      child: Tooltip(
+                        message: caption,
+                        child: Text(
+                          caption,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: catalogMuted,
+                            fontSize: 11,
+                            height: 1.35,
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
       ),

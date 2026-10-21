@@ -231,11 +231,12 @@ class StockExpiryGridSource extends DataGridSource {
     ('expiry_date', 'Expiry date', 160),
     ('ordered_qty', 'Ordered Qty', 150),
     ('received_qty', 'Received Qty', 170),
+    ('vendor', 'Vendor', 160),
     ('note', 'Note / review', 250),
-    ('total_stock', 'Total stock', 145),
     ('store_stock', 'Store stock', 125),
     ('branches_stock', 'Branches stock', 150),
-    ('store_branches_ratio', 'Store / branches', 155),
+    ('total_stock', 'Total stock', 145),
+    ('store_total_percent', 'Store / Total stock', 180),
     ('days_on_hand', 'Days on hand', 165),
     ('sales_2025', '2025 sales · qty', 300),
     ('sales_2026', '2026 sales · qty', 300),
@@ -329,6 +330,8 @@ class StockExpiryGridSource extends DataGridSource {
         return _number(a.data[key]);
       case 'received_qty':
         return a.number(key);
+      case 'vendor':
+        return formatStockVendor(a.data[key]);
       case 'note':
         return a.note;
       case 'review_state':
@@ -339,8 +342,8 @@ class StockExpiryGridSource extends DataGridSource {
             : 'Awaiting review';
       case 'stock_status':
         return p.stockAvailable ? _status(p.status) : 'No snapshot';
-      case 'store_branches_ratio':
-        return p.ratio;
+      case 'store_total_percent':
+        return p.storeTotalPercent;
       case 'days_on_hand':
         return p.stockAvailable ? p.days : null;
       case 'total_stock':
@@ -586,10 +589,8 @@ class StockExpiryGridSource extends DataGridSource {
             size: 11,
           ),
         ]);
-      case 'store_branches_ratio':
-        return _text(
-          formatStoreBranchesPercentage(value is num ? value : null),
-        );
+      case 'store_total_percent':
+        return _text(formatStockPercentage(value is num ? value : null));
       case 'days_on_hand':
         return _text(
           !p.stockAvailable

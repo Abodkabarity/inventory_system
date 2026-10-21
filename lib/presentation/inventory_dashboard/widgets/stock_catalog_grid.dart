@@ -185,14 +185,14 @@ class _CatalogGridSource extends DataGridSource {
       'product',
       'PRODUCT',
       340.0,
-      'Item Report product identity. Open any row for details.',
+      'Product identity. Open any row for details.',
     ),
-    ('item_status', 'ITEM STATUS', 200.0, 'Item Report purchase status.'),
+    ('item_status', 'ITEM STATUS', 200.0, 'Product purchase status.'),
     (
       'added_date_time',
       'CREATED DATE',
       160.0,
-      'Created date from Item Report (day/month/year).',
+      'Product created date (day/month/year).',
     ),
     (
       'status',
@@ -257,6 +257,11 @@ class _CatalogGridSource extends DataGridSource {
       175.0,
       'Eligible branches with planned final-order quantity, not confirmed delivery.',
     ),
+    ('category', 'CATEGORY', 190.0, 'Product category.'),
+    ('supplier', 'SUPPLIER', 250.0, 'Product supplier.'),
+    ('main_ingredient', 'INGREDIENT', 260.0, 'Main ingredient.'),
+    ('indication', 'INDICATION', 300.0, 'Product indication.'),
+    ('sub_category', 'SUB-CATEGORY', 200.0, 'Product sub-category.'),
   ];
   _CatalogGridSource(List<StockCatalogItem> items) {
     _replaceRows(items);
@@ -270,6 +275,11 @@ class _CatalogGridSource extends DataGridSource {
   dynamic _value(StockCatalogItem item, String column) => switch (column) {
     'product' => item.name,
     'item_status' => item.itemStatus,
+    'category' ||
+    'supplier' ||
+    'main_ingredient' ||
+    'indication' ||
+    'sub_category' => item.text(column),
     'added_date_time' => stockItemAddedDate(item.data['added_date_time']),
     'reorder_branches' =>
       item.distributionStatus.orderDataAvailable
@@ -332,6 +342,24 @@ class _CatalogGridSource extends DataGridSource {
                 : Alignment.center,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             child: switch (c.$1) {
+              'category' ||
+              'supplier' ||
+              'main_ingredient' ||
+              'indication' ||
+              'sub_category' => Tooltip(
+                message: item.text(c.$1),
+                child: Text(
+                  item.text(c.$1).isEmpty ? '—' : item.text(c.$1),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: catalogInk,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
               'product' => Row(
                 children: [
                   Container(

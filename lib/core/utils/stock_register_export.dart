@@ -1,6 +1,7 @@
 import '../../domain/entities/stock_management.dart';
 import '../../domain/entities/stock_expiry.dart';
 import 'stock_item_added_date.dart';
+import 'stock_vendor.dart';
 
 typedef StockRegisterExporter =
     Future<void> Function(List<Map<String, dynamic>> rows, String fileName);
@@ -20,12 +21,11 @@ Map<String, dynamic> stockRegisterExportRow(StockManagementItem item) => {
   'Expiry date': formatStockItemAddedDate(item.data['expiry_date'], empty: ''),
   'Ordered Qty': item.data['ordered_quantity'],
   'Received Qty': item.data['received_quantity'],
-  'Total stock': item.stockAvailable ? item.number('total_stock') : null,
+  'Vendor': formatStockVendor(item.data['vendor']),
   'Store stock': item.stockAvailable ? item.number('store_stock') : null,
   'Branches stock': item.stockAvailable ? item.number('branches_stock') : null,
-  'Store / branches %': item.stockAvailable && item.ratio != null
-      ? item.ratio! * 100
-      : null,
+  'Total stock': item.stockAvailable ? item.number('total_stock') : null,
+  'Store / Total stock %': item.storeTotalPercent,
   'Stock / Sales %': item.stockSalesPercent,
   'Stock cover (days)': item.stockAvailable ? item.days : null,
   'Sales 45D': item.data['recent_sales'],
@@ -49,6 +49,7 @@ Map<String, dynamic> stockExpiryExportRow(StockExpiryAlert alert) => {
   'Expiry date': formatStockItemAddedDate(alert.expiry, empty: ''),
   'Ordered Qty': alert.data['ordered_qty'],
   'Received Qty': alert.data['received_qty'],
+  'Vendor': formatStockVendor(alert.data['vendor']),
   'Days to expiry': alert.days,
   'Review status': alert.reviewed ? 'Reviewed' : 'Active',
   'New receipts': alert.newReceipts ? 'Yes' : 'No',

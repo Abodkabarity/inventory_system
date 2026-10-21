@@ -599,6 +599,96 @@ void main() {
     },
   );
   testWidgets(
+    'APG metadata columns filter as text, sort and export their full values',
+    (tester) async {
+      final key = GlobalKey<StockCatalogGridState>();
+      final boundary = GlobalKey();
+      StockCatalogItem product(String code, String ingredient) =>
+          StockCatalogItem({
+            'item_code': code,
+            'item_name': 'Product $code',
+            'category': 'Medicines',
+            'supplier': 'Supplier $code',
+            'main_ingredient': ingredient,
+            'indication': 'Pain relief',
+            'sub_category': 'Tablets',
+          });
+      final items = [product('A', 'Zinc'), product('B', 'Paracetamol')];
+      await app(
+        tester,
+        StockCatalogGrid(key: key, items: items, onOpen: (_) {}),
+        boundary: boundary,
+      );
+      final grid = tester.widget<SfDataGrid>(find.byType(SfDataGrid));
+      const fields = {
+        'category': 'Category',
+        'supplier': 'Supplier',
+        'main_ingredient': 'Ingredient',
+        'indication': 'Indication',
+        'sub_category': 'Sub-category',
+      };
+      for (final field in fields.entries) {
+        expect(grid.columns.any((c) => c.columnName == field.key), isTrue);
+        expect(
+          grid.source.rows.first
+              .getCells()
+              .firstWhere((cell) => cell.columnName == field.key)
+              .value,
+          items.first.text(field.key),
+        );
+        expect(
+          catalogExportRow(items.first)[field.value],
+          items.first.text(field.key),
+        );
+      }
+      grid.horizontalScrollController!.jumpTo(
+        grid.horizontalScrollController!.position.maxScrollExtent,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('datagrid_filtering_indication_filterIcon')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Text Filters'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      await capture(tester, boundary, 'stock_catalog_apg_metadata');
+      grid.source.addFilter(
+        'main_ingredient',
+        const FilterCondition(
+          type: FilterType.contains,
+          value: 'Paracetamol',
+          filterBehavior: FilterBehavior.stringDataType,
+          filterOperator: FilterOperator.and,
+        ),
+      );
+      grid.source.addFilter(
+        'sub_category',
+        const FilterCondition(
+          type: FilterType.equals,
+          value: 'Tablets',
+          filterOperator: FilterOperator.and,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(key.currentState!.visibleItems.single.code, 'B');
+      key.currentState!.clearFilters();
+      grid.source.sortedColumns.add(
+        const SortColumnDetails(
+          name: 'main_ingredient',
+          sortDirection: DataGridSortDirection.ascending,
+        ),
+      );
+      await grid.source.sort();
+      await tester.pumpAndSettle();
+      expect(key.currentState!.visibleItems.map((item) => item.code), [
+        'B',
+        'A',
+      ]);
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets(
     'Growth distinguishes decrease, increase, zero, unavailable and new sales',
     (tester) async {
       const cases = [

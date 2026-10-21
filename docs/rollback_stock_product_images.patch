@@ -1,0 +1,67 @@
+diff --git a/lib/presentation/inventory_dashboard/page/stock_catalog_page.dart b/lib/presentation/inventory_dashboard/page/stock_catalog_page.dart
+index 3076646..eb40193 100644
+--- a/lib/presentation/inventory_dashboard/page/stock_catalog_page.dart
++++ b/lib/presentation/inventory_dashboard/page/stock_catalog_page.dart
+@@ -9,6 +9,8 @@ import '../widgets/stock_distribution_widgets.dart';
+ import '../../../core/utils/stock_catalog_export.dart';
+ import '../../../core/utils/store_branch_identity_registry.dart';
+ import '../../../data/datasources/remote/stock_catalog_remote_ds.dart';
++import '../../../data/datasources/remote/stock_product_image_service.dart';
++import '../../../core/config/stock_product_image_config.dart';
+ import '../../../domain/entities/stock_catalog.dart';
+ import '../../../domain/entities/stock_management.dart';
+ import '../../../core/theme/app_colors.dart';
+@@ -463,6 +465,13 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
+                                   builder: (_) => StockCatalogProductDialog(
+                                     item: item,
+                                     source: _source,
++                                    resolveImage:
++                                        StockProductImageConfig.enabled &&
++                                            _source is StockCatalogRemoteDs
++                                        ? StockProductImageService.forClient(
++                                            _source.client,
++                                          ).resolve
++                                        : null,
+                                   ),
+                                 ),
+                               ),
+diff --git a/lib/presentation/inventory_dashboard/page/stock_catalog_product_dialog.dart b/lib/presentation/inventory_dashboard/page/stock_catalog_product_dialog.dart
+index 926232f..7ce5dac 100644
+--- a/lib/presentation/inventory_dashboard/page/stock_catalog_product_dialog.dart
++++ b/lib/presentation/inventory_dashboard/page/stock_catalog_product_dialog.dart
+@@ -9,6 +9,7 @@ import '../../../domain/entities/stock_management.dart';
+ import '../widgets/stock_catalog_visuals.dart';
+ import '../widgets/stock_sales_summary.dart';
+ import '../widgets/stock_distribution_widgets.dart';
++import '../widgets/stock_product_image.dart';
+ 
+ class StockCatalogProductDialog extends StatefulWidget {
+   final StockCatalogItem item;
+@@ -17,6 +18,7 @@ class StockCatalogProductDialog extends StatefulWidget {
+   final Widget Function(StockCatalogItem)? detailsSection;
+   final VoidCallback? onClose;
+   final bool allowSavedFallback;
++  final Future<String?> Function(String)? resolveImage;
+   const StockCatalogProductDialog({
+     super.key,
+     required this.item,
+@@ -25,6 +27,7 @@ class StockCatalogProductDialog extends StatefulWidget {
+     this.detailsSection,
+     this.onClose,
+     this.allowSavedFallback = false,
++    this.resolveImage,
+   }) : assert(source != null || loadItem != null);
+   @override
+   State<StockCatalogProductDialog> createState() =>
+@@ -294,6 +297,11 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
+           ),
+         ),
+         const SizedBox(width: 14),
++        if (widget.resolveImage != null)
++          StockProductImage(
++            sku: widget.item.code,
++            resolve: widget.resolveImage!,
++          ),
+         Expanded(
+           child: Column(
+             crossAxisAlignment: CrossAxisAlignment.start,

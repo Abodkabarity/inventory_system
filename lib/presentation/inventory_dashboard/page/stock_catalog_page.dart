@@ -9,6 +9,8 @@ import '../widgets/stock_distribution_widgets.dart';
 import '../../../core/utils/stock_catalog_export.dart';
 import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../../data/datasources/remote/stock_catalog_remote_ds.dart';
+import '../../../data/datasources/remote/stock_product_image_service.dart';
+import '../../../core/config/stock_product_image_config.dart';
 import '../../../domain/entities/stock_catalog.dart';
 import '../../../domain/entities/stock_management.dart';
 import '../../../core/theme/app_colors.dart';
@@ -463,6 +465,13 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
                                   builder: (_) => StockCatalogProductDialog(
                                     item: item,
                                     source: _source,
+                                    resolveImage:
+                                        StockProductImageConfig.enabled &&
+                                            _source is StockCatalogRemoteDs
+                                        ? StockProductImageService.forClient(
+                                            _source.client,
+                                          ).resolve
+                                        : null,
                                   ),
                                 ),
                               ),

@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/config/stock_management_load_config.dart';
 import '../../../domain/entities/stock_management.dart';
+import 'stock_workspace_memory.dart';
 
 abstract class StockManagementDataSource {
   Future<StockManagementResult> fetchPage(StockManagementQuery query);
@@ -57,75 +58,108 @@ extension StockManagementCompleteRegister on StockManagementDataSource {
     bool Function()? isCancelled,
     void Function(int loaded, int total)? onProgress,
   }) async {
-    final overview = await fetchPage(const StockManagementQuery(limit: 1));
+    if (this is StockManagementRemoteDs) {
+      final remote = this as StockManagementRemoteDs;
+      final result = await remote.memory.read(
+        'mrn:register',
+        'mrn',
+        () => _loadRegister(
+          this,
+          isCancelled: isCancelled,
+          onProgress: onProgress,
+        ),
+      );
+      if (isCancelled?.call() ?? false) {
+        throw const StockManagementLoadCancelled();
+      }
+      onProgress?.call(result.rows.length, result.total);
+      return result;
+    }
+    return _loadRegister(
+      this,
+      isCancelled: isCancelled,
+      onProgress: onProgress,
+    );
+  }
+}
+
+Future<StockManagementResult> _loadRegister(
+  StockManagementDataSource source, {
+  bool Function()? isCancelled,
+  void Function(int loaded, int total)? onProgress,
+}) async {
+  final overview = await source.fetchPage(const StockManagementQuery(limit: 1));
+  if (isCancelled?.call() ?? false) {
+    throw const StockManagementLoadCancelled();
+  }
+  final rows = <StockManagementItem>[];
+  final codes = <String>{};
+  String? snapshotAt;
+  int? expectedTotal;
+  do {
     if (isCancelled?.call() ?? false) {
       throw const StockManagementLoadCancelled();
     }
-    final rows = <StockManagementItem>[];
-    final codes = <String>{};
-    String? snapshotAt;
-    int? expectedTotal;
-    do {
-      if (isCancelled?.call() ?? false) {
-        throw const StockManagementLoadCancelled();
-      }
-      final batch = await fetchRegisterBatch(rows.length);
-      if (isCancelled?.call() ?? false) {
-        throw const StockManagementLoadCancelled();
-      }
-      expectedTotal ??= batch.total;
-      snapshotAt ??= batch.snapshotAt;
-      if (batch.total != expectedTotal ||
-          batch.snapshotAt != snapshotAt ||
-          (batch.rows.isEmpty && rows.length < expectedTotal)) {
+    final batch = await source.fetchRegisterBatch(rows.length);
+    if (isCancelled?.call() ?? false) {
+      throw const StockManagementLoadCancelled();
+    }
+    expectedTotal ??= batch.total;
+    snapshotAt ??= batch.snapshotAt;
+    if (batch.total != expectedTotal ||
+        batch.snapshotAt != snapshotAt ||
+        (batch.rows.isEmpty && rows.length < expectedTotal)) {
+      throw StateError(
+        'The stock register changed while loading. Please refresh.',
+      );
+    }
+    for (final row in batch.rows) {
+      if (!codes.add(row.code)) {
         throw StateError(
           'The stock register changed while loading. Please refresh.',
         );
       }
-      for (final row in batch.rows) {
-        if (!codes.add(row.code)) {
-          throw StateError(
-            'The stock register changed while loading. Please refresh.',
-          );
-        }
-        rows.add(row);
-      }
-      if (rows.length > expectedTotal) {
-        throw StateError('The stock response is inconsistent. Please refresh.');
-      }
-      onProgress?.call(rows.length, expectedTotal);
-    } while (rows.length < expectedTotal);
-    if (overview.total != expectedTotal) {
-      throw StateError(
-        'The stock snapshot changed while loading. Please refresh.',
-      );
+      rows.add(row);
     }
-    final overviewVersion = DateTime.tryParse(
-      (overview.meta['snapshot_at'] ?? overview.meta['refreshed_at'])
-              ?.toString() ??
-          '',
-    );
-    final batchVersion = DateTime.tryParse(snapshotAt);
-    if (overviewVersion != null &&
-        batchVersion != null &&
-        !overviewVersion.isAtSameMomentAs(batchVersion)) {
-      throw StateError(
-        'The stock snapshot changed while loading. Please refresh.',
-      );
+    if (rows.length > expectedTotal) {
+      throw StateError('The stock response is inconsistent. Please refresh.');
     }
-    return StockManagementResult(
-      rows: List.unmodifiable(rows),
-      summary: overview.summary,
-      meta: overview.meta,
-      categories: overview.categories,
-      suppliers: overview.suppliers,
+    onProgress?.call(rows.length, expectedTotal);
+  } while (rows.length < expectedTotal);
+  if (overview.total != expectedTotal) {
+    throw StateError(
+      'The stock snapshot changed while loading. Please refresh.',
     );
   }
+  final overviewVersion = DateTime.tryParse(
+    (overview.meta['snapshot_at'] ?? overview.meta['refreshed_at'])
+            ?.toString() ??
+        '',
+  );
+  final batchVersion = DateTime.tryParse(snapshotAt);
+  if (overviewVersion != null &&
+      batchVersion != null &&
+      !overviewVersion.isAtSameMomentAs(batchVersion)) {
+    throw StateError(
+      'The stock snapshot changed while loading. Please refresh.',
+    );
+  }
+  if (isCancelled?.call() ?? false) {
+    throw const StockManagementLoadCancelled();
+  }
+  return StockManagementResult(
+    rows: List.unmodifiable(rows),
+    summary: overview.summary,
+    meta: overview.meta,
+    categories: overview.categories,
+    suppliers: overview.suppliers,
+  );
 }
 
 class StockManagementRemoteDs implements StockManagementDataSource {
   final SupabaseClient client;
   const StockManagementRemoteDs(this.client);
+  StockWorkspaceMemory get memory => StockWorkspaceMemory.forClient(client);
 
   @override
   Future<StockManagementResult> fetchPage(StockManagementQuery query) async {
@@ -151,21 +185,39 @@ class StockManagementRemoteDs implements StockManagementDataSource {
   }
 
   @override
-  Future<StockManagementItem> fetchItem(String itemCode) async {
-    final data = await client.rpc(
-      'get_stock_management_item',
-      params: {'p_item_code': itemCode},
-    );
+  Future<StockManagementItem> fetchItem(
+    String itemCode,
+  ) => memory.read('mrn:detail:$itemCode', 'details', () async {
+    dynamic data;
+    try {
+      data = await client.rpc(
+        'get_stock_management_product_details',
+        params: {'p_item_code': itemCode},
+      );
+    } on PostgrestException catch (e) {
+      if (!StockWorkspaceMemory.missingRpc(e)) rethrow;
+      data = await client.rpc(
+        'get_stock_management_item',
+        params: {'p_item_code': itemCode},
+      );
+    }
     if (data == null) {
       throw StateError(
         'This product is no longer in the current snapshot. Refresh the list.',
       );
     }
-    return StockManagementItem(Map<String, dynamic>.from(data as Map));
-  }
+    final item = StockManagementItem(
+      Map<String, dynamic>.unmodifiable(stockMap(data)),
+    );
+    if (item.code != itemCode) {
+      throw StateError('Unexpected product response. Please retry.');
+    }
+    return item;
+  });
 
   @override
   Future<void> requestRefresh() async {
+    memory.clear();
     await client.rpc('refresh_stock_management_snapshot');
   }
 

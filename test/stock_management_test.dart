@@ -37,6 +37,7 @@ StockManagementItem product({
   'reference': 'in26217285',
   'last_mrn_qty': 500,
   'received_quantity': 500,
+  'vendor': 'abcdefghijk-latest',
   'ordered_quantity': 500,
   'expiry_date': code == '16-01-00362' ? '2026-12-01' : '2028-01-01',
   'recent_sales': 3337.6665,
@@ -212,24 +213,27 @@ void main() {
     await tester.ensureVisible(stockHeader);
     await tester.pumpAndSettle();
     bool aFirst() =>
-        tester.getTopLeft(find.text('BRANCH A')).dy <
-        tester.getTopLeft(find.text('BRANCH B')).dy;
-    expect(aFirst(), isFalse);
+        tester.getTopLeft(find.text('BRANCH A').last).dy <
+        tester.getTopLeft(find.text('BRANCH B').last).dy;
+    expect(aFirst(), isTrue);
     await tester.tap(stockHeader);
     await tester.pumpAndSettle();
     expect(aFirst(), isTrue);
-    await tester.tap(find.byKey(const ValueKey('branch-sort:sales_2025')));
+    await tester.tap(stockHeader);
     await tester.pumpAndSettle();
-    expect(aFirst(), isTrue);
+    expect(aFirst(), isFalse);
     await tester.tap(find.byKey(const ValueKey('branch-sort:sales_2025')));
     await tester.pumpAndSettle();
     expect(aFirst(), isFalse);
-    await tester.tap(find.byKey(const ValueKey('branch-sort:sales_2026')));
+    await tester.tap(find.byKey(const ValueKey('branch-sort:sales_2025')));
     await tester.pumpAndSettle();
-    expect(aFirst(), isFalse);
+    expect(aFirst(), isTrue);
     await tester.tap(find.byKey(const ValueKey('branch-sort:sales_2026')));
     await tester.pumpAndSettle();
     expect(aFirst(), isTrue);
+    await tester.tap(find.byKey(const ValueKey('branch-sort:sales_2026')));
+    await tester.pumpAndSettle();
+    expect(aFirst(), isFalse);
     expect(tester.takeException(), isNull);
   });
 
@@ -426,21 +430,20 @@ void main() {
     expect(
       find.descendant(
         of: details,
-        matching: find.text(
-          '16-01-00362  ·  LUNATUS DRUG STORE LLC  ·  BAUSCH & LOMB',
-        ),
+        matching: find.text('SKU 16-01-00362  •  BAUSCH & LOMB'),
       ),
       findsOneWidget,
     );
-    expect(find.text('Monthly sales'), findsOneWidget);
-    expect(find.text('Best month: Sep 2025'), findsOneWidget);
-    expect(find.text('Best month: Apr 2026'), findsOneWidget);
+    expect(find.text('Monthly sales & momentum'), findsOneWidget);
+    expect(find.text('Best 2025: 09/2025 • 3,309.67 Qty'), findsOneWidget);
+    expect(find.text('Best 2026: 04/2026 • 2,466 Qty'), findsOneWidget);
     expect(find.textContaining('Reference  IN26217285'), findsOneWidget);
-    expect(find.text('Total Sales 2025'), findsOneWidget);
+    expect(find.text('Annual sales mix'), findsOneWidget);
     expect(find.text('Created date  01/01/2025'), findsOneWidget);
-    expect(find.text('Total Sales 2026'), findsOneWidget);
-    expect(find.text('1,360.33'), findsOneWidget);
-    expect(find.text('990.67'), findsOneWidget);
+    expect(find.text('MRN receipt details'), findsNothing);
+    expect(find.byKey(const ValueKey('mrn-receipt-cards')), findsOneWidget);
+    expect(find.text('1,360.33'), findsWidgets);
+    expect(find.text('990.67'), findsWidgets);
     expect(tester.takeException(), isNull);
     await tester.tap(find.byTooltip('Close details'));
     await tester.pumpAndSettle();
@@ -451,6 +454,8 @@ void main() {
   ) async {
     await showPage(tester, FakeStockSource());
     final grid = find.byType(StockManagementGrid);
+    tester.widget<StockManagementGrid>(grid).horizontalController.jumpTo(500);
+    await tester.pumpAndSettle();
     Finder cellText(String value) =>
         find.descendant(of: grid, matching: find.text(value));
 

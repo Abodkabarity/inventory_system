@@ -36,6 +36,7 @@ StockExpiryAlert expiryAlert({
   'category': 'Medicine',
   'ordered_qty': orderedQty,
   'received_qty': receivedQty,
+  'vendor': 'older-vendor-name',
   'total_stock': 1908.19,
   'store_stock': 561,
   'branches_stock': 1347.19,
@@ -216,6 +217,13 @@ class _BrokenExpiryBatchSource extends FakeExpirySource {
   }
 }
 
+Future<void> tapReview(WidgetTester tester, StockExpiryAlert alert) async {
+  final grid = tester.widget<StockExpiryGrid>(find.byType(StockExpiryGrid));
+  grid.horizontalController.jumpTo(300);
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(ValueKey('review:${alert.key}')));
+}
+
 void main() {
   testWidgets('near expiry product fields are uppercase and selectable', (
     tester,
@@ -259,6 +267,8 @@ void main() {
       ];
     await showExpiry(tester, source, size: const Size(1700, 900));
     final grid = find.byType(StockExpiryGrid);
+    tester.widget<StockExpiryGrid>(grid).horizontalController.jumpTo(600);
+    await tester.pumpAndSettle();
     Finder cellText(String value) =>
         find.descendant(of: grid, matching: find.text(value));
 
@@ -444,7 +454,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(data.filterConditions['received_qty'], isNotEmpty);
       expect(data.effectiveRows.map((r) => data.alertFor(r).code), ['B', 'C']);
-      await tester.tap(find.byKey(ValueKey('review:${source.items[1].key}')));
+      await tapReview(tester, source.items[1]);
       await tester.pumpAndSettle();
       expect(source.items[1].reviewed, isTrue);
       expect(source.items[0].reviewed, isFalse);
@@ -634,7 +644,13 @@ void main() {
         find.textContaining('Live product details unavailable'),
         findsOneWidget,
       );
-      expect(find.text('Product stock unavailable'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('expiry-review-badges')),
+          matching: find.text('Product stock unavailable'),
+        ),
+        findsOneWidget,
+      );
       await tester.enterText(
         find.byKey(const ValueKey('expiry-note-field')),
         'Check the saved batch evidence',
@@ -758,26 +774,25 @@ void main() {
       expect(
         find.descendant(
           of: details,
-          matching: find.text(
-            '16-01-00362  ·  LUNATUS DRUG STORE LLC  ·  BAUSCH & LOMB',
-          ),
+          matching: find.text('SKU 16-01-00362  •  BAUSCH & LOMB'),
         ),
         findsOneWidget,
       );
       expect(find.textContaining('Reference  IN26217285'), findsOneWidget);
-      expect(find.text('Total Sales 2025'), findsOneWidget);
-      expect(find.text('Total Sales 2026'), findsOneWidget);
-      expect(find.text('1,360.33'), findsOneWidget);
-      expect(find.text('990.67'), findsOneWidget);
+      expect(find.text('Annual sales mix'), findsOneWidget);
+      expect(find.text('MRN receipt details'), findsNothing);
+      expect(find.byKey(const ValueKey('mrn-receipt-cards')), findsOneWidget);
+      expect(find.text('1,360.33'), findsWidgets);
+      expect(find.text('990.67'), findsWidgets);
       for (final label in [
-        'Monthly sales',
-        'Stock by branch',
+        'Monthly sales & momentum',
+        'Branch intelligence',
         'AL AIN MAIN',
         'Review note',
         'Save & mark reviewed',
         'Expiry 01 Nov 2026',
       ]) {
-        expect(find.text(label), findsOneWidget);
+        expect(find.text(label), findsWidgets);
       }
       expect(find.byKey(const ValueKey('expiry-note-field')), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -866,7 +881,7 @@ void main() {
     await tester.tap(find.byTooltip('Close details'));
     await tester.pumpAndSettle();
     expect(find.text('View note'), findsOneWidget);
-    await tester.tap(find.byKey(ValueKey('review:${source.items.first.key}')));
+    await tapReview(tester, source.items.first);
     await tester.pumpAndSettle();
     expect(source.items.first.reviewed, isTrue);
     expect(
@@ -876,7 +891,7 @@ void main() {
     await tester.tap(find.widgetWithText(ChoiceChip, 'Reviewed'));
     await tester.pumpAndSettle();
     expect(find.text('View note'), findsAtLeastNWidgets(1));
-    await tester.tap(find.byKey(ValueKey('review:${source.items.first.key}')));
+    await tapReview(tester, source.items.first);
     await tester.pumpAndSettle();
     expect(source.items.first.reviewed, isFalse);
     expect(source.items.first.note, 'Return planned with supplier');
@@ -885,7 +900,7 @@ void main() {
   testWidgets('review undo restores the active alarm', (tester) async {
     final source = FakeExpirySource();
     await showExpiry(tester, source);
-    await tester.tap(find.byKey(ValueKey('review:${source.items.first.key}')));
+    await tapReview(tester, source.items.first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();

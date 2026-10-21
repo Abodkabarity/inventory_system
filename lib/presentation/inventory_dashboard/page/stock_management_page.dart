@@ -1,6 +1,5 @@
 import '../../widgets/inventory_dropdown.dart';
 import 'dart:async';
-import '../../../core/utils/stock_item_added_date.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -10,8 +9,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/stock_register_export.dart';
 import '../../../core/utils/stock_excel_export.dart';
-import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../../data/datasources/remote/stock_management_remote_ds.dart';
+import '../../../data/datasources/remote/stock_catalog_remote_ds.dart';
+import '../../../domain/entities/stock_catalog.dart';
+import 'stock_catalog_product_dialog.dart';
 import '../../../data/datasources/remote/stock_expiry_remote_ds.dart';
 import '../../../domain/entities/stock_expiry.dart';
 import '../../../domain/entities/stock_management.dart';
@@ -1114,17 +1115,6 @@ InputDecoration _input(String label, {IconData? icon}) => InputDecoration(
     borderSide: const BorderSide(color: _teal, width: 1.5),
   ),
 );
-Widget _surface(Widget child) => Container(
-  decoration: BoxDecoration(
-    color: Colors.white,
-    borderRadius: BorderRadius.circular(17),
-    border: Border.all(color: _line),
-    boxShadow: const [
-      BoxShadow(color: Color(0x060F172A), blurRadius: 20, offset: Offset(0, 6)),
-    ],
-  ),
-  child: child,
-);
 Widget _pill(String label, Color color) => Container(
   padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
   decoration: BoxDecoration(
@@ -1484,7 +1474,7 @@ class _StockRowState extends State<StockManagementTableRow> {
               cell(
                 160,
                 Text(
-                  formatStoreBranchesPercentage(item.ratio),
+                  formatStockPercentage(item.storeTotalPercent),
                   style: const TextStyle(color: _ink, fontSize: 15),
                 ),
               ),
@@ -1658,7 +1648,8 @@ class _Coverage extends StatelessWidget {
   }
 }
 
-class StockManagementProductDialog extends StatefulWidget {
+/// MRN and expiry share the Overview's charts, layout and branch controls.
+class StockManagementProductDialog extends StatelessWidget {
   final StockManagementItem item;
   final StockManagementDataSource source;
   final Widget? extraSection;
@@ -1670,748 +1661,107 @@ class StockManagementProductDialog extends StatefulWidget {
     this.extraSection,
     this.onClose,
   });
-  @override
-  State<StockManagementProductDialog> createState() => _ProductDialogState();
-}
-
-class _ProductDialogState extends State<StockManagementProductDialog> {
-  late Future<StockManagementItem> _future;
-  @override
-  void initState() {
-    super.initState();
-    _future = widget.source.fetchItem(widget.item.code);
-  }
 
   @override
-  Widget build(BuildContext context) => Dialog(
-    insetPadding: const EdgeInsets.all(24),
-    backgroundColor: const Color(0xFFF5F8FC),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-    child: ConstrainedBox(
-      constraints: BoxConstraints(
-        maxWidth: 1100,
-        maxHeight: MediaQuery.sizeOf(context).height - 48,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.fromLTRB(24, 20, 14, 18),
-            decoration: const BoxDecoration(
-              color: _ink,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.item.name.toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 21,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        '${widget.item.code}  ·  ${widget.item.text('supplier').toUpperCase()}  ·  ${widget.item.text('company').toUpperCase()}',
-                        style: const TextStyle(
-                          color: Color(0xFFACCFD9),
-                          fontSize: 14,
-                        ),
-                      ),
-                      FutureBuilder<StockManagementItem>(
-                        future: _future,
-                        builder: (context, snapshot) {
-                          final product = snapshot.data ?? widget.item;
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: SelectableText(
-                              'Created date  ${formatStockItemAddedDate(product.data['added_date_time'])}',
-                              style: const TextStyle(
-                                color: Color(0xFFACCFD9),
-                                fontSize: 13,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                      FutureBuilder<StockManagementItem>(
-                        future: _future,
-                        builder: (context, snapshot) {
-                          final reference = (snapshot.data ?? widget.item)
-                              .text('reference')
-                              .trim()
-                              .toUpperCase();
-                          if (reference.isEmpty) return const SizedBox.shrink();
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 10),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: .11),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: SelectableText.rich(
-                                TextSpan(
-                                  children: [
-                                    const TextSpan(
-                                      text: 'Reference  ',
-                                      style: TextStyle(
-                                        color: Color(0xFFACCFD9),
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                    TextSpan(
-                                      text: reference,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                style: const TextStyle(fontSize: 13),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Close details',
-                  onPressed: widget.onClose ?? () => Navigator.pop(context),
-                  icon: const Icon(Icons.close, color: Colors.white),
-                ),
-              ],
-            ),
-          ),
-          Flexible(
-            child: FutureBuilder<StockManagementItem>(
-              future: _future,
-              builder: (context, snapshot) {
-                if (snapshot.hasError && widget.extraSection == null) {
-                  return Padding(
-                    padding: const EdgeInsets.all(30),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Could not load product details. ${snapshot.error}',
-                        ),
-                        TextButton(
-                          onPressed: () => setState(
-                            () => _future = widget.source.fetchItem(
-                              widget.item.code,
-                            ),
-                          ),
-                          child: const Text('Retry'),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-                if (!snapshot.hasData && widget.extraSection == null) {
-                  return const SizedBox(
-                    height: 300,
-                    child: Center(
-                      child: CircularProgressIndicator(color: _teal),
-                    ),
-                  );
-                }
-                final item = snapshot.data ?? widget.item;
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (widget.extraSection != null) ...[
-                        widget.extraSection!,
-                        const SizedBox(height: 20),
-                        if (snapshot.connectionState == ConnectionState.waiting)
-                          const LinearProgressIndicator(color: _teal),
-                        if (snapshot.hasError)
-                          Text(
-                            'Live product details unavailable; showing saved facts. ${snapshot.error}',
-                            style: const TextStyle(color: _amber),
-                          ),
-                      ],
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [
-                          _detailStat(
-                            'Total stock',
-                            item.stockAvailable
-                                ? _qty(item.number('total_stock'))
-                                : 'Unavailable',
-                            'STORE + active branches',
-                            _ink,
-                          ),
-                          _detailStat(
-                            'Store / branches',
-                            item.stockAvailable
-                                ? '${_qty(item.number('store_stock'))} / ${_qty(item.number('branches_stock'))}'
-                                : 'Unavailable',
-                            item.ratio == null
-                                ? 'Ratio unavailable: no positive branch stock'
-                                : formatStoreBranchesPercentage(item.ratio),
-                            _blue,
-                          ),
-                          _detailStat(
-                            'Days on hand',
-                            !item.stockAvailable
-                                ? 'Unavailable'
-                                : item.status == 'no_stock'
-                                ? 'No Stock'
-                                : item.days == null
-                                ? 'No recent sales'
-                                : '${_qty(item.days)} days',
-                            item.stockAvailable
-                                ? '${_qty(item.number('daily_sales'))} Qty / day'
-                                : 'No product snapshot yet',
-                            _statusColor(item.status),
-                          ),
-                          _detailStat(
-                            'Last MRN',
-                            _date(item.text('last_mrn_date')),
-                            'Qty ${_qty(item.number('last_mrn_qty'))} · ${item.text('last_mrn_no')}',
-                            _teal,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-                      LayoutBuilder(
-                        builder: (_, size) => Wrap(
-                          spacing: 14,
-                          runSpacing: 14,
-                          children: [
-                            SizedBox(
-                              width: size.maxWidth,
-                              child: CatalogPanel(
-                                title: 'Stock / Sales',
-                                subtitle:
-                                    'Current stock against 45-day net sales',
-                                child: Align(
-                                  alignment: Alignment.center,
-                                  child: ConstrainedBox(
-                                    constraints: const BoxConstraints(
-                                      maxWidth: 600,
-                                    ),
-                                    child: CatalogStockChart(item: item),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            for (final year in [2025, 2026])
-                              SizedBox(
-                                width: size.maxWidth < 700
-                                    ? size.maxWidth
-                                    : (size.maxWidth - 14) / 2,
-                                child: _yearCard(year, item.year(year)),
-                              ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      _surface(
-                        Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Monthly sales',
-                                style: TextStyle(
-                                  color: _ink,
-                                  fontSize: 19,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              const Text(
-                                'Net Qty · Cash + Insurance + Online · hover over a month for exact quantities',
-                                style: TextStyle(color: _muted, fontSize: 13),
-                              ),
-                              const SizedBox(height: 18),
-                              _MonthlyChart(months: item.list('monthly_sales')),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      _surface(
-                        Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Stock by branch',
-                                style: TextStyle(
-                                  color: _ink,
-                                  fontSize: 19,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              const Text(
-                                'Active APG and 71 branches · stock and net sales quantities',
-                                style: TextStyle(color: _muted, fontSize: 13),
-                              ),
-                              const SizedBox(height: 12),
-                              if (item.list('branches').isEmpty)
-                                const Text(
-                                  'No branch stock records for this product.',
-                                  style: TextStyle(color: _muted),
-                                ),
-                              if (item.list('branches').isNotEmpty)
-                                _BranchStockTable(
-                                  branches: item.list('branches'),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      Text(
-                        'Coverage uses ${stockMap(item.data['meta'])['demand_days'] ?? 45} calendar days: '
-                        '${_date(stockMap(item.data['meta'])['demand_from']?.toString())} – ${_date(stockMap(item.data['meta'])['demand_through']?.toString())}. '
-                        'Returns are included as negative quantities. No recent sales means coverage cannot be estimated. '
-                        'Best month is based on net quantity; tied months use the earliest month. 2026 includes the available partial month.',
-                        style: const TextStyle(
-                          color: _muted,
-                          fontSize: 13,
-                          height: 1.6,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-class _BranchStockTable extends StatefulWidget {
-  final List<Map<String, dynamic>> branches;
-
-  const _BranchStockTable({required this.branches});
-
-  @override
-  State<_BranchStockTable> createState() => _BranchStockTableState();
-}
-
-class _BranchStockTableState extends State<_BranchStockTable> {
-  String _sortColumn = 'stock';
-  bool _descending = true;
-
-  List<Map<String, dynamic>> get _sortedBranches {
-    final rows = [...widget.branches];
-    rows.sort((a, b) {
-      final av = a[_sortColumn], bv = b[_sortColumn];
-      if (av == null && bv != null) return 1;
-      if (bv == null && av != null) return -1;
-      final result = stockNumber(av).compareTo(stockNumber(bv));
-      if (result != 0) return _descending ? -result : result;
-      return '${a['branch']}'.compareTo('${b['branch']}');
-    });
-    return rows;
-  }
-
-  Widget _sortHeader(String label, String column, double width) {
-    final selected = _sortColumn == column;
-    final nextDescending = selected ? !_descending : true;
-    return SizedBox(
-      width: width,
-      child: Tooltip(
-        message:
-            '$label: ${nextDescending ? 'Largest to smallest' : 'Smallest to largest'}',
-        child: TextButton(
-          key: ValueKey('branch-sort:$column'),
-          onPressed: () => setState(() {
-            _descending = nextDescending;
-            _sortColumn = column;
-          }),
-          style: TextButton.styleFrom(
-            foregroundColor: selected ? _teal : _muted,
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-            alignment: Alignment.centerRight,
-            backgroundColor: selected ? _teal.withValues(alpha: .06) : null,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(6),
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(
-                child: Text(
-                  label,
-                  style: _headerStyle.copyWith(
-                    color: selected ? _teal : _muted,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 4),
-              Icon(
-                selected
-                    ? (_descending
-                          ? Icons.arrow_downward_rounded
-                          : Icons.arrow_upward_rounded)
-                    : Icons.unfold_more_rounded,
-                size: 14,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  static const _headerStyle = TextStyle(
-    color: _muted,
-    fontSize: 12,
-    fontWeight: FontWeight.w700,
-  );
-
-  @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, size) => SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: SizedBox(
-        width: math.max(760, size.maxWidth),
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                children: [
-                  const Expanded(child: Text('Branch', style: _headerStyle)),
-                  const SizedBox(
-                    width: 92,
-                    child: Text('Company', style: _headerStyle),
-                  ),
-                  _sortHeader('Stock', 'stock', 86),
-                  _sortHeader('Total Sales 2025', 'sales_2025', 144),
-                  _sortHeader('Total Sales 2026', 'sales_2026', 144),
-                ],
-              ),
-            ),
-            const Divider(height: 1, color: _line),
-            for (final branch in _sortedBranches)
-              Padding(
-                key: ValueKey('branch-row:${branch['branch']}'),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        StoreBranchIdentityRegistry.displayName(
-                          branch['branch']?.toString(),
-                        ),
-                        style: const TextStyle(color: _ink, fontSize: 14),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 92,
-                      child: Text(
-                        '${branch['company'] ?? ''}',
-                        style: const TextStyle(color: _muted, fontSize: 13),
-                      ),
-                    ),
-                    _BranchValue(
-                      _qty(branch['stock']),
-                      color: stockNumber(branch['stock']) > 0 ? _teal : _red,
-                      width: 86,
-                    ),
-                    _BranchValue(
-                      branch['sales_2025'] == null
-                          ? '—'
-                          : _qty(branch['sales_2025']),
-                      width: 144,
-                    ),
-                    _BranchValue(
-                      branch['sales_2026'] == null
-                          ? '—'
-                          : _qty(branch['sales_2026']),
-                      width: 144,
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
-class _BranchValue extends StatelessWidget {
-  final String value;
-  final Color color;
-  final double width;
-
-  const _BranchValue(this.value, {required this.width, this.color = _ink});
-
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    width: width,
-    child: Text(
-      value,
-      textAlign: TextAlign.right,
-      style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 14),
-    ),
-  );
-}
-
-Widget _detailStat(String label, String value, String note, Color color) =>
-    SizedBox(
-      width: 245,
-      child: _surface(
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: const TextStyle(color: _muted, fontSize: 14)),
-              const SizedBox(height: 8),
-              Text(
-                value,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                note,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: _muted, fontSize: 12),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-Widget _yearCard(int year, Map<String, dynamic> data) {
-  final color = year == 2025 ? _blue : _teal;
-  if (data.isEmpty) {
-    return _surface(
-      Padding(
-        padding: const EdgeInsets.all(20),
-        child: Text(
-          '$year · Sales data unavailable',
-          style: TextStyle(color: color, fontSize: 18),
-        ),
-      ),
-    );
-  }
-  return _surface(
-    Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                '$year',
-                style: TextStyle(
-                  color: color,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const Spacer(),
-              _pill(year == 2025 ? 'Full year' : 'Available 2026 data', color),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            '${_qty(data['total'])} Qty',
-            style: const TextStyle(
-              color: _ink,
-              fontSize: 26,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 16,
-            runSpacing: 8,
-            children: [
-              for (final channel in ['cash', 'insurance', 'online'])
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${channel[0].toUpperCase()}${channel.substring(1)}',
-                      style: const TextStyle(color: _muted, fontSize: 13),
-                    ),
-                    Text(
-                      _qty(data[channel]),
-                      style: const TextStyle(
-                        color: _ink,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
-                ),
-            ],
-          ),
-          const SizedBox(height: 15),
-          const Divider(color: _line),
-          const SizedBox(height: 7),
-          Row(
-            children: [
-              Icon(Icons.emoji_events_outlined, size: 22, color: color),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Best month: ${_month(data['best_month'])}',
-                  style: const TextStyle(color: _ink, fontSize: 14),
-                ),
-              ),
-              Text(
-                'Qty ${_qty(data['best_qty'])}',
-                style: TextStyle(
-                  color: color,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-class _MonthlyChart extends StatelessWidget {
-  final List<Map<String, dynamic>> months;
-  const _MonthlyChart({required this.months});
-  @override
-  Widget build(BuildContext context) {
-    final data = {for (final month in months) month['month'].toString(): month};
-    final max = months.fold<double>(
-      1,
-      (value, month) => math.max(value, stockNumber(month['total']).abs()),
-    );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget build(BuildContext context) => StockCatalogProductDialog(
+    item: StockCatalogItem({
+      ...item.data,
+      'item_name': item.name.toUpperCase(),
+      'company': item.text('company').toUpperCase(),
+      'catalog_unavailable': true,
+    }),
+    source: source is StockManagementRemoteDs
+        ? StockCatalogRemoteDs((source as StockManagementRemoteDs).client)
+        : null,
+    loadItem: () async {
+      final loaded = await source.fetchItem(item.code);
+      return StockCatalogItem({
+        ...loaded.data,
+        if (!loaded.data.containsKey('last_3_sales'))
+          'catalog_unavailable': true,
+      });
+    },
+    onClose: onClose,
+    allowSavedFallback: extraSection != null,
+    detailsSection: (product) => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            _pill('2025', _blue),
-            const SizedBox(width: 8),
-            _pill('2026', _teal),
-            const Spacer(),
-            Text(
-              'Scale: ${_qty(max)} Qty',
-              style: const TextStyle(color: _muted, fontSize: 13),
-            ),
-          ],
-        ),
-        const SizedBox(height: 15),
-        SizedBox(
-          height: 175,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              for (var m = 1; m <= 12; m++)
-                Expanded(
-                  child: Column(
-                    children: [
-                      Expanded(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            for (final year in [2025, 2026])
-                              Builder(
-                                builder: (context) {
-                                  final key =
-                                      '${m.toString().padLeft(2, '0')}/$year';
-                                  final qty = stockNumber(data[key]?['total']);
-                                  final color = year == 2025 ? _blue : _teal;
-                                  return Flexible(
-                                    child: Tooltip(
-                                      message:
-                                          '${_month(key)}: ${data.containsKey(key) ? _qty(qty) : 'No data'} Qty\n'
-                                          'Cash ${_qty(data[key]?['cash'])} · Insurance ${_qty(data[key]?['insurance'])} · Online ${_qty(data[key]?['online'])}',
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 2,
-                                        ),
-                                        child: Align(
-                                          alignment: Alignment.bottomCenter,
-                                          child: TweenAnimationBuilder<double>(
-                                            tween: Tween(
-                                              begin: 0,
-                                              end: qty.abs() / max,
-                                            ),
-                                            duration:
-                                                MediaQuery.disableAnimationsOf(
-                                                  context,
-                                                )
-                                                ? Duration.zero
-                                                : const Duration(
-                                                    milliseconds: 500,
-                                                  ),
-                                            builder: (_, value, _) => Container(
-                                              width: 22,
-                                              height: math.max(
-                                                data.containsKey(key) ? 2 : 0,
-                                                value * 125,
-                                              ),
-                                              decoration: BoxDecoration(
-                                                color: qty < 0 ? _red : color,
-                                                borderRadius:
-                                                    const BorderRadius.vertical(
-                                                      top: Radius.circular(5),
-                                                    ),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        DateFormat('MMM').format(DateTime(2025, m)),
-                        style: const TextStyle(color: _muted, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
+        if (extraSection != null) ...[
+          extraSection!,
+          const SizedBox(height: 16),
+        ],
+        _mrnDetails(
+          StockManagementItem(
+            product.data['mrn_details'] is Map
+                ? stockMap(product.data['mrn_details'])
+                : product.data,
           ),
         ),
       ],
-    );
-  }
+    ),
+  );
+
+  Widget _mrnDetails(StockManagementItem product) => LayoutBuilder(
+    builder: (context, constraints) {
+      final columns = constraints.maxWidth < 600
+          ? 2
+          : constraints.maxWidth < 1000
+          ? 3
+          : 5;
+      final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
+      return Wrap(
+        key: const ValueKey('mrn-receipt-cards'),
+        spacing: 12,
+        runSpacing: 12,
+        children: [
+          for (final entry in [
+            (
+              'LAST MRN',
+              _date(product.text('last_mrn_date')),
+              catalogBlue,
+              Icons.event_note_rounded,
+            ),
+            (
+              'VENDOR',
+              formatStockVendor(product.data['vendor']),
+              catalogTeal,
+              Icons.local_shipping_outlined,
+            ),
+            (
+              'EXPIRY DATE',
+              _date(product.text('expiry_date')),
+              catalogOrange,
+              Icons.event_busy_outlined,
+            ),
+            (
+              'ORDERED QTY',
+              product.data['ordered_quantity'] == null
+                  ? '—'
+                  : _qty(product.number('ordered_quantity')),
+              catalogBlue,
+              Icons.shopping_bag_outlined,
+            ),
+            (
+              'RECEIVED QTY',
+              product.data['last_mrn_qty'] == null
+                  ? '—'
+                  : _qty(product.number('last_mrn_qty')),
+              catalogTeal,
+              Icons.move_to_inbox_outlined,
+            ),
+          ])
+            SizedBox(
+              width: width,
+              child: CatalogMetric(
+                title: entry.$1,
+                value: entry.$2.isEmpty ? '—' : entry.$2,
+                caption: '',
+                color: entry.$3,
+                icon: entry.$4,
+              ),
+            ),
+        ],
+      );
+    },
+  );
 }

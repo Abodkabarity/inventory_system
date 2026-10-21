@@ -1,9 +1,21 @@
 # Item Report stock Overview
 
 Stock Management has three independent entries: Overview, MRN Overview, Near Expiry.
-Overview includes every nonempty unique Item Report code, even without an MRN.
+Overview reads `item_report_apg`, resolving the latest import per nonempty trimmed
+item code before filtering. It includes only `status = active`,
+`is_block = unchecked` and Item Status number prefixes 1, 2 or 3 (for example
+`1#NORMAL PURCHASE`). Comparisons trim whitespace and ignore case. At an equal
+latest timestamp, a disallowed row takes precedence over an allowed duplicate;
+remaining ties use the product facts for deterministic selection. An empty eligible
+catalog aborts the rebuild and preserves the previous snapshot. MRN is not required.
+The table includes Category, Supplier, Ingredient, Indication and Sub-category
+as text columns with Excel-style filters and sorting. Excel includes the same facts.
+The APG rebuild disables nested-loop joins only within its private builder:
+correlated catalog eligibility predicates otherwise cause an estimate of one row
+and repeated annual-sales scans. The caller's planner settings are restored.
 All three Stock Management registers and product details show Created date from
-`item_report.added_date_time` as `dd/MM/yyyy`, without a time. Timestamp values
+`added_date_time` as `dd/MM/yyyy`, without a time (Overview uses `item_report_apg`;
+MRN Overview and Near Expiry retain `item_report`). Timestamp values
 are converted to the Asia/Dubai calendar day; date-only values stay unchanged.
 Headers filter/sort actual dates. Missing Item Report identities/dates show —;
 they are never replaced with MRN dates or import `created_at`. Catalog Excel uses
@@ -187,6 +199,60 @@ The latter uses an isolated `@electric-sql/pglite` installation supplied through
 rollback, bulk-write revisions, deletion, RLS and privilege revocation.
 
 ## Refresh, permissions and verification
+
+MRN Overview and Near Expiry now use the same product dialog component as
+Overview. Current analytics come directly from `get_stock_catalog_item`, while
+`get_stock_management_product_details` preserves the MRN reference, receipt date,
+MRN number and receipt-specific ordered/received quantities under `mrn_details`.
+The existing expiry note, review/reopen actions, conflict version and durable
+receipt evidence remain intact. When catalog statistics are unavailable, saved
+MRN evidence remains visible and missing short-term comparisons display a dash.
+
+MRN receipt facts use five compact `CatalogMetric` cards: Last MRN, Vendor,
+Expiry date, Ordered Qty and Received Qty. Reference stays in the dialog header;
+the redundant MRN-number and expiry-received cards and section prose are removed.
+Expiry facts retain their compact coloured badges. The review editor places note input and
+actions together on wide screens and wraps on small screens, keeping multiline
+notes, review conflicts and receipt evidence. The review action uses white text
+and icons. Detailed receipt guidance is available in the collapsed evidence area.
+
+Both registers place Vendor immediately after Received Qty and Total stock
+immediately after Branches stock. Store / Total stock is STORE divided by total
+stock, expressed as a numeric percentage; zero/unavailable totals remain empty.
+The same column order and percentage are used by Excel exports.
+
+`20261020122615_stock_mrn_expiry_vendor_and_stock_share.sql` enriches MRN rows
+with the vendor for their matching latest MRN/expiry. Near Expiry uses the latest
+nonblank vendor from that expiry's durable receipt evidence. Full vendor evidence
+is retained with receipts, while public labels/exports are uppercase and limited
+to ten characters. Vendor corrections invalidate memory but preserve review
+fingerprints, notes and reviewed status. Evidence survives removal of source MRNs.
+
+`20261020124301_stock_mrn_register_set_based_receipts.sql` aggregates receipt
+facts for the entire MRN batch instead of repeating a correlated receipt query
+per product. The bulk RPC disables nested-loop planning only for its own duration
+to prevent underestimated CTE sizes causing a quadratic final join. The setting
+is restored on return. RLS, payloads, first-expiry selection, vendor fallback,
+signed quantities, snapshot checks and the 5,000-row cap remain unchanged.
+
+Deploy `20261020105108_stock_workspaces_validated_cache_and_shared_details.sql`
+with this client update. MRN and expiry maintain a bounded, account-scoped memory
+cache (28 entries, at most one complete register per workspace). Each reopen
+validates a fresh server revision; errors never return cached quantities or notes.
+Full loads retain the shared 5,000-row size and completeness/duplicate checks,
+and validate revisions before and after loading. Review writes and rebuilds clear
+memory before dispatch; cancelled and late requests cannot repopulate it.
+
+Revisions track MRN snapshots/imports, durable expiry receipts, reviews, Item
+Report and watcher state. Product detail revisions also include Overview's stock,
+annual-sales and branch revisions. The Dubai calendar day participates in expiry
+validation. `prepare_stock_expiry_workspace` validates and discovers receipts in
+one round trip; unchanged reopens avoid rediscovery, and bulk pages never repeat
+the scan. Raw identities and original stock/demand calculations are unchanged.
+
+Regression suites: `test/stock_workspace_memory_test.dart`,
+`test/stock_workspace_dialog_test.dart` and the isolated PostgreSQL suite
+`supabase/tests/stock_workspace_cache_test.cjs` (uses `STOCK_CACHE_PGLITE_MODULE`).
 
 stock_catalog_snapshot and stock_catalog_refresh_state have inventory-only RLS.
 Public RPCs are SECURITY INVOKER; private cron writers have a fixed search path

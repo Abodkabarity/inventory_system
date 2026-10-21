@@ -204,10 +204,11 @@ class StockManagementGridSource extends DataGridSource {
     ('expiry_date', 'Expiry date', 200),
     ('ordered_quantity', 'Ordered Qty', 150),
     ('received_quantity', 'Received Qty', 155),
-    ('total_stock', 'Stock total', 155),
+    ('vendor', 'Vendor', 160),
     ('store_stock', 'Store', 115),
     ('branches_stock', 'Branches', 140),
-    ('store_branches_ratio', 'Store / branches', 165),
+    ('total_stock', 'Total stock', 155),
+    ('store_total_percent', 'Store / Total stock', 180),
     ('days_on_hand', 'Days on hand', 175),
     ('sales_2025', '2025 sales · qty', 300),
     ('sales_2026', '2026 sales · qty', 300),
@@ -269,7 +270,8 @@ class StockManagementGridSource extends DataGridSource {
     'stock_status' => item.status,
     'ordered_quantity' || 'received_quantity' => item.number(key),
     'total_stock' || 'store_stock' || 'branches_stock' => item.number(key),
-    'store_branches_ratio' => item.ratio,
+    'vendor' => formatStockVendor(item.data['vendor']),
+    'store_total_percent' => item.storeTotalPercent,
     'days_on_hand' => item.days,
     'sales_2025' || 'sales_2026' =>
       item.year(key.endsWith('2025') ? 2025 : 2026)['total'] == null
@@ -492,10 +494,8 @@ class StockManagementGridSource extends DataGridSource {
           size: 16,
           strong: true,
         );
-      case 'store_branches_ratio':
-        return _text(
-          formatStoreBranchesPercentage(value is num ? value : null),
-        );
+      case 'store_total_percent':
+        return _text(formatStockPercentage(value is num ? value : null));
       case 'days_on_hand':
         return _text(
           item.status == 'no_stock'

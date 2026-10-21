@@ -1,4 +1,5 @@
 import 'package:intl/intl.dart';
+export '../../../core/utils/stock_vendor.dart';
 
 final _percentage = NumberFormat('#,##0.##');
 
@@ -8,3 +9,6 @@ String formatStoreBranchesPercentage(num? ratio) {
   if (ratio == null) return '—';
   return '${_percentage.format(ratio * 100)}%';
 }
+
+String formatStockPercentage(num? percentage) =>
+    percentage == null ? '—' : '${_percentage.format(percentage)}%';

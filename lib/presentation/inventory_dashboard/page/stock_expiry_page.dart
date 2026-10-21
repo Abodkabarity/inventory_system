@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../core/utils/stock_register_export.dart';
 import '../../../core/utils/stock_excel_export.dart';
+import '../../../core/utils/stock_vendor.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../../data/datasources/remote/stock_expiry_remote_ds.dart';
 import '../../../domain/entities/stock_expiry.dart';
 import '../../../domain/entities/stock_management.dart';
@@ -1001,272 +1003,378 @@ class _ReviewDialogState extends State<_ReviewDialog> {
             widget.productSource ??
             StockManagementRemoteDs(Supabase.instance.client),
         onClose: _close,
-        extraSection: _surface(
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: _loading
-                ? const Padding(
-                    padding: EdgeInsets.all(35),
-                    child: CircularProgressIndicator(color: _teal),
-                  )
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (_error != null)
-                        Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.all(12),
-                          color: _red.withValues(alpha: .06),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _error!,
-                                style: const TextStyle(
-                                  color: _red,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              TextButton(
-                                onPressed: _saving
-                                    ? null
-                                    : () {
-                                        if (_dirty) {
-                                          showDialog<void>(
-                                            context: context,
-                                            builder: (context) => AlertDialog(
-                                              title: const Text(
-                                                'Copy your note first',
-                                              ),
-                                              content: const Text(
-                                                'Reloading will replace your unsaved text with the latest saved version. Copy it before reloading.',
-                                              ),
-                                              actions: [
-                                                TextButton(
-                                                  onPressed: () =>
-                                                      Navigator.pop(context),
-                                                  child: const Text(
-                                                    'Keep editing',
-                                                  ),
-                                                ),
-                                                TextButton(
-                                                  onPressed: () {
-                                                    Navigator.pop(context);
-                                                    _load();
-                                                  },
-                                                  child: const Text(
-                                                    'Reload anyway',
-                                                  ),
-                                                ),
-                                              ],
+        extraSection: _reviewSection(a, c),
+      ),
+    );
+  }
+
+  Widget _reviewSection(StockExpiryAlert a, Color risk) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      if (_alert != null) ...[
+        Wrap(
+          key: const ValueKey('expiry-review-badges'),
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _tag('Expiry ${_date(a.expiry)}', risk, icon: Icons.event_outlined),
+            _tag(_days(a), risk),
+            _tag(
+              'Expiry MRN date ${_date(a.text('last_receipt_date'))}',
+              _teal,
+              icon: Icons.calendar_month_rounded,
+            ),
+            _tag('MRN qty ${_qty(a.data['received_qty'])}', _amber),
+            _tag(
+              'Vendor ${formatStockVendor(a.data['vendor']).isEmpty ? '—' : formatStockVendor(a.data['vendor'])}',
+              _teal,
+              icon: Icons.local_shipping_outlined,
+            ),
+            _tag(
+              a.product.stockAvailable
+                  ? 'Current product stock ${_qty(a.data['total_stock'])}'
+                  : 'Product stock unavailable',
+              _teal,
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+      ],
+      _surface(
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+          child: _loading
+              ? const SizedBox(
+                  height: 56,
+                  child: Center(child: CircularProgressIndicator(color: _teal)),
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_error != null)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(12),
+                        color: _red.withValues(alpha: .06),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _error!,
+                              style: const TextStyle(color: _red, fontSize: 14),
+                            ),
+                            TextButton(
+                              onPressed: _saving
+                                  ? null
+                                  : () {
+                                      if (_dirty) {
+                                        showDialog<void>(
+                                          context: context,
+                                          builder: (context) => AlertDialog(
+                                            title: const Text(
+                                              'Copy your note first',
                                             ),
-                                          );
-                                        } else {
-                                          _load();
-                                        }
-                                      },
-                                child: const Text('Reload latest note'),
-                              ),
+                                            content: const Text(
+                                              'Reloading will replace your unsaved text with the latest saved version. Copy it before reloading.',
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed: () =>
+                                                    Navigator.pop(context),
+                                                child: const Text(
+                                                  'Keep editing',
+                                                ),
+                                              ),
+                                              TextButton(
+                                                onPressed: () {
+                                                  Navigator.pop(context);
+                                                  _load();
+                                                },
+                                                child: const Text(
+                                                  'Reload anyway',
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      } else {
+                                        _load();
+                                      }
+                                    },
+                              child: const Text('Reload latest note'),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    if (_alert != null) ...[
+                      if (a.reviewed ||
+                          a.newReceipts ||
+                          a.data['stock_snapshot_missing'] == true)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              if (a.reviewed)
+                                _tag(
+                                  'Reviewed',
+                                  _teal,
+                                  icon: Icons.task_alt_rounded,
+                                ),
+                              if (a.newReceipts)
+                                _tag('New receipts since review', _amber),
+                              if (a.data['stock_snapshot_missing'] == true)
+                                _tag(
+                                  'Saved product facts · live stock unavailable',
+                                  _amber,
+                                ),
                             ],
                           ),
                         ),
-                      if (_alert != null) ...[
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            _tag(
-                              'Expiry ${_date(a.expiry)}',
-                              c,
-                              icon: Icons.event_outlined,
-                            ),
-                            _tag(_days(a), c),
-                            _tag(
-                              'Expiry MRN date ${_date(a.text('last_receipt_date'))}',
-                              _teal,
-                              icon: Icons.calendar_month_rounded,
-                            ),
-                            _tag(
-                              'MRN qty ${_qty(a.data['received_qty'])}',
-                              _amber,
-                            ),
-                            _tag(
-                              a.product.stockAvailable
-                                  ? 'Current product stock ${_qty(a.data['total_stock'])}'
-                                  : 'Product stock unavailable',
-                              _teal,
-                            ),
-                            if (a.reviewed)
-                              _tag(
-                                'Reviewed',
-                                _teal,
-                                icon: Icons.task_alt_rounded,
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final actions = Wrap(
+                            key: const ValueKey('expiry-note-actions'),
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              SizedBox(
+                                height: 48,
+                                child: OutlinedButton.icon(
+                                  onPressed: _saving || !_dirty
+                                      ? null
+                                      : () => _save('note'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: _teal,
+                                    side: BorderSide(
+                                      color: _teal.withValues(alpha: .25),
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  icon: const Icon(
+                                    Icons.save_outlined,
+                                    size: 18,
+                                  ),
+                                  label: const Text('Save note'),
+                                ),
                               ),
-                            if (a.newReceipts)
-                              _tag('New receipts since review', _amber),
-                            if (a.data['stock_snapshot_missing'] == true)
-                              _tag(
-                                'Saved product facts · live stock unavailable',
-                                _amber,
+                              SizedBox(
+                                height: 48,
+                                child: FilledButton.icon(
+                                  key: const ValueKey('expiry-review-button'),
+                                  onPressed: _saving
+                                      ? null
+                                      : () => _save(
+                                          a.reviewed ? 'reopen' : 'review',
+                                        ),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: _teal,
+                                    foregroundColor: Colors.white,
+                                    disabledBackgroundColor: _teal.withValues(
+                                      alpha: .55,
+                                    ),
+                                    disabledForegroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  icon: _saving
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : Icon(
+                                          a.reviewed
+                                              ? Icons.undo_rounded
+                                              : Icons.task_alt_rounded,
+                                          size: 18,
+                                        ),
+                                  label: Text(
+                                    a.reviewed
+                                        ? 'Reopen alarm'
+                                        : 'Save & mark reviewed',
+                                  ),
+                                ),
                               ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        const Text(
-                          _sourceWarning,
-                          style: TextStyle(
-                            color: _muted,
-                            fontSize: 14,
-                            height: 1.5,
+                            ],
+                          );
+                          final note = TextField(
+                            key: const ValueKey('expiry-note-field'),
+                            controller: _note,
+                            enabled: !_saving,
+                            minLines: 1,
+                            maxLines: 2,
+                            maxLength: 4000,
+                            style: const TextStyle(color: _ink, fontSize: 14),
+                            decoration: InputDecoration(
+                              labelText: 'Review note',
+                              hintText: 'Write a follow-up or action…',
+                              prefixIcon: const Icon(
+                                Icons.sticky_note_2_outlined,
+                                color: _teal,
+                                size: 19,
+                              ),
+                              suffixText: '${_note.text.length}/4000',
+                              suffixStyle: const TextStyle(
+                                color: _muted,
+                                fontSize: 10,
+                              ),
+                              counterText: '',
+                              filled: true,
+                              fillColor: const Color(0xFFF6FAFC),
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 17,
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFFDFEAF0),
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(
+                                  color: _teal,
+                                  width: 1.5,
+                                ),
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          );
+                          return constraints.maxWidth >=
+                                  820 *
+                                      MediaQuery.textScalerOf(context).scale(1)
+                              ? Row(
+                                  key: const ValueKey('expiry-note-toolbar'),
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Expanded(child: note),
+                                    const SizedBox(width: 12),
+                                    actions,
+                                  ],
+                                )
+                              : Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    note,
+                                    const SizedBox(height: 10),
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: actions,
+                                    ),
+                                  ],
+                                );
+                        },
+                      ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: Theme(
+                              data: Theme.of(
+                                context,
+                              ).copyWith(dividerColor: Colors.transparent),
+                              child: ExpansionTile(
+                                key: const ValueKey('expiry-receipt-evidence'),
+                                tilePadding: EdgeInsets.zero,
+                                childrenPadding: EdgeInsets.zero,
+                                dense: true,
+                                visualDensity: VisualDensity.compact,
+                                minTileHeight: 40,
+                                title: Text(
+                                  'Receipt evidence (${a.receipts.length})',
+                                  style: const TextStyle(
+                                    color: _muted,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                children: [
+                                  const Padding(
+                                    padding: EdgeInsets.only(bottom: 8),
+                                    child: Text(
+                                      _sourceWarning,
+                                      style: TextStyle(
+                                        color: _muted,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                  for (final receipt in a.receipts)
+                                    ListTile(
+                                      dense: true,
+                                      contentPadding: EdgeInsets.zero,
+                                      leading: const Icon(
+                                        Icons.receipt_long_outlined,
+                                        color: _muted,
+                                        size: 18,
+                                      ),
+                                      title: Text(
+                                        'MRN ${receipt['mrn_no']} · ${_date('${receipt['mrn_date'] ?? ''}')}',
+                                        style: const TextStyle(fontSize: 13),
+                                      ),
+                                      subtitle: Text(
+                                        StoreBranchIdentityRegistry.displayName(
+                                          receipt['warehouse']?.toString(),
+                                        ),
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                      trailing: Text(
+                                        _qty(receipt['received_qty']),
+                                        style: const TextStyle(
+                                          color: _ink,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 18),
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.sticky_note_2_outlined,
-                              color: _teal,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            const Expanded(
+                          if (_changed && !_dirty)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 10),
                               child: Text(
-                                'Review note',
+                                'Saved',
                                 style: TextStyle(
-                                  color: _ink,
-                                  fontSize: 16,
+                                  color: _teal,
+                                  fontSize: 12,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ),
-                            if (_changed && !_dirty)
-                              const Text(
-                                'Saved',
-                                style: TextStyle(color: _teal, fontSize: 14),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          key: const ValueKey('expiry-note-field'),
-                          controller: _note,
-                          enabled: !_saving,
-                          maxLines: 5,
-                          minLines: 3,
-                          maxLength: 4000,
-                          decoration: InputDecoration(
-                            hintText:
-                                'Add a follow-up, return plan, branch check, or any observation…',
-                            hintStyle: const TextStyle(fontSize: 14),
-                            filled: true,
-                            fillColor: Colors.white,
-                            alignLabelWithHint: true,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: _line),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: [
-                            OutlinedButton.icon(
-                              onPressed: _saving || !_dirty
-                                  ? null
-                                  : () => _save('note'),
-                              icon: const Icon(Icons.save_outlined, size: 18),
-                              label: const Text('Save note'),
-                            ),
-                            FilledButton.icon(
-                              onPressed: _saving
-                                  ? null
-                                  : () =>
-                                        _save(a.reviewed ? 'reopen' : 'review'),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: _teal,
-                              ),
-                              icon: _saving
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : Icon(
-                                      a.reviewed
-                                          ? Icons.undo_rounded
-                                          : Icons.task_alt_rounded,
-                                      size: 18,
-                                    ),
-                              label: Text(
-                                a.reviewed
-                                    ? 'Reopen alarm'
-                                    : 'Save & mark reviewed',
+                          Tooltip(
+                            message:
+                                '$_sourceWarning\nReviewed items leave the active list; notes remain saved. Changed receipts create a fresh alarm.',
+                            child: const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: Icon(
+                                Icons.info_outline_rounded,
+                                color: _muted,
+                                size: 17,
                               ),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        const Text(
-                          'Reviewed items leave the active alarm list, but notes remain saved. A new expiry date or changed receipts create a fresh alarm.',
-                          style: TextStyle(
-                            color: _muted,
-                            fontSize: 13,
-                            height: 1.5,
                           ),
-                        ),
-                        const SizedBox(height: 18),
-                        ExpansionTile(
-                          tilePadding: EdgeInsets.zero,
-                          title: Text(
-                            'Receipt evidence (${a.receipts.length})',
-                            style: const TextStyle(
-                              color: _ink,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          subtitle: Text(
-                            'MRN received ${_qty(a.data['received_qty'])} · not remaining batch stock',
-                            style: const TextStyle(color: _muted, fontSize: 13),
-                          ),
-                          children: [
-                            for (final receipt in a.receipts)
-                              ListTile(
-                                dense: true,
-                                contentPadding: EdgeInsets.zero,
-                                leading: const Icon(
-                                  Icons.receipt_long_outlined,
-                                  color: _muted,
-                                  size: 20,
-                                ),
-                                title: Text(
-                                  'MRN ${receipt['mrn_no']} · ${_date('${receipt['mrn_date'] ?? ''}')}',
-                                  style: const TextStyle(fontSize: 14),
-                                ),
-                                subtitle: Text(
-                                  '${receipt['warehouse']}',
-                                  style: const TextStyle(fontSize: 13),
-                                ),
-                                trailing: Text(
-                                  _qty(receipt['received_qty']),
-                                  style: const TextStyle(
-                                    color: _ink,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ],
+                        ],
+                      ),
                     ],
-                  ),
-          ),
+                  ],
+                ),
         ),
       ),
-    );
-  }
+    ],
+  );
 }
