@@ -106,6 +106,28 @@ The existing daily/manual catalog rebuild updates all facts atomically.
 
 ## Stock and demand calculations
 
+The shared product dialog includes a Sales 45 Days stacked daily chart below the
+monthly chart. It uses the same snapshot window, active branches and signed net
+Qty as the 45-day KPI. Cash and Online keep the existing sales classification:
+Delivery Invoice / Return Delivery Invoice are Online; remaining non-insurance
+sales are Cash. Insurance / Direct Insurance (including the source typo Dirict
+Insurance) are split by exact normalized customer name into Insurance Basic
+(`National Health Insurance Company - Daman Basic`), Insurance Thiqa
+(`National Health Insurance Company - Daman Thiqa`) and Other Insurance, including
+missing customer names. Insurance classification takes priority for insurance
+invoice types. Matching ignores case and surrounding/repeated whitespace.
+Customer names and individual invoices are never included in the client payload.
+
+Sparse per-day channel sums are stored in the same atomic catalog snapshot;
+list/header and 5,000-row register RPCs omit the daily series. Details reuse the
+existing validated memory cache and invalidate when the snapshot changes. The
+client fills missing in-window calendar days with zero, preserves negative
+returns and fractions, and verifies its total against the snapshot KPI. Partial
+source windows show their actual bounds rather than inventing earlier zero sales.
+Products without catalog detail data show an unavailable message, never a false
+zero-sales chart. Hover/tap and day navigation expose each day's five quantities;
+the dedicated Excel export contains every date, all five channels and total Qty.
+
 - Branches Stock: all active registered branches, excluding warehouses and STORE.
 - STORE Stock: STORE warehouse balance. Duplicate item/branch balances use MAX,
   matching the existing stock workspace. Signed balances remain signed.
@@ -258,7 +280,7 @@ stock_catalog_snapshot and stock_catalog_refresh_state have inventory-only RLS.
 Public RPCs are SECURITY INVOKER; private cron writers have a fixed search path
 and narrowly scoped grants. Rebuild data queues a background job; atomic refresh
 keeps the prior complete snapshot readable and preserves it on error. A daily
-refresh runs at 07:15 Asia/Dubai; users can rebuild after later imports. Reload
+refresh runs at 08:30 Asia/Dubai (04:30 UTC); users can rebuild after later imports. Reload
 reads the current snapshot. Both stock and sales source dates are visible.
 
 Verified on 13 Oct 2026: 14,929 products; zero differences for catalog count,

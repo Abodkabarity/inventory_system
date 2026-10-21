@@ -5,11 +5,13 @@ import '../../../core/utils/stock_item_added_date.dart';
 import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../../data/datasources/remote/stock_catalog_remote_ds.dart';
 import '../../../domain/entities/stock_catalog.dart';
+import '../../../domain/entities/stock_daily_sales.dart';
 import '../../../domain/entities/stock_management.dart';
 import '../widgets/stock_catalog_visuals.dart';
 import '../widgets/stock_sales_summary.dart';
 import '../widgets/stock_distribution_widgets.dart';
 import '../widgets/stock_product_image.dart';
+import '../widgets/stock_daily_sales_chart.dart';
 
 class StockCatalogProductDialog extends StatefulWidget {
   final StockCatalogItem item;
@@ -42,6 +44,8 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
   String _sort = 'recent_sales';
   bool _descending = true;
   bool _uncoveredOnly = false;
+  Map<String, dynamic>? _dailyData;
+  StockDailySalesMix? _dailySales;
   @override
   void initState() {
     super.initState();
@@ -195,6 +199,8 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                                     Expanded(flex: 3, child: _stock(item)),
                                   ],
                                 ),
+                              const SizedBox(height: 18),
+                              _daily(item),
                               const SizedBox(height: 18),
                               if (compact) ...[
                                 _annual(item),
@@ -546,6 +552,32 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
     ),
     child: CatalogMonthlyChart(item: item),
   );
+  Widget _daily(StockCatalogItem item) {
+    if (!identical(_dailyData, item.data)) {
+      _dailyData = item.data;
+      _dailySales = StockDailySalesMix.fromMap(item.data);
+    }
+    final mix = _dailySales!;
+    return CatalogPanel(
+      key: const ValueKey('daily-sales-panel'),
+      title: 'Sales 45 Days',
+      subtitle: mix.available
+          ? '${catalogDate(mix.days.first.date)} – ${catalogDate(mix.days.last.date)} • Active branches • Daily net Qty'
+          : 'Daily net Qty by sales type',
+      trailing: IconButton(
+        tooltip: 'Export daily sales',
+        onPressed: mix.available
+            ? () => _save(
+                mix.days.map((day) => day.exportRow).toList(),
+                '${item.code}_daily_sales_45_days.xlsx',
+              )
+            : null,
+        icon: const Icon(Icons.download_rounded, size: 19, color: catalogBlue),
+      ),
+      child: StockDailySalesChart(mix: mix),
+    );
+  }
+
   Widget _stock(StockCatalogItem item) => CatalogPanel(
     title: 'Stock / Sales',
     subtitle: 'Current stock against 45-day net sales',

@@ -81,10 +81,26 @@ const {PGlite} = require(process.env.STOCK_CACHE_PGLITE_MODULE || '@electric-sql
   const migration=fs.readFileSync('supabase/migrations/20261021082126_stock_catalog_apg_eligible_products.sql','utf8');
   await db.exec(migration);
   await db.exec(fs.readFileSync('supabase/migrations/20261021083257_stock_catalog_apg_refresh_plan.sql','utf8'));
+  await db.exec(`alter table sales_last_45_days add column inv_type text,add column sales_type text,add column customer_name text;
+    update sales_last_45_days set sales_type='POS Invoice',inv_type='Cash';
+    update sales_last_45_days set inv_type='Insurance',customer_name='National Health Insurance Company - Daman Basic'
+      where item_code='A' and branch_name='Alpha' and inv_date=current_date;
+    update sales_last_45_days set inv_type=' Direct Insurance ',customer_name=' National Health Insurance Company - Daman Thiqa '
+      where branch_name='Beta';
+    insert into sales_last_45_days values
+      ('A','Alpha',current_date-1,2.25,'Delivery (Cash)','Delivery Invoice',null),
+      ('A','Alpha',current_date-1,-2.25,'Return Delivery (Cash)','Return Delivery Invoice',null),
+      ('A','Alpha',current_date-3,0.5,'insurance','POS Invoice','Other company'),
+      ('A','Alpha',current_date-4,-0.5,'dirict insurance','Return POS Invoice',null),
+      ('A','Alpha',current_date-5,0.75,'Insurance','POS Invoice','NATIONAL HEALTH INSURANCE COMPANY - DAMAN BASIC'),
+      ('A','Alpha',current_date-5,-0.75,'Cash Prescription','Return POS Invoice',null);
+    create function stock_management_private.catalog_cache_version(boolean) returns text
+      language sql stable as $$ select 'test-version'::text $$;`);
+  await db.exec(fs.readFileSync('supabase/migrations/20261021115546_stock_catalog_daily_sales_mix.sql','utf8'));
   const plannerBefore=(await db.query('show enable_nestloop')).rows;
   await db.exec('select stock_management_private.refresh_catalog()');
   assert.deepEqual((await db.query('show enable_nestloop')).rows,plannerBefore,'planner setting is restored outside the builder');
-  assert.deepEqual((await db.query("select item_code,payload-'meta' payload from stock_catalog_snapshot order by item_code")).rows,reference,
+  assert.deepEqual((await db.query("select item_code,payload-'meta'-'daily_sales_45d'-'daily_sales_45d_available' payload from stock_catalog_snapshot order by item_code")).rows,reference,
     'APG selection preserves exact stock, signed sales, distribution, dates and monthly analytics');
   const a=(await db.query("select payload from stock_catalog_snapshot where item_code='A'")).rows[0].payload;
   assert.equal(a.total_stock,60); assert.equal(a.apg_stock,60); assert.equal(a.stock_71,3);
@@ -93,6 +109,23 @@ const {PGlite} = require(process.env.STOCK_CACHE_PGLITE_MODULE || '@electric-sql
   assert.equal(a.distribution.reorder,2); assert.equal(a.distribution.final_qty,5);
   assert.equal(a.added_date_time,'2026-10-02'); assert.equal(a.meta.catalog_source,'item_report_apg');
   assert.equal(a.all_barcode,undefined);
+  assert.equal(a.daily_sales_45d_available,true);
+  const daily=a.daily_sales_45d;
+  const totals=key=>daily.reduce((n,d)=>n+Number(d[key]),0);
+  assert.equal(totals('total'),a.recent_sales);
+  assert.equal(totals('cash'),41.25);
+  assert.equal(totals('insurance_basic'),12.75);
+  assert.equal(totals('insurance_thiqa'),-1);
+  assert.equal(totals('online'),0);
+  assert.equal(totals('other_insurance'),0);
+  assert.equal(daily.filter(d=>d.other_insurance<0).length,1);
+  assert.deepEqual(daily.map(d=>d.date),daily.map(d=>d.date).sort());
+  const noSales=(await db.query("select payload from stock_catalog_snapshot where item_code='B'")).rows[0].payload;
+  assert.deepEqual(noSales.daily_sales_45d,[]);
+  const page=(await db.query('select public.get_stock_catalog_page(p_limit=>1) data')).rows[0].data;
+  const batch=(await db.query('select public.get_stock_catalog_register_batch(0,5000) data')).rows[0].data;
+  assert.equal(page.rows.some(r=>'daily_sales_45d' in r),false);
+  assert.equal(batch.rows.some(r=>'daily_sales_45d' in r),false);
   for(const field of ['category','supplier','main_ingredient','indication','sub_category'])assert.equal(a[field],base[field]);
   // APG is authoritative, even if Item Report contains unrelated identities/facts.
   await db.exec("update item_report set item_name='Legacy name'; insert into item_report(item_code) values('LEGACY_ONLY')");

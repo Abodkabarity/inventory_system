@@ -47,6 +47,7 @@ class StockExcelReport {
     if (file.contains('near_expiry')) return 'Near Expiry';
     if (file.contains('mrn_overview')) return 'MRN Overview';
     if (file.contains('monthly_sales')) return 'Monthly Sales';
+    if (file.contains('daily_sales_45_days')) return 'Daily Sales 45 Days';
     if (file.contains('branches')) return 'Branch Stock';
     return 'Stock Overview';
   }
