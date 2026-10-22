@@ -928,6 +928,7 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
       width: width,
       height: 46,
       child: InventoryDropdown<String>(
+        searchable: true,
         value: value,
         label: label,
         icon: Icon(icon),

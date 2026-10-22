@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+import 'package:dropdown_search/dropdown_search.dart';
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/store_branch_identity_registry.dart';
@@ -58,7 +60,7 @@ class InventoryDropdown<T> extends StatelessWidget {
   final ValueChanged<T?>? onChanged;
   final Widget? hint, icon, underline;
   final String? label;
-  final bool isExpanded, isDense, branchNames;
+  final bool isExpanded, isDense, branchNames, searchable;
   final TextStyle? style;
   final Color? dropdownColor;
   final BorderRadius? borderRadius;
@@ -74,6 +76,7 @@ class InventoryDropdown<T> extends StatelessWidget {
     this.isExpanded = false,
     this.isDense = false,
     this.branchNames = false,
+    this.searchable = false,
     this.style,
     this.dropdownColor,
     this.borderRadius,
@@ -111,6 +114,20 @@ class InventoryDropdown<T> extends StatelessWidget {
             final enabled = onChanged != null && options.isNotEmpty;
             final selectedLabel =
                 selected?.child ?? hint ?? const Text('Select');
+            if (searchable) {
+              return SizedBox(
+                width: size.hasBoundedWidth ? null : 220,
+                child: _SearchableInventoryMenu<T>(
+                  value: value,
+                  options: options,
+                  onChanged: onChanged,
+                  label: label,
+                  hint: hint,
+                  branchNames: branch,
+                  leading: leading,
+                ),
+              );
+            }
             return SizedBox(
               width: size.hasBoundedWidth ? null : 220,
               child: PopupMenuButton<_MenuChoice<T>>(
@@ -240,6 +257,202 @@ class InventoryDropdown<T> extends StatelessWidget {
       );
 }
 
+/// Opt-in searchable selection; menu items retain nullable/raw filter values.
+class _SearchableInventoryMenu<T> extends StatelessWidget {
+  final T? value;
+  final List<DropdownMenuItem<T>> options;
+  final ValueChanged<T?>? onChanged;
+  final String? label;
+  final Widget? hint;
+  final bool branchNames;
+  final IconData leading;
+  const _SearchableInventoryMenu({
+    required this.value,
+    required this.options,
+    required this.onChanged,
+    required this.label,
+    required this.hint,
+    required this.branchNames,
+    required this.leading,
+  });
+
+  String _optionText(DropdownMenuItem<T> option) {
+    final child = option.child;
+    var text = child is Text ? child.data ?? '' : '${option.value ?? ''}';
+    final raw = option.value;
+    if (branchNames && raw is String && text.contains(raw)) {
+      final display = StoreBranchIdentityRegistry.displayName(raw);
+      if (!text.contains(display)) text = text.replaceFirst(raw, display);
+    }
+    return text;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title = label == null ? 'Choose option' : 'Choose $label';
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(
+        color: AppColors.primaryColor.withValues(alpha: .14),
+      ),
+    );
+    final popupWidth = math.min(380.0, MediaQuery.sizeOf(context).width - 24);
+    return Tooltip(
+      message: title,
+      child: DropdownSearch<DropdownMenuItem<T>>(
+        enabled: onChanged != null && options.isNotEmpty,
+        selectedItem: options.where((item) => item.value == value).firstOrNull,
+        items: (_, _) => options,
+        compareFn: (left, right) => left.value == right.value,
+        itemAsString: _optionText,
+        filterFn: (item, query) => _optionText(
+          item,
+        ).toLowerCase().contains(query.trim().toLowerCase()),
+        onSelected: (item) {
+          if (item == null) return;
+          item.onTap?.call();
+          onChanged?.call(item.value);
+        },
+        decoratorProps: DropDownDecoratorProps(
+          decoration: InputDecoration(
+            constraints: const BoxConstraints.tightFor(height: 46),
+            isDense: true,
+            filled: true,
+            fillColor: AppColors.primaryColor.withValues(alpha: .04),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 5,
+            ),
+            prefixIcon: Icon(leading, color: AppColors.primaryColor, size: 18),
+            prefixIconConstraints: const BoxConstraints(
+              minWidth: 36,
+              minHeight: 30,
+            ),
+            border: border,
+            enabledBorder: border,
+            disabledBorder: border,
+            focusedBorder: border.copyWith(
+              borderSide: const BorderSide(
+                color: AppColors.primaryColor,
+                width: 1.5,
+              ),
+            ),
+          ),
+        ),
+        dropdownBuilder: (_, selected) => Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (label?.isNotEmpty ?? false) ...[
+              Text(
+                label!.toUpperCase(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.subText,
+                  fontSize: 10,
+                  height: 1,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 2),
+            ],
+            _label(
+              selected?.child ?? hint ?? const Text('Select'),
+              branchNames,
+              selected?.value,
+              maxLines: 1,
+            ),
+          ],
+        ),
+        suffixProps: const DropdownSuffixProps(
+          dropdownButtonProps: DropdownButtonProps(
+            iconClosed: Icon(
+              Icons.expand_more_rounded,
+              size: 18,
+              color: AppColors.primaryColor,
+            ),
+            padding: EdgeInsets.all(4),
+            constraints: BoxConstraints(minWidth: 26, minHeight: 30),
+          ),
+        ),
+        popupProps: PopupProps<DropdownMenuItem<T>>.menu(
+          showSearchBox: true,
+          showSelectedItems: true,
+          searchDelay: Duration.zero,
+          fit: FlexFit.loose,
+          disabledItemFn: (item) => !item.enabled,
+          constraints: BoxConstraints(
+            minWidth: popupWidth,
+            maxWidth: popupWidth,
+            maxHeight: math.min(420, MediaQuery.sizeOf(context).height * .7),
+          ),
+          menuProps: MenuProps(
+            align: MenuAlign.bottomEnd,
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.transparent,
+            elevation: 8,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            clipBehavior: Clip.antiAlias,
+            margin: const EdgeInsets.only(top: 6),
+          ),
+          searchFieldProps: TextFieldProps(
+            autofocus: true,
+            cursorColor: AppColors.primaryColor,
+            style: const TextStyle(
+              color: AppColors.secondaryColor,
+              fontSize: 13,
+            ),
+            decoration: InputDecoration(
+              hintText: label == null
+                  ? 'Search options...'
+                  : 'Search $label...',
+              prefixIcon: const Icon(
+                Icons.search_rounded,
+                color: AppColors.primaryColor,
+                size: 20,
+              ),
+              isDense: true,
+              border: border,
+              enabledBorder: border,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 12,
+              ),
+            ),
+          ),
+          itemBuilder: (_, item, disabled, selected) => Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Opacity(
+              opacity: disabled ? .45 : 1,
+              child: Row(
+                children: [
+                  Expanded(child: _label(item.child, branchNames, item.value)),
+                  if (selected)
+                    const Icon(
+                      Icons.check_rounded,
+                      color: AppColors.primaryColor,
+                      size: 18,
+                    ),
+                ],
+              ),
+            ),
+          ),
+          emptyBuilder: (_, _) => const Padding(
+            padding: EdgeInsets.all(20),
+            child: Text(
+              'No matching options',
+              style: TextStyle(color: AppColors.subText),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Keeps Form validation, saving and controlled updates while using the same
 /// trigger and popup as ordinary inventory selectors.
 class InventoryDropdownFormField<T> extends FormField<T> {
@@ -251,6 +464,7 @@ class InventoryDropdownFormField<T> extends FormField<T> {
     InputDecoration decoration = const InputDecoration(),
     Widget? icon,
     bool isExpanded = true,
+    bool searchable = false,
     TextStyle? style,
     super.validator,
     super.onSaved,
@@ -262,6 +476,7 @@ class InventoryDropdownFormField<T> extends FormField<T> {
            crossAxisAlignment: CrossAxisAlignment.start,
            children: [
              InventoryDropdown<T>(
+               searchable: searchable,
                value: field.value,
                items: items,
                isExpanded: isExpanded,

@@ -661,6 +661,7 @@ class _StockExpiryPageState extends State<StockExpiryPage> {
               width: math.min(220, size.maxWidth),
               height: 46,
               child: InventoryDropdownFormField<String>(
+                searchable: true,
                 key: ValueKey(_urgency),
                 initialValue: _urgency,
                 isExpanded: true,

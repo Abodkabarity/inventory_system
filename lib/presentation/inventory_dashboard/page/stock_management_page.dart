@@ -863,6 +863,7 @@ class _StockManagementPageState extends State<StockManagementPage> {
     },
     height: 46,
     child: InventoryDropdownFormField<String>(
+      searchable: true,
       key: ValueKey('$label:$value:${options.length}'),
       initialValue: options.containsKey(value) ? value : '',
       isExpanded: true,

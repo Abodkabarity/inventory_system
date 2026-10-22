@@ -21,6 +21,10 @@ position without rerunning its initial loader. Hidden pages cannot receive focus
 or run animations. Explicit reload and existing background refresh behavior
 remain available; leaving the dashboard disposes all retained pages.
 
+All ten selection menus in the three Stock Management pages use the existing
+`dropdown_search` package with local option search. Selection keeps the original
+filter values, including All options. The same menus apply to Inventory and View.
+
 Apply `20261022120906_add_view_dashboard_role.sql` and
 `20261022121419_harden_stock_refresh_role_checks.sql` before deploying the client.
 It adds SELECT policies for stock workspaces and their cache revisions. The
