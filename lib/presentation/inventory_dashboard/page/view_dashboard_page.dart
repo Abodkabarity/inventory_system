@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../data/datasources/remote/stock_expiry_remote_ds.dart';
 import '../../../domain/entities/inventory_page.dart';
+import '../../widgets/retained_page_stack.dart';
 import '../widgets/inventory_drawer.dart';
 import 'availability_kpi_page.dart';
 import 'fill_rate_kpi_page.dart';
@@ -38,7 +39,7 @@ class _ViewDashboardPageState extends State<ViewDashboardPage> {
     setState(() => _page = page);
   }
 
-  Widget _buildPage() => switch (_page) {
+  Widget _buildPage(InventoryPageType page) => switch (page) {
     InventoryPageType.stockManagement => const StockCatalogPage(readOnly: true),
     InventoryPageType.mrnOverview => StockManagementPage(
       onOpenExpiry: () => _select(InventoryPageType.nearExpiry),
@@ -77,7 +78,13 @@ class _ViewDashboardPageState extends State<ViewDashboardPage> {
                 ),
               ),
             ),
-            Expanded(child: _buildPage()),
+            Expanded(
+              child: RetainedPageStack<InventoryPageType>(
+                pages: ViewDashboardPage.pages.toList(growable: false),
+                selectedPage: _page,
+                pageBuilder: (context, page) => _buildPage(page),
+              ),
+            ),
           ],
         ),
         Positioned(

@@ -15,6 +15,12 @@ inventory order subscriptions. Inventory and other existing roles keep their
 navigation. Raw branch identities and the shared group 71 display registry are
 preserved.
 
+Pages are created on their first visit and retained while the view dashboard is
+open. Returning to a visited page preserves its loaded data, filters and scroll
+position without rerunning its initial loader. Hidden pages cannot receive focus
+or run animations. Explicit reload and existing background refresh behavior
+remain available; leaving the dashboard disposes all retained pages.
+
 Apply `20261022120906_add_view_dashboard_role.sql` and
 `20261022121419_harden_stock_refresh_role_checks.sql` before deploying the client.
 It adds SELECT policies for stock workspaces and their cache revisions. The
