@@ -11,6 +11,7 @@ import 'presentation/items_tracker/page/items_tracker_page.dart';
 import 'presentation/orders/pages/branch_orders_page.dart';
 import 'presentation/purchase/page/purchase_status_page.dart';
 import 'presentation/zone_manager/page/zone_manager_page.dart';
+import 'presentation/inventory_dashboard/page/view_dashboard_page.dart';
 
 class RoleGatePage extends StatelessWidget {
   const RoleGatePage({super.key});
@@ -72,6 +73,10 @@ class RoleGatePage extends StatelessWidget {
 
         if (role == 'inventory') {
           return InventoryDashboardPage(runDate: runDate);
+        }
+
+        if (role == 'view') {
+          return ViewDashboardPage(runDate: runDate);
         }
 
         if (role == 'purchase') {

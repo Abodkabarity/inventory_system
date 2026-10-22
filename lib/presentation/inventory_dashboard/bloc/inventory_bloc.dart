@@ -1245,10 +1245,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
       result = result.where((e) {
         return e.itemName.toLowerCase().contains(q) ||
-            e.itemCode.toLowerCase().contains(q) ||
-            StoreBranchIdentityRegistry.displayName(
-              e.branchName,
-            ).toLowerCase().contains(q);
+            e.itemCode.toLowerCase().contains(q);
       }).toList();
     }
 

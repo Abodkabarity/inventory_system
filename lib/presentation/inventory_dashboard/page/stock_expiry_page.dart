@@ -51,6 +51,7 @@ class StockExpiryPage extends StatefulWidget {
   final StockExpiryDataSource dataSource;
   final ValueChanged<StockManagementItem>? onOpenProduct;
   final bool embedded;
+  final bool readOnly;
   final StockManagementDataSource? productDataSource;
   final StockRegisterExporter? exporter;
   const StockExpiryPage({
@@ -58,6 +59,7 @@ class StockExpiryPage extends StatefulWidget {
     required this.dataSource,
     this.onOpenProduct,
     this.embedded = false,
+    this.readOnly = false,
     this.productDataSource,
     this.exporter,
   });
@@ -174,7 +176,7 @@ class _StockExpiryPageState extends State<StockExpiryPage> {
   }
 
   Future<void> _review(StockExpiryAlert alert, String action) async {
-    if (_busy.contains(alert.key)) return;
+    if (widget.readOnly || _busy.contains(alert.key)) return;
     setState(() => _busy.add(alert.key));
     try {
       final saved = await widget.dataSource.save(
@@ -238,6 +240,7 @@ class _StockExpiryPageState extends State<StockExpiryPage> {
         alert: alert,
         source: widget.dataSource,
         productSource: widget.productDataSource,
+        readOnly: widget.readOnly,
       ),
     );
     if (mounted) await _load();
@@ -769,6 +772,7 @@ class _StockExpiryPageState extends State<StockExpiryPage> {
           child: StockExpiryGrid(
             key: _gridKey,
             alerts: data.rows,
+            readOnly: widget.readOnly,
             busy: Set.of(_busy),
             fading: Set.of(_fading),
             horizontalController: _horizontal,
@@ -869,10 +873,12 @@ class _ReviewDialog extends StatefulWidget {
   final StockExpiryAlert alert;
   final StockExpiryDataSource source;
   final StockManagementDataSource? productSource;
+  final bool readOnly;
   const _ReviewDialog({
     required this.alert,
     required this.source,
     this.productSource,
+    this.readOnly = false,
   });
   @override
   State<_ReviewDialog> createState() => _ReviewDialogState();
@@ -950,6 +956,7 @@ class _ReviewDialogState extends State<_ReviewDialog> {
   }
 
   Future<void> _save(String action) async {
+    if (widget.readOnly) return;
     if (_alert == null || _saving) return;
     setState(() {
       _saving = true;
@@ -999,6 +1006,14 @@ class _ReviewDialogState extends State<_ReviewDialog> {
       },
       child: StockManagementProductDialog(
         item: a.product,
+        receiptDetails: StockManagementItem({
+          'last_mrn_date': a.text('last_receipt_date'),
+          'expiry_date': a.expiry,
+          'vendor': a.data['vendor'],
+          'ordered_quantity': a.data['ordered_qty'],
+          'received_quantity': a.data['received_qty'],
+          'last_mrn_qty': a.data['received_qty'],
+        }),
         source:
             widget.productSource ??
             StockManagementRemoteDs(Supabase.instance.client),
@@ -1135,80 +1150,91 @@ class _ReviewDialogState extends State<_ReviewDialog> {
                         ),
                       LayoutBuilder(
                         builder: (context, constraints) {
-                          final actions = Wrap(
-                            key: const ValueKey('expiry-note-actions'),
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              SizedBox(
-                                height: 48,
-                                child: OutlinedButton.icon(
-                                  onPressed: _saving || !_dirty
-                                      ? null
-                                      : () => _save('note'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: _teal,
-                                    side: BorderSide(
-                                      color: _teal.withValues(alpha: .25),
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                  icon: const Icon(
-                                    Icons.save_outlined,
-                                    size: 18,
-                                  ),
-                                  label: const Text('Save note'),
-                                ),
-                              ),
-                              SizedBox(
-                                height: 48,
-                                child: FilledButton.icon(
-                                  key: const ValueKey('expiry-review-button'),
-                                  onPressed: _saving
-                                      ? null
-                                      : () => _save(
-                                          a.reviewed ? 'reopen' : 'review',
-                                        ),
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: _teal,
-                                    foregroundColor: Colors.white,
-                                    disabledBackgroundColor: _teal.withValues(
-                                      alpha: .55,
-                                    ),
-                                    disabledForegroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                  icon: _saving
-                                      ? const SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Colors.white,
+                          final actions = widget.readOnly
+                              ? const SizedBox.shrink()
+                              : Wrap(
+                                  key: const ValueKey('expiry-note-actions'),
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    SizedBox(
+                                      height: 48,
+                                      child: OutlinedButton.icon(
+                                        onPressed: _saving || !_dirty
+                                            ? null
+                                            : () => _save('note'),
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: _teal,
+                                          side: BorderSide(
+                                            color: _teal.withValues(alpha: .25),
                                           ),
-                                        )
-                                      : Icon(
-                                          a.reviewed
-                                              ? Icons.undo_rounded
-                                              : Icons.task_alt_rounded,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                        ),
+                                        icon: const Icon(
+                                          Icons.save_outlined,
                                           size: 18,
                                         ),
-                                  label: Text(
-                                    a.reviewed
-                                        ? 'Reopen alarm'
-                                        : 'Save & mark reviewed',
-                                  ),
-                                ),
-                              ),
-                            ],
-                          );
+                                        label: const Text('Save note'),
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      height: 48,
+                                      child: FilledButton.icon(
+                                        key: const ValueKey(
+                                          'expiry-review-button',
+                                        ),
+                                        onPressed: _saving
+                                            ? null
+                                            : () => _save(
+                                                a.reviewed
+                                                    ? 'reopen'
+                                                    : 'review',
+                                              ),
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor: _teal,
+                                          foregroundColor: Colors.white,
+                                          disabledBackgroundColor: _teal
+                                              .withValues(alpha: .55),
+                                          disabledForegroundColor: Colors.white,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                        ),
+                                        icon: _saving
+                                            ? const SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                      color: Colors.white,
+                                                    ),
+                                              )
+                                            : Icon(
+                                                a.reviewed
+                                                    ? Icons.undo_rounded
+                                                    : Icons.task_alt_rounded,
+                                                size: 18,
+                                              ),
+                                        label: Text(
+                                          a.reviewed
+                                              ? 'Reopen alarm'
+                                              : 'Save & mark reviewed',
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                );
                           final note = TextField(
                             key: const ValueKey('expiry-note-field'),
                             controller: _note,
+                            readOnly: widget.readOnly,
                             enabled: !_saving,
                             minLines: 1,
                             maxLines: 2,

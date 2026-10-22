@@ -13,13 +13,6 @@ class MaxAdjHistoryDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<Map<String, String>>(
-      valueListenable: StoreBranchIdentityRegistry.groups,
-      builder: (context, _, child) => _buildDialog(context),
-    );
-  }
-
-  Widget _buildDialog(BuildContext context) {
     return Dialog(
       backgroundColor: Colors.white,
       child: BlocBuilder<InventoryBloc, InventoryState>(

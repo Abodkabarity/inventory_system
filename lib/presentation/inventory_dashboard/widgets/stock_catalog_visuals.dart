@@ -507,6 +507,16 @@ class _CatalogMonthlyChartState extends State<CatalogMonthlyChart> {
       );
     }
     final active = _hover == null ? null : series[_hover!];
+    var source = '';
+    if (active != null) {
+      if (active['source'] == 'sales_last_45_days') {
+        source = active['through'] == null
+            ? 'Daily sales • No current-month data uploaded'
+            : 'Daily sales through ${catalogDate(active['through'])}';
+      } else if (active['source'] == 'sales_history') {
+        source = 'Monthly history';
+      }
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -518,7 +528,7 @@ class _CatalogMonthlyChartState extends State<CatalogMonthlyChart> {
             const CatalogPill('3-month moving average', color: catalogBlue),
             if (active != null)
               Text(
-                '${active['month']}  ·  ${catalogQty(active['total'])} Qty  ·  MA ${averages[_hover!] == null ? '—' : catalogQty(averages[_hover!])}',
+                '${active['month']}  ·  ${catalogQty(active['total'])} Qty  ·  MA ${averages[_hover!] == null ? '—' : catalogQty(averages[_hover!])}${source.isEmpty ? '' : '  ·  $source'}',
                 style: const TextStyle(
                   color: catalogInk,
                   fontWeight: FontWeight.w700,

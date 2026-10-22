@@ -38,7 +38,7 @@ class _MismatchReviewWorkspaceState extends State<MismatchReviewWorkspace> {
   final _search = TextEditingController();
   String _branch = 'ALL', _risk = 'all';
   DateTimeRange? _reportRange;
-  bool _recentFirst = false, _exporting = false, _showReviewed = false;
+  bool _recentFirst = false, _exporting = false;
   List<Object?>? _projectionKey;
   List<MismatchReview> _scopedRows = [], _visibleRows = [];
   List<String> _branches = [];
@@ -53,7 +53,6 @@ class _MismatchReviewWorkspaceState extends State<MismatchReviewWorkspace> {
       _risk,
       _reportRange,
       _recentFirst,
-      _showReviewed,
     ];
     if (listEquals(key, _projectionKey)) return;
     _projectionKey = key;
@@ -104,7 +103,6 @@ class _MismatchReviewWorkspaceState extends State<MismatchReviewWorkspace> {
           (r) =>
               (_branch == 'ALL' || r.branch == _branch) &&
               r.matches(_search.text) &&
-              (_showReviewed || !r.reviewed) &&
               _matchesReportDate(r),
         )
         .toList();
@@ -452,7 +450,7 @@ class _MismatchReviewWorkspaceState extends State<MismatchReviewWorkspace> {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               SizedBox(
-                width: wide ? box.maxWidth - 1070 : box.maxWidth,
+                width: wide ? box.maxWidth - 918 : box.maxWidth,
                 height: 56,
                 child: TextField(
                   controller: _search,
@@ -502,37 +500,6 @@ class _MismatchReviewWorkspaceState extends State<MismatchReviewWorkspace> {
                 width: wide ? 300 : fieldWidth,
                 height: 56,
                 child: _reportDateFilter(),
-              ),
-              SizedBox(
-                width: 140,
-                height: 56,
-                child: OutlinedButton.icon(
-                  onPressed: () => setState(
-                    () => _showReviewed = !_showReviewed,
-                  ),
-                  icon: Icon(
-                    _showReviewed
-                        ? Icons.visibility_rounded
-                        : Icons.visibility_off_rounded,
-                    size: 18,
-                  ),
-                  label: Text(
-                    _showReviewed ? 'All records' : 'New only',
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _showReviewed ? _teal : _ink,
-                    side: BorderSide(
-                      color: _showReviewed ? _teal.withValues(alpha: .45) : _line,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    textStyle: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
               ),
               SizedBox(
                 width: 160,
@@ -1245,7 +1212,7 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
   String? _loadedKey;
   String? _error;
   int _generation = 0;
-  bool _loading = true, _updatingReview = false;
+  bool _loading = true;
   @override
   void initState() {
     super.initState();
@@ -1304,32 +1271,6 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
           _error = 'Could not load movement evidence. Retry the review.';
         });
       }
-    }
-  }
-
-  Future<void> _setReviewed(bool reviewed) async {
-    if (_updatingReview) return;
-    setState(() => _updatingReview = true);
-    try {
-      await widget.controller.setReviewed(widget.row, reviewed);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            reviewed
-                ? 'Marked as reviewed. It is now hidden from New only.'
-                : 'Moved back to New only.',
-          ),
-        ),
-      );
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not update review status.')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _updatingReview = false);
     }
   }
 
@@ -1408,44 +1349,7 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
                   style: const TextStyle(color: _muted, fontSize: 13),
                 ),
                 const SizedBox(height: 12),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    ReviewBadge(status: status),
-                    const Spacer(),
-                    OutlinedButton.icon(
-                      onPressed: _updatingReview
-                          ? null
-                          : () => _setReviewed(!row.reviewed),
-                      icon: _updatingReview
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Icon(
-                              row.reviewed
-                                  ? Icons.undo_rounded
-                                  : Icons.check_circle_outline_rounded,
-                              size: 18,
-                            ),
-                      label: Text(
-                        row.reviewed ? 'Mark as new' : 'Mark reviewed',
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: row.reviewed ? _muted : _teal,
-                        side: BorderSide(
-                          color: row.reviewed
-                              ? _line
-                              : _teal.withValues(alpha: .45),
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                ReviewBadge(status: status),
               ],
             ),
           ),

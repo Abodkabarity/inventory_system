@@ -54,6 +54,7 @@ DateTime _addMonths(DateTime date, int months) {
 /// The same Syncfusion grid engine used by Inventory Daily Order. Values stay
 /// typed (dates/numbers/text) so Excel-style filters and sorting remain correct.
 class StockExpiryGrid extends StatefulWidget {
+  final bool readOnly;
   final List<StockExpiryAlert> alerts;
   final Set<String> busy, fading;
   final ScrollController horizontalController;
@@ -62,6 +63,7 @@ class StockExpiryGrid extends StatefulWidget {
   final void Function(int visible, bool filtered) onViewChanged;
   const StockExpiryGrid({
     super.key,
+    this.readOnly = false,
     required this.alerts,
     required this.busy,
     required this.fading,
@@ -85,6 +87,7 @@ class StockExpiryGridState extends State<StockExpiryGrid> {
   void initState() {
     super.initState();
     source = StockExpiryGridSource(
+      readOnly: widget.readOnly,
       alerts: widget.alerts,
       busy: widget.busy,
       fading: widget.fading,
@@ -225,6 +228,7 @@ class StockExpiryGridState extends State<StockExpiryGrid> {
 }
 
 class StockExpiryGridSource extends DataGridSource {
+  final bool readOnly;
   static const columns = <(String, String, double)>[
     ('item_name', 'PRODUCT / SUPPLIER', 340),
     ('last_receipt_date', 'MRN date', 175),
@@ -256,6 +260,7 @@ class StockExpiryGridSource extends DataGridSource {
   final _alerts = <DataGridRow, StockExpiryAlert>{};
   Set<String> _busy = {}, _fading = {};
   StockExpiryGridSource({
+    this.readOnly = false,
     required List<StockExpiryAlert> alerts,
     required Set<String> busy,
     required Set<String> fading,
@@ -526,30 +531,31 @@ class StockExpiryGridSource extends DataGridSource {
                 ),
               ),
               const SizedBox(width: 5),
-              IconButton(
-                key: ValueKey('review:${a.key}'),
-                tooltip: a.reviewed ? 'Reopen alarm' : 'Mark reviewed',
-                onPressed: disabled ? null : () => onReview(a),
-                style: IconButton.styleFrom(
-                  backgroundColor: _teal.withValues(alpha: .08),
-                  minimumSize: const Size(34, 34),
-                  padding: const EdgeInsets.all(6),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              if (!readOnly)
+                IconButton(
+                  key: ValueKey('review:${a.key}'),
+                  tooltip: a.reviewed ? 'Reopen alarm' : 'Mark reviewed',
+                  onPressed: disabled ? null : () => onReview(a),
+                  style: IconButton.styleFrom(
+                    backgroundColor: _teal.withValues(alpha: .08),
+                    minimumSize: const Size(34, 34),
+                    padding: const EdgeInsets.all(6),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  icon: disabled
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          a.reviewed
+                              ? Icons.undo_rounded
+                              : Icons.task_alt_rounded,
+                          color: _teal,
+                          size: 22,
+                        ),
                 ),
-                icon: disabled
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(
-                        a.reviewed
-                            ? Icons.undo_rounded
-                            : Icons.task_alt_rounded,
-                        color: _teal,
-                        size: 22,
-                      ),
-              ),
             ],
           ),
         ]);

@@ -1,6 +1,6 @@
-import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 import 'dart:async';
 
+import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -24,16 +24,16 @@ import '../final_reorder/widgets/limit_dialog.dart';
 import '../widgets/branch_allocation_dialog.dart';
 import '../widgets/branch_stock_check_page.dart';
 import '../widgets/branch_zone_cubit.dart';
-import '../widgets/items_to_order_dialog.dart';
 import '../widgets/insurance_assistant_zone_access.dart';
+import '../widgets/items_to_order_dialog.dart';
 import '../widgets/low_demand_order_suggestions_dialog.dart';
 import '../widgets/max_allowed_dialog.dart';
 import '../widgets/orders_grid_controller.dart';
 import '../widgets/orders_table.dart';
 import '../widgets/orders_toolbar.dart';
 import '../widgets/pending_items_to_order_dialog.dart';
-import 'branch_orders_actions.dart';
 import 'branch_order_guide_page.dart';
+import 'branch_orders_actions.dart';
 import 'branch_orders_selectors.dart';
 import 'branch_widgets/columns_panel.dart';
 
@@ -938,7 +938,7 @@ class _BranchOrdersScreenState extends State<BranchOrdersScreen> {
                                           size: 18,
                                         ),
                                         label: const Text(
-                                          'Non Recived',
+                                          'Non Received',
                                           style: TextStyle(
                                             fontWeight: FontWeight.bold,
                                           ),

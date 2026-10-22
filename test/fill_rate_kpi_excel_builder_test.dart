@@ -4,10 +4,13 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:daily_order/core/utils/fill_rate_kpi_excel_builder.dart';
 import 'package:daily_order/data/datasources/remote/fill_rate_kpi_remote_ds.dart';
+import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  tearDown(() => StoreBranchIdentityRegistry.groups.value = const {});
   test('management export contains all explained report sheets', () {
+    StoreBranchIdentityRegistry.groups.value = {'AL AIN MAIN': '71'};
     const summary = FillRateSummary(
       branchName: 'ALL BRANCHES',
       totalItems: 50,
@@ -88,7 +91,7 @@ void main() {
     final bytes = FillRateKpiExcelBuilder.build(
       from: DateTime(2026, 8, 11),
       to: DateTime(2026, 8, 11),
-      branch: 'ALL BRANCHES',
+      branch: 'AL AIN MAIN',
       report: report,
       items: [item],
     );
@@ -102,6 +105,9 @@ void main() {
     );
     final workbook = entry('xl/workbook.xml');
     final sharedStrings = entry('xl/sharedStrings.xml');
+    expect(sharedStrings, contains('Scope: 71 AL AIN MAIN'));
+    expect(sharedStrings, contains('>71 AL AIN MAIN<'));
+    expect(item.branchName, 'AL AIN MAIN');
 
     expect(workbook, contains('Fill Rate Gap Analysis'));
     expect(workbook, contains('Item Details'));

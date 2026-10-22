@@ -48,6 +48,7 @@ class _FillRateKpiPageState extends State<FillRateKpiPage> {
   @override
   void initState() {
     super.initState();
+    StoreBranchIdentityRegistry.groups.addListener(_refreshBranchLabels);
     final yesterday = DateUtils.dateOnly(
       DateTime.now().subtract(const Duration(days: 1)),
     );
@@ -69,8 +70,13 @@ class _FillRateKpiPageState extends State<FillRateKpiPage> {
 
   @override
   void dispose() {
+    StoreBranchIdentityRegistry.groups.removeListener(_refreshBranchLabels);
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _refreshBranchLabels() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -100,7 +106,9 @@ class _FillRateKpiPageState extends State<FillRateKpiPage> {
           if (search.isEmpty) return true;
           return item.itemCode.toLowerCase().contains(search) ||
               item.itemName.toLowerCase().contains(search) ||
-              item.branchName.toLowerCase().contains(search) ||
+              StoreBranchIdentityRegistry.displayName(
+                item.branchName,
+              ).toLowerCase().contains(search) ||
               item.purchaseStatus.toLowerCase().contains(search);
         })
         .toList(growable: false);
@@ -1282,6 +1290,15 @@ class _ProductTableState extends State<_ProductTable> {
   void initState() {
     super.initState();
     _source = _ProductGridSource(widget.items);
+    StoreBranchIdentityRegistry.groups.addListener(_refreshBranchLabels);
+  }
+
+  void _refreshBranchLabels() => _source.update(widget.items);
+
+  @override
+  void dispose() {
+    StoreBranchIdentityRegistry.groups.removeListener(_refreshBranchLabels);
+    super.dispose();
   }
 
   @override
@@ -1487,7 +1504,7 @@ class _ProductGridSource extends DataGridSource {
             cells: [
               DataGridCell<String>(
                 columnName: 'branch',
-                value: item.branchName,
+                value: StoreBranchIdentityRegistry.displayName(item.branchName),
               ),
               DataGridCell<String>(columnName: 'code', value: item.itemCode),
               DataGridCell<String>(columnName: 'name', value: item.itemName),
@@ -1827,6 +1844,15 @@ class _BranchReportTableState extends State<_BranchReportTable> {
       widget.summaries,
       onOpenBranch: widget.onOpenBranch,
     );
+    StoreBranchIdentityRegistry.groups.addListener(_refreshBranchLabels);
+  }
+
+  void _refreshBranchLabels() => _source.update(widget.summaries);
+
+  @override
+  void dispose() {
+    StoreBranchIdentityRegistry.groups.removeListener(_refreshBranchLabels);
+    super.dispose();
   }
 
   @override
@@ -1958,7 +1984,9 @@ class _BranchGridSource extends DataGridSource {
             cells: [
               DataGridCell<String>(
                 columnName: 'branch',
-                value: summary.branchName,
+                value: StoreBranchIdentityRegistry.displayName(
+                  summary.branchName,
+                ),
               ),
               DataGridCell<num>(
                 columnName: 'unit',

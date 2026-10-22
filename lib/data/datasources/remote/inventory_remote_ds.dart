@@ -6,7 +6,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../domain/entities/branch_setting.dart';
 import '../../../core/utils/purchase_shortage_report.dart';
 import '../../../core/utils/max_adj_search.dart';
-import '../../../core/utils/mismatch_report_date.dart';
 
 class InventoryRemoteDs {
   final SupabaseClient client;
@@ -805,13 +804,11 @@ class InventoryRemoteDs {
     return res.count;
   }
 
-  Future<List<Map<String, dynamic>>> fetchMismatch({
-    Function(double progress)? onProgress,
-  }) async {
+  Future<List<Map<String, dynamic>>> fetchMismatch() async {
     List<Map<String, dynamic>> all = [];
 
     int from = 0;
-    const int limit = 500;
+    const int limit = 10000;
 
     while (true) {
       final res = await client
@@ -828,7 +825,6 @@ class InventoryRemoteDs {
             created_at
           ''')
           .order('update_date', ascending: false)
-          .order('id')
           .range(from, from + limit - 1);
 
       final data = List<Map<String, dynamic>>.from(res);
@@ -836,27 +832,13 @@ class InventoryRemoteDs {
       if (data.isEmpty) break;
 
       all.addAll(data);
-      onProgress?.call((all.length / 20000).clamp(0, .8));
 
       if (data.length < limit) break;
 
       from += limit;
     }
 
-    if (all.isEmpty) return all;
-    final activity = <Map<String, dynamic>>[];
-    for (var offset = 0; ; offset += limit) {
-      final page = await client
-          .from('mismatch_log')
-          .select('id,branch_name,item_code,action,changed_at')
-          .inFilter('action', ['update', 'delete'])
-          .order('id')
-          .range(offset, offset + limit - 1);
-      activity.addAll(List<Map<String, dynamic>>.from(page));
-      if (page.length < limit) break;
-    }
-    onProgress?.call(1);
-    return mismatchReportRows(all, activity);
+    return all;
   }
 
   Future<List<Map<String, dynamic>>> fetchMismatchLog(

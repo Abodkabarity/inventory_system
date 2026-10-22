@@ -39,9 +39,6 @@ class InsuranceConversationPdfExporter {
     pw.Font? boldFont,
     pw.Font? arabicFont,
   }) async {
-    // Noto Sans Arabic does not contain every Latin glyph. Using it as the
-    // only base font caused the exported English text to render as squares.
-    // Keep the full Latin font as the base and use Arabic as a true fallback.
     regularFont ??= await PdfGoogleFonts.notoSansRegular();
     boldFont ??= await PdfGoogleFonts.notoSansBold();
     arabicFont ??= await PdfGoogleFonts.notoSansArabicRegular();

@@ -86,7 +86,10 @@ List<Map<String, dynamic>> catalogMonthlySeries(StockCatalogItem item) {
   final raw = item.list('monthly_sales');
   final byMonth = {for (final r in raw) r['month'].toString(): r};
   final through = DateTime.tryParse(
-    stockMap(item.data['meta'])['sales_2026_through']?.toString() ?? '',
+    (stockMap(item.data['meta'])['monthly_sales_through'] ??
+                stockMap(item.data['meta'])['sales_2026_through'])
+            ?.toString() ??
+        '',
   );
   final parsed =
       raw
@@ -114,6 +117,8 @@ List<Map<String, dynamic>> catalogMonthlySeries(StockCatalogItem item) {
           },
   ];
 }
+
+List<int> catalogSalesYears(StockCatalogItem item) => stockSalesYears(item);
 
 List<double?> catalogMovingAverage(List<Map<String, dynamic>> months) => [
   for (var i = 0; i < months.length; i++)

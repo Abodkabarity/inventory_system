@@ -16,7 +16,17 @@ import 'branch_tracker_badge_controller.dart';
 import 'stock_management_navigation.dart';
 
 class InventoryDrawer extends StatefulWidget {
-  const InventoryDrawer({super.key});
+  const InventoryDrawer({super.key}) : viewPage = null, onViewSelected = null;
+
+  const InventoryDrawer.view({
+    super.key,
+    required InventoryPageType selectedPage,
+    required ValueChanged<InventoryPageType> onSelected,
+  }) : viewPage = selectedPage,
+       onViewSelected = onSelected;
+
+  final InventoryPageType? viewPage;
+  final ValueChanged<InventoryPageType>? onViewSelected;
 
   @override
   State<InventoryDrawer> createState() => _InventoryDrawerState();
@@ -82,8 +92,10 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
         return (result as num).toInt();
       },
     )..addListener(_onTrackerBadgeChanged);
-    _initTrackerBadge();
-    _startTrackerRealtime();
+    if (widget.viewPage == null) {
+      _initTrackerBadge();
+      _startTrackerRealtime();
+    }
   }
 
   void _onTrackerBadgeChanged() {
@@ -160,282 +172,297 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<InventoryBloc, InventoryState>(
-      builder: (context, state) {
-        final currentPage = state.currentPage;
-        return Container(
-          width: 290,
-          decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFD),
-            border: Border(right: BorderSide(color: Colors.grey.shade200)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 24,
-                offset: const Offset(4, 0),
-              ),
-            ],
-          ),
-          child: Column(
-            children: [
-              const _Header(),
+    if (widget.viewPage != null) {
+      return _buildDrawer(
+        context,
+        InventoryState.initial().copyWith(currentPage: widget.viewPage),
+      );
+    }
+    return BlocBuilder<InventoryBloc, InventoryState>(builder: _buildDrawer);
+  }
 
-              Expanded(
-                child: SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(12, 16, 12, 24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+  void _selectPage(BuildContext context, InventoryPageType page) {
+    if (widget.onViewSelected case final onSelected?) {
+      onSelected(page);
+    } else {
+      context.read<InventoryBloc>().add(ChangeInventoryPage(page));
+    }
+  }
+
+  Widget _buildDrawer(BuildContext context, InventoryState state) {
+    final viewOnly = widget.viewPage != null;
+    final currentPage = state.currentPage;
+    return Container(
+      width: 290,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFD),
+        border: Border(right: BorderSide(color: Colors.grey.shade200)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 24,
+            offset: const Offset(4, 0),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          const _Header(),
+
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(12, 16, 12, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (!viewOnly) ...[
+                    _menuItem(
+                      context: context,
+                      state: state,
+                      page: InventoryPageType.dashboard,
+                      icon: Icons.dashboard_rounded,
+                      title: 'Dashboard',
+                      standalone: true,
+                    ),
+
+                    const SizedBox(height: 14),
+
+                    _drawerSection(
+                      title: 'ORDER MANAGEMENT',
+                      icon: Icons.shopping_cart_checkout_rounded,
+                      expanded: _orderManagementExpanded,
+                      active: _orderManagementPages.contains(currentPage),
+                      onToggle: () {
+                        setState(() {
+                          _orderManagementExpanded = !_orderManagementExpanded;
+                        });
+                      },
+                      children: [
+                        _menuItem(
+                          context: context,
+                          state: state,
+                          page: InventoryPageType.dailyOrder,
+                          icon: Icons.shopping_cart_rounded,
+                          title: 'Daily Order',
+                          nested: true,
+                        ),
+                        _menuItem(
+                          context: context,
+                          state: state,
+                          page: InventoryPageType.maxAdjustment,
+                          icon: Icons.trending_up_rounded,
+                          title: 'Max Adjustment',
+                          nested: true,
+                        ),
+                        _menuItem(
+                          context: context,
+                          state: state,
+                          page: InventoryPageType.formulary,
+                          icon: Icons.list_alt_rounded,
+                          title: 'Formulary',
+                          nested: true,
+                        ),
+                        _menuItem(
+                          context: context,
+                          state: state,
+                          page: InventoryPageType.assortment,
+                          icon: Icons.category_rounded,
+                          title: 'Assortment',
+                          nested: true,
+                        ),
+                        _menuItem(
+                          context: context,
+                          state: state,
+                          page: InventoryPageType.tma,
+                          icon: Icons.medication_rounded,
+                          title: 'TMA',
+                          nested: true,
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    _drawerSection(
+                      title: 'OPERATIONS',
+                      icon: Icons.settings_suggest_rounded,
+                      expanded: _operationsExpanded,
+                      active: _operationsPages.contains(currentPage),
+                      onToggle: () {
+                        setState(() {
+                          _operationsExpanded = !_operationsExpanded;
+                        });
+                      },
+                      children: [
+                        _menuItem(
+                          context: context,
+                          state: state,
+                          page: InventoryPageType.additionalOrders,
+                          icon: Icons.add_shopping_cart_rounded,
+                          title: 'Additional Orders',
+                          nested: true,
+                        ),
+                        _menuItem(
+                          context: context,
+                          state: state,
+                          page: InventoryPageType.itemsTracker,
+                          icon: Icons.track_changes_rounded,
+                          title: 'Items Tracker',
+                          nested: true,
+                        ),
+                        _menuItem(
+                          context: context,
+                          state: state,
+                          page: InventoryPageType.allocation,
+                          icon: Icons.account_tree_rounded,
+                          title: 'Allocation',
+                          nested: true,
+                        ),
+                        _menuItem(
+                          context: context,
+                          state: state,
+                          page: InventoryPageType.stockCheck,
+                          icon: Icons.inventory_2_rounded,
+                          title: 'Stock Check',
+                          nested: true,
+                        ),
+                        _menuItem(
+                          context: context,
+                          state: state,
+                          page: InventoryPageType.shortage,
+                          icon: Icons.production_quantity_limits_rounded,
+                          title: 'Shortage',
+                          nested: true,
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 12),
+                  ],
+                  StockManagementNavigation(
+                    selectedPage: currentPage,
+                    onSelected: (page) => _selectPage(context, page),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  _drawerSection(
+                    title: 'ANALYTICS & REPORTS',
+                    icon: Icons.analytics_rounded,
+                    expanded: _analyticsExpanded,
+                    active: _analyticsPages.contains(currentPage),
+                    onToggle: () {
+                      setState(() {
+                        _analyticsExpanded = !_analyticsExpanded;
+                      });
+                    },
                     children: [
+                      if (!viewOnly) ...[
+                        _menuItem(
+                          context: context,
+                          state: state,
+                          page: InventoryPageType.branchSubmissionTracker,
+                          icon: Icons.assignment_late_rounded,
+                          title: 'Submission Tracker',
+                          nested: true,
+                        ),
+                        _menuItem(
+                          context: context,
+                          state: state,
+                          page: InventoryPageType.branchesTracker,
+                          icon: Icons.timeline_rounded,
+                          title: 'Branches Tracker',
+                          badgeCount: _trackerCount,
+                          badgeLoading: _trackerLoading,
+                          nested: true,
+                        ),
+                        _menuItem(
+                          context: context,
+                          state: state,
+                          page: InventoryPageType.mismatch,
+                          icon: Icons.warning_amber_rounded,
+                          title: 'Mismatch Report',
+                          nested: true,
+                        ),
+                        _menuItem(
+                          context: context,
+                          state: state,
+                          page: InventoryPageType.additionalOrderAnalysis,
+                          icon: Icons.bar_chart_rounded,
+                          title: 'Additional Analysis',
+                          nested: true,
+                        ),
+                        _menuItem(
+                          context: context,
+                          state: state,
+                          page: InventoryPageType.orderEditAnalysis,
+                          icon: Icons.add_chart_rounded,
+                          title: 'Order Edit Analysis',
+                          nested: true,
+                        ),
+                      ],
                       _menuItem(
                         context: context,
                         state: state,
-                        page: InventoryPageType.dashboard,
-                        icon: Icons.dashboard_rounded,
-                        title: 'Dashboard',
-                        standalone: true,
+                        page: InventoryPageType.availabilityKpi,
+                        icon: Icons.monitor_heart_rounded,
+                        title: 'Availability KPI',
+                        nested: true,
                       ),
-
-                      const SizedBox(height: 14),
-
-                      _drawerSection(
-                        title: 'ORDER MANAGEMENT',
-                        icon: Icons.shopping_cart_checkout_rounded,
-                        expanded: _orderManagementExpanded,
-                        active: _orderManagementPages.contains(currentPage),
-                        onToggle: () {
-                          setState(() {
-                            _orderManagementExpanded =
-                                !_orderManagementExpanded;
-                          });
-                        },
-                        children: [
-                          _menuItem(
-                            context: context,
-                            state: state,
-                            page: InventoryPageType.dailyOrder,
-                            icon: Icons.shopping_cart_rounded,
-                            title: 'Daily Order',
-                            nested: true,
-                          ),
-                          _menuItem(
-                            context: context,
-                            state: state,
-                            page: InventoryPageType.maxAdjustment,
-                            icon: Icons.trending_up_rounded,
-                            title: 'Max Adjustment',
-                            nested: true,
-                          ),
-                          _menuItem(
-                            context: context,
-                            state: state,
-                            page: InventoryPageType.formulary,
-                            icon: Icons.list_alt_rounded,
-                            title: 'Formulary',
-                            nested: true,
-                          ),
-                          _menuItem(
-                            context: context,
-                            state: state,
-                            page: InventoryPageType.assortment,
-                            icon: Icons.category_rounded,
-                            title: 'Assortment',
-                            nested: true,
-                          ),
-                          _menuItem(
-                            context: context,
-                            state: state,
-                            page: InventoryPageType.tma,
-                            icon: Icons.medication_rounded,
-                            title: 'TMA',
-                            nested: true,
-                          ),
-                        ],
+                      _menuItem(
+                        context: context,
+                        state: state,
+                        page: InventoryPageType.fillRateKpi,
+                        icon: Icons.local_shipping_rounded,
+                        title: 'Fill Rate KPI',
+                        nested: true,
                       ),
-
-                      const SizedBox(height: 12),
-
-                      _drawerSection(
-                        title: 'OPERATIONS',
-                        icon: Icons.settings_suggest_rounded,
-                        expanded: _operationsExpanded,
-                        active: _operationsPages.contains(currentPage),
-                        onToggle: () {
-                          setState(() {
-                            _operationsExpanded = !_operationsExpanded;
-                          });
-                        },
-                        children: [
-                          _menuItem(
-                            context: context,
-                            state: state,
-                            page: InventoryPageType.additionalOrders,
-                            icon: Icons.add_shopping_cart_rounded,
-                            title: 'Additional Orders',
-                            nested: true,
-                          ),
-                          _menuItem(
-                            context: context,
-                            state: state,
-                            page: InventoryPageType.itemsTracker,
-                            icon: Icons.track_changes_rounded,
-                            title: 'Items Tracker',
-                            nested: true,
-                          ),
-                          _menuItem(
-                            context: context,
-                            state: state,
-                            page: InventoryPageType.allocation,
-                            icon: Icons.account_tree_rounded,
-                            title: 'Allocation',
-                            nested: true,
-                          ),
-                          _menuItem(
-                            context: context,
-                            state: state,
-                            page: InventoryPageType.stockCheck,
-                            icon: Icons.inventory_2_rounded,
-                            title: 'Stock Check',
-                            nested: true,
-                          ),
-                          _menuItem(
-                            context: context,
-                            state: state,
-                            page: InventoryPageType.shortage,
-                            icon: Icons.production_quantity_limits_rounded,
-                            title: 'Shortage',
-                            nested: true,
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      StockManagementNavigation(
-                        selectedPage: currentPage,
-                        onSelected: (page) => context.read<InventoryBloc>().add(
-                          ChangeInventoryPage(page),
-                        ),
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      _drawerSection(
-                        title: 'ANALYTICS & REPORTS',
-                        icon: Icons.analytics_rounded,
-                        expanded: _analyticsExpanded,
-                        active: _analyticsPages.contains(currentPage),
-                        onToggle: () {
-                          setState(() {
-                            _analyticsExpanded = !_analyticsExpanded;
-                          });
-                        },
-                        children: [
-                          _menuItem(
-                            context: context,
-                            state: state,
-                            page: InventoryPageType.branchSubmissionTracker,
-                            icon: Icons.assignment_late_rounded,
-                            title: 'Submission Tracker',
-                            nested: true,
-                          ),
-                          _menuItem(
-                            context: context,
-                            state: state,
-                            page: InventoryPageType.branchesTracker,
-                            icon: Icons.timeline_rounded,
-                            title: 'Branches Tracker',
-                            badgeCount: _trackerCount,
-                            badgeLoading: _trackerLoading,
-                            nested: true,
-                          ),
-                          _menuItem(
-                            context: context,
-                            state: state,
-                            page: InventoryPageType.mismatch,
-                            icon: Icons.warning_amber_rounded,
-                            title: 'Mismatch Report',
-                            nested: true,
-                          ),
-                          _menuItem(
-                            context: context,
-                            state: state,
-                            page: InventoryPageType.additionalOrderAnalysis,
-                            icon: Icons.bar_chart_rounded,
-                            title: 'Additional Analysis',
-                            nested: true,
-                          ),
-                          _menuItem(
-                            context: context,
-                            state: state,
-                            page: InventoryPageType.orderEditAnalysis,
-                            icon: Icons.add_chart_rounded,
-                            title: 'Order Edit Analysis',
-                            nested: true,
-                          ),
-
-                          _menuItem(
-                            context: context,
-                            state: state,
-                            page: InventoryPageType.availabilityKpi,
-                            icon: Icons.monitor_heart_rounded,
-                            title: 'Availability KPI',
-                            nested: true,
-                          ),
-                          _menuItem(
-                            context: context,
-                            state: state,
-                            page: InventoryPageType.fillRateKpi,
-                            icon: Icons.local_shipping_rounded,
-                            title: 'Fill Rate KPI',
-                            nested: true,
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      _drawerSection(
-                        title: 'CONFIGURATION',
-                        icon: Icons.tune_rounded,
-                        expanded: _configurationExpanded,
-                        active: _configurationPages.contains(currentPage),
-                        onToggle: () {
-                          setState(() {
-                            _configurationExpanded = !_configurationExpanded;
-                          });
-                        },
-                        children: [
-                          _menuItem(
-                            context: context,
-                            state: state,
-                            page: InventoryPageType.branchSetting,
-                            icon: Icons.store_rounded,
-                            title: 'Branch Setting',
-                            nested: true,
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      const _DrawerFooter(),
-
-                      const SizedBox(height: 14),
-
-                      const Divider(height: 1, color: Color(0xFFE2E8F0)),
-
-                      const SizedBox(height: 14),
-
-                      const _InventoryLogoutButton(),
                     ],
                   ),
-                ),
+
+                  const SizedBox(height: 12),
+
+                  if (!viewOnly)
+                    _drawerSection(
+                      title: 'CONFIGURATION',
+                      icon: Icons.tune_rounded,
+                      expanded: _configurationExpanded,
+                      active: _configurationPages.contains(currentPage),
+                      onToggle: () {
+                        setState(() {
+                          _configurationExpanded = !_configurationExpanded;
+                        });
+                      },
+                      children: [
+                        _menuItem(
+                          context: context,
+                          state: state,
+                          page: InventoryPageType.branchSetting,
+                          icon: Icons.store_rounded,
+                          title: 'Branch Setting',
+                          nested: true,
+                        ),
+                      ],
+                    ),
+
+                  const SizedBox(height: 12),
+
+                  const _DrawerFooter(),
+
+                  const SizedBox(height: 14),
+
+                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+                  const SizedBox(height: 14),
+
+                  const _InventoryLogoutButton(),
+                ],
               ),
-            ],
+            ),
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 
@@ -591,7 +618,7 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
 
             if (!context.mounted) return;
 
-            context.read<InventoryBloc>().add(ChangeInventoryPage(page));
+            _selectPage(context, page);
           },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 230),

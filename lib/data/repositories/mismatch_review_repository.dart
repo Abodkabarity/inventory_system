@@ -28,7 +28,6 @@ abstract class MismatchReviewRepository {
   Future<MismatchReviewSnapshot> load();
   Future<Map<String, dynamic>?> detail(int id);
   Future<void> refreshReviews(List<int> ids);
-  Future<void> setReviewed(int id, bool reviewed) async {}
   Future<MismatchReviewChanges?> changes(List<int> ids) async => null;
   void watch(
     void Function(int? id) changed,
@@ -126,14 +125,6 @@ class SupabaseMismatchReviewRepository implements MismatchReviewRepository {
         params: {'p_ids': ids},
       );
     }
-  }
-
-  @override
-  Future<void> setReviewed(int id, bool reviewed) async {
-    await client.rpc(
-      'inventory_set_mismatch_reviewed',
-      params: {'p_id': id, 'p_reviewed': reviewed},
-    );
   }
 
   @override
@@ -445,16 +436,6 @@ class MismatchReviewController extends ChangeNotifier {
         unawaited(_applyChanges());
       }
     }
-  }
-
-  Future<void> setReviewed(MismatchReview row, bool reviewed) async {
-    if (_disposed) return;
-    await repository.setReviewed(row.id, reviewed);
-    if (_disposed) return;
-    _details.remove(row.id);
-    _detailEpochs[row.id] = (_detailEpochs[row.id] ?? 0) + 1;
-    _changedIds.add(row.id);
-    await _applyChanges();
   }
 
   @override

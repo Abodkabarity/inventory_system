@@ -19,6 +19,7 @@ import '../../../domain/entities/stock_management.dart';
 import '../../widgets/app_date_range_picker_dialog.dart';
 import '../widgets/stock_management_formatters.dart';
 import '../widgets/stock_management_grid.dart';
+import '../widgets/stock_mrn_receipts.dart';
 import '../widgets/stock_sales_summary.dart';
 import '../widgets/stock_catalog_visuals.dart';
 import '../widgets/stock_workspace_style.dart';
@@ -1061,8 +1062,8 @@ class _StockManagementPageState extends State<StockManagementPage> {
               'STORE + all active APG and 71 branches. Virtual and expired warehouses are excluded.\n'
               'Days on hand = total stock ÷ net daily sales over the latest available 45-day window.\n'
               '2026 sales and best month include the current partial month.\n'
-              'Latest MRN quantity combines the lines of the latest MRN document; same-day ties use MRN number.\n'
-              'Expiry is the earliest dated line on that MRN, not verified remaining batch stock.',
+              'Received and ordered Qty combine all approved MRNs on the latest receipt day. Open the product to see each receipt and expiry date.\n'
+              'Expiry is the earliest date across those receipts. Received Qty is historical, not remaining batch stock.',
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1540,7 +1541,7 @@ class _MrnDateCell extends StatelessWidget {
     return Tooltip(
       message: linked
           ? "Last receipt linked to this expiry alert. Latest product MRN: ${_date(item.text('last_mrn_date'))}."
-          : "Latest product receipt · MRN ${item.text('last_mrn_no')}",
+          : 'All approved MRNs on the latest receipt day. Open the product for receipt details.',
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1653,12 +1654,14 @@ class StockManagementProductDialog extends StatelessWidget {
   final StockManagementItem item;
   final StockManagementDataSource source;
   final Widget? extraSection;
+  final StockManagementItem? receiptDetails;
   final VoidCallback? onClose;
   const StockManagementProductDialog({
     super.key,
     required this.item,
     required this.source,
     this.extraSection,
+    this.receiptDetails,
     this.onClose,
   });
 
@@ -1683,22 +1686,26 @@ class StockManagementProductDialog extends StatelessWidget {
     },
     onClose: onClose,
     allowSavedFallback: extraSection != null,
-    detailsSection: (product) => Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (extraSection != null) ...[
-          extraSection!,
-          const SizedBox(height: 16),
-        ],
-        _mrnDetails(
+    detailsSection: (product) {
+      final receipt =
+          receiptDetails ??
           StockManagementItem(
             product.data['mrn_details'] is Map
                 ? stockMap(product.data['mrn_details'])
                 : product.data,
-          ),
-        ),
-      ],
-    ),
+          );
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (extraSection != null) ...[
+            extraSection!,
+            const SizedBox(height: 16),
+          ],
+          _mrnDetails(receipt),
+          if (extraSection == null) StockMrnReceipts(item: receipt),
+        ],
+      );
+    },
   );
 
   Widget _mrnDetails(StockManagementItem product) => LayoutBuilder(
@@ -1729,7 +1736,7 @@ class StockManagementProductDialog extends StatelessWidget {
             ),
             (
               'EXPIRY DATE',
-              _date(product.text('expiry_date')),
+              '${_date(product.text('expiry_date'))}${product.number('expiry_count') > 1 ? ' (+${product.number('expiry_count').toInt() - 1})' : ''}',
               catalogOrange,
               Icons.event_busy_outlined,
             ),
@@ -1743,9 +1750,14 @@ class StockManagementProductDialog extends StatelessWidget {
             ),
             (
               'RECEIVED QTY',
-              product.data['last_mrn_qty'] == null
+              (product.data['received_quantity'] ??
+                          product.data['last_mrn_qty']) ==
+                      null
                   ? '—'
-                  : _qty(product.number('last_mrn_qty')),
+                  : _qty(
+                      product.data['received_quantity'] ??
+                          product.data['last_mrn_qty'],
+                    ),
               catalogTeal,
               Icons.move_to_inbox_outlined,
             ),

@@ -21,8 +21,6 @@ class MismatchReview {
   late final DateTime? eventAt = DateTime.tryParse(
     '${analysis['event_at'] ?? raw['created_at']}',
   );
-  late final DateTime? reviewedAt = DateTime.tryParse('${raw['reviewed_at']}');
-  bool get reviewed => reviewedAt != null;
   bool get needsFollowup =>
       const ['priority_followup', 'recent_receipt_followup'].contains(status);
   late final int priority =
@@ -58,7 +56,6 @@ class MismatchReview {
     'actual_stock': raw['actual_stock'],
     'diff': raw['diff'],
     'review': reviewTitle(status),
-    'reviewed_at': raw['reviewed_at'],
     'event_at': analysis['event_at'],
     'baseline': analysis['baseline_qty'],
     'reconstructed': analysis['reconstructed_before'],

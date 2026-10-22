@@ -361,7 +361,7 @@ class StockManagementGridSource extends DataGridSource {
           ),
           const SizedBox(height: 3),
           _text(
-            'Received ${_qty(item.number('last_mrn_qty'))}',
+            'Received ${_qty(item.number('last_mrn_qty'))}${item.number('receipt_count') > 1 ? ' · ${item.number('receipt_count').toInt()} MRNs' : ''}',
             color: _muted,
             size: 11,
           ),
@@ -378,7 +378,7 @@ class StockManagementGridSource extends DataGridSource {
         final color = near ? _red : _teal;
         return Tooltip(
           message:
-              'Earliest expiry recorded in the latest MRN. Confirm current batch stock before acting.',
+              'Earliest expiry across all MRNs on the latest receipt date${item.number('expiry_count') > 1 ? ' (${item.number('expiry_count').toInt()} expiry dates)' : ''}. Open the product for receipt details.',
           child: _badge(
             _stack([
               Row(
@@ -438,13 +438,13 @@ class StockManagementGridSource extends DataGridSource {
       case 'received_quantity':
         return Tooltip(
           message:
-              'Quantity received for the displayed expiry date on the latest MRN. It is not the current batch stock.',
+              'Total received across all MRNs and expiry dates on the latest receipt day. Open the product for each receipt. This is historical received Qty.',
           child: _text(_qty(value), strong: true, size: 16),
         );
       case 'ordered_quantity':
         return Tooltip(
           message:
-              'Quantity ordered for the displayed expiry date on the latest MRN.',
+              'Total ordered across all MRNs and expiry dates on the latest receipt day.',
           child: _text(_qty(value), strong: true, size: 16),
         );
       case 'total_stock':

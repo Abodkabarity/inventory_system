@@ -20,7 +20,8 @@ import 'stock_catalog_product_dialog.dart';
 
 class StockCatalogPage extends StatefulWidget {
   final StockCatalogDataSource? dataSource;
-  const StockCatalogPage({super.key, this.dataSource});
+  final bool readOnly;
+  const StockCatalogPage({super.key, this.dataSource, this.readOnly = false});
   @override
   State<StockCatalogPage> createState() => _StockCatalogPageState();
 }
@@ -235,6 +236,7 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
   }
 
   Future<void> _refresh() async {
+    if (widget.readOnly) return;
     setState(() {
       _refreshing = true;
       _refreshError = null;
@@ -562,18 +564,19 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
             color: Color(0xFF82E4CF),
           ),
         ),
-        Tooltip(
-          message:
-              'Rebuild Item Report stock and sales snapshot in the background',
-          child: IconButton.filledTonal(
-            onPressed: _refreshing ? null : _refresh,
-            icon: const Icon(Icons.cloud_sync_outlined),
-            style: IconButton.styleFrom(
-              backgroundColor: AppColors.primaryColor,
-              foregroundColor: catalogInk,
+        if (!widget.readOnly)
+          Tooltip(
+            message:
+                'Rebuild Item Report stock and sales snapshot in the background',
+            child: IconButton.filledTonal(
+              onPressed: _refreshing ? null : _refresh,
+              icon: const Icon(Icons.cloud_sync_outlined),
+              style: IconButton.styleFrom(
+                backgroundColor: AppColors.primaryColor,
+                foregroundColor: catalogInk,
+              ),
             ),
           ),
-        ),
       ],
     ),
   );

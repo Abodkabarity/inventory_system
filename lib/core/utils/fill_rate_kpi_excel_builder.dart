@@ -68,7 +68,7 @@ class FillRateKpiExcelBuilder {
       columns: 4,
       title: 'FILL RATE — GAP ANALYSIS',
       subtitle:
-          'Reporting period: ${_date(from)} to ${_date(to)}   |   Scope: $branch   |   Generated: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}',
+          'Reporting period: ${_date(from)} to ${_date(to)}   |   Scope: ${StoreBranchIdentityRegistry.displayName(branch)}   |   Generated: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}',
     );
 
     _section(sheet, 5, 4, '1. Fill Rate and Unfulfilled Gap');

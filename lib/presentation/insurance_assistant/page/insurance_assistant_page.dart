@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -758,7 +759,7 @@ class _AssistantHeader extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '$branchName • Clinical & coverage intelligence',
+                      '${StoreBranchIdentityRegistry.displayName(branchName)} • Clinical & coverage intelligence',
                       style: const TextStyle(
                         fontSize: 12.5,
                         color: Color(0xFF64748B),

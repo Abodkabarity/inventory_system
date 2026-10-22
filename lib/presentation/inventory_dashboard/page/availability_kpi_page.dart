@@ -1900,6 +1900,7 @@ class _BranchReportState extends State<_BranchReport> {
       const [],
       onOpenBranch: widget.onOpenBranch,
     );
+    StoreBranchIdentityRegistry.groups.addListener(_applyReportFilters);
     _applyReportFilters();
   }
 
@@ -1913,6 +1914,7 @@ class _BranchReportState extends State<_BranchReport> {
 
   @override
   void dispose() {
+    StoreBranchIdentityRegistry.groups.removeListener(_applyReportFilters);
     _searchController.dispose();
     super.dispose();
   }
@@ -1924,7 +1926,9 @@ class _BranchReportState extends State<_BranchReport> {
             .where((summary) {
               final matchesSearch =
                   query.isEmpty ||
-                  summary.branchName.toLowerCase().contains(query);
+                  StoreBranchIdentityRegistry.displayName(
+                    summary.branchName,
+                  ).toLowerCase().contains(query);
               final matchesBand = switch (_band) {
                 'at_least_97' => summary.availabilityRate >= 97,
                 'below_97' => summary.availabilityRate < 97,
@@ -2388,7 +2392,9 @@ class _BranchReportGridSource extends DataGridSource {
             cells: [
               DataGridCell<String>(
                 columnName: 'branch',
-                value: summary.branchName,
+                value: StoreBranchIdentityRegistry.displayName(
+                  summary.branchName,
+                ),
               ),
               DataGridCell<num>(
                 columnName: 'availability',

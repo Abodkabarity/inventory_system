@@ -543,10 +543,19 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
   Widget _monthly(StockCatalogItem item) => CatalogPanel(
     title: 'Monthly sales & momentum',
     subtitle:
-        '2025 to 2026 • All source branches • Hover or tap a month for exact values',
+        '2025 to ${catalogSalesYears(item).last} • All source branches • Hover or tap a month for exact values'
+        '${stockMap(item.data['meta'])['monthly_current_source'] == 'sales_last_45_days' ? ' • Current month uses daily sales' : ''}',
     trailing: IconButton(
-      onPressed: () =>
-          _save(item.list('monthly_sales'), '${item.code}_monthly_sales.xlsx'),
+      onPressed: () => _save([
+        for (final row in item.list('monthly_sales'))
+          {
+            ...row,
+            if (row['source'] != null)
+              'source': row['source'] == 'sales_last_45_days'
+                  ? 'Daily sales'
+                  : 'Monthly history',
+          },
+      ], '${item.code}_monthly_sales.xlsx'),
       tooltip: 'Export monthly sales',
       icon: const Icon(Icons.download_rounded, size: 19, color: catalogBlue),
     ),
@@ -620,7 +629,7 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
     subtitle: 'Cash • Insurance • Online — net Qty',
     child: Column(
       children: [
-        for (final year in [2025, 2026])
+        for (final year in catalogSalesYears(item))
           Padding(
             padding: const EdgeInsets.only(bottom: 14),
             child: Container(
@@ -656,7 +665,7 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
           spacing: 10,
           runSpacing: 8,
           children: [
-            for (final year in [2025, 2026])
+            for (final year in catalogSalesYears(item))
               CatalogPill(
                 'Best $year: ${item.year(year)['best_month'] ?? '—'} • ${catalogQty(item.year(year)['best_qty'])} Qty',
                 color: year == 2025 ? catalogBlue : catalogTeal,

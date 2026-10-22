@@ -30,7 +30,7 @@ Map<String, dynamic> stockRegisterExportRow(StockManagementItem item) => {
   'Stock cover (days)': item.stockAvailable ? item.days : null,
   'Sales 45D': item.data['recent_sales'],
   'Stock status': item.stockAvailable ? item.status : 'Unavailable',
-  for (final year in [2025, 2026]) ...{
+  for (final year in stockSalesYears(item)) ...{
     'Sales $year': item.year(year)['total'],
     'Cash $year': item.year(year)['cash'],
     'Insurance $year': item.year(year)['insurance'],

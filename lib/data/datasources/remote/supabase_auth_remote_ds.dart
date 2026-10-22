@@ -86,7 +86,10 @@ class SupabaseAuthRemoteDs {
     }
 
     // Other back-office roles do not require a branch assignment.
-    if (role == 'inventory' || role == 'purchase' || role == 'category') {
+    if (role == 'inventory' ||
+        role == 'purchase' ||
+        role == 'category' ||
+        role == 'view') {
       return AppUserModel.fromMap({
         'user_id': data['user_id'],
         'role': data['role'],

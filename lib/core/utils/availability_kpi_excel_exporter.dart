@@ -22,7 +22,9 @@ class AvailabilityKpiExcelExporter {
 
     final title = sheet.getRangeByName('A1:S1');
     title.merge();
-    title.setText('Availability KPI — $branch');
+    title.setText(
+      'Availability KPI — ${StoreBranchIdentityRegistry.displayName(branch)}',
+    );
     title.cellStyle
       ..bold = true
       ..fontSize = 18

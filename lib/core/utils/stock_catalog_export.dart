@@ -24,7 +24,7 @@ Map<String, dynamic> catalogExportRow(StockCatalogItem item) => {
   'Total stock': item.number('total_stock'),
   'Cover days': item.days,
   'STORE / Total Stock %': item.storeTotalPercent,
-  for (final year in [2025, 2026]) ...{
+  for (final year in catalogSalesYears(item)) ...{
     'Sales $year': item.year(year)['total'] ?? 0,
     'Cash $year': item.year(year)['cash'] ?? 0,
     'Insurance $year': item.year(year)['insurance'] ?? 0,

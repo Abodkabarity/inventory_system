@@ -61,6 +61,19 @@ class StockManagementItem {
       (data[key] as List? ?? []).map(stockMap).toList();
 }
 
+/// Sales years shared by all Stock Management views and exports.
+List<int> stockSalesYears(StockManagementItem item) {
+  var last = 2026;
+  final meta = stockMap(item.data['meta']);
+  final through = DateTime.tryParse('${meta['monthly_sales_through']}');
+  if (through != null && through.year > last) last = through.year;
+  for (final key in stockMap(item.data['years']).keys) {
+    final year = int.tryParse(key);
+    if (year != null && year > last && year <= 2099) last = year;
+  }
+  return [for (var year = 2025; year <= last; year++) year];
+}
+
 class StockManagementResult {
   final List<StockManagementItem> rows;
   final Map<String, dynamic> summary, meta;

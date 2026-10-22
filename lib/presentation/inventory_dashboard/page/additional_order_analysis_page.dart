@@ -1587,7 +1587,6 @@ class AdditionalAnalysisDateRangePickerDialog extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => AppDateRangePickerDialog(
-    initialRange: initialRange,
-  );
+  Widget build(BuildContext context) =>
+      AppDateRangePickerDialog(initialRange: initialRange);
 }
