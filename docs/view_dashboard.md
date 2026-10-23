@@ -25,6 +25,13 @@ All ten selection menus in the three Stock Management pages use the existing
 `dropdown_search` package with local option search. Selection keeps the original
 filter values, including All options. The same menus apply to Inventory and View.
 
+`20261023052717_view_stock_read_parity.sql` also grants active viewers SELECT
+access to the MRN receipt source, 2025 sales and Overview cache revisions. These
+are required by the existing invoker RPCs: snapshot access alone silently omits
+receipt quantities, vendor, expiry and historical sales. The migration advances
+cache revisions so previously incomplete data is not reused on the next read.
+Inventory-only write guards remain unchanged.
+
 Apply `20261022120906_add_view_dashboard_role.sql` and
 `20261022121419_harden_stock_refresh_role_checks.sql` before deploying the client.
 It adds SELECT policies for stock workspaces and their cache revisions. The
@@ -44,3 +51,7 @@ Run `supabase/tests/view_dashboard_role_test.sql` against a database with an
 active view, inventory and category users and populated stock snapshots. It
 impersonates these users inside a transaction, checks reads, mutation denials,
 deactivation and role isolation, and rolls back.
+
+`supabase/tests/view_stock_read_parity_test.sql` compares actual authenticated
+Inventory and View payloads for complete stock registers, product details, cache
+validation, Availability data and Fill Rate KPI in one repeatable-read snapshot.

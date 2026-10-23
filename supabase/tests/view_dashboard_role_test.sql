@@ -13,8 +13,14 @@ begin
   if public.item_tracker_my_role() is not null then raise exception 'Viewer acquired a back-office role'; end if;
   if not exists(select 1 from public.stock_catalog_snapshot) then raise exception 'Overview inaccessible'; end if;
   if not exists(select 1 from public.stock_management_snapshot) then raise exception 'MRN inaccessible'; end if;
+  if not exists(select 1 from public.mrn_apg_2026) then raise exception 'MRN receipt source inaccessible'; end if;
+  if not exists(select 1 from public.sales_history_2025) then raise exception '2025 sales source inaccessible'; end if;
+  if stock_management_private.catalog_cache_version(false) is null
+    or stock_management_private.catalog_cache_version(true) is null then
+    raise exception 'Overview cache metadata inaccessible';
+  end if;
   state_before := public.get_stock_workspace_cache_state();
-  if state_before->>'mrn' is null or state_before->>'expiry' is null then
+  if state_before->>'mrn' is null or state_before->>'expiry' is null or state_before->>'details' is null then
     raise exception 'Cache validation inaccessible';
   end if;
   state_after := public.prepare_stock_expiry_workspace(null);
@@ -59,6 +65,9 @@ begin
   if stock_management_private.is_view_user()
     or exists(select 1 from public.stock_catalog_snapshot)
     or exists(select 1 from public.stock_management_snapshot)
+    or exists(select 1 from public.mrn_apg_2026)
+    or exists(select 1 from public.sales_history_2025)
+    or exists(select 1 from public.stock_catalog_cache_revisions)
     or public.get_stock_workspace_cache_state() is not null then
     raise exception 'Inactive viewer retained stock access';
   end if;
