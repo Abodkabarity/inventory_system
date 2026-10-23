@@ -144,7 +144,7 @@ class _DistributionRulesDialogState extends State<_DistributionRulesDialog> {
                         controller: branches,
                         label: 'Maximum covered branches',
                         helper:
-                            'Branches with stock or a final order, counted once',
+                            'Branches with a positive balance including Final Reorder, counted once',
                         unit: 'branches',
                         icon: Icons.hub_outlined,
                         minimum: 0,
@@ -447,7 +447,7 @@ class StockDistributionPanel extends StatelessWidget {
           const SizedBox(height: 14),
           if (status.known) ...[
             Text(
-              '${catalogQty(item.number('store_stock'))} Qty in STORE (${catalogQty(status.availableStore)} after final orders) · ${status.covered} of ${status.eligible} eligible branches have stock or a final order · ${status.uncovered} still uncovered.',
+              '${catalogQty(item.number('store_stock'))} Qty in STORE (${catalogQty(status.availableStore)} after final orders) · ${status.covered} of ${status.eligible} eligible branches have a positive balance including Final Reorder · ${status.uncovered} still uncovered.',
               style: const TextStyle(
                 color: catalogInk,
                 fontWeight: FontWeight.w600,

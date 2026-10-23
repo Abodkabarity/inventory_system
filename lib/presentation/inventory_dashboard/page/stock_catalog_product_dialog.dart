@@ -825,8 +825,7 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
               (row) =>
                   !_uncoveredOnly ||
                   (row['distribution_eligible'] == true &&
-                      stockNumber(row['stock']) <= 0 &&
-                      stockNumber(row['final_qty']) <= 0),
+                      stockNumber(row['stock']) <= 0),
             )
             .where(
               (row) => StoreBranchIdentityRegistry.displayName(
@@ -991,7 +990,7 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
             ),
           const SizedBox(height: 10),
           const Text(
-            'Red balance: 45-day sales exceed current branch stock. Coverage uses branch stock and branch demand. Negative quantities retain returns.',
+            'Branch stock includes Final Reorder from the latest Daily Order. Red balance: 45-day sales exceed this balance. Coverage uses this balance and branch demand. Negative quantities retain returns.',
             style: TextStyle(color: catalogMuted, fontSize: 11),
           ),
         ],

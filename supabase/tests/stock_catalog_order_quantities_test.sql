@@ -23,9 +23,7 @@ begin
   create temporary table expected_branch_quantities on commit drop as
     select btrim(d.item_code) item_code,public._norm_text(d.branch) branch_key,
       greatest(max(coalesce(d.reorder_qty_num,0)),0) reorder_qty,
-      greatest(max(case when replace(btrim(coalesce(d.final_reorder_qty_store_stock_gt_0,'')),',','')
-        ~ '^[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)$'
-        then replace(btrim(d.final_reorder_qty_store_stock_gt_0),',','')::numeric else 0 end),0) final_qty
+      greatest(max(coalesce(d.total_final_reorder_today,0)),0) final_qty
     from public.daily_order d join expected_order_branches b on b.branch_key=public._norm_text(d.branch)
     where d.run_date=(select max(run_date) from public.daily_order)
     group by btrim(d.item_code),public._norm_text(d.branch);

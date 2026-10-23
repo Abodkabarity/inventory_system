@@ -78,7 +78,16 @@ class DistributionSource extends catalog.FakeCatalog {
         {
           'branch': 'CITY',
           'branch_group': 'APG',
-          'stock': 0,
+          'stock': 2,
+          'distribution_eligible': true,
+          'reorder_qty': 0,
+          'final_qty': 2,
+        },
+        {
+          'branch': 'SHORTFALL',
+          'branch_group': 'APG',
+          'stock': -1,
+          'base_stock': -3,
           'distribution_eligible': true,
           'reorder_qty': 0,
           'final_qty': 2,
@@ -377,7 +386,11 @@ void main() {
       };
       await tester.pumpAndSettle();
       expect(find.text('71 AL AIN'), findsOneWidget);
-      expect(find.text('CITY'), findsNothing);
+      expect(
+        find.descendant(of: find.byType(DataTable), matching: find.text('CITY')),
+        findsNothing,
+      );
+      expect(find.text('SHORTFALL'), findsOneWidget);
       expect(find.text('EXCLUDED'), findsNothing);
       expect(
         StockExcelReport([

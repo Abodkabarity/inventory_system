@@ -78,10 +78,10 @@ by later deliveries. Receipt facts are informational only: missing, unapproved,
 or out-of-range MRNs do not suppress the distribution alert or change its status.
 The partial-distribution limit remains.
 
-Covered means the union of eligible branches with positive ledger stock OR a
-positive Final Reorder; overlapping branches count once. Reorder demand remains
-separate. The latest Daily Order run supplies `total_reorder_today` and
-`total_final_reorder_today`, collapsed once per normalized item/branch. This uses
+Covered means eligible branches with a positive effective balance after adding
+Final Reorder; each branch counts once. Reorder demand remains
+separate. The latest Daily Order run supplies order quantities, collapsed once per
+normalized item/branch; Final Reorder uses `total_final_reorder_today`. This uses
 the current day's requirements and allocations rather than historical runs or
 the original pre-edit reorder calculation. Active non-warehouse branches and
 their authoritative identities come from `branches`, including group 71.

@@ -16,10 +16,14 @@ sources, formulas and verification are documented in `stock_catalog_overview.md`
   MRN number descending is the deterministic tie-breaker (the source has no receipt
   time). Received quantity sums the document's split/batch rows, not all receipts
   on that day.
-- Current stock: `stk_ledger`. STORE is separate from all active registered APG/71
-  branches. Other warehouses, virtual warehouses and expired stock are excluded.
-  Repeated item/branch ledger rows use maximum quantity, consistent with the
-  existing stock aggregation; branch names are normalized by `_norm_text`.
+- Current branch stock: `daily_order.branch_stock + total_final_reorder_today`
+  from the latest uploaded run date. Each normalized item/branch is counted once;
+  duplicate raw names use the newest `created_at` (raw name breaks timestamp ties).
+  Negative stock is preserved; null/negative final allocations contribute zero.
+  Missing Daily Order rows or null `branch_stock` fall back to `stk_ledger.actual_qty`.
+  Ledger duplicates retain the maximum-quantity rule. Active registered branches
+  include APG and group 71; inactive/virtual/expired warehouses are excluded.
+  STORE remains its ledger quantity, with no final reorder added.
 - Total stock = STORE + active branches. STORE/branches is a ratio, not a percentage
   of total; it is unavailable when branches stock is zero or negative.
 - Days on hand = total stock / average daily **net units** in `sales_last_45_days`
@@ -33,6 +37,25 @@ sources, formulas and verification are documented in `stock_catalog_overview.md`
 - Best month is the greatest positive Cash + Insurance + Online net quantity in
   each year. Ties select the earlier month. With no positive month it is unavailable.
   The current month's 2026 data can be partial and is included as uploaded.
+
+The shared effective balance feeds Overview, MRN Overview, Near Expiry (including
+saved receipt-only products), branch detail/stocked counts, days on hand, stock
+statuses, stock/sales ratios, distribution coverage and exports. A zero-stock
+branch with a positive final allocation counts as stocked when its resulting
+balance is positive. Receipt quantities, expiry evidence and review fingerprints
+remain historical facts. Rebuild after Daily Order imports/edits to publish the
+atomic stock snapshots and invalidate register/detail caches for both roles.
+
+`20261023061551_stock_effective_branch_balances.sql` introduces the internal
+shared stock source. `supabase/tests/stock_effective_branch_balances_test.sql`
+uses rollback-only source fixtures for zero-stock allocations, order-only group
+71 branches, duplicate identities, old runs, signed/null quantities and fallback.
+After rebuilding both registers, `stock_effective_snapshot_test.sql` reconciles
+all published balances and derived fields against the current sources; rerun
+after a rebuild if another user edits allocations during verification.
+`test/stock_effective_balance_exports_test.dart` verifies branch coverage and
+all three register exports, including group 71 presentation. Existing cache tests
+cover revision invalidation and the complete 5,000-row bulk-loading contract.
 
 The footer exposes source dates. Data is a snapshot of uploaded database tables,
 not a new ERP pull. Filters operate on the latest MRN date, not all historic MRNs.
