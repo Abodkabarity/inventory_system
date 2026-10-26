@@ -26,7 +26,8 @@ class StockExpiryAlert {
   double number(String key) => stockNumber(data[key]);
   String get code => text('item_code');
   String get expiry => text('expiry_date');
-  String get key => '$code:$expiry';
+  String get mrnDate => text('last_receipt_date');
+  String get key => '$code:$expiry:$mrnDate';
   int get days => number('days_left').toInt();
   bool get reviewed => data['is_reviewed'] == true;
   bool get newReceipts => data['new_receipts'] == true;

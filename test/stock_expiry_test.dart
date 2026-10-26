@@ -7,6 +7,7 @@ import 'package:daily_order/data/datasources/remote/stock_management_remote_ds.d
 import 'package:daily_order/domain/entities/stock_management.dart';
 import 'package:daily_order/domain/entities/stock_expiry.dart';
 import 'package:daily_order/domain/entities/inventory_page.dart';
+import 'package:daily_order/core/utils/stock_register_export.dart';
 import 'package:daily_order/presentation/inventory_dashboard/page/stock_expiry_page.dart';
 import 'package:daily_order/presentation/inventory_dashboard/page/stock_management_page.dart';
 import 'package:daily_order/presentation/inventory_dashboard/widgets/stock_management_navigation.dart';
@@ -24,6 +25,7 @@ StockExpiryAlert expiryAlert({
   int days = 25,
   num orderedQty = 30,
   num receivedQty = 25,
+  String mrnDate = '2026-10-03',
   String stockStatus = 'low_cover',
 }) => StockExpiryAlert({
   'product_data': stock.product(code: code, status: stockStatus).data,
@@ -41,7 +43,8 @@ StockExpiryAlert expiryAlert({
   'store_stock': 561,
   'branches_stock': 1347.19,
   'receipt_count': 1,
-  'last_receipt_date': '2026-10-03',
+  'mrn_numbers': '105058',
+  'last_receipt_date': mrnDate,
   'receipt_fingerprint': 'receipt-v1',
   'is_reviewed': reviewed,
   'note': note,
@@ -50,7 +53,7 @@ StockExpiryAlert expiryAlert({
   'receipts': [
     {
       'mrn_no': '105058',
-      'mrn_date': '2026-10-03',
+      'mrn_date': mrnDate,
       'warehouse': 'store',
       'ordered_qty': orderedQty,
       'received_qty': receivedQty,
@@ -225,6 +228,37 @@ Future<void> tapReview(WidgetTester tester, StockExpiryAlert alert) async {
 }
 
 void main() {
+  test(
+    'same expiry on separate receipt days keeps separate keys and exports',
+    () async {
+      final source = FakeExpirySource()
+        ..items = [
+          expiryAlert(mrnDate: '2026-10-02', receivedQty: 1000),
+          expiryAlert(mrnDate: '2026-10-24', receivedQty: 525),
+        ];
+      final result = await source.fetchAll(const StockExpiryQuery());
+      expect(result.rows.map((a) => a.key).toSet(), hasLength(2));
+      expect(result.rows.map((a) => stockExpiryExportRow(a)['Received Qty']), [
+        1000,
+        525,
+      ]);
+      expect(
+        result.rows.map((a) => stockExpiryExportRow(a)['MRN date']).toSet(),
+        hasLength(2),
+      );
+      expect(stockExpiryExportRow(result.rows.last)['MRN number'], '105058');
+      await source.save(
+        result.rows.last,
+        note: 'Check this delivery',
+        action: 'review',
+      );
+      expect(source.items.first.reviewed, isFalse);
+      expect(source.items.first.note, isEmpty);
+      expect(source.items.last.reviewed, isTrue);
+      expect(source.items.last.note, 'Check this delivery');
+    },
+  );
+
   testWidgets('near expiry product fields are uppercase and selectable', (
     tester,
   ) async {
@@ -256,6 +290,83 @@ void main() {
     );
     expect(selectedText.controller.selection.isCollapsed, isFalse);
   });
+
+  testWidgets('same product and expiry show independent MRN day rows', (
+    tester,
+  ) async {
+    final source = FakeExpirySource()
+      ..items = [
+        expiryAlert(mrnDate: '2026-10-02', receivedQty: 1000),
+        expiryAlert(mrnDate: '2026-10-24', receivedQty: 525),
+      ];
+    await showExpiry(tester, source);
+    final grid = tester.widget<SfDataGrid>(find.byType(SfDataGrid));
+    expect(grid.source.rows, hasLength(2));
+    expect(
+      find.byKey(ValueKey('mrn-date:${source.items.first.key}')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(ValueKey('mrn-date:${source.items.last.key}')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(ValueKey('expiry-product:${source.items.last.key}')),
+    );
+    await tester.pumpAndSettle();
+    final dialog = tester.widget<StockManagementProductDialog>(
+      find.byType(StockManagementProductDialog),
+    );
+    expect(dialog.receiptDetails!.text('last_mrn_date'), '2026-10-24');
+    expect(dialog.receiptDetails!.number('received_quantity'), 525);
+    expect(find.text('Receipt evidence (1)'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  test(
+    'detail memory separates MRN days of the same product and expiry',
+    () async {
+      final dates = <String>[];
+      final client = SupabaseClient(
+        'https://example.supabase.co',
+        'test-key',
+        httpClient: MockClient((request) async {
+          final name = request.url.path.split('/').last;
+          Object data;
+          if (name == 'get_stock_workspace_cache_state') {
+            data = {
+              'expiry': 'v1',
+              'details': 'v1',
+              'mrn': 'v1',
+              'discovery': 'v1',
+            };
+          } else {
+            final date =
+                (jsonDecode(request.body) as Map)['p_mrn_date'] as String;
+            dates.add(date);
+            data = expiryAlert(
+              mrnDate: date,
+              receivedQty: date == '2026-10-24' ? 525 : 1000,
+            ).data;
+          }
+          return http.Response(
+            jsonEncode(data),
+            200,
+            headers: {'content-type': 'application/json'},
+            request: request,
+          );
+        }),
+      );
+      addTearDown(client.dispose);
+      final source = StockExpiryRemoteDs(client);
+      final older = expiryAlert(mrnDate: '2026-10-02');
+      final recent = expiryAlert(mrnDate: '2026-10-24');
+      expect((await source.fetchItem(older)).number('received_qty'), 1000);
+      expect((await source.fetchItem(recent)).number('received_qty'), 525);
+      expect((await source.fetchItem(older)).number('received_qty'), 1000);
+      expect(dates, ['2026-10-02', '2026-10-24']);
+    },
+  );
 
   testWidgets('near expiry stock values and badges share a center line', (
     tester,
@@ -754,7 +865,7 @@ void main() {
       expect(find.text('Latest: 06 Oct 2026'), findsNWidgets(2));
       expect(
         tester
-            .getRect(find.byKey(const ValueKey('mrn-date:16-01-00362')))
+            .getRect(find.byKey(ValueKey('mrn-date:${source.items.first.key}')))
             .right,
         lessThan(tester.view.physicalSize.width),
       );
@@ -846,6 +957,11 @@ void main() {
       });
       expect(result.rows.single.days, 25);
       final alert = await source.fetchItem(result.rows.single);
+      expect(jsonDecode(requests.last.body), {
+        'p_item_code': alert.code,
+        'p_expiry_date': alert.expiry,
+        'p_mrn_date': '2026-10-03',
+      });
       await source.save(
         alert,
         note: 'Follow up with supplier',
@@ -854,6 +970,7 @@ void main() {
       expect(jsonDecode(requests.last.body), {
         'p_item_code': alert.code,
         'p_expiry_date': '2026-11-01',
+        'p_mrn_date': '2026-10-03',
         'p_fingerprint': 'receipt-v1',
         'p_note': 'Follow up with supplier',
         'p_action': 'review',

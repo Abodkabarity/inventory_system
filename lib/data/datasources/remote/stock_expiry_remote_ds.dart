@@ -129,7 +129,11 @@ class StockExpiryRemoteDs implements StockExpiryDataSource {
     () async {
       final data = await client.rpc(
         'get_stock_expiry_item',
-        params: {'p_item_code': alert.code, 'p_expiry_date': alert.expiry},
+        params: {
+          'p_item_code': alert.code,
+          'p_expiry_date': alert.expiry,
+          'p_mrn_date': alert.mrnDate,
+        },
       );
       if (data == null) {
         throw StateError('This alert is no longer eligible. Reload the list.');
@@ -158,6 +162,7 @@ class StockExpiryRemoteDs implements StockExpiryDataSource {
         params: {
           'p_item_code': alert.code,
           'p_expiry_date': alert.expiry,
+          'p_mrn_date': alert.mrnDate,
           'p_fingerprint': alert.text('receipt_fingerprint'),
           'p_note': note,
           'p_action': action,

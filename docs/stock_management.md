@@ -104,23 +104,33 @@ and expiry date, **not** by product alone or the latest MRN only.
   explicitly labels historical MRN quantity separately from current product stock.
   These are review candidates, not confirmed remaining near-expiry quantities.
 - Notes (up to 4,000 characters) and review state are shared persistently among
-  inventory users in `stock_expiry_reviews`. Click Note/details or a row to edit.
+  inventory users in `stock_expiry_receipt_reviews`. Click Note/details or a row to edit.
 - Save note leaves the alarm active. Mark reviewed removes it from active counts
   and queues; Reviewed retains the saved note. Reopen and immediate Undo restore
   it. Unsaved notes are protected by a discard confirmation.
-- A review covers the exact item + date + receipt fingerprint. A different expiry
-  or changed/new receipt reactivates the alarm without deleting the prior note.
+- Near Expiry groups by **item + expiry date + MRN date**. Multiple documents on
+  the same day with the same expiry are summed; different receipt days stay separate
+  in the register, detail dialog, cache and Excel export. For example, 1,000 units
+  on October 2 and 500 + 25 on October 24 produce rows of 1,000 and 525.
+- A review covers the exact item + expiry + MRN date + receipt fingerprint.
+  A new receipt day starts its own review. A changed receipt on an existing day
+  reactivates only that day's alarm without deleting its note.
   Fingerprints use grouped document/date/warehouse/quantity, so source reimports
   or numeric scale changes alone do not reactivate it.
 - Writes go through a permission-checked private function with an invoker RPC.
   Browser clients have SELECT only on the review table. Optimistic version checks
-  and a per-item/date advisory lock reject stale notes/reviews; a failed save
+  and a per-item/expiry/MRN-day advisory lock reject stale notes/reviews; a failed save
   keeps the user's text visible. Anonymous/non-inventory users cannot read or write.
 
 The first verified October 7, 2026 view contained 1,515 upcoming date groups and
 386 expired date groups across 1,368 stocked products. These are date-group counts,
 not unique products or confirmed batch quantities. Reviews are never erased by
 stock snapshot refreshes. Source stock dates are visible in the footer.
+
+Legacy aggregate notes remain unchanged in `stock_expiry_reviews` and are copied
+to their existing receipt days. A valid former aggregate review carries over only
+to its existing days; later deliveries never inherit it. Legacy RPC calls without
+an MRN date reject ambiguous multi-day alerts instead of selecting an arbitrary day.
 
 ```powershell
 flutter test --no-pub test/stock_management_test.dart test/stock_expiry_test.dart

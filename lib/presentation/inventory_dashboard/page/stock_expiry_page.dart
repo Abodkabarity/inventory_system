@@ -746,7 +746,7 @@ class _StockExpiryPageState extends State<StockExpiryPage> {
         title: const Text('About these alerts'),
         content: Text(
           'Receipts ${_date('${_result?.meta['window_from'] ?? ''}')} – ${_date('${_result?.meta['window_through'] ?? ''}')}\n\n'
-          '$_expiryColourGuide\n\n$_sourceWarning\n\nDiscovery starts with seven days ending yesterday in Dubai time. Earlier MRNs are excluded. Detected alerts remain in the permanent register after the week ends, stock changes or the source is replaced. Active includes expired alerts. New or changed receipts reactivate a review and preserve its note.',
+          '$_expiryColourGuide\n\n$_sourceWarning\n\nEach row contains one product, one expiry date and one MRN date. Receipts from different days stay separate. The received quantity, note and review apply only to that receipt day. Detected alerts remain in the permanent register after the week ends, stock changes or the source is replaced. Active includes expired alerts. New or changed receipts on the same day reactivate that review and preserve its note.',
         ),
         actions: [
           TextButton(

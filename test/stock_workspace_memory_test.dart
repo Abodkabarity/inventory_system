@@ -47,6 +47,7 @@ class WorkspaceServer {
       Map<String, dynamic> alert() => {
         'item_code': 'A',
         'expiry_date': '2026-11-01',
+        'last_receipt_date': '2026-10-03',
         'note': note,
         'review_updated_at': revision,
         'product_data': product('A'),

@@ -456,12 +456,12 @@ class StockExpiryGridSource extends DataGridSource {
       case 'last_receipt_date':
         return Tooltip(
           message:
-              'Receipt linked to this expiry. Latest product MRN: ${_date(DateTime.tryParse(p.text('last_mrn_date')))}',
+              'Only receipts on this MRN date with this expiry are included.',
           child: _stack([
             _badge(
               _text(
                 _date(value),
-                key: ValueKey('mrn-date:${a.code}'),
+                key: ValueKey('mrn-date:${a.key}'),
                 strong: true,
                 size: 15,
               ),

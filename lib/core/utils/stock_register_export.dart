@@ -42,6 +42,7 @@ Map<String, dynamic> stockRegisterExportRow(StockManagementItem item) => {
 
 Map<String, dynamic> stockExpiryExportRow(StockExpiryAlert alert) => {
   ...stockRegisterExportRow(alert.product),
+  'MRN number': alert.text('mrn_numbers'),
   'MRN date': formatStockItemAddedDate(
     alert.data['last_receipt_date'],
     empty: '',
