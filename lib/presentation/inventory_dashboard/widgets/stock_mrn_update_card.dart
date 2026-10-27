@@ -86,7 +86,7 @@ class _StockMrnUpdateCardState extends State<StockMrnUpdateCard> {
     final failed =
         _status?['has_error'] == true || _status?['status'] == 'failed';
     final label = dubai != null
-        ? '${DateFormat('dd MMM yyyy · h:mm a').format(dubai)} · Dubai'
+        ? DateFormat('dd MMM yyyy · h:mm a').format(dubai)
         : _unavailable
         ? 'Update time unavailable'
         : !_initialized

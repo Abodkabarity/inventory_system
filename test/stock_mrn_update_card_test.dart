@@ -29,7 +29,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.binding.setSurfaceSize(null);
   });
-  testWidgets('shows server last success in Dubai while an import is running', (
+  testWidgets('shows the converted server last success while an import is running', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -47,7 +47,7 @@ void main() {
     await tester.pump();
     expect(find.text('Last MRN update'), findsOneWidget);
     expect(find.textContaining('9:15 AM'), findsOneWidget);
-    expect(find.textContaining('Dubai'), findsOneWidget);
+    expect(find.textContaining('Dubai'), findsNothing);
     expect(find.textContaining('Updating MRN'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
