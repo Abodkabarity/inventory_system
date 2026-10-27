@@ -100,7 +100,7 @@ class _StockMrnUpdateCardState extends State<StockMrnUpdateCard> {
         ? 'Latest attempt failed · last success shown'
         : timestamp != null
         ? 'MRN Overview and Near Expiry updated'
-        : 'Hourly updates · 8 AM–5 PM after Purchase';
+        : '';
     final accent = failed || _unavailable
         ? const Color(0xFFB76C06)
         : const Color(0xFF008A83);
@@ -139,13 +139,14 @@ class _StockMrnUpdateCardState extends State<StockMrnUpdateCard> {
                       color: accent,
                     ),
                   ),
-                  Text(
-                    detail,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF64748B),
+                  if (detail.isNotEmpty)
+                    Text(
+                      detail,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF64748B),
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
