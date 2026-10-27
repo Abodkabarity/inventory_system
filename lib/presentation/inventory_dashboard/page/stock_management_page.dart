@@ -23,6 +23,7 @@ import '../widgets/stock_mrn_receipts.dart';
 import '../widgets/stock_sales_summary.dart';
 import '../widgets/stock_catalog_visuals.dart';
 import '../widgets/stock_workspace_style.dart';
+import '../widgets/stock_mrn_update_card.dart';
 import 'stock_expiry_page.dart';
 
 const _ink = Color(0xFF142C40);
@@ -456,6 +457,15 @@ class _StockManagementPageState extends State<StockManagementPage> {
                             ],
                             const SizedBox(height: 8),
                           ],
+                          StockMrnUpdateCard(
+                            enabled:
+                                widget.dataSource == null ||
+                                widget.dataSource is StockManagementRemoteDs,
+                            onUpdated: () {
+                              if (!_loading) _load();
+                              _loadExpirySummary();
+                            },
+                          ),
                           _filters(result, compact),
                           if (_error != null)
                             Padding(

@@ -15,6 +15,7 @@ import '../../../data/datasources/remote/stock_management_remote_ds.dart';
 import 'stock_management_page.dart';
 import '../widgets/stock_expiry_grid.dart';
 import '../widgets/stock_workspace_style.dart';
+import '../widgets/stock_mrn_update_card.dart';
 
 const _ink = Color(0xFF142C40),
     _muted = Color(0xFF64748B),
@@ -282,6 +283,12 @@ class _StockExpiryPageState extends State<StockExpiryPage> {
                             ],
                             const SizedBox(height: 8),
                           ],
+                          StockMrnUpdateCard(
+                            enabled: widget.dataSource is StockExpiryRemoteDs,
+                            onUpdated: () {
+                              if (!_loading) _load();
+                            },
+                          ),
                           _filters(),
                           if (_error != null)
                             Padding(
