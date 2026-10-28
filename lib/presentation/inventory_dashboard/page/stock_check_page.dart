@@ -21,6 +21,8 @@ import '../../../core/utils/stock_check_excel_exporter.dart';
 import '../../../domain/entities/stock_check_task.dart';
 import '../../../domain/entities/stock_check_campaign.dart';
 import '../../../data/datasources/remote/stock_check_workspace_remote_ds.dart';
+import '../../../data/datasources/remote/stock_check_kpi_adjustment_remote_ds.dart';
+import '../../../domain/entities/stock_check_kpi_adjustment.dart';
 import '../../orders/widgets/branch_stock_check_page.dart';
 import '../../widgets/app_date_range_picker_dialog.dart';
 import '../widgets/stock_check_kpi_analysis_panel.dart';
@@ -68,6 +70,7 @@ class StockCheckPage extends StatefulWidget {
 class _StockCheckPageState extends State<StockCheckPage> {
   late final _client = widget.client ?? Supabase.instance.client;
   late final _workspace = StockCheckWorkspaceRemoteDs(_client);
+  late final _adjustmentSource = StockCheckKpiAdjustmentRemoteDs(_client);
   final _titleController = TextEditingController();
 
   final _items = <_StockCheckItem>[];
@@ -836,6 +839,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
                                     batches: batches,
                                     selectedBatchIds: _analysisBatchIds,
                                     rows: selectedAnalysisRows,
+                                    loadAdjustments: _adjustmentSource.load,
                                     branchContacts: _branchContacts,
                                     onSelectBatches: () =>
                                         _openAnalysisBatchPicker(batches),
@@ -1396,6 +1400,7 @@ class _StockCheckPageState extends State<StockCheckPage> {
                   batches: batches,
                   selectedBatchIds: _analysisBatchIds,
                   rows: selectedAnalysisRows,
+                  loadAdjustments: _adjustmentSource.load,
                   branchContacts: _branchContacts,
                   onSelectBatches: () => _openAnalysisBatchPicker(batches),
                 )
@@ -1720,6 +1725,8 @@ class _StockCheckResultTable extends StatefulWidget {
 }
 
 class _StockCheckAnalysisPanel extends StatefulWidget {
+  final Future<StockCheckKpiAdjustments> Function(List<StockCheckCampaign>)?
+  loadAdjustments;
   final bool isKpi;
   final bool isLoading;
   final String loadError;
@@ -1732,6 +1739,7 @@ class _StockCheckAnalysisPanel extends StatefulWidget {
   final VoidCallback onSelectBatches;
 
   const _StockCheckAnalysisPanel({
+    this.loadAdjustments,
     this.isKpi = false,
     this.isLoading = false,
     this.loadError = '',
@@ -1781,6 +1789,7 @@ class _StockCheckAnalysisPanelState extends State<_StockCheckAnalysisPanel> {
   Widget build(BuildContext context) {
     if (widget.isKpi) {
       return StockCheckKpiAnalysisPanel(
+        loadAdjustments: widget.loadAdjustments,
         isLoading: widget.isLoading,
         loadError: widget.loadError,
         loadedProjects: widget.loadedProjects,

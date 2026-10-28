@@ -1,8 +1,10 @@
 /* ExcelJS is loaded into this dedicated worker before this script. */
 'use strict';
+const STOCK_CHECK_KPI_EXPORT_VERSION = 2;
 let workbook, details, totalRows, received = 0;
 let singleReport = false, columnTypes = [], reportStyles = [];
 let projectStyles = [];
+let differenceColumn = 0, scoreColumn = 0;
 const quarterColors = [
   ['2563EB', 'F2F7FF', 'E7EFFC'],
   ['0F766E', 'EFFAF7', 'E0F2EC'],
@@ -11,7 +13,7 @@ const quarterColors = [
 ];
 function colorsFromHeaders(headers) {
   const colors = [];
-  for (let column = 6; column < headers.length - 2; column += 3) {
+  for (let column = 6; /\| System Qty$/.test(headers[column] || ''); column += 3) {
     const quarter = headers[column].match(/\bQ([1-4])\b/i);
     colors.push(quarterColors[quarter ? Number(quarter[1]) - 1 : colors.length % 4]);
   }
@@ -39,7 +41,7 @@ function addHeader(sheet, headers, color, height, widths, projectColors = []) {
   row.eachCell((cell, column) => { cell.style = {
     font: {name: 'Calibri', size: 11, bold: true, color: {argb: 'FFFFFFFF'}},
     fill: {type: 'pattern', pattern: 'solid', fgColor: {argb:
-      column >= 7 && column <= headers.length - 2 && projectColors.length
+      column >= 7 && column < 7 + projectColors.length * 3
         ? 'FF' + projectColors[Math.floor((column - 7) / 3)][0] : color}}, border,
     alignment: {horizontal: 'center', vertical: 'middle', wrapText: true}
   }; });
@@ -48,17 +50,20 @@ function addRow(sheet, values, leftColumns, detail) {
   const row = sheet.addRow(values);
   const even = row.number % 2 === 0 ? 1 : 0;
   row.eachCell({includeEmpty: true}, (cell, column) => {
-    cell.style = detail && column >= 7 && column <= values.length - 2 && projectStyles.length
+    cell.style = detail && column >= 7 && column < 7 + projectStyles.length * 3
       ? projectStyles[Math.floor((column - 7) / 3)][even]
       : rowStyles[even][leftColumns.includes(column) ? 1 : 0];
   });
   if (detail) {
-    const difference = values[values.length - 2], score = values[values.length - 1];
+    row.height = 36;
+    row.getCell(6).style = {...rowStyles[even][1],
+      alignment: {horizontal: 'left', vertical: 'middle', wrapText: true}};
+    const difference = values[differenceColumn - 1], score = values[scoreColumn - 1];
     if (typeof difference === 'number' && Math.abs(difference) > 1e-9) {
-      row.getCell(values.length - 1).style = {...rowStyles[even][0],
+      row.getCell(differenceColumn).style = {...rowStyles[even][0],
         font: {name: 'Calibri', size: 11, bold: true, color: {argb: 'FFB91C1C'}}};
     }
-    const cell = row.getCell(values.length);
+    const cell = row.getCell(scoreColumn);
     cell.style = typeof score === 'number' ? scoreStyles[score === 100 ? 1 : 0]
       : {...rowStyles[even][0], numFmt: '0"%"'};
   }
@@ -104,8 +109,18 @@ self.onmessage = async event => {
       }
       // Older open clients do not send projectColors. They still export the
       // same quarter-labelled columns, so retain colors during app updates.
-      const projectColors = data.projectColors && data.projectColors.length
-        ? data.projectColors : colorsFromHeaders(data.detailHeaders);
+      // The quarter columns, not the trailing comparison/accuracy/adjustment
+      // cells, determine palette length. Old clients or partial palettes are
+      // safe: missing/invalid entries use the quarter-labelled fallback.
+      const projectColors = colorsFromHeaders(data.detailHeaders).map((fallback, i) => {
+        const supplied = data.projectColors && data.projectColors[i];
+        return Array.isArray(supplied) && supplied.length === 3 &&
+          supplied.every(color => typeof color === 'string' && /^[0-9a-f]{6}$/i.test(color))
+          ? supplied : fallback;
+      });
+      differenceColumn = data.detailHeaders.findIndex(h => h.startsWith('Difference | ')) + 1;
+      scoreColumn = data.detailHeaders.indexOf('Accuracy %') + 1;
+      if (!differenceColumn || !scoreColumn) throw new Error('Invalid KPI columns');
       projectStyles = projectColors.map(colors => [0, 1].map(even => ({
         ...rowStyles[even][0],
         fill: {type: 'pattern', pattern: 'solid', fgColor: {argb: 'FF' + colors[even + 1]}}
@@ -125,6 +140,9 @@ self.onmessage = async event => {
       if (received !== totalRows) throw new Error('Incomplete export data. Please retry.');
       if (singleReport) details.autoFilter = {
         from: {row: 1, column: 1}, to: {row: received + 1, column: columnTypes.length}
+      };
+      else details.autoFilter = {
+        from: {row: 1, column: 1}, to: {row: received + 1, column: details.columnCount}
       };
       self.postMessage({type: 'packaging', processed: received, total: totalRows});
       const bytes = await workbook.xlsx.writeBuffer({useStyles: true, useSharedStrings: true,

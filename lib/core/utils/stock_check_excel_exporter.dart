@@ -116,6 +116,8 @@ class StockCheckExcelExporter {
     if (report.projects.length > 1)
       'Shared Items (${report.projects.map((project) => project.quarter == null ? (project.period.isEmpty ? project.title : project.period) : 'Q${project.quarter}').join(' - ')})',
     'Single Project',
+    'Awaiting / Review',
+    'Excluded from KPI',
     'Accuracy %',
   ];
 
@@ -147,6 +149,7 @@ class StockCheckExcelExporter {
     ],
     'Difference | ${report.projects.map((project) => project.period.isEmpty ? project.title : project.period).join(' vs ')}',
     'Accuracy %',
+    'Adjustment Qty${report.adjustments == null ? '' : ' | ${report.adjustments!.period}'}',
   ];
 
   static List<Object> _kpiTotals(
@@ -161,6 +164,8 @@ class StockCheckExcelExporter {
     totals.failed,
     if (report.projects.length > 1) totals.shared,
     totals.standalone,
+    totals.awaiting,
+    totals.excluded,
     totals.accuracy ?? '',
   ];
 
@@ -179,12 +184,14 @@ class StockCheckExcelExporter {
       item.rowFor(project.id)?.actualQty ?? '',
       if (item.rowFor(project.id) case final row?
           when StockCheckKpiItem.counted(row))
-        row.variance!
+        item.differenceFor(project.id)!
       else
         '',
     ],
     item.comparisonDifference ?? '',
     item.score ?? '',
+    report.adjustments?.forItem(item.branch, item.code)?.exportValue ??
+        'Not loaded',
   ];
 
   static Future<Uint8List> buildKpiAnalysisBytes({
@@ -213,8 +220,8 @@ class StockCheckExcelExporter {
               : i == 2
               ? 45
               : i == 5
-              ? 55
-              : i == headers.length - 2
+              ? 48
+              : i == headers.length - 3 || i == headers.length - 1
               ? 42
               : 16,
       ],
@@ -269,6 +276,8 @@ class StockCheckExcelExporter {
     for (final item in report.items) {
       final values = _kpiValues(item, report);
       _writeRow(details, index, values, leftColumns: {1, 2, 3, 6});
+      details.getRangeByIndex(index, 6).cellStyle.wrapText = true;
+      details.getRangeByIndex(index, 1).rowHeight = 36;
       for (var project = 0; project < projectColors.length; project++) {
         details
                 .getRangeByIndex(index, 7 + project * 3, index, 9 + project * 3)
@@ -276,13 +285,13 @@ class StockCheckExcelExporter {
                 .backColor =
             '#${projectColors[project][index.isEven ? 2 : 1]}';
       }
-      final differenceCell = details.getRangeByIndex(index, headers.length - 1);
+      final differenceCell = details.getRangeByIndex(index, headers.length - 2);
       if (item.comparisonDifference != null &&
           item.comparisonDifference!.abs() > StockCheckKpiItem.tolerance) {
         differenceCell.cellStyle.fontColor = '#B91C1C';
         differenceCell.cellStyle.bold = true;
       }
-      final scoreCell = details.getRangeByIndex(index, headers.length);
+      final scoreCell = details.getRangeByIndex(index, headers.length - 1);
       scoreCell.numberFormat = '0"%"';
       if (item.score != null) {
         scoreCell.cellStyle
@@ -295,11 +304,18 @@ class StockCheckExcelExporter {
     _setColumnWidths(details, headers, {
       'Branch': 35,
       'Item Name': 45,
-      'Result': 55,
-      headers[headers.length - 2]: 42,
+      'Result': 48,
+      headers[headers.length - 3]: 42,
+      headers.last: 42,
     });
     details.getRangeByIndex(1, 1, 1, headers.length).rowHeight = 60;
     details.getRangeByIndex(1, 1, 1, headers.length).cellStyle.wrapText = true;
+    details.autoFilters.filterRange = details.getRangeByIndex(
+      1,
+      1,
+      report.total + 1,
+      headers.length,
+    );
     return workbook;
   }
 

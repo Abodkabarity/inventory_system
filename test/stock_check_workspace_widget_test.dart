@@ -12,9 +12,11 @@ import 'package:daily_order/core/utils/stock_check_kpi_export_worker.dart';
 import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 import 'package:daily_order/domain/entities/stock_check_campaign.dart';
 import 'package:daily_order/domain/entities/stock_check_kpi_report.dart';
+import 'package:daily_order/domain/entities/stock_check_kpi_adjustment.dart';
 import 'package:daily_order/domain/entities/stock_check_task.dart';
 import 'package:daily_order/presentation/inventory_dashboard/page/stock_check_page.dart';
 import 'package:daily_order/presentation/inventory_dashboard/widgets/stock_check_kpi_analysis_panel.dart';
+import 'package:daily_order/presentation/widgets/inventory_dropdown.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -25,6 +27,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:xml/xml.dart';
 
 var _workerAssetRequests = 0;
+var _serveStaleKpiWorker = false;
 
 StockCheckKpiReport exportFixture({int products = 4, int quarters = 4}) =>
     StockCheckKpiReport(
@@ -52,6 +55,82 @@ StockCheckKpiReport exportFixture({int products = 4, int quarters = 4}) =>
             }),
       ],
     );
+
+StockCheckKpiReport revisedKpiFixture() {
+  StockCheckTask row(int q, String code, num? actual, {num system = 10}) =>
+      StockCheckTask.fromMap({
+        'id': '$q-$code',
+        'batch_id': 'q$q',
+        'branch_name': 'Branch A',
+        'item_code': code,
+        'item_name': 'Medicine $code',
+        'system_qty': system,
+        'actual_qty': actual,
+        'status': actual == null ? 'pending' : 'submitted',
+      });
+  return StockCheckKpiReport(
+    projects: exportFixture(quarters: 2).projects.reversed.toList(),
+    rows: [
+      row(1, 'A', 11), row(2, 'A', 10), // Corrected.
+      row(1, 'B', 11), row(2, 'B', 11.005), // Stable within tolerance.
+      row(1, 'C', 10), row(2, 'C', 12), // New error.
+      row(1, 'D', 15), row(2, 'D', .009, system: .01), // Zero stock.
+      row(1, 'E', 8), // Missing in latest.
+      row(1, 'F', 9.99), row(2, 'F', 10.001), // Tiny differences.
+      row(1, 'G', 10), row(2, 'G', null), // Awaiting.
+    ],
+  );
+}
+
+StockCheckKpiAdjustments adjustmentFixture(StockCheckKpiReport report) =>
+    StockCheckKpiAdjustments(
+      fromDate: DateTime(2026, 7, 8),
+      throughDate: DateTime(2026, 10, 28),
+      snapshot: 'adjustment-fixture',
+      values: {
+        for (final item in report.items)
+          StockCheckKpiAdjustments.key(
+            item.branch,
+            item.code,
+          ): StockCheckKpiAdjustment(
+            quantity: switch (item.code) {
+              'A' => 3.5,
+              'B' => -2,
+              'E' => 5,
+              'G' => -.005,
+              _ => 0,
+            },
+            movementCount: switch (item.code) {
+              'C' => 2,
+              'D' || 'F' => 0,
+              _ => 1,
+            },
+            complete: item.code != 'E' && item.code != 'F',
+          ),
+      },
+    );
+
+StockCheckKpiReport zeroStockFixture() {
+  final fixture = revisedKpiFixture();
+  return StockCheckKpiReport(
+    projects: fixture.projects,
+    rows: [
+      for (final item in fixture.items)
+        for (final project in fixture.projects) ?item.rowFor(project.id),
+      for (var q = 1; q <= 2; q++)
+        StockCheckTask.fromMap({
+          'id': 'zero-$q',
+          'batch_id': 'q$q',
+          'branch_name': 'Branch A',
+          'item_code': 'Z',
+          'item_name': 'Zero stock medicine',
+          'system_qty': q == 1 ? 0.001 : 0.01,
+          'actual_qty': q == 1 ? 0 : 0.009,
+          'status': 'submitted',
+        }),
+    ],
+  );
+}
 
 XmlDocument exportXml(Archive archive, String path) => XmlDocument.parse(
   utf8.decode(archive.findFile(path)!.content as List<int>),
@@ -152,6 +231,30 @@ Future<List<http.Request>> showStockCheck(
                     'expires_at': '2030-01-01T10:00:00Z',
                   },
             ];
+      }
+      if (request.url.path.endsWith('/rpc/stock_check_kpi_adjustments')) {
+        final ids = (jsonDecode(request.body) as Map)['p_project_ids'] as List;
+        final pairs = <String, Map<String, Object>>{};
+        for (final task in taskRows ?? <Map<String, dynamic>>[]) {
+          if (!ids.contains(task['batch_id'])) continue;
+          final branch = '${task['branch_name']}'.trim().toLowerCase();
+          final code = '${task['item_code']}'.trim().toLowerCase();
+          pairs['$branch\u0000$code'] = {
+            'branch': branch,
+            'item_code': code,
+            'qty': '0',
+            'movement_count': 0,
+            'complete': true,
+          };
+        }
+        result = {
+          'rows': pairs.values.toList(),
+          'total': pairs.length,
+          'has_more': false,
+          'snapshot': 'test-history',
+          'from_date': '2026-07-08',
+          'through_date': '2026-10-28',
+        };
       }
       if (request.method == 'POST' &&
           request.url.path.endsWith('/stock_check_tasks')) {
@@ -370,6 +473,8 @@ void main() {
           if (quarters > 1)
             'Shared Items (${List.generate(quarters, (i) => 'Q${i + 1}').join(' - ')})',
           'Single Project',
+          'Awaiting / Review',
+          'Excluded from KPI',
           'Accuracy %',
         ];
         final expectedTotals = [
@@ -380,6 +485,8 @@ void main() {
           '${report.failed}',
           if (quarters > 1) '${report.shared}',
           '${report.standalone}',
+          '${report.awaiting}',
+          '${report.excluded}',
         ];
         final bytes = await StockCheckExcelExporter.buildKpiAnalysisBytes(
           report: report,
@@ -430,6 +537,616 @@ void main() {
           workbook.dispose();
         }
       }
+    },
+  );
+  test(
+    'revised KPI rules and result history match in both Excel export paths',
+    () async {
+      final originalGroups = StoreBranchIdentityRegistry.groups.value;
+      addTearDown(
+        () => StoreBranchIdentityRegistry.groups.value = originalGroups,
+      );
+      StoreBranchIdentityRegistry.groups.value = const {'BRANCH A': '71'};
+      final report = revisedKpiFixture();
+      expect(report.scored, 4);
+      expect(report.correct, 3);
+      expect(report.excluded, 2);
+      expect(report.awaiting, 1);
+      expect(report.accuracy, 75);
+      final bytes = await StockCheckExcelExporter.buildKpiAnalysisBytes(
+        report: report,
+      );
+      final archive = ZipDecoder().decodeBytes(bytes);
+      final summary = exportXml(archive, 'xl/worksheets/sheet1.xml');
+      final detail = exportXml(archive, 'xl/worksheets/sheet2.xml');
+      final strings = exportXml(
+        archive,
+        'xl/sharedStrings.xml',
+      ).findAllElements('si').map((e) => e.innerText).toList();
+      expect(exportCell(summary, 'C2', strings), '4');
+      expect(exportCell(summary, 'D2', strings), '3');
+      expect(exportCell(summary, 'H2', strings), '1');
+      expect(exportCell(summary, 'I2', strings), '2');
+      expect(exportCell(summary, 'J2', strings), '75');
+      expect(exportCell(detail, 'A2', strings), '71 Branch A');
+      expect(
+        exportCell(detail, 'F2', strings),
+        equals('Incorrect in Q1, corrected in Q2'),
+      );
+      expect(
+        exportCell(detail, 'F4', strings),
+        equals('Correct in Q1, incorrect in Q2'),
+      );
+      expect(exportCell(detail, 'F5', strings), equals('Zero stock in Q2'));
+      expect(exportCell(detail, 'F6', strings), startsWith('Not present in '));
+      expect(exportCell(detail, 'F8', strings), equals('Awaiting counts'));
+      expect(
+        exportCell(detail, 'M3', strings),
+        '0',
+      ); // Quarter change normalized.
+      expect(exportCell(detail, 'I7', strings), '0'); // Q1 tiny difference.
+      expect(exportCell(detail, 'L7', strings), '0'); // Q2 tiny difference.
+      expect(
+        exportCell(detail, 'K7', strings),
+        '10.001',
+      ); // Raw actual unchanged.
+      for (final (address, value) in [
+        ('N2', '100'),
+        ('N3', '100'),
+        ('N4', '0'),
+        ('N5', ''),
+        ('N6', ''),
+        ('N7', '100'),
+        ('N8', ''),
+      ]) {
+        expect(exportCell(detail, address, strings), value);
+      }
+      final workbook = StockCheckExcelExporter.buildKpiAnalysisWorkbook(report);
+      try {
+        expect(workbook.worksheets[0].getRangeByIndex(2, 10).getNumber(), 75);
+        for (var i = 0; i < report.items.length; i++) {
+          final item = report.items[i];
+          final row = i + 2;
+          expect(
+            workbook.worksheets[1].getRangeByIndex(row, 6).getText(),
+            item.result,
+          );
+          expect(exportCell(detail, 'F$row', strings), item.result);
+          if (item.score != null) {
+            expect(
+              workbook.worksheets[1].getRangeByIndex(row, 14).getNumber(),
+              item.score,
+            );
+          } else {
+            expect(
+              workbook.worksheets[1].getRangeByIndex(row, 14).getText(),
+              '',
+            );
+          }
+        }
+      } finally {
+        workbook.dispose();
+      }
+    },
+  );
+  test(
+    'last adjustment column shows recorded signed quantities and counts in both Excel paths',
+    () async {
+      final base = revisedKpiFixture();
+      final report = base.withAdjustments(adjustmentFixture(base));
+      expect(report.accuracy, base.accuracy);
+      expect(report.scored, base.scored);
+      final bytes = await StockCheckExcelExporter.buildKpiAnalysisBytes(
+        report: report,
+      );
+      final archive = ZipDecoder().decodeBytes(bytes);
+      final detail = exportXml(archive, 'xl/worksheets/sheet2.xml');
+      final strings = exportXml(
+        archive,
+        'xl/sharedStrings.xml',
+      ).findAllElements('si').map((e) => e.innerText).toList();
+      expect(
+        exportCell(detail, 'O1', strings),
+        'Adjustment Qty | 2026-07-08 → 2026-10-28',
+      );
+      final expected = [
+        '3.5 (1 adjustment)',
+        '-2 (1 adjustment)',
+        '0 (2 adjustments)',
+        '',
+        '5 (1 adjustment)',
+        '',
+        '-0.005 (1 adjustment)',
+      ];
+      final workbook = StockCheckExcelExporter.buildKpiAnalysisWorkbook(report);
+      try {
+        for (var i = 0; i < expected.length; i++) {
+          expect(exportCell(detail, 'O${i + 2}', strings), expected[i]);
+          final cell = workbook.worksheets[1].getRangeByIndex(i + 2, 15);
+          final raw = report.adjustments!
+              .forItem(report.items[i].branch, report.items[i].code)!
+              .exportValue;
+          expect(raw is num ? cell.getNumber() : cell.getText(), raw);
+        }
+        expect(
+          workbook.worksheets[1].getRangeByIndex(1, 15).getText(),
+          exportCell(detail, 'O1', strings),
+        );
+        expect(exportCell(detail, 'N2', strings), '100');
+        expect(exportCell(detail, 'N4', strings), '0');
+      } finally {
+        workbook.dispose();
+      }
+    },
+  );
+  test(
+    'all-zero rows export blank accuracy and a short filterable result in both Excel paths',
+    () async {
+      final report = zeroStockFixture();
+      expect(report.accuracy, 75);
+      expect(report.scored, 4);
+      expect(report.excluded, 3);
+      final bytes = await StockCheckExcelExporter.buildKpiAnalysisBytes(
+        report: report,
+      );
+      final archive = ZipDecoder().decodeBytes(bytes);
+      final detail = exportXml(archive, 'xl/worksheets/sheet2.xml');
+      final strings = exportXml(
+        archive,
+        'xl/sharedStrings.xml',
+      ).findAllElements('si').map((e) => e.innerText).toList();
+      expect(exportCell(detail, 'F9', strings), 'Zero stock in both quarters');
+      expect(exportCell(detail, 'F5', strings), 'Zero stock in Q2');
+      expect(exportCell(detail, 'N5', strings), '');
+      expect(exportCell(detail, 'N9', strings), '');
+      expect(
+        [
+          for (var row = 2; row <= report.total + 1; row++)
+            exportCell(detail, 'N$row', strings),
+        ].where((value) => value == '100').length,
+        report.correct,
+      );
+      expect(
+        detail.rootElement.getElement('autoFilter')!.getAttribute('ref'),
+        'A1:O9',
+      );
+      final workbook = StockCheckExcelExporter.buildKpiAnalysisWorkbook(report);
+      try {
+        final sheet = workbook.worksheets[1];
+        expect(
+          sheet.getRangeByIndex(9, 6).getText(),
+          'Zero stock in both quarters',
+        );
+        expect(sheet.getRangeByIndex(9, 14).getText(), '');
+        expect(sheet.getRangeByIndex(5, 14).getText(), '');
+        expect(
+          sheet.getRangeByIndex(5, 14).cellStyle.backColor.toUpperCase(),
+          isNot(endsWith('DCFCE7')),
+        );
+        expect(
+          sheet.getRangeByIndex(9, 14).cellStyle.backColor.toUpperCase(),
+          isNot(endsWith('DCFCE7')),
+        );
+        expect(sheet.getRangeByIndex(1, 6).columnWidth, 48);
+        expect(sheet.getRangeByIndex(9, 1).rowHeight, 36);
+      } finally {
+        workbook.dispose();
+      }
+    },
+  );
+
+  testWidgets(
+    'zero stock has blank UI accuracy and short Result text is searchable',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      await tester.binding.setSurfaceSize(const Size(1600, 1000));
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final report = zeroStockFixture();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StockCheckKpiAnalysisPanel(
+              projects: report.projects,
+              rows: [
+                for (final item in report.items)
+                  for (final project in report.projects)
+                    ?item.rowFor(project.id),
+              ],
+              onSelectProjects: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Product details'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (w) =>
+              w is TextField &&
+              w.decoration?.labelText == 'Search item code, name or result',
+        ),
+        'Zero stock in both quarters',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Zero stock medicine'), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is Text && w.data == 'Zero stock in both quarters',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('100%'), findsNothing);
+      expect(find.text('Excluded'), findsNothing);
+      expect(find.text('Medicine A'), findsNothing);
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (w) =>
+              w is TextField &&
+              w.decoration?.labelText == 'Search item code, name or result',
+        ),
+        'Zero stock in Q2',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Medicine D'), findsOneWidget);
+      expect(find.text('Zero stock medicine'), findsNothing);
+      expect(find.text('100%'), findsNothing);
+      expect(find.text('Excluded'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'adjustment history loads into an open dialog and export waits for complete loading',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1100);
+      tester.view.devicePixelRatio = 1;
+      await tester.binding.setSurfaceSize(const Size(1600, 1100));
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final report = revisedKpiFixture();
+      final pending = Completer<StockCheckKpiAdjustments>();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StockCheckKpiAnalysisPanel(
+              projects: report.projects,
+              rows: [
+                for (final item in report.items)
+                  for (final project in report.projects)
+                    ?item.rowFor(project.id),
+              ],
+              onSelectProjects: () {},
+              loadAdjustments: (_) => pending.future,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Export KPI Report'),
+            )
+            .onPressed,
+        isNotNull,
+      );
+      await tester.tap(find.text('Product details'));
+      await tester.pumpAndSettle();
+      expect(find.text('Adjustment Qty'), findsOneWidget);
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (w) =>
+              w is TextField &&
+              w.decoration?.labelText == 'Search item code, name or result',
+        ),
+        'Medicine E',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Not loaded'), findsOneWidget);
+      pending.complete(adjustmentFixture(report));
+      await tester.pumpAndSettle();
+      expect(find.text('5 (1 adjustment)'), findsOneWidget);
+      expect(find.text('Not loaded'), findsNothing);
+      await tester.tap(find.byTooltip('Close'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Export KPI Report'),
+            )
+            .onPressed,
+        isNotNull,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'export queues immediately for adjustments and copied parent rows do not reload history',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1100);
+      tester.view.devicePixelRatio = 1;
+      await tester.binding.setSurfaceSize(const Size(1600, 1100));
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final report = revisedKpiFixture();
+      final pending = Completer<StockCheckKpiAdjustments>();
+      var loads = 0, exports = 0;
+      StockCheckKpiReport? exported;
+      Widget build() => MaterialApp(
+        home: Scaffold(
+          body: StockCheckKpiAnalysisPanel(
+            projects: List.of(report.projects),
+            rows: [
+              for (final item in report.items)
+                for (final project in report.projects) ?item.rowFor(project.id),
+            ],
+            onSelectProjects: () {},
+            loadAdjustments: (_) {
+              loads++;
+              return pending.future;
+            },
+            exportReport: ({required report, job, onProgress}) async {
+              exports++;
+              exported = report;
+            },
+          ),
+        ),
+      );
+      await tester.pumpWidget(build());
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Export KPI Report'),
+            )
+            .onPressed,
+        isNotNull,
+      );
+      await tester.tap(find.text('Export KPI Report'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(
+        find.text('Loading adjustment history for your export'),
+        findsOneWidget,
+      );
+      expect(exports, 0);
+      await tester.pumpWidget(build());
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(loads, 1);
+      final data = adjustmentFixture(report);
+      pending.complete(data);
+      await tester.pumpAndSettle();
+      expect(exports, 1);
+      expect(identical(exported!.adjustments, data), isTrue);
+      expect(exported!.accuracy, report.accuracy);
+      expect(find.text('Export KPI Report'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'waiting export can be cancelled and retries failed adjustment loading',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1100);
+      tester.view.devicePixelRatio = 1;
+      await tester.binding.setSurfaceSize(const Size(1600, 1100));
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final report = revisedKpiFixture();
+      final pending = Completer<StockCheckKpiAdjustments>();
+      var loads = 0, exports = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StockCheckKpiAnalysisPanel(
+              projects: report.projects,
+              rows: [
+                for (final item in report.items)
+                  for (final project in report.projects)
+                    ?item.rowFor(project.id),
+              ],
+              onSelectProjects: () {},
+              loadAdjustments: (_) async {
+                loads++;
+                if (loads == 1) throw StateError('Temporary history failure');
+                return pending.future;
+              },
+              exportReport: ({required report, job, onProgress}) async {
+                exports++;
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Temporary history failure'), findsOneWidget);
+      await tester.tap(find.text('Export KPI Report'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(loads, 2);
+      expect(
+        find.text('Loading adjustment history for your export'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(exports, 0);
+      expect(find.text('Export KPI Report'), findsOneWidget);
+      await tester.tap(find.text('Export KPI Report'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      pending.complete(adjustmentFixture(report));
+      await tester.pumpAndSettle();
+      expect(exports, 1);
+      expect(loads, 2);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  test('outdated worker assets produce a clear retryable error', () async {
+    _serveStaleKpiWorker = true;
+    try {
+      await expectLater(
+        StockCheckExcelExporter.buildKpiAnalysisBytes(
+          report: revisedKpiFixture(),
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('assets are outdated'),
+          ),
+        ),
+      );
+    } finally {
+      _serveStaleKpiWorker = false;
+    }
+    expect(
+      (await StockCheckExcelExporter.buildKpiAnalysisBytes(
+        report: revisedKpiFixture(),
+      )).length,
+      greaterThan(1000),
+    );
+  });
+
+  test(
+    'two-quarter adjustment export tolerates missing and partial color palettes',
+    () async {
+      final headers = [
+        'Branch',
+        'Item Code',
+        'Item Name',
+        'Included Projects',
+        'Type',
+        'Result',
+        'Q1 2026 | System Qty',
+        'Q1 2026 | Actual Qty',
+        'Q1 2026 | Difference',
+        'Q2 2026 | System Qty',
+        'Q2 2026 | Actual Qty',
+        'Q2 2026 | Difference',
+        'Difference | Q1 vs Q2',
+        'Accuracy %',
+        'Adjustment Qty',
+      ];
+      for (final palette in <List<List<String>>>[
+        [],
+        [
+          ['2563EB', 'F2F7FF', 'E7EFFC'],
+        ],
+        [
+          [],
+          ['invalid'],
+        ],
+      ]) {
+        final bytes = await StockCheckKpiExportWorker.build(
+          summaryHeaders: ['Branch'],
+          summaryWidths: [20],
+          summaryRows: [
+            ['Branch A'],
+          ],
+          detailHeaders: headers,
+          detailWidths: List.filled(headers.length, 20),
+          projectColors: palette,
+          detailRows: [
+            [
+              'Branch A',
+              'A',
+              'Medicine',
+              2,
+              'Shared',
+              'Correct',
+              10,
+              10,
+              0,
+              10,
+              10,
+              0,
+              0,
+              100,
+              3.5,
+            ],
+          ],
+          totalRows: 1,
+          job: KpiExportJob(),
+        );
+        final archive = ZipDecoder().decodeBytes(bytes);
+        final details = exportXml(archive, 'xl/worksheets/sheet2.xml');
+        final strings = exportXml(
+          archive,
+          'xl/sharedStrings.xml',
+        ).findAllElements('si').map((e) => e.innerText).toList();
+        expect(exportCell(details, 'N2', strings), '100');
+        expect(exportCell(details, 'O2', strings), '3.5');
+      }
+    },
+  );
+
+  testWidgets(
+    'revised KPI dialog shows results, normalized differences and exclusions',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      await tester.binding.setSurfaceSize(const Size(1600, 1000));
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final report = revisedKpiFixture();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StockCheckKpiAnalysisPanel(
+              projects: report.projects,
+              rows: [
+                for (final item in report.items)
+                  for (final project in report.projects)
+                    ?item.rowFor(project.id),
+              ],
+              onSelectProjects: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('3 / 4'), findsOneWidget);
+      expect(find.text('75.0%'), findsNWidgets(2));
+      expect(find.text('2 excluded'), findsOneWidget);
+      await tester.tap(find.text('Product details'));
+      await tester.pumpAndSettle();
+      expect(find.text('Result'), findsOneWidget);
+      expect(find.text(report.items.first.result), findsOneWidget);
+      expect(find.text('Incorrect in Q1, corrected in Q2'), findsOneWidget);
+      expect(find.text('Correct in Q1, incorrect in Q2'), findsOneWidget);
+      final dropdown = find.byType(InventoryDropdown<String>);
+      await tester.tap(dropdown.last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Excluded from KPI').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Medicine D'), findsOneWidget);
+      expect(find.text('Medicine E'), findsOneWidget);
+      expect(find.text('Medicine A'), findsNothing);
+      expect(find.text('100%'), findsNothing);
+      expect(find.text('Excluded'), findsOneWidget);
+      expect(find.text('Difference: 0'), findsOneWidget);
+      await tester.tap(dropdown.last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('100%').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Medicine A'), findsOneWidget);
+      expect(find.text('Medicine B'), findsOneWidget);
+      expect(find.text('Medicine F'), findsOneWidget);
+      expect(find.text('Medicine D'), findsNothing);
+      expect(find.text('Medicine E'), findsNothing);
+      expect(find.text('Medicine C'), findsNothing);
+      expect(tester.takeException(), isNull);
     },
   );
   test(
@@ -588,12 +1305,9 @@ void main() {
         archive,
         'xl/sharedStrings.xml',
       ).findAllElements('si').map((e) => e.innerText).toList();
-      expect(exportCell(summary, 'C2', strings), '3');
+      expect(exportCell(summary, 'C2', strings), '2');
       expect(exportCell(summary, 'D2', strings), '2');
-      expect(
-        double.parse(exportCell(summary, 'H2', strings)),
-        closeTo(200 / 3, .001),
-      );
+      expect(double.parse(exportCell(summary, 'J2', strings)), 100);
       expect(exportCell(detail, 'R1', strings), 'Q4 2026 | Difference');
       expect(
         exportCell(detail, 'S1', strings),
@@ -601,8 +1315,8 @@ void main() {
       );
       expect(exportCell(detail, 'L2', strings), '2');
       expect(exportCell(detail, 'S2', strings), '2');
-      expect(exportCell(detail, 'T2', strings), '0');
-      expect(exportCell(detail, 'T3', strings), '100');
+      expect(exportCell(detail, 'T2', strings), '100');
+      expect(exportCell(detail, 'T3', strings), '');
       expect(exportCell(detail, 'T4', strings), '');
       expect(
         exportCell(detail, 'M3', strings),
@@ -656,10 +1370,10 @@ void main() {
         }
       }
       expect(color('S2'), 'FFB91C1C');
-      expect(color('T2'), 'FFB91C1C');
-      expect(color('T3'), 'FF15803D');
+      expect(color('T2'), 'FF15803D');
+      expect(color('T5'), 'FF15803D');
       expect(
-        fills[int.parse(style('T3').getAttribute('fillId')!)]
+        fills[int.parse(style('T5').getAttribute('fillId')!)]
             .getElement('patternFill')!
             .getElement('fgColor')!
             .getAttribute('rgb'),
@@ -925,11 +1639,12 @@ void main() {
       addTearDown(workbook.dispose);
       final summary = workbook.worksheets[0];
       final details = workbook.worksheets[1];
-      expect(summary.getRangeByIndex(2, 3).getNumber(), 2);
+      expect(summary.getRangeByIndex(2, 3).getNumber(), 1);
       expect(summary.getRangeByIndex(2, 4).getNumber(), 1);
-      expect(summary.getRangeByIndex(2, 8).getNumber(), 50);
-      expect(details.getRangeByIndex(2, 20).getNumber(), 0);
-      expect(details.getRangeByIndex(3, 20).getNumber(), 100);
+      expect(summary.getRangeByIndex(2, 10).getNumber(), 100);
+      expect(summary.getRangeByIndex(2, 9).getNumber(), 1);
+      expect(details.getRangeByIndex(2, 20).getNumber(), 100);
+      expect(details.getRangeByIndex(3, 20).getText(), '');
       expect(details.getRangeByIndex(2, 12).getNumber(), 2);
       expect(details.getRangeByIndex(2, 19).getNumber(), 2);
       expect(details.getRangeByIndex(1, 18).getText(), 'Q4 2026 | Difference');
@@ -944,11 +1659,11 @@ void main() {
       );
       expect(
         details.getRangeByIndex(2, 20).cellStyle.fontColor.toUpperCase(),
-        endsWith('B91C1C'),
+        endsWith('15803D'),
       );
       expect(
-        details.getRangeByIndex(3, 20).cellStyle.fontColor.toUpperCase(),
-        endsWith('15803D'),
+        details.getRangeByIndex(3, 6).getText(),
+        startsWith('Not present in '),
       );
       expect(details.getRangeByIndex(3, 20).numberFormat, '0"%"');
       for (var col = 1; col <= 20; col++) {
@@ -1025,8 +1740,8 @@ void main() {
       await tester.tap(find.text('Apply 4 project(s)'));
       await tester.pumpAndSettle();
       expect(find.text('4 Projects'), findsOneWidget);
-      expect(find.text('2 / 3'), findsOneWidget);
-      expect(find.text('66.7%'), findsNWidgets(2));
+      expect(find.text('1 / 1'), findsOneWidget);
+      expect(find.text('100.0%'), findsNWidgets(2));
       await tester.tap(find.text('Product details'));
       await tester.pumpAndSettle();
       for (var q = 1; q <= 4; q++) {
@@ -1040,8 +1755,9 @@ void main() {
       }
       expect(find.text('Shared medicine'), findsOneWidget);
       expect(find.text('Single medicine B'), findsOneWidget);
-      expect(find.text('0%'), findsOneWidget);
-      expect(find.text('100%'), findsNWidgets(2));
+      expect(find.text('0%'), findsNothing);
+      expect(find.text('100%'), findsOneWidget);
+      expect(find.text('Excluded'), findsNWidgets(2));
       expect(find.text('Not included'), findsNWidgets(6));
       expect(find.text('Difference: 2'), findsOneWidget);
       expect(find.text('Difference between quarters'), findsOneWidget);
@@ -1054,7 +1770,7 @@ void main() {
         find.byWidgetPredicate(
           (w) =>
               w is TextField &&
-              w.decoration?.labelText == 'Search item code or name',
+              w.decoration?.labelText == 'Search item code, name or result',
         ),
         'Single medicine B',
       );
@@ -1066,7 +1782,7 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(find.textContaining('66.7% KPI accuracy'), findsOneWidget);
+      expect(find.textContaining('100.0% KPI accuracy'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -1079,6 +1795,11 @@ void main() {
           if (!key.startsWith('assets/workers/')) return null;
           if (key.endsWith('stock_check_kpi_export_worker.js')) {
             _workerAssetRequests++;
+            if (_serveStaleKpiWorker) {
+              return ByteData.sublistView(
+                Uint8List.fromList(utf8.encode('/* legacy cached worker */')),
+              );
+            }
           }
           final response = await http.get(
             Uri.base.resolve('/workers/${key.split('/').last}'),

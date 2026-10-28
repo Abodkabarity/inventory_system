@@ -30,6 +30,16 @@ class KpiExportJob {
   void checkCancelled() {
     if (cancelled) throw const KpiExportCancelled();
   }
+
+  Future<T> waitFor<T>(Future<T> operation) async {
+    checkCancelled();
+    final result = await Future.any<T>([
+      operation,
+      _cancellation.future.then<T>((_) => throw const KpiExportCancelled()),
+    ]);
+    checkCancelled();
+    return result;
+  }
 }
 
 /// Builds and compresses Excel in a real browser worker. Flutter web's compute
@@ -81,6 +91,12 @@ class StockCheckKpiExportWorker {
       job._cancellation.future.then((_) => throw const KpiExportCancelled()),
     ]);
     job.checkCancelled();
+    if (!singleReport &&
+        !scripts.last.contains('STOCK_CHECK_KPI_EXPORT_VERSION = 2')) {
+      throw StateError(
+        'KPI export assets are outdated. Restart the application to load the updated exporter.',
+      );
+    }
     final url = html.Url.createObjectUrlFromBlob(
       html.Blob([scripts.first, '\n', scripts.last], 'text/javascript'),
     );

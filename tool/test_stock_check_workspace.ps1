@@ -7,7 +7,7 @@ $stockRendererDirectory = Join-Path $stockWorkspaceRoot 'test/canvaskit'
 $stockWorkerDirectory = Join-Path $stockWorkspaceRoot 'test/workers'
 $stockWorkersCreated = $false
 try {
-    flutter test --no-pub test/stock_check_workspace_test.dart test/stock_check_kpi_report_test.dart
+    flutter test --no-pub test/stock_check_workspace_test.dart test/stock_check_kpi_report_test.dart test/stock_check_kpi_adjustment_test.dart
     if ($LASTEXITCODE -ne 0) { throw 'Stock Check model/data tests failed.' }
 
     # Flutter 3.44's local CanvasKit handler uses a slash prefix on Windows.

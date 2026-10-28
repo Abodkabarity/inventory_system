@@ -9,6 +9,7 @@ import '../../../core/utils/stock_check_kpi_export_worker.dart';
 import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../../domain/entities/stock_check_campaign.dart';
 import '../../../domain/entities/stock_check_kpi_report.dart';
+import '../../../domain/entities/stock_check_kpi_adjustment.dart';
 import '../../../domain/entities/stock_check_task.dart';
 
 String _percent(double? value) =>
@@ -25,6 +26,8 @@ class StockCheckKpiAnalysisPanel extends StatefulWidget {
   final String loadError;
   final int loadedProjects;
   final VoidCallback? onRetry;
+  final Future<StockCheckKpiAdjustments> Function(List<StockCheckCampaign>)?
+  loadAdjustments;
   final Future<void> Function({
     required StockCheckKpiReport report,
     KpiExportJob? job,
@@ -41,6 +44,7 @@ class StockCheckKpiAnalysisPanel extends StatefulWidget {
     this.loadError = '',
     this.loadedProjects = 0,
     this.onRetry,
+    this.loadAdjustments,
     this.exportReport = StockCheckExcelExporter.exportKpiAnalysis,
   });
 
@@ -56,6 +60,12 @@ class _StockCheckKpiAnalysisPanelState
   bool _exporting = false;
   KpiExportJob? _exportJob;
   KpiExportProgress? _exportProgress;
+  final _adjustments = ValueNotifier<StockCheckKpiAdjustments?>(null);
+  bool _adjustmentLoading = false;
+  String _adjustmentError = '';
+  int _adjustmentRequest = 0;
+  Future<void>? _adjustmentFuture;
+  bool _exportWaitingForAdjustments = false;
 
   @override
   void initState() {
@@ -74,7 +84,7 @@ class _StockCheckKpiAnalysisPanelState
     super.didUpdateWidget(oldWidget);
     if (oldWidget.isLoading != widget.isLoading ||
         oldWidget.loadError != widget.loadError ||
-        !identical(oldWidget.rows, widget.rows) ||
+        !listEquals(oldWidget.rows, widget.rows) ||
         !listEquals(oldWidget.projects, widget.projects)) {
       _refresh();
     }
@@ -85,14 +95,69 @@ class _StockCheckKpiAnalysisPanelState
     // last valid KPI score or look like products absent from another quarter.
     if (widget.isLoading || widget.loadError.isNotEmpty) return;
     _report = StockCheckKpiReport(projects: widget.projects, rows: widget.rows);
+    _adjustmentRequest++;
+    _adjustments.value = null;
+    _adjustmentLoading = false;
+    _adjustmentError = '';
+    if (_report.total > 0 && widget.loadAdjustments != null) {
+      _loadAdjustments();
+    }
+  }
+
+  Future<void> _loadAdjustments() {
+    final future = _performLoadAdjustments();
+    _adjustmentFuture = future;
+    return future;
+  }
+
+  Future<void> _performLoadAdjustments() async {
+    final loader = widget.loadAdjustments;
+    if (loader == null) return;
+    final report = _report;
+    final request = ++_adjustmentRequest;
+    setState(() {
+      _adjustmentLoading = true;
+      _adjustmentError = '';
+    });
+    try {
+      final data = await loader(report.projects);
+      if (!mounted || request != _adjustmentRequest) return;
+      if (data.values.length != report.total ||
+          report.items.any(
+            (item) => data.forItem(item.branch, item.code) == null,
+          )) {
+        throw StateError(
+          'Project products changed while loading adjustments. Refresh projects.',
+        );
+      }
+      setState(() {
+        _report = report.withAdjustments(data);
+        _adjustments.value = data;
+        _adjustmentLoading = false;
+      });
+    } catch (error) {
+      if (!mounted || request != _adjustmentRequest) return;
+      setState(() {
+        _adjustmentLoading = false;
+        _adjustmentError = error.toString();
+      });
+    }
   }
 
   Future<void> _export() async {
-    if (_exporting || widget.isLoading || widget.loadError.isNotEmpty) return;
-    final report = _report;
+    if (_exporting || widget.isLoading || widget.loadError.isNotEmpty) {
+      return;
+    }
+    var report = _report;
     final job = KpiExportJob();
+    final waitForAdjustments =
+        widget.loadAdjustments != null &&
+        (_adjustmentLoading ||
+            _adjustmentError.isNotEmpty ||
+            report.adjustments == null);
     setState(() {
       _exporting = true;
+      _exportWaitingForAdjustments = waitForAdjustments;
       _exportJob = job;
       _exportProgress = KpiExportProgress(
         KpiExportStage.preparing,
@@ -103,6 +168,25 @@ class _StockCheckKpiAnalysisPanelState
       // Paint feedback before preparing any export data.
       await WidgetsBinding.instance.endOfFrame;
       job.checkCancelled();
+      if (waitForAdjustments) {
+        final loading = _adjustmentLoading
+            ? _adjustmentFuture!
+            : _loadAdjustments();
+        await job.waitFor(loading);
+        if (!mounted) return;
+        if (!listEquals(report.items, _report.items)) {
+          throw StateError(
+            'Selected projects changed. Export the updated report again.',
+          );
+        }
+        if (_adjustmentError.isNotEmpty || _report.adjustments == null) {
+          throw StateError(
+            'Could not load adjustment history. Retry the export. $_adjustmentError',
+          );
+        }
+        report = _report;
+        setState(() => _exportWaitingForAdjustments = false);
+      }
       await widget.exportReport(
         report: report,
         job: job,
@@ -136,6 +220,7 @@ class _StockCheckKpiAnalysisPanelState
       if (mounted && identical(_exportJob, job)) {
         setState(() {
           _exporting = false;
+          _exportWaitingForAdjustments = false;
           _exportJob = null;
           _exportProgress = null;
         });
@@ -147,6 +232,8 @@ class _StockCheckKpiAnalysisPanelState
 
   @override
   void dispose() {
+    _adjustmentRequest++;
+    _adjustments.dispose();
     StoreBranchIdentityRegistry.groups.removeListener(_branchDisplayChanged);
     _exportJob?.cancel();
     _scroll.dispose();
@@ -230,6 +317,37 @@ class _StockCheckKpiAnalysisPanelState
                           _summary(constraints.maxWidth - 48),
                           const SizedBox(height: 16),
                           _ruleNote(),
+                          if (widget.loadAdjustments != null &&
+                              _report.total > 0) ...[
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    _adjustmentLoading
+                                        ? 'Loading INVAdjustment quantities from Q1 project date through today…'
+                                        : _adjustmentError.isNotEmpty
+                                        ? 'Adjustment history unavailable: $_adjustmentError'
+                                        : 'Adjustments: ${_report.adjustments?.period ?? 'Not loaded'}',
+                                    style: const TextStyle(
+                                      color: _kpiMuted,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: _adjustmentLoading
+                                      ? null
+                                      : _loadAdjustments,
+                                  child: Text(
+                                    _adjustmentError.isEmpty
+                                        ? 'Refresh adjustments'
+                                        : 'Retry adjustments',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                           if (_report.incompleteProjectIds.isNotEmpty) ...[
                             const SizedBox(height: 10),
                             _notice(
@@ -518,12 +636,14 @@ class _StockCheckKpiAnalysisPanelState
   Widget _exportStatus() {
     final progress = _exportProgress!;
     final stage = progress.stage;
-    final label = switch (stage) {
-      KpiExportStage.preparing => 'Preparing your KPI report',
-      KpiExportStage.writing => 'Building the Excel worksheets',
-      KpiExportStage.packaging => 'Compressing and finishing your file',
-      KpiExportStage.downloading => 'Starting your download',
-    };
+    final label = _exportWaitingForAdjustments
+        ? 'Loading adjustment history for your export'
+        : switch (stage) {
+            KpiExportStage.preparing => 'Preparing your KPI report',
+            KpiExportStage.writing => 'Building the Excel worksheets',
+            KpiExportStage.packaging => 'Compressing and finishing your file',
+            KpiExportStage.downloading => 'Starting your download',
+          };
     final fraction = progress.total == 0
         ? 0.0
         : progress.processed / progress.total;
@@ -702,14 +822,14 @@ class _StockCheckKpiAnalysisPanelState
       _metricCard(
         'Single-project products',
         '${_report.standalone}',
-        'Counted individually',
+        'Present in one selected project',
         Icons.inventory_2_outlined,
         const Color(0xff8056c9),
       ),
       _metricCard(
         'Awaiting / review',
         '${_report.awaiting}',
-        'Excluded until completed',
+        '${_report.excluded} products excluded from KPI',
         Icons.hourglass_top_rounded,
         const Color(0xffbb7a19),
       ),
@@ -917,15 +1037,15 @@ class _StockCheckKpiAnalysisPanelState
     children: [
       const Icon(Icons.info_outline_rounded, size: 17, color: _kpiBlue),
       const SizedBox(width: 8),
-      const Expanded(
+      Expanded(
         child: Text(
-          'One score per product, per branch. 100% requires zero Difference in every project containing that product.',
-          style: TextStyle(color: _kpiMuted, fontSize: 12, height: 1.4),
+          '100%: zero Difference in the latest project, or unchanged Difference across included projects. Differences up to ±0.01 count as zero. ${_report.excluded} products excluded from KPI.',
+          style: const TextStyle(color: _kpiMuted, fontSize: 12, height: 1.4),
         ),
       ),
       Tooltip(
         message:
-            'Shared products must have zero Difference in every included project. Single-project products are evaluated on their own. Missing products do not lower the score.',
+            'The latest selected quarter determines inclusion. Products absent from it, or with both System and Actual within ±0.01 of zero, are excluded from the final percentage. Latest zero stock has blank accuracy regardless of earlier quarters. Pending counts and duplicate rows require review.',
         child: const Icon(
           Icons.help_outline_rounded,
           size: 17,
@@ -1080,6 +1200,8 @@ class _StockCheckKpiAnalysisPanelState
                   '${totals.awaiting} awaiting',
                   totals.awaiting == 0 ? _kpiMuted : const Color(0xffa46a16),
                 ),
+                if (totals.excluded > 0)
+                  _kpiPill('${totals.excluded} excluded', _kpiMuted),
               ],
             ),
             const Spacer(),
@@ -1113,6 +1235,7 @@ class _StockCheckKpiAnalysisPanelState
                       branch: branch,
                       totals: totals,
                       projects: _report.projects,
+                      adjustments: _adjustments,
                     ),
                   ),
                   style: TextButton.styleFrom(
@@ -1366,10 +1489,12 @@ class _KpiProductDialog extends StatefulWidget {
   final String branch;
   final StockCheckKpiTotals totals;
   final List<StockCheckCampaign> projects;
+  final ValueListenable<StockCheckKpiAdjustments?> adjustments;
   const _KpiProductDialog({
     required this.branch,
     required this.totals,
     required this.projects,
+    required this.adjustments,
   });
 
   @override
@@ -1385,6 +1510,7 @@ class _KpiProductDialogState extends State<_KpiProductDialog> {
   void initState() {
     super.initState();
     StoreBranchIdentityRegistry.groups.addListener(_branchDisplayChanged);
+    widget.adjustments.addListener(_branchDisplayChanged);
   }
 
   void _branchDisplayChanged() {
@@ -1394,6 +1520,7 @@ class _KpiProductDialogState extends State<_KpiProductDialog> {
   @override
   void dispose() {
     StoreBranchIdentityRegistry.groups.removeListener(_branchDisplayChanged);
+    widget.adjustments.removeListener(_branchDisplayChanged);
     _horizontal.dispose();
     super.dispose();
   }
@@ -1406,18 +1533,20 @@ class _KpiProductDialogState extends State<_KpiProductDialog> {
         .where(
           (item) =>
               (item.code.toLowerCase().contains(needle) ||
-                  item.name.toLowerCase().contains(needle)) &&
+                  item.name.toLowerCase().contains(needle) ||
+                  item.result.toLowerCase().contains(needle)) &&
               switch (_filter) {
                 '100%' => item.score == 100,
                 '0%' => item.score == 0,
-                'Awaiting / review' => !item.scorable,
+                'Awaiting / review' => !item.scorable && !item.excluded,
+                'Excluded from KPI' => item.excluded,
                 'Shared' => item.shared,
                 'Single project' => !item.shared,
                 _ => true,
               },
         )
         .toList();
-    final tableWidth = 580.0 + 260 * widget.projects.length;
+    final tableWidth = 1160.0 + 260 * widget.projects.length;
     return Dialog(
       backgroundColor: Colors.white,
       elevation: 24,
@@ -1465,7 +1594,7 @@ class _KpiProductDialogState extends State<_KpiProductDialog> {
                 ],
               ),
               const Text(
-                'Difference = Actual − System. Difference between quarters = largest − smallest included Difference; a single-project product uses its own Difference. Missing products do not lower the score.',
+                'Difference = Actual − System; values within ±0.01 become 0, including quarter-to-quarter changes. The comparison column shows the full range (largest − smallest). Latest zero Difference or unchanged differences earn 100%. Latest zero stock and absent products are excluded from the final KPI.',
                 style: TextStyle(color: _kpiMuted, fontSize: 12, height: 1.5),
               ),
               const SizedBox(height: 14),
@@ -1474,7 +1603,7 @@ class _KpiProductDialogState extends State<_KpiProductDialog> {
                   Expanded(
                     child: TextField(
                       decoration: _kpiInput(
-                        'Search item code or name',
+                        'Search item code, name or result',
                         Icons.search_rounded,
                       ),
                       onChanged: (value) => setState(() => _search = value),
@@ -1494,6 +1623,7 @@ class _KpiProductDialogState extends State<_KpiProductDialog> {
                               '100%',
                               '0%',
                               'Awaiting / review',
+                              'Excluded from KPI',
                               'Shared',
                               'Single project',
                             ]
@@ -1510,7 +1640,7 @@ class _KpiProductDialogState extends State<_KpiProductDialog> {
               ),
               const SizedBox(height: 8),
               Text(
-                '${items.length} products shown • ${widget.totals.correct} / ${widget.totals.scored} scored in this branch',
+                '${items.length} products shown • ${widget.totals.correct} / ${widget.totals.scored} scored • ${widget.totals.excluded} excluded from KPI',
                 style: const TextStyle(color: _kpiMuted, fontSize: 12),
               ),
               const SizedBox(height: 8),
@@ -1581,12 +1711,36 @@ class _KpiProductDialogState extends State<_KpiProductDialog> {
                                     ),
                                   ),
                                   _cell(
+                                    360,
+                                    const Text(
+                                      'Result',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                  _cell(
                                     100,
                                     const Text(
                                       'Accuracy %',
                                       style: TextStyle(
                                         fontWeight: FontWeight.w700,
                                         color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                  _cell(
+                                    220,
+                                    Tooltip(
+                                      message:
+                                          'INVAdjustment signed net quantity • ${widget.adjustments.value?.period ?? 'History not loaded'}',
+                                      child: const Text(
+                                        'Adjustment Qty',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.white,
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -1600,7 +1754,7 @@ class _KpiProductDialogState extends State<_KpiProductDialog> {
                                     )
                                   : ListView.builder(
                                       itemCount: items.length,
-                                      itemExtent: 122,
+                                      itemExtent: 156,
                                       itemBuilder: (_, index) {
                                         final item = items[index];
                                         return Container(
@@ -1683,18 +1837,45 @@ class _KpiProductDialogState extends State<_KpiProductDialog> {
                                                 ),
                                               ),
                                               _cell(
-                                                100,
-                                                _kpiPill(
-                                                  item.score == null
-                                                      ? 'Awaiting /\nreview'
-                                                      : '${item.score}%',
-                                                  item.accurate
-                                                      ? _kpiTeal
-                                                      : item.scorable
-                                                      ? const Color(0xffb94747)
-                                                      : const Color(0xffa46a16),
+                                                360,
+                                                Tooltip(
+                                                  message: item.result,
+                                                  child: Text(
+                                                    item.result,
+                                                    textDirection:
+                                                        TextDirection.ltr,
+                                                    maxLines: 2,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                      fontSize: 12,
+                                                      height: 1.4,
+                                                    ),
+                                                  ),
                                                 ),
                                               ),
+                                              _cell(
+                                                100,
+                                                item.zeroStockLatest
+                                                    ? const SizedBox.shrink()
+                                                    : _kpiPill(
+                                                        item.score == null
+                                                            ? (item.excluded
+                                                                  ? 'Excluded'
+                                                                  : 'Awaiting /\nreview')
+                                                            : '${item.score}%',
+                                                        item.accurate
+                                                            ? _kpiTeal
+                                                            : item.scorable
+                                                            ? const Color(
+                                                                0xffb94747,
+                                                              )
+                                                            : const Color(
+                                                                0xffa46a16,
+                                                              ),
+                                                      ),
+                                              ),
+                                              _cell(220, _adjustmentCell(item)),
                                             ],
                                           ),
                                         );
@@ -1725,7 +1906,25 @@ class _KpiProductDialogState extends State<_KpiProductDialog> {
 
   double _projectWidth(double available) => widget.projects.isEmpty
       ? 260
-      : math.max(260, (available - 580) / widget.projects.length);
+      : math.max(260, (available - 1160) / widget.projects.length);
+
+  Widget _adjustmentCell(StockCheckKpiItem item) {
+    final data = widget.adjustments.value;
+    final row = data?.forItem(item.branch, item.code);
+    return Tooltip(
+      message: row == null
+          ? 'Adjustment history is not loaded.'
+          : 'INVAdjustment • ${data!.period}\n${row.countLabel}; signed net ${row.quantityLabel}',
+      child: Text(
+        row?.label ?? 'Not loaded',
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: row == null ? _kpiMuted : const Color(0xff8056c9),
+        ),
+      ),
+    );
+  }
 
   Widget _projectCell(
     StockCheckKpiItem item,
@@ -1740,7 +1939,7 @@ class _KpiProductDialogState extends State<_KpiProductDialog> {
       );
     }
     final counted = StockCheckKpiItem.counted(row);
-    final difference = counted ? row.variance : null;
+    final difference = item.differenceFor(project.id);
     return _cell(
       width,
       Column(
