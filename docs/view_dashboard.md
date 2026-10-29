@@ -4,7 +4,7 @@ Set the intended user's `public.app_users.role` to `view` and keep `is_active`
 enabled. A branch or zone assignment is not required. On sign-in, the role opens
 Stock Management Overview with the Inventory Management drawer containing only:
 
-- Stock Management: Overview, MRN Overview, MRN CD Overview, Near Expiry
+- Stock Management: Overview, MRN Overview, Near Expiry
 - Availability KPI
 - Fill Rate KPI
 

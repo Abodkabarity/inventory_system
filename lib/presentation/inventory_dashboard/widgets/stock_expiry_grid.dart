@@ -1,5 +1,3 @@
-import '../../../domain/entities/stock_supply_insight.dart';
-import 'stock_supply_insight_widgets.dart';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -11,7 +9,6 @@ import '../../../core/utils/stock_item_added_date.dart';
 import 'stock_management_formatters.dart';
 import 'stock_selectable_cell_text.dart';
 import 'stock_sales_summary.dart';
-import 'stock_receipt_quantity.dart';
 
 const _ink = Color(0xFF142C40),
     _muted = Color(0xFF64748B),
@@ -234,20 +231,17 @@ class StockExpiryGridSource extends DataGridSource {
   final bool readOnly;
   static const columns = <(String, String, double)>[
     ('item_name', 'PRODUCT / SUPPLIER', 340),
-    ('reference', 'Reference', 190),
     ('last_receipt_date', 'MRN date', 175),
     ('expiry_date', 'Expiry date', 160),
     ('ordered_qty', 'Ordered Qty', 150),
-    ('received_qty', 'Total Qty', 190),
+    ('received_qty', 'Received Qty', 170),
     ('vendor', 'Vendor', 160),
     ('note', 'Note / review', 250),
     ('store_stock', 'Store stock', 125),
     ('branches_stock', 'Branches stock', 150),
     ('total_stock', 'Total stock', 145),
-    ('supply_review', 'STORE history', 210),
     ('store_total_percent', 'Store / Total stock', 180),
     ('days_on_hand', 'Days on hand', 165),
-    ('purchase_status_items', 'Purchase Status', 220),
     ('sales_2025', '2025 sales · qty', 300),
     ('sales_2026', '2026 sales · qty', 300),
     ('best_month_2025', 'Best month · 2025', 185),
@@ -327,10 +321,6 @@ class StockExpiryGridSource extends DataGridSource {
         return p.name.toUpperCase();
       case 'item_code':
         return a.code;
-      case 'purchase_status_items':
-        return p.purchaseStatus;
-      case 'reference':
-        return a.text(key);
       case 'added_date_time':
         return stockItemAddedDate(p.data[key]);
       case 'supplier':
@@ -344,11 +334,9 @@ class StockExpiryGridSource extends DataGridSource {
       case 'ordered_qty':
         return _number(a.data[key]);
       case 'received_qty':
-        return a.number(a.data.containsKey('total_qty') ? 'total_qty' : key);
+        return a.number(key);
       case 'vendor':
         return formatStockVendor(a.data[key]);
-      case 'supply_review':
-        return StockSupplyInsight.of(p).label;
       case 'note':
         return a.note;
       case 'review_state':
@@ -431,19 +419,6 @@ class StockExpiryGridSource extends DataGridSource {
     final key = cell.columnName, value = cell.value;
     final p = a.product, risk = riskColor(a);
     switch (key) {
-      case 'purchase_status_items':
-        return Tooltip(
-          message: p.purchaseStatus,
-          child: _text(p.purchaseStatus, lines: 3),
-        );
-      case 'supply_review':
-        return StockSupplyReviewCell(item: a.product);
-      case 'reference':
-        final reference = a.text('reference');
-        return Tooltip(
-          message: reference,
-          child: _text(reference.isEmpty ? '—' : reference, lines: 3),
-        );
       case 'item_name':
         return _stack([
           Tooltip(
@@ -657,11 +632,8 @@ class StockExpiryGridSource extends DataGridSource {
       case 'received_qty':
         return Tooltip(
           message:
-              'Reported total_qty for this receipt day and expiry. Bonus is a note only.',
-          child: StockReceiptQuantity(
-            quantity: _number(value) ?? 0,
-            bonus: a.number('bonus'),
-          ),
+              'Historical MRN received quantity, not remaining batch stock.',
+          child: _text(_qty(value), strong: true, size: 16),
         );
       default:
         return Tooltip(

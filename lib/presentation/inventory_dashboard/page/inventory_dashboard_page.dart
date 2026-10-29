@@ -300,8 +300,6 @@ Widget _buildPage(
           ChangeInventoryPage(InventoryPageType.nearExpiry),
         ),
       );
-    case InventoryPageType.mrnCdOverview:
-      return const StockManagementPage(cd: true);
     case InventoryPageType.nearExpiry:
       return StockExpiryPage(
         dataSource: StockExpiryRemoteDs(Supabase.instance.client),

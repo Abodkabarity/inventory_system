@@ -16,7 +16,6 @@ import 'stock_management_page.dart';
 import '../widgets/stock_expiry_grid.dart';
 import '../widgets/stock_workspace_style.dart';
 import '../widgets/stock_mrn_update_card.dart';
-import '../widgets/stock_receipt_quantity.dart';
 
 const _ink = Color(0xFF142C40),
     _muted = Color(0xFF64748B),
@@ -1022,8 +1021,6 @@ class _ReviewDialogState extends State<_ReviewDialog> {
           'ordered_quantity': a.data['ordered_qty'],
           'received_quantity': a.data['received_qty'],
           'last_mrn_qty': a.data['received_qty'],
-          'total_qty': a.data['total_qty'] ?? a.data['received_qty'],
-          'bonus': a.number('bonus'),
         }),
         source:
             widget.productSource ??
@@ -1050,10 +1047,7 @@ class _ReviewDialogState extends State<_ReviewDialog> {
               _teal,
               icon: Icons.calendar_month_rounded,
             ),
-            _tag(
-              'Total Qty ${_qty(a.data['total_qty'] ?? a.data['received_qty'])}${a.number('bonus') > 0 ? ' · Bonus ${_qty(a.number('bonus'))}' : ''}',
-              _amber,
-            ),
+            _tag('MRN qty ${_qty(a.data['received_qty'])}', _amber),
             _tag(
               'Vendor ${formatStockVendor(a.data['vendor']).isEmpty ? '—' : formatStockVendor(a.data['vendor'])}',
               _teal,
@@ -1372,13 +1366,12 @@ class _ReviewDialogState extends State<_ReviewDialog> {
                                         ),
                                         style: const TextStyle(fontSize: 12),
                                       ),
-                                      trailing: StockReceiptQuantity(
-                                        quantity: stockNumber(
-                                          receipt['total_qty'] ??
-                                              receipt['received_qty'],
+                                      trailing: Text(
+                                        _qty(receipt['received_qty']),
+                                        style: const TextStyle(
+                                          color: _ink,
+                                          fontWeight: FontWeight.w600,
                                         ),
-                                        bonus: stockNumber(receipt['bonus']),
-                                        fontSize: 14,
                                       ),
                                     ),
                                 ],

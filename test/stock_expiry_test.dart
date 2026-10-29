@@ -227,18 +227,6 @@ Future<void> tapReview(WidgetTester tester, StockExpiryAlert alert) async {
   await tester.tap(find.byKey(ValueKey('review:${alert.key}')));
 }
 
-Future<void> revealExpiryNote(WidgetTester tester) async {
-  final grid = tester.widget<SfDataGrid>(find.byType(SfDataGrid));
-  final beforeNote = grid.columns
-      .takeWhile((column) => column.columnName != 'note')
-      .fold<double>(0, (width, column) => width + column.width);
-  final frozenWidth = grid.columns
-      .take(grid.frozenColumnsCount)
-      .fold<double>(0, (width, column) => width + column.width);
-  grid.horizontalScrollController!.jumpTo(beforeNote - frozenWidth);
-  await tester.pumpAndSettle();
-}
-
 void main() {
   test(
     'same expiry on separate receipt days keeps separate keys and exports',
@@ -250,7 +238,7 @@ void main() {
         ];
       final result = await source.fetchAll(const StockExpiryQuery());
       expect(result.rows.map((a) => a.key).toSet(), hasLength(2));
-      expect(result.rows.map((a) => stockExpiryExportRow(a)['Total Qty']), [
+      expect(result.rows.map((a) => stockExpiryExportRow(a)['Received Qty']), [
         1000,
         525,
       ]);
@@ -720,7 +708,9 @@ void main() {
     );
     expect(find.text('Review register'), findsOneWidget);
     expect(find.byType(SfDataGrid), findsOneWidget);
-    await revealExpiryNote(tester);
+    final grid = tester.widget<SfDataGrid>(find.byType(SfDataGrid));
+    grid.horizontalScrollController!.jumpTo(600);
+    await tester.pumpAndSettle();
     expect(find.text('Note / details'), findsWidgets);
   });
 
@@ -759,7 +749,6 @@ void main() {
         cells.singleWhere((c) => c.columnName == 'sales_2026').value,
         isNull,
       );
-      await revealExpiryNote(tester);
       await tester.tap(find.text('Note / details'));
       await tester.pumpAndSettle();
       expect(
@@ -995,7 +984,6 @@ void main() {
     final source = FakeExpirySource();
     await showExpiry(tester, source);
     expect(tester.takeException(), isNull);
-    await revealExpiryNote(tester);
     await tester.tap(find.text('Note / details').first);
     await tester.pumpAndSettle();
     await tester.enterText(
@@ -1068,7 +1056,6 @@ void main() {
   ) async {
     final source = FakeExpirySource()..failSave = true;
     await showExpiry(tester, source);
-    await revealExpiryNote(tester);
     await tester.tap(find.text('Note / details').first);
     await tester.pumpAndSettle();
     await tester.enterText(
@@ -1116,7 +1103,6 @@ void main() {
   ) async {
     final source = FakeExpirySource();
     await showExpiry(tester, source);
-    await revealExpiryNote(tester);
     await tester.tap(find.text('Note / details').first);
     await tester.pumpAndSettle();
     await tester.enterText(

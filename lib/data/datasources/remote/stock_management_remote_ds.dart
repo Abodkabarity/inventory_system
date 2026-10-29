@@ -2,7 +2,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/config/stock_management_load_config.dart';
 import '../../../domain/entities/stock_management.dart';
-import '../../../domain/entities/stock_mrn_receipt_history.dart';
 import 'stock_workspace_memory.dart';
 
 abstract class StockManagementDataSource {
@@ -55,14 +54,6 @@ class StockManagementLoadCancelled implements Exception {
 }
 
 extension StockManagementCompleteRegister on StockManagementDataSource {
-  Future<StockMrnReceiptHistory> fetchReceiptHistory(String itemCode) {
-    final source = this;
-    if (source is StockManagementRemoteDs) {
-      return source.fetchReceiptHistory(itemCode);
-    }
-    return Future.error(UnsupportedError('Receipt history is unavailable.'));
-  }
-
   Future<StockManagementResult> fetchAll({
     bool Function()? isCancelled,
     void Function(int loaded, int total)? onProgress,
@@ -70,8 +61,8 @@ extension StockManagementCompleteRegister on StockManagementDataSource {
     if (this is StockManagementRemoteDs) {
       final remote = this as StockManagementRemoteDs;
       final result = await remote.memory.read(
-        '${remote.namespace}:register',
-        remote.namespace,
+        'mrn:register',
+        'mrn',
         () => _loadRegister(
           this,
           isCancelled: isCancelled,
@@ -123,7 +114,7 @@ Future<StockManagementResult> _loadRegister(
       );
     }
     for (final row in batch.rows) {
-      if (!codes.add(row.registerKey)) {
+      if (!codes.add(row.code)) {
         throw StateError(
           'The stock register changed while loading. Please refresh.',
         );
@@ -146,10 +137,6 @@ Future<StockManagementResult> _loadRegister(
         '',
   );
   final batchVersion = DateTime.tryParse(snapshotAt);
-  if (overview.meta['source'] == 'mrn_cd_apg_2026' &&
-      overview.meta['snapshot_at'] != snapshotAt) {
-    throw StateError('The MRN CD data changed while loading. Please refresh.');
-  }
   if (overviewVersion != null &&
       batchVersion != null &&
       !overviewVersion.isAtSameMomentAs(batchVersion)) {
@@ -171,19 +158,15 @@ Future<StockManagementResult> _loadRegister(
 
 class StockManagementRemoteDs implements StockManagementDataSource {
   final SupabaseClient client;
-  final bool cd;
-  final String? warehouse;
-  const StockManagementRemoteDs(this.client, {this.cd = false, this.warehouse});
-  String get namespace => cd ? 'mrn_cd' : 'mrn';
-  String get _rpc => cd ? 'get_stock_mrn_cd' : 'get_stock_management';
-  StockManagementRemoteDs forReceipt(StockManagementItem item) => cd
-      ? StockManagementRemoteDs(client, cd: true, warehouse: item.warehouse)
-      : this;
+  const StockManagementRemoteDs(this.client);
   StockWorkspaceMemory get memory => StockWorkspaceMemory.forClient(client);
 
   @override
   Future<StockManagementResult> fetchPage(StockManagementQuery query) async {
-    final data = await client.rpc('${_rpc}_page', params: query.params);
+    final data = await client.rpc(
+      'get_stock_management_page',
+      params: query.params,
+    );
     return StockManagementResult.fromMap(
       Map<String, dynamic>.from(data as Map),
     );
@@ -192,7 +175,7 @@ class StockManagementRemoteDs implements StockManagementDataSource {
   @override
   Future<StockManagementRegisterBatch> fetchRegisterBatch(int offset) async {
     final data = await client.rpc(
-      '${_rpc}_register_batch',
+      'get_stock_management_register_batch',
       params: {
         'p_offset': offset,
         'p_limit': StockManagementLoadConfig.batchSize,
@@ -202,122 +185,44 @@ class StockManagementRemoteDs implements StockManagementDataSource {
   }
 
   @override
-  Future<StockManagementItem> fetchItem(String itemCode) => memory.read(
-    '$namespace:detail:$warehouse:$itemCode',
-    cd ? namespace : 'details',
-    () async {
-      dynamic data;
-      if (cd) {
-        if (warehouse == null || warehouse!.isEmpty) {
-          throw StateError('Choose a receiving warehouse.');
-        }
-        data = await client.rpc(
-          '${_rpc}_item',
-          params: {'p_item_code': itemCode, 'p_warehouse': warehouse},
-        );
-      } else {
-        try {
-          data = await client.rpc(
-            'get_stock_management_product_details',
-            params: {'p_item_code': itemCode},
-          );
-        } on PostgrestException catch (e) {
-          if (!StockWorkspaceMemory.missingRpc(e)) rethrow;
-          data = await client.rpc(
-            'get_stock_management_item',
-            params: {'p_item_code': itemCode},
-          );
-        }
-      }
-      if (data == null) {
-        throw StateError(
-          'This product is no longer in the current snapshot. Refresh the list.',
-        );
-      }
-      final item = StockManagementItem(
-        Map<String, dynamic>.unmodifiable(stockMap(data)),
+  Future<StockManagementItem> fetchItem(
+    String itemCode,
+  ) => memory.read('mrn:detail:$itemCode', 'details', () async {
+    dynamic data;
+    try {
+      data = await client.rpc(
+        'get_stock_management_product_details',
+        params: {'p_item_code': itemCode},
       );
-      if (item.code != itemCode) {
-        throw StateError('Unexpected product response. Please retry.');
-      }
-      if (cd && item.warehouse != warehouse) {
-        throw StateError('Unexpected warehouse response. Please retry.');
-      }
-      return item;
-    },
-  );
-
-  Future<StockMrnReceiptHistory> fetchReceiptHistory(String itemCode) =>
-      memory.read(
-        '$namespace:receipt-history:$warehouse:$itemCode',
-        cd ? namespace : 'details',
-        () async {
-          final lines = <Map<String, dynamic>>[];
-          final identities = <String>{};
-          Map<String, dynamic>? meta;
-          int? total;
-          String? version;
-          do {
-            final page = stockMap(
-              await client.rpc(
-                '${_rpc}_receipt_history',
-                params: {
-                  'p_item_code': itemCode,
-                  if (cd) 'p_warehouse': warehouse,
-                  'p_offset': lines.length,
-                  'p_limit': StockManagementLoadConfig.batchSize,
-                },
-              ),
-            );
-            final rows = (page['rows'] as List? ?? []).map(stockMap).toList();
-            total ??= stockNumber(page['total']).toInt();
-            version ??= page['snapshot_version']?.toString() ?? '';
-            meta ??= page;
-            if (page['item_code'] != itemCode ||
-                (cd && page['warehouse'] != warehouse) ||
-                version.isEmpty ||
-                page['snapshot_version'] != version ||
-                stockNumber(page['total']).toInt() != total ||
-                (rows.isEmpty && lines.length < total)) {
-              throw StateError(
-                'Receipt history changed while loading. Please retry.',
-              );
-            }
-            for (final row in rows) {
-              final id = row['line_id']?.toString() ?? '';
-              if (id.isEmpty || !identities.add(id)) {
-                throw StateError(
-                  'Receipt history is inconsistent. Please retry.',
-                );
-              }
-              lines.add(Map.unmodifiable(row));
-            }
-            if (lines.length > total) {
-              throw StateError('Receipt history is incomplete. Please retry.');
-            }
-          } while (lines.length < total);
-          return StockMrnReceiptHistory(
-            lines: List.unmodifiable(lines),
-            mrnCount: stockNumber(meta['mrn_count']).toInt(),
-            dayCount: stockNumber(meta['day_count']).toInt(),
-            receivedQty: stockNumber(meta['total_qty'] ?? meta['received_qty']),
-            bonus: stockNumber(meta['bonus']),
-            from: meta['from']?.toString() ?? '',
-            through: meta['through']?.toString() ?? '',
-          );
-        },
+    } on PostgrestException catch (e) {
+      if (!StockWorkspaceMemory.missingRpc(e)) rethrow;
+      data = await client.rpc(
+        'get_stock_management_item',
+        params: {'p_item_code': itemCode},
       );
+    }
+    if (data == null) {
+      throw StateError(
+        'This product is no longer in the current snapshot. Refresh the list.',
+      );
+    }
+    final item = StockManagementItem(
+      Map<String, dynamic>.unmodifiable(stockMap(data)),
+    );
+    if (item.code != itemCode) {
+      throw StateError('Unexpected product response. Please retry.');
+    }
+    return item;
+  });
 
   @override
   Future<void> requestRefresh() async {
     memory.clear();
-    if (cd) return;
     await client.rpc('refresh_stock_management_snapshot');
   }
 
   @override
   Future<Map<String, dynamic>?> refreshState() async {
-    if (cd) return stockMap(await client.rpc('${_rpc}_refresh_state'));
     return await client
         .from('stock_management_refresh_state')
         .select()

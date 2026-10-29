@@ -15,8 +15,6 @@ class StoreBranchIdentityRegistry {
     'BRANCH',
     'Branch',
     'Branch Name',
-    'Warehouse',
-    'warehouse',
     'from_branch',
     'to_branch',
     'source_branch',

@@ -20,7 +20,6 @@ class _StockManagementNavigationState extends State<StockManagementNavigation> {
   bool get _active =>
       widget.selectedPage == InventoryPageType.stockManagement ||
       widget.selectedPage == InventoryPageType.mrnOverview ||
-      widget.selectedPage == InventoryPageType.mrnCdOverview ||
       widget.selectedPage == InventoryPageType.nearExpiry;
   @override
   void didUpdateWidget(covariant StockManagementNavigation oldWidget) {
@@ -131,13 +130,6 @@ class _StockManagementNavigationState extends State<StockManagementNavigation> {
                         'MRN Overview',
                         'Receipts, stock & sales',
                         Icons.receipt_long_outlined,
-                      ),
-                      const SizedBox(height: 5),
-                      _entry(
-                        InventoryPageType.mrnCdOverview,
-                        'MRN CD Overview',
-                        'Branch receipts, stock & sales',
-                        Icons.local_shipping_outlined,
                       ),
                       const SizedBox(height: 5),
                       _entry(

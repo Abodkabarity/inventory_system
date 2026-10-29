@@ -106,53 +106,6 @@ The existing daily/manual catalog rebuild updates all facts atomically.
 
 ## Stock and demand calculations
 
-Monthly sales use completed months from `sales_history_2025` / `sales_history`
-and replace the current Asia/Dubai calendar month entirely with signed Qty from
-`sales_last_45_days`. Current-month history is excluded even when it exists;
-missing daily transactions produce zero, never a fallback to stale history.
-The rule advances with the Dubai month (including January), independently of the
-latest uploaded invoice date. Future history months are excluded. Monthly/annual
-totals, best month, moving averages, branch annual totals and Excel follow this
-same source boundary. Monthly and annual sales retain all-source branch scope;
-the 45-day demand KPI/chart retains its existing active-branch scope.
-
-The snapshot records the current source month and available daily bounds. The
-monthly chart explains its source on hover and preserves the current month even
-without a matching monthly-history record. New-year chart/annual/export dates
-extend from snapshot metadata. Current-month branch sums are kept only in the
-detail snapshot and omitted from header and 5,000-row bulk payloads. Existing
-revision checks invalidate old cached product details when the snapshot rebuilds.
-
-MRN Overview and Near Expiry use this same source boundary in their registers,
-Excel exports and shared product dialog. MRN refresh also updates sales analytics
-inside durable expiry product data, covering alerts without a live MRN snapshot.
-Only monthly/year/branch sales and their source metadata change in saved data;
-receipt quantities, saved stock facts, evidence fingerprints and reviews remain
-intact. Dialog sales follow the MRN snapshot even if Overview was rebuilt at a
-different time. The bulk payloads omit the internal branch-year sales map.
-
-Regression: `supabase/tests/stock_workspace_month_source_test.cjs` verifies the
-October example, Dubai month/year rollover, signed returns, zero current-month
-sales, shared/saved details, review preservation, cache invalidation, atomic
-rollback and inventory-only access in an isolated PostgreSQL fixture.
-
-MRN received/ordered quantities include every approved receipt on the product's
-latest receipt day across STORE, main virtual and new virtual, including all
-MRN numbers and expiry dates. The row keeps the earliest expiry and indicates
-multiple MRNs. Product details expand into individual receipt lines with their
-MRN number, reference, warehouse, expiry, vendor and quantities. Receipt lines
-load only on demand; register/export totals remain lightweight and use 5,000-row
-batches. Quantities without an expiry and signed adjustments are included.
-
-Near Expiry keeps its existing product/expiry identity and sums all saved
-receipts for that expiry across receipt days and MRN numbers. Its receipt cards
-use the selected alert's quantities, vendor and date, even when the product's
-latest MRN has another expiry. Discovery and review fingerprints are unchanged.
-`supabase/tests/stock_receipt_totals_test.cjs` covers four equal/unequal receipts,
-multiple expiry dates/warehouses, references, null expiry, signed corrections,
-idempotent discovery and review reactivation. `test/stock_receipt_totals_test.dart`
-checks receipt labels, responsive layout and Excel totals.
-
 The shared product dialog includes a Sales 45 Days stacked daily chart below the
 monthly chart. It uses the same snapshot window, active branches and signed net
 Qty as the 45-day KPI. Cash and Online keep the existing sales classification:
@@ -350,6 +303,3 @@ Excel exports use .xlsx files with brand-coloured white-text headers, thin cell 
 blue/white alternating rows, fixed column widths, frozen headers and Excel filters.
 Dates use dd/mm/yyyy and quantities/percentages remain numeric. Browser exports
 reuse the pinned local ExcelJS worker in bounded batches; no CDN is required.
-
-STORE availability evidence and the staged demand-learning work are documented
-in [stock_supply_insights.md](stock_supply_insights.md).

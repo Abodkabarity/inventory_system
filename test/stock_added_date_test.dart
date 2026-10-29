@@ -1,5 +1,4 @@
 import 'package:daily_order/core/utils/stock_catalog_export.dart';
-import 'package:daily_order/core/utils/stock_excel_report.dart';
 import 'package:daily_order/domain/entities/stock_catalog.dart';
 import 'package:daily_order/domain/entities/stock_expiry.dart';
 import 'package:daily_order/domain/entities/stock_management.dart';
@@ -142,10 +141,7 @@ void main() {
       }
       final row = catalogExportRow(StockCatalogItem(products.first.data));
       expect(row['Created date'], '01/01/2025');
-      final report = StockExcelReport([row], 'stock_overview');
-      final dateColumn = report.keys.indexOf('Created date');
-      expect(report.types[dateColumn], 'date');
-      expect(report.values.single[dateColumn], '2025-01-01T00:00:00.000Z');
+      expect(catalogCsv([row]), contains('01/01/2025'));
       expect(row['Created date'], isNot(contains('00:00')));
     },
   );

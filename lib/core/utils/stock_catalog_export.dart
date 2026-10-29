@@ -1,4 +1,3 @@
-import '../../domain/entities/stock_supply_insight.dart';
 import '../../domain/entities/stock_catalog.dart';
 import '../../domain/entities/stock_management.dart';
 import 'stock_item_added_date.dart';
@@ -6,7 +5,6 @@ import 'stock_item_added_date.dart';
 Map<String, dynamic> catalogExportRow(StockCatalogItem item) => {
   'Item code': item.code,
   'Product': item.name,
-  'Reference': item.text('reference'),
   'Item status': item.itemStatus,
   'Created date': formatStockItemAddedDate(
     item.data['added_date_time'],
@@ -26,7 +24,6 @@ Map<String, dynamic> catalogExportRow(StockCatalogItem item) => {
   'Total stock': item.number('total_stock'),
   'Cover days': item.days,
   'STORE / Total Stock %': item.storeTotalPercent,
-  'Purchase Status': item.purchaseStatus,
   for (final year in catalogSalesYears(item)) ...{
     'Sales $year': item.year(year)['total'] ?? 0,
     'Cash $year': item.year(year)['cash'] ?? 0,
@@ -40,7 +37,6 @@ Map<String, dynamic> catalogExportRow(StockCatalogItem item) => {
   'Sales 45D': item.number('recent_sales'),
   'Growth %': item.growth,
   'Status': item.signal,
-  ...StockSupplyInsight.of(item).exportFields,
   'Distribution status': item.distributionStatus.label,
   'First STORE MRN date': formatStockItemAddedDate(
     item.distributionStatus.firstReceivedDate,
@@ -91,46 +87,3 @@ Map<String, dynamic> catalogExportRow(StockCatalogItem item) => {
   'Distribution maximum covered branches':
       item.distributionRules.maxCoveredBranches,
 };
-
-/// Keep chart exports aligned with every plotted month, including zero months.
-List<Map<String, dynamic>> catalogMonthlyExportRows(StockCatalogItem item) {
-  final insight = StockSupplyInsight.of(item);
-  final evidence = {for (final row in insight.months) row['month']: row};
-  return [
-    for (final row in catalogMonthlySeries(item))
-      {
-        ...row,
-        if (insight.hasChartPeriods) ...{
-          'STORE chart timeline': insight.chartMonthDescription(row['month']),
-          'STORE receipt timeline': insight
-              .chartArrivalsInMonth(row['month'])
-              .map(
-                (r) =>
-                    '${r['date']}: ${StockSupplyInsight.arrivalLabel(r)} · ${r['qty']} Qty',
-              )
-              .join('; '),
-          'STORE chart timeline basis': insight.chartNeedsReview
-              ? 'Estimated · Stock history needs checking'
-              : 'Estimated from STORE movements and historical sales',
-        },
-        if (row['source'] != null)
-          'source': row['source'] == 'sales_last_45_days'
-              ? 'Daily sales'
-              : 'Monthly history',
-        if (evidence[row['month']] case final month?) ...{
-          'STORE empty days': month['empty_days'],
-          'STORE stocked days': month['available_days'],
-          'STORE partial days': month['partial_days'],
-          'STORE analysis basis': insight.basis,
-          'STORE evidence note': insight.basisDescription,
-          if (insight.hasSupplyAnalysis) ...{
-            'STORE supply interruption days': month['limited_days'],
-            'STORE learned daily demand': insight.demandModel['daily_qty'],
-            'STORE recovery Qty threshold': insight.demandModel['recovery_qty'],
-            'STORE supply interruption basis':
-                'Estimated from historical demand and STORE movements',
-          },
-        },
-      },
-  ];
-}

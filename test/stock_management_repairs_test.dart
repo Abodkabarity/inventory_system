@@ -250,7 +250,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(exported!.map((r) => r['Item code']), ['B', 'A']);
       expect(exported![1]['Ordered Qty'], 100);
-      expect(exported![1]['Total Qty'], 40);
+      expect(exported![1]['Received Qty'], 40);
       expect(exported![1]['MRN date'], '03/10/2026');
       expect(exported![1]['Expiry date'], '01/11/2026');
       expect(exported![1]['Note'], 'Check batch');
@@ -269,7 +269,7 @@ void main() {
     expect(row['Total stock'], isNull);
     expect(row['Store stock'], isNull);
     expect(row['Stock / Sales %'], isNull);
-    expect(row['Total Qty'], 25);
+    expect(row['Received Qty'], 25);
     expect(row['Sales 45D'], isNotNull);
   });
 }
