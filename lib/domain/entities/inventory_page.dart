@@ -17,6 +17,7 @@ enum InventoryPageType {
   stockCheck,
   stockManagement,
   mrnOverview,
+  mrnCdOverview,
   nearExpiry,
   shortage,
   availabilityKpi,

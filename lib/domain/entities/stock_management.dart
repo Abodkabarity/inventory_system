@@ -40,6 +40,19 @@ class StockManagementItem {
   double number(String key) => stockNumber(data[key]);
   String get code => text('item_code');
   String get name => text('item_name');
+  bool get isCdReceipt => text('receipt_source') == 'mrn_cd_apg_2026';
+  String get warehouse => text('warehouse');
+  String get registerKey =>
+      text('register_key').isEmpty ? code : text('register_key');
+  double get receiptTotal => data.containsKey('total_qty')
+      ? number('total_qty')
+      : stockNumber(data['received_quantity'] ?? data['last_mrn_qty']);
+  double get receiptBonus => number('bonus');
+  String get purchaseStatus {
+    final value = text('purchase_status_items').trim();
+    return value.isEmpty ? 'Not assigned' : value;
+  }
+
   String get status => text('stock_status');
   bool get stockAvailable => data['stock_unavailable'] != true;
   double? get storeTotalPercent => stockAvailable && number('total_stock') > 0

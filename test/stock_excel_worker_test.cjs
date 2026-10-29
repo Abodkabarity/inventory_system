@@ -76,13 +76,13 @@ async function build(start, rows, workerScript = script) {
 
   // Existing KPI clients retain both sheets and the original score format.
   const kpi = await build({summaryHeaders: ['Branch'], summaryWidths: [20], summaryRows: [['A']],
-    detailHeaders: ['Branch', 'Item', 'Name', 'A', 'B', 'C', 'Difference', 'Score'],
+    detailHeaders: ['Branch', 'Item', 'Name', 'A', 'B', 'C', 'Difference | Total', 'Accuracy %'],
     detailWidths: Array(8).fill(20)}, [['A', '001', 'Product', 1, 2, 3, 0, 100]], kpiScript);
   const legacy = new ExcelJS.Workbook();
   await legacy.xlsx.load(kpi);
   assert.equal(legacy.worksheets.length, 2);
   assert.equal(legacy.worksheets[1].getCell('H2').numFmt, '0"%"');
-  console.log('Excel worker: values, dates, percentages, group 71 labels, styles and KPI compatibility passed.');
+  console.log('Excel worker: dates, percentages, group 71 labels, styles and KPI compatibility passed.');
 
   if (process.env.STOCK_EXCEL_STRESS === '1') {
     const rows = Array.from({length: 15000}, (_, i) => [String(i).padStart(6, '0'), `Product ${i}`,

@@ -1,3 +1,5 @@
+import '../../../domain/entities/stock_supply_insight.dart';
+import 'stock_supply_insight_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
@@ -7,6 +9,7 @@ import '../../../domain/entities/stock_management.dart';
 import '../../../domain/entities/stock_catalog.dart';
 import 'stock_catalog_visuals.dart';
 import 'stock_sales_summary.dart';
+import 'stock_selectable_cell_text.dart';
 
 class StockCatalogGrid extends StatefulWidget {
   final List<StockCatalogItem> items;
@@ -59,7 +62,10 @@ class StockCatalogGridState extends State<StockCatalogGrid> {
   @override
   void initState() {
     super.initState();
-    _source = _CatalogGridSource(widget.items);
+    _source = _CatalogGridSource(
+      widget.items,
+      onOpen: (item) => widget.onOpen(item),
+    );
     _publishView();
   }
 
@@ -177,6 +183,7 @@ class StockCatalogGridState extends State<StockCatalogGrid> {
 }
 
 class _CatalogGridSource extends DataGridSource {
+  final ValueChanged<StockCatalogItem> _onOpen;
   List<DataGridRow> _rows = [];
   final _identity = <DataGridRow, StockCatalogItem>{};
   final _positions = <DataGridRow, int>{};
@@ -186,6 +193,12 @@ class _CatalogGridSource extends DataGridSource {
       'PRODUCT',
       340.0,
       'Product identity. Open any row for details.',
+    ),
+    (
+      'reference',
+      'REFERENCE',
+      190.0,
+      'Reference numbers on the latest approved MRN date.',
     ),
     ('item_status', 'ITEM STATUS', 200.0, 'Product purchase status.'),
     (
@@ -200,6 +213,7 @@ class _CatalogGridSource extends DataGridSource {
       165.0,
       'Purple: ≥2× daily demand and ≥3 recent Qty, or new demand. Red: 45-day sales exceed stock.',
     ),
+
     (
       'branches_stock',
       'BRANCHES STOCK',
@@ -215,12 +229,24 @@ class _CatalogGridSource extends DataGridSource {
       'STORE + all active branches. Do not add APG again.',
     ),
     (
+      'supply_review',
+      'STORE HISTORY',
+      210.0,
+      'Verified STORE gaps and MRN returns. Retail branch availability is separate.',
+    ),
+    (
       'cover',
       'STOCK COVER',
       175.0,
       'Filter in days: total stock ÷ 45-day daily net sales. Months use 30 days.',
     ),
     ('ratio', 'STORE / TOTAL STOCK', 180.0, 'STORE stock ÷ total stock × 100.'),
+    (
+      'purchase_status_items',
+      'Purchase Status',
+      220.0,
+      'Current purchase status from the Purchase team.',
+    ),
     (
       'sales_2025',
       'SALES 2025',
@@ -263,7 +289,10 @@ class _CatalogGridSource extends DataGridSource {
     ('indication', 'INDICATION', 300.0, 'Product indication.'),
     ('sub_category', 'SUB-CATEGORY', 200.0, 'Product sub-category.'),
   ];
-  _CatalogGridSource(List<StockCatalogItem> items) {
+  _CatalogGridSource(
+    List<StockCatalogItem> items, {
+    required ValueChanged<StockCatalogItem> onOpen,
+  }) : _onOpen = onOpen {
     _replaceRows(items);
   }
   StockCatalogItem itemFor(DataGridRow row) => _identity[row]!;
@@ -275,6 +304,8 @@ class _CatalogGridSource extends DataGridSource {
   dynamic _value(StockCatalogItem item, String column) => switch (column) {
     'product' => item.name,
     'item_status' => item.itemStatus,
+    'purchase_status_items' => item.purchaseStatus,
+    'reference' ||
     'category' ||
     'supplier' ||
     'main_ingredient' ||
@@ -290,6 +321,7 @@ class _CatalogGridSource extends DataGridSource {
           ? item.distributionStatus.finalOrders
           : null,
     'status' => item.signal,
+    'supply_review' => StockSupplyInsight.of(item).label,
     'cover' => item.days,
     'ratio' => item.storeTotalPercent,
     'sales_2025' || 'sales_2026' => stockNumber(
@@ -342,6 +374,24 @@ class _CatalogGridSource extends DataGridSource {
                 : Alignment.center,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             child: switch (c.$1) {
+              'reference' || 'purchase_status_items' => Tooltip(
+                message: c.$1 == 'purchase_status_items'
+                    ? item.purchaseStatus
+                    : item.text('reference'),
+                child: StockCellTapScope(
+                  onTap: () => _onOpen(item),
+                  child: StockSelectableCellText(
+                    c.$1 == 'purchase_status_items'
+                        ? item.purchaseStatus
+                        : item.text('reference').isEmpty
+                        ? '—'
+                        : item.text('reference'),
+                    maxLines: 3,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: catalogInk, fontSize: 12),
+                  ),
+                ),
+              ),
               'category' ||
               'supplier' ||
               'main_ingredient' ||
@@ -406,6 +456,7 @@ class _CatalogGridSource extends DataGridSource {
                   ),
                 ],
               ),
+              'supply_review' => StockSupplyReviewCell(item: item),
               'status' => Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [

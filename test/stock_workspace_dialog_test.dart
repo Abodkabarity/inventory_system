@@ -111,7 +111,7 @@ void main() {
           'VENDOR',
           'EXPIRY DATE',
           'ORDERED QTY',
-          'RECEIVED QTY',
+          'TOTAL QTY',
         ]);
         expect(cardWidgets.every((c) => c.caption.isEmpty), isTrue);
         final heights = find
@@ -174,6 +174,24 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Receipt evidence (1)'), findsOneWidget);
+      final receiptMetrics = tester.widgetList<CatalogMetric>(
+        find.descendant(
+          of: find.byKey(const ValueKey('mrn-receipt-cards')),
+          matching: find.byType(CatalogMetric),
+        ),
+      );
+      expect(
+        receiptMetrics.singleWhere((m) => m.title == 'TOTAL QTY').value,
+        '25',
+      );
+      expect(
+        receiptMetrics.singleWhere((m) => m.title == 'ORDERED QTY').value,
+        '30',
+      );
+      expect(
+        receiptMetrics.singleWhere((m) => m.title == 'LAST MRN').value,
+        '03 Oct 2026',
+      );
       expect(find.text('Monthly sales & momentum'), findsOneWidget);
       final note = find.byKey(const ValueKey('expiry-note-field'));
       final toolbar = find.byKey(const ValueKey('expiry-note-toolbar'));

@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/stock_register_export.dart';
 import '../../../core/utils/stock_excel_export.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../../data/datasources/remote/stock_management_remote_ds.dart';
 import '../../../data/datasources/remote/stock_catalog_remote_ds.dart';
 import '../../../domain/entities/stock_catalog.dart';
@@ -70,18 +71,22 @@ Future<void> showStockManagementProductDetails(
     context: context,
     builder: (_) => StockManagementProductDialog(
       item: item,
-      source: dataSource ?? StockManagementRemoteDs(Supabase.instance.client),
+      source: dataSource is StockManagementRemoteDs
+          ? dataSource.forReceipt(item)
+          : dataSource ?? StockManagementRemoteDs(Supabase.instance.client),
     ),
   );
 }
 
 class StockManagementPage extends StatefulWidget {
+  final bool cd;
   final StockManagementDataSource? dataSource;
   final StockExpiryDataSource? expiryDataSource;
   final VoidCallback? onOpenExpiry;
   final StockRegisterExporter? exporter;
   const StockManagementPage({
     super.key,
+    this.cd = false,
     this.dataSource,
     this.expiryDataSource,
     this.onOpenExpiry,
@@ -119,10 +124,19 @@ class _StockManagementPageState extends State<StockManagementPage> {
   void initState() {
     super.initState();
     _source =
-        widget.dataSource ?? StockManagementRemoteDs(Supabase.instance.client);
+        widget.dataSource ??
+        StockManagementRemoteDs(Supabase.instance.client, cd: widget.cd);
+    if (widget.cd) {
+      StoreBranchIdentityRegistry.groups.addListener(_branchLabelsChanged);
+      if (_source is StockManagementRemoteDs) {
+        StoreBranchIdentityRegistry.load(
+          _source.client,
+        );
+      }
+    }
     _expirySource =
-        widget.expiryDataSource ??
-        (widget.dataSource == null
+        (widget.cd ? null : widget.expiryDataSource) ??
+        (widget.dataSource == null && !widget.cd
             ? StockExpiryRemoteDs(Supabase.instance.client)
             : null);
     _load();
@@ -136,6 +150,9 @@ class _StockManagementPageState extends State<StockManagementPage> {
 
   @override
   void dispose() {
+    if (widget.cd) {
+      StoreBranchIdentityRegistry.groups.removeListener(_branchLabelsChanged);
+    }
     _request++;
     _debounce?.cancel();
     _poll?.cancel();
@@ -151,7 +168,7 @@ class _StockManagementPageState extends State<StockManagementPage> {
     final search = _search.text.trim().toLowerCase();
     final rows = result.rows.where((item) {
       if (search.isNotEmpty &&
-          !'${item.code} ${item.name} ${item.text('supplier')} ${item.text('company')}'
+          !'${item.code} ${item.name} ${item.text('supplier')} ${item.text('company')} ${widget.cd ? StoreBranchIdentityRegistry.displayName(item.warehouse) : ''}'
               .toLowerCase()
               .contains(search)) {
         return false;
@@ -206,6 +223,10 @@ class _StockManagementPageState extends State<StockManagementPage> {
     });
   }
 
+  void _branchLabelsChanged() {
+    if (mounted) _applyFilters();
+  }
+
   Future<void> _export() async {
     if (_exporting || _loading || _result == null) return;
     setState(() => _exporting = true);
@@ -219,7 +240,10 @@ class _StockManagementPageState extends State<StockManagementPage> {
           stockRegisterExportRow(item),
       ];
       if (rows.isEmpty) throw StateError('No matching products to export.');
-      await (widget.exporter ?? saveStockExcel)(rows, 'mrn_overview.xlsx');
+      await (widget.exporter ?? saveStockExcel)(
+        rows,
+        widget.cd ? 'mrn_cd_overview.xlsx' : 'mrn_overview.xlsx',
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Exported ${rows.length} matching products')),
@@ -457,15 +481,16 @@ class _StockManagementPageState extends State<StockManagementPage> {
                             ],
                             const SizedBox(height: 8),
                           ],
-                          StockMrnUpdateCard(
-                            enabled:
-                                widget.dataSource == null ||
-                                widget.dataSource is StockManagementRemoteDs,
-                            onUpdated: () {
-                              if (!_loading) _load();
-                              _loadExpirySummary();
-                            },
-                          ),
+                          if (!widget.cd)
+                            StockMrnUpdateCard(
+                              enabled:
+                                  widget.dataSource == null ||
+                                  widget.dataSource is StockManagementRemoteDs,
+                              onUpdated: () {
+                                if (!_loading) _load();
+                                _loadExpirySummary();
+                              },
+                            ),
                           _filters(result, compact),
                           if (_error != null)
                             Padding(
@@ -557,7 +582,7 @@ class _StockManagementPageState extends State<StockManagementPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'MRN Overview',
+                    widget.cd ? 'MRN CD Overview' : 'MRN Overview',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: compact ? 23 : 26,
@@ -566,8 +591,10 @@ class _StockManagementPageState extends State<StockManagementPage> {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  const Text(
-                    'Stock Management / MRN Overview',
+                  Text(
+                    widget.cd
+                        ? 'Stock Management / MRN CD Overview'
+                        : 'Stock Management / MRN Overview',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -592,12 +619,14 @@ class _StockManagementPageState extends State<StockManagementPage> {
     final result = _result;
     final cards = [
       (
-        'MRN products',
+        widget.cd ? 'MRN CD entries' : 'MRN products',
         result?.total.toDouble(),
         _teal,
         Icons.layers_outlined,
         '',
-        'All products received in 2026',
+        widget.cd
+            ? 'One entry per receiving warehouse and product'
+            : 'All products received in 2026',
       ),
       (
         'No Stock',
@@ -1049,6 +1078,7 @@ class _StockManagementPageState extends State<StockManagementPage> {
       : StockManagementGrid(
           key: _gridKey,
           items: _filtered,
+          showWarehouse: widget.cd,
           horizontalController: _horizontal,
           onOpen: _details,
           onViewChanged: (visible, filtered) {
@@ -1073,8 +1103,9 @@ class _StockManagementPageState extends State<StockManagementPage> {
               'STORE + all active APG and 71 branches. Virtual and expired warehouses are excluded.\n'
               'Days on hand = total stock ÷ net daily sales over the latest available 45-day window.\n'
               '2026 sales and best month include the current partial month.\n'
-              'Received and ordered Qty combine all approved MRNs on the latest receipt day. Open the product to see each receipt and expiry date.\n'
-              'Expiry is the earliest date across those receipts. Received Qty is historical, not remaining batch stock.',
+              'Total Qty uses the reported total_qty. Bonus is shown as a note and is not added again.\n'
+              'MRN CD entries and their histories are separate for each receiving warehouse. Stock and sales columns show the whole product.\n'
+              'Expiry is the earliest date across the latest-day receipts. Total Qty is historical, not remaining batch stock.',
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1713,7 +1744,13 @@ class StockManagementProductDialog extends StatelessWidget {
             const SizedBox(height: 16),
           ],
           _mrnDetails(receipt),
-          if (extraSection == null) StockMrnReceipts(item: receipt),
+          if (extraSection == null) ...[
+            const SizedBox(height: 16),
+            StockMrnReceipts(
+              item: receipt,
+              loadHistory: () => source.fetchReceiptHistory(item.code),
+            ),
+          ],
         ],
       );
     },
@@ -1733,6 +1770,13 @@ class StockManagementProductDialog extends StatelessWidget {
         runSpacing: 12,
         children: [
           for (final entry in [
+            if (product.isCdReceipt)
+              (
+                'WAREHOUSE',
+                StoreBranchIdentityRegistry.displayName(product.warehouse),
+                catalogTeal,
+                Icons.storefront_outlined,
+              ),
             (
               'LAST MRN',
               _date(product.text('last_mrn_date')),
@@ -1760,15 +1804,8 @@ class StockManagementProductDialog extends StatelessWidget {
               Icons.shopping_bag_outlined,
             ),
             (
-              'RECEIVED QTY',
-              (product.data['received_quantity'] ??
-                          product.data['last_mrn_qty']) ==
-                      null
-                  ? '—'
-                  : _qty(
-                      product.data['received_quantity'] ??
-                          product.data['last_mrn_qty'],
-                    ),
+              'TOTAL QTY',
+              _qty(product.receiptTotal),
               catalogTeal,
               Icons.move_to_inbox_outlined,
             ),
@@ -1778,7 +1815,9 @@ class StockManagementProductDialog extends StatelessWidget {
               child: CatalogMetric(
                 title: entry.$1,
                 value: entry.$2.isEmpty ? '—' : entry.$2,
-                caption: '',
+                caption: entry.$1 == 'TOTAL QTY' && product.receiptBonus > 0
+                    ? 'Bonus ${_qty(product.receiptBonus)}'
+                    : '',
                 color: entry.$3,
                 icon: entry.$4,
               ),

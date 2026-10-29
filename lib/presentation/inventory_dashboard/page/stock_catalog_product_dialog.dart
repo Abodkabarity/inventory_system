@@ -12,6 +12,7 @@ import '../widgets/stock_sales_summary.dart';
 import '../widgets/stock_distribution_widgets.dart';
 import '../widgets/stock_product_image.dart';
 import '../widgets/stock_daily_sales_chart.dart';
+import '../../../core/utils/stock_catalog_export.dart';
 
 class StockCatalogProductDialog extends StatefulWidget {
   final StockCatalogItem item;
@@ -343,6 +344,28 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                       fontSize: 12,
                     ),
                   ),
+                  if (widget.item.isCdReceipt)
+                    ValueListenableBuilder<Map<String, String>>(
+                      valueListenable: StoreBranchIdentityRegistry.groups,
+                      builder: (context, _, _) => Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: .12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: SelectableText(
+                          'Warehouse  ${StoreBranchIdentityRegistry.displayName(widget.item.warehouse)}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
                   FutureBuilder<StockCatalogItem>(
                     future: _future,
                     builder: (context, snapshot) {
@@ -400,6 +423,31 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                         ),
                         child: SelectableText(
                           'Reference  $reference',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  FutureBuilder<StockCatalogItem>(
+                    future: _future,
+                    builder: (context, snapshot) {
+                      final item = snapshot.data ?? widget.item;
+                      return Container(
+                        key: const ValueKey('product-purchase-status'),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: .12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: SelectableText(
+                          'Purchase Status  ${item.purchaseStatus}',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 12,
@@ -546,16 +594,10 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
         '2025 to ${catalogSalesYears(item).last} • All source branches • Hover or tap a month for exact values'
         '${stockMap(item.data['meta'])['monthly_current_source'] == 'sales_last_45_days' ? ' • Current month uses daily sales' : ''}',
     trailing: IconButton(
-      onPressed: () => _save([
-        for (final row in item.list('monthly_sales'))
-          {
-            ...row,
-            if (row['source'] != null)
-              'source': row['source'] == 'sales_last_45_days'
-                  ? 'Daily sales'
-                  : 'Monthly history',
-          },
-      ], '${item.code}_monthly_sales.xlsx'),
+      onPressed: () => _save(
+        catalogMonthlyExportRows(item),
+        '${item.code}_monthly_sales.xlsx',
+      ),
       tooltip: 'Export monthly sales',
       icon: const Icon(Icons.download_rounded, size: 19, color: catalogBlue),
     ),

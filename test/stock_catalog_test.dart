@@ -523,7 +523,7 @@ void main() {
         boundary: boundary,
       );
       final grid = tester.widget<SfDataGrid>(find.byType(SfDataGrid));
-      grid.horizontalScrollController!.jumpTo(180);
+      grid.horizontalScrollController!.jumpTo(370);
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey('datagrid_filtering_total_stock_filterIcon')),
