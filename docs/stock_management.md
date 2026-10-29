@@ -155,3 +155,37 @@ note/review actions. The sidebar workspace expands/collapses with an active chil
 indicator and independently routes to Overview or Near Expiry. There are no
 placeholder entries for future features. Existing review fingerprints and stored
 notes are unchanged by this presentation update.
+
+## Current STORE status and receipt coverage
+
+Monthly charts show one current availability label based on the latest loaded
+STORE and branch stock, independently of historical returns. `STORE empty` is
+paired with `Available in branches` or `Unavailable in branches`. Positive STORE
+stock is labelled `Stock available` or `Limited stock` using the existing model's
+minimum stock threshold (normally seven days). With no reliable demand estimate
+the label is `In STORE`; its tooltip explains that coverage is unconfirmed.
+All states include branch availability from the current product stock reference.
+A missing or null branch quantity is counted as zero and displays
+`Unavailable in branches`; a positive quantity displays `Available in branches`.
+Historical receipt quantities never replace a missing current branch balance.
+
+The long receipt/coverage paragraphs beneath the chart legend are removed.
+Historical shortage shading, dated receipt markers and selected-month details
+remain on the chart. Current availability labels are shared by the overview,
+MRN, expiry grids, filters and exports, using already loaded stock and adding no
+database requests. A newly loaded stock snapshot takes priority over an older
+supply-analysis endpoint. An explicitly missing STORE quantity stays unknown;
+missing branch quantities follow the zero rule above.
+
+An item omitted from the latest available STORE ledger is treated as zero when
+the STORE report is present and its source timestamp matches the published stock
+snapshot. Empty or mid-import reports, duplicate rows and invalid movements keep
+their existing checks. Recent approved MRNs linked to a known product's long
+shortage now retain a `back_in_store` event even when current STORE stock is zero.
+The return assessment distinguishes enough/limited/unconfirmed receipt coverage;
+it carries the return date, quantity and historical gap, separately from current
+STORE and reported branch stock. No transfer is invented: the reconstructed
+movement balance and its endpoint difference remain in the detail/export data.
+An MRN without prior product/gap evidence cannot create a return-after-shortage
+claim, and a product without a reliable demand estimate is never called limited
+just because its receipt is small.

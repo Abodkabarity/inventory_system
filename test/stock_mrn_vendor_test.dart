@@ -74,7 +74,8 @@ void main() {
     () {
       final row = stockRegisterExportRow(item);
       final keys = row.keys.toList();
-      expect(keys[keys.indexOf('Received Qty') + 1], 'Vendor');
+      expect(keys[keys.indexOf('Total Qty') + 1], 'Bonus Qty');
+      expect(keys[keys.indexOf('Bonus Qty') + 1], 'Vendor');
       expect(keys[keys.indexOf('Branches stock') + 1], 'Total stock');
       expect(row['Vendor'], 'ABCDEFGHIJ');
       expect(row['Store / Total stock %'], 25);

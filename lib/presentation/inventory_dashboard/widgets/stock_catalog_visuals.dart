@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import '../../../domain/entities/stock_catalog.dart';
 import '../../../domain/entities/stock_management.dart';
+import '../../../domain/entities/stock_supply_insight.dart';
 import '../../../core/theme/app_colors.dart';
 
 /// Stock workspace controls always use the app brand, including routed menus.
@@ -55,6 +56,15 @@ const catalogBlue = Color(0xFF5277E8);
 const catalogPurple = Color(0xFF8259DB);
 const catalogOrange = Color(0xFFF19A4B);
 const catalogRose = Color(0xFFD74674);
+Color catalogSupplyStatusColor(StockSupplyInsight insight) =>
+    switch (insight.currentState) {
+      'empty' => insight.currentBranchesQty > 0 ? catalogOrange : catalogRose,
+      'limited' => catalogOrange,
+      'available' => catalogTeal,
+      'cover_unknown' => catalogBlue,
+      'invalid' => catalogRose,
+      _ => catalogMuted,
+    };
 final _quantity = NumberFormat('#,##0.##');
 String catalogQty(dynamic n) => _quantity.format(stockNumber(n));
 String catalogDate(dynamic value) {
@@ -83,7 +93,13 @@ Color catalogSignalColor(StockCatalogItem item) =>
 class CatalogPill extends StatelessWidget {
   final String text;
   final Color color;
-  const CatalogPill(this.text, {super.key, this.color = catalogTeal});
+  final int maxLines;
+  const CatalogPill(
+    this.text, {
+    super.key,
+    this.color = catalogTeal,
+    this.maxLines = 2,
+  });
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -93,7 +109,7 @@ class CatalogPill extends StatelessWidget {
     ),
     child: Text(
       text,
-      maxLines: 2,
+      maxLines: maxLines,
       overflow: TextOverflow.ellipsis,
       style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w800),
     ),
@@ -496,10 +512,155 @@ class _CatalogMonthlyChartState extends State<CatalogMonthlyChart> {
     super.dispose();
   }
 
+  Future<void> _showMonthDetails(
+    String month,
+    String summary,
+    String description,
+    List<Map<String, dynamic>> receipts,
+    bool estimated,
+  ) => showDialog<void>(
+    context: context,
+    builder: (context) => Dialog(
+      insetPadding: const EdgeInsets.all(16),
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 540,
+          maxHeight: MediaQuery.sizeOf(context).height * .8,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Month details · $month',
+                      style: const TextStyle(
+                        color: catalogInk,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close month details',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        summary,
+                        style: const TextStyle(
+                          color: catalogInk,
+                          fontSize: 13,
+                          height: 1.5,
+                        ),
+                      ),
+                      if (description.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          description,
+                          style: const TextStyle(
+                            color: catalogRose,
+                            fontSize: 12,
+                            height: 1.5,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 18),
+                      Text(
+                        'STORE receipts${estimated ? ' · Estimated' : ''}',
+                        style: const TextStyle(
+                          color: catalogInk,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      if (receipts.isEmpty)
+                        const Text(
+                          'No MRN receipts recorded for this month.',
+                          style: TextStyle(color: catalogMuted, fontSize: 13),
+                        )
+                      else
+                        Table(
+                          columnWidths: const {
+                            0: FlexColumnWidth(1.1),
+                            1: FlexColumnWidth(.6),
+                            2: FlexColumnWidth(1.8),
+                          },
+                          defaultVerticalAlignment:
+                              TableCellVerticalAlignment.middle,
+                          border: const TableBorder(
+                            horizontalInside: BorderSide(
+                              color: Color(0xFFE8EEF5),
+                            ),
+                          ),
+                          children: [
+                            const TableRow(
+                              decoration: BoxDecoration(
+                                color: Color(0xFFF5F8FC),
+                              ),
+                              children: [
+                                _MonthReceiptText('Date', strong: true),
+                                _MonthReceiptText('Qty', strong: true),
+                                _MonthReceiptText('At arrival', strong: true),
+                              ],
+                            ),
+                            for (final receipt in receipts)
+                              TableRow(
+                                children: [
+                                  _MonthReceiptText(
+                                    catalogDate(receipt['date']),
+                                  ),
+                                  _MonthReceiptText(
+                                    catalogQty(receipt['qty']),
+                                    strong: true,
+                                  ),
+                                  _MonthReceiptText(
+                                    StockSupplyInsight.arrivalLabel(receipt),
+                                    color: receipt['kind'] == 'restored'
+                                        ? const Color(0xFF15803D)
+                                        : const Color(0xFF568C0B),
+                                  ),
+                                ],
+                              ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final series = catalogMonthlySeries(widget.item);
     final averages = catalogMovingAverage(series);
+    final supply = StockSupplyInsight.of(widget.item);
+    final hasGaps = series.any((row) => supply.chartMarksMonth(row['month']));
+    final arrivals = supply.chartArrivals;
+    final supplySemantics = !hasGaps
+        ? ''
+        : supply.hasChartPeriods
+        ? ' ${supply.chartIsContinuousStockout ? 'Continuous STORE out-of-stock periods' : 'Estimated supply interruption periods'}: ${supply.chartPeriods.map((p) => "${p['from']} through ${p['through']}: ${supply.supplyDuration(p)}").join('; ')}.${supply.chartNeedsReview ? ' Stock history needs checking.' : ''}'
+        : ' STORE out-of-stock periods: ${series.where((r) => supply.marksMonth(r['month'])).map((r) => "${r['month']}: ${supply.monthDescription(r['month'])}").join('; ')}.';
     if (series.isEmpty) {
       return const SizedBox(
         height: 180,
@@ -517,6 +678,22 @@ class _CatalogMonthlyChartState extends State<CatalogMonthlyChart> {
         source = 'Monthly history';
       }
     }
+    final summary = active == null
+        ? 'Hover or tap a month to see sales and receipt details.'
+        : '${active['month']}  ·  ${catalogQty(active['total'])} Qty  ·  3-month average: ${averages[_hover!] == null ? '—' : '${catalogQty(averages[_hover!])} Qty'}${source.isEmpty ? '' : '  ·  $source'}';
+    final description =
+        active != null && supply.chartMarksMonth(active['month'])
+        ? supply.chartMonthDescription(active['month'])
+        : '';
+    final monthReceipts = active == null
+        ? <Map<String, dynamic>>[]
+        : supply.chartArrivalsInMonth(active['month']);
+    monthReceipts.sort((a, b) => '${b['date']}'.compareTo('${a['date']}'));
+    final receivedQty = monthReceipts.fold<double>(
+      0,
+      (total, row) => total + stockNumber(row['qty']),
+    );
+    final scale = MediaQuery.textScalerOf(context).scale(1);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -525,16 +702,120 @@ class _CatalogMonthlyChartState extends State<CatalogMonthlyChart> {
           runSpacing: 8,
           children: [
             const CatalogPill('Monthly net Qty', color: catalogOrange),
-            const CatalogPill('3-month moving average', color: catalogBlue),
-            if (active != null)
-              Text(
-                '${active['month']}  ·  ${catalogQty(active['total'])} Qty  ·  MA ${averages[_hover!] == null ? '—' : catalogQty(averages[_hover!])}${source.isEmpty ? '' : '  ·  $source'}',
-                style: const TextStyle(
-                  color: catalogInk,
-                  fontWeight: FontWeight.w700,
+            const Tooltip(
+              message:
+                  'Average monthly net Qty for the selected month and the two preceding months.',
+              child: CatalogPill('3-month average', color: catalogBlue),
+            ),
+            if (supply.showCurrentStatus)
+              Tooltip(
+                message: supply.currentExplanation,
+                child: CatalogPill(
+                  'Current: ${supply.currentLabel}',
+                  key: const ValueKey('monthly-current-store-status'),
+                  color: catalogSupplyStatusColor(supply),
                 ),
               ),
+            if (hasGaps)
+              Tooltip(
+                message: supply.chartIsContinuousStockout
+                    ? 'One continuous period without STORE stock, from the stock movement analysis. A sales demand model is not required. Branch stock is separate. ${supply.basisDescription}'
+                    : supply.hasChartPeriods
+                    ? 'Continuous periods of insufficient STORE supply compared with learned historical demand. Small arrivals do not end a period until recovery cover is restored. Branch availability is separate.'
+                    : 'Months with at least 7 full days without STORE stock. Branch stock is separate. ${supply.basisDescription}',
+                child: CatalogPill(
+                  'Chart history · ${supply.chartNeedsReview || supply.hasSupplyAnalysis ? 'Estimated' : supply.basis}',
+                  color: catalogRose,
+                ),
+              ),
+            if (supply.chartNeedsReview)
+              const CatalogPill(
+                'Estimated · Stock history needs checking',
+                color: catalogMuted,
+              ),
           ],
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          key: const ValueKey('monthly-selection-info'),
+          height: 100 * scale,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                height: 36 * scale,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Tooltip(
+                    message: summary,
+                    child: Text(
+                      summary,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: active == null ? catalogMuted : catalogInk,
+                        fontSize: 13,
+                        height: 1.3,
+                        fontWeight: active == null
+                            ? FontWeight.w400
+                            : FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 20 * scale,
+                child: Tooltip(
+                  message: description,
+                  child: Text(
+                    description,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: catalogRose,
+                      fontSize: 12,
+                      height: 1.3,
+                    ),
+                  ),
+                ),
+              ),
+              if (active != null)
+                SizedBox(
+                  height: 36 * scale,
+                  child: TextButton.icon(
+                    key: const ValueKey('monthly-receipt-details'),
+                    onPressed: () => _showMonthDetails(
+                      '${active['month']}',
+                      summary,
+                      description,
+                      monthReceipts,
+                      supply.chartNeedsReview ||
+                          supply.inferred ||
+                          supply.hasSupplyAnalysis,
+                    ),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF15803D),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    icon: const Icon(Icons.receipt_long_outlined, size: 16),
+                    label: Text(
+                      monthReceipts.isEmpty
+                          ? 'View month details'
+                          : '${monthReceipts.length} ${monthReceipts.length == 1 ? 'receipt' : 'receipts'} · ${catalogQty(receivedQty)} Qty · Details',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
         const SizedBox(height: 12),
         LayoutBuilder(
@@ -547,7 +828,6 @@ class _CatalogMonthlyChartState extends State<CatalogMonthlyChart> {
                 controller: _scroll,
                 scrollDirection: Axis.horizontal,
                 child: MouseRegion(
-                  onExit: (_) => setState(() => _hover = null),
                   onHover: (event) {
                     final i =
                         ((event.localPosition.dx - 60) /
@@ -570,11 +850,17 @@ class _CatalogMonthlyChartState extends State<CatalogMonthlyChart> {
                     },
                     child: Semantics(
                       label:
-                          'Monthly net sales and trailing three month average. Scroll horizontally to see every month.',
+                          'Monthly net sales and trailing three month average. Scroll horizontally to see every month.$supplySemantics ${arrivals.map((r) => '${r['date']}: ${StockSupplyInsight.arrivalLabel(r)}, ${catalogQty(r['qty'])} Qty received at STORE').join('; ')}',
                       child: CatalogMotion(
                         builder: (p) => CustomPaint(
                           size: Size(width, 285),
-                          painter: _MonthlyPainter(series, averages, p, _hover),
+                          painter: _MonthlyPainter(
+                            series,
+                            averages,
+                            p,
+                            _hover,
+                            supply,
+                          ),
                         ),
                       ),
                     ),
@@ -592,6 +878,31 @@ class _CatalogMonthlyChartState extends State<CatalogMonthlyChart> {
       ],
     );
   }
+}
+
+class _MonthReceiptText extends StatelessWidget {
+  final String text;
+  final bool strong;
+  final Color color;
+  const _MonthReceiptText(
+    this.text, {
+    this.strong = false,
+    this.color = catalogInk,
+  });
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+    child: Text(
+      text,
+      style: TextStyle(
+        color: color,
+        fontSize: 12,
+        height: 1.4,
+        fontWeight: strong ? FontWeight.w700 : FontWeight.w400,
+      ),
+    ),
+  );
 }
 
 void _paintText(
@@ -622,19 +933,111 @@ class _MonthlyPainter extends CustomPainter {
   final List<double?> averages;
   final double progress;
   final int? hover;
-  _MonthlyPainter(this.series, this.averages, this.progress, this.hover);
+  final StockSupplyInsight supply;
+  _MonthlyPainter(
+    this.series,
+    this.averages,
+    this.progress,
+    this.hover,
+    this.supply,
+  );
   @override
   void paint(Canvas canvas, Size size) {
     final values = series.map((r) => stockNumber(r['total'])).toList();
     final maxValue = math.max(1.0, values.reduce(math.max)) * 1.18;
     final minValue = math.min(0.0, values.reduce(math.min)) * 1.18;
-    const left = 60.0, top = 15.0;
+    const left = 60.0;
+    final hasGaps = series.any((row) => supply.chartMarksMonth(row['month']));
+    final hasArrivals = supply.chartArrivals.isNotEmpty;
+    final top = hasArrivals
+        ? 85.0
+        : hasGaps
+        ? supply.hasChartPeriods
+              ? 50.0
+              : 43.0
+        : 15.0;
     final bottom = size.height - 55,
         width = size.width - left - 16,
         height = bottom - top;
     double y(double value) =>
         bottom - (value - minValue) / (maxValue - minValue) * height;
     final zero = y(0), step = width / series.length;
+    if (supply.hasChartPeriods) {
+      final indices = {
+        for (var i = 0; i < series.length; i++) '${series[i]['month']}': i,
+      };
+      double? position(DateTime date) {
+        final key = '${date.month.toString().padLeft(2, '0')}/${date.year}';
+        final index = indices[key];
+        if (index == null) return null;
+        return left +
+            step *
+                (index +
+                    (date.day - 1) /
+                        DateTime(date.year, date.month + 1, 0).day);
+      }
+
+      for (final period in supply.chartPeriods) {
+        final from = DateTime.tryParse('${period['from']}');
+        final through = DateTime.tryParse('${period['through']}');
+        if (from == null || through == null) continue;
+        // Clip spans to the visible series, including a boundary month outside it.
+        final firstParts = '${series.first['month']}'.split('/');
+        final lastParts = '${series.last['month']}'.split('/');
+        final visibleFrom = DateTime(
+          int.parse(firstParts.last),
+          int.parse(firstParts.first),
+        );
+        final visibleUntil = DateTime(
+          int.parse(lastParts.last),
+          int.parse(lastParts.first) + 1,
+        );
+        final until = DateTime(through.year, through.month, through.day + 1);
+        if (!from.isBefore(visibleUntil) || !until.isAfter(visibleFrom)) {
+          continue;
+        }
+        final x1 = from.isBefore(visibleFrom) ? left : position(from);
+        final x2 = !until.isBefore(visibleUntil)
+            ? size.width - 16
+            : position(until);
+        if (x1 == null || x2 == null || x2 <= x1) continue;
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTRB(x1, hasArrivals ? 77 : 31, x2, bottom),
+            const Radius.circular(6),
+          ),
+          Paint()..color = catalogRose.withValues(alpha: .055),
+        );
+        final bracket = Path()
+          ..moveTo(x1, 29)
+          ..lineTo(x1, 23)
+          ..lineTo(x2, 23)
+          ..lineTo(x2, 29);
+        canvas.drawPath(
+          bracket,
+          Paint()
+            ..color = catalogRose
+            ..strokeWidth = 1.5
+            ..style = PaintingStyle.stroke,
+        );
+        final tp = TextPainter(
+          text: TextSpan(
+            text:
+                '${supply.supplyDuration(period, compact: true)} · ${supply.chartIsContinuousStockout ? supply.basis : 'Estimated'}',
+            style: const TextStyle(
+              color: catalogRose,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              fontFamily: 'Roboto',
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+          maxLines: 1,
+          ellipsis: '…',
+        )..layout(maxWidth: math.max(1, x2 - x1 - 8));
+        tp.paint(canvas, Offset((x1 + x2 - tp.width) / 2, 5));
+      }
+    }
     for (var i = 0; i <= 4; i++) {
       final value = minValue + (maxValue - minValue) * i / 4;
       canvas.drawLine(
@@ -648,10 +1051,89 @@ class _MonthlyPainter extends CustomPainter {
         Offset(0, y(value) - 6),
       );
     }
+    // Receipt dates use a separate lane above the values. Several receipts in
+    // one month keep their individual lines and share a compact month label.
+    for (var i = 0; i < series.length; i++) {
+      final arrivals = supply.chartArrivalsInMonth(series[i]['month']);
+      if (arrivals.isEmpty) continue;
+      final restored = arrivals.any((r) => r['kind'] == 'restored');
+      final color = restored
+          ? const Color(0xFF15803D)
+          : const Color(0xFF65A30D);
+      for (final arrival in arrivals) {
+        final date = DateTime.parse('${arrival['date']}');
+        final x =
+            left +
+            step *
+                (i +
+                    (date.day - 1) /
+                        DateTime(date.year, date.month + 1, 0).day);
+        final lineColor = arrival['kind'] == 'restored'
+            ? const Color(0xFF15803D)
+            : const Color(0xFF65A30D);
+        final pen = Paint()
+          ..color = lineColor.withValues(alpha: .55)
+          ..strokeWidth = 1.5;
+        if (supply.chartNeedsReview) {
+          for (var dy = 77.0; dy < bottom; dy += 8) {
+            canvas.drawLine(
+              Offset(x, dy),
+              Offset(x, math.min(dy + 4, bottom)),
+              pen,
+            );
+          }
+        } else {
+          canvas.drawLine(Offset(x, 77), Offset(x, bottom), pen);
+        }
+        canvas.drawCircle(Offset(x, 77), 3, Paint()..color = lineColor);
+      }
+      final x = left + step * i;
+      _paintText(
+        canvas,
+        restored ? 'BACK' : 'LIMITED',
+        Offset(x + 4, 42),
+        color: color,
+        size: 9,
+        bold: true,
+      );
+      _paintText(
+        canvas,
+        '${NumberFormat.compact().format(arrivals.fold<double>(0, (sum, r) => sum + stockNumber(r['qty'])))} Qty',
+        Offset(x + 4, 56),
+        color: color,
+        size: 9,
+      );
+    }
     final path = Path();
     var started = false;
     for (var i = 0; i < values.length; i++) {
       final x = left + step * i + step / 2;
+      if (!supply.hasChartPeriods &&
+          supply.chartMarksMonth(series[i]['month'])) {
+        // A separate top lane keeps the quantity labels and line unobscured.
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(x - step / 2 + 2, 2, step - 4, bottom - 2),
+            const Radius.circular(6),
+          ),
+          Paint()..color = catalogRose.withValues(alpha: .055),
+        );
+        _paintText(
+          canvas,
+          'OUT',
+          Offset(x - 10, 5),
+          color: catalogRose,
+          bold: true,
+          size: 9,
+        );
+        _paintText(
+          canvas,
+          '${stockNumber(supply.month(series[i]['month'])['empty_days']).toInt()}d${supply.inferred ? '*' : ''}',
+          Offset(x - 10, 18),
+          color: catalogRose,
+          size: 9,
+        );
+      }
       if (hover == i) {
         canvas.drawRRect(
           RRect.fromRectAndRadius(
@@ -724,7 +1206,10 @@ class _MonthlyPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _MonthlyPainter old) =>
-      old.progress != progress || old.hover != hover || old.series != series;
+      old.progress != progress ||
+      old.hover != hover ||
+      old.series != series ||
+      old.supply.data != supply.data;
 }
 
 class CatalogStockChart extends StatelessWidget {

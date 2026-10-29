@@ -17,6 +17,7 @@ abstract class StockCatalogDataSource {
       rows: page.rows,
       total: page.total,
       snapshotAt: page.meta['refreshed_at']?.toString() ?? '',
+      referenceVersion: page.meta['reference_version']?.toString() ?? '',
     );
   }
 
@@ -29,10 +30,12 @@ class StockCatalogRegisterBatch {
   final List<StockCatalogItem> rows;
   final int total;
   final String snapshotAt;
+  final String referenceVersion;
   const StockCatalogRegisterBatch({
     required this.rows,
     required this.total,
     required this.snapshotAt,
+    this.referenceVersion = '',
   });
   factory StockCatalogRegisterBatch.fromMap(Map<String, dynamic> map) =>
       StockCatalogRegisterBatch(
@@ -41,6 +44,7 @@ class StockCatalogRegisterBatch {
             .toList(),
         total: stockNumber(map['total']).toInt(),
         snapshotAt: map['snapshot_at']?.toString() ?? '',
+        referenceVersion: map['reference_version']?.toString() ?? '',
       );
 }
 
@@ -75,7 +79,10 @@ extension StockCatalogCompleteRegister on StockCatalogDataSource {
         throw StateError('Stock load cancelled');
       }
       version ??= batch.snapshotAt;
+      final referenceVersion = overview.meta['reference_version']?.toString();
       if (batch.total != overview.total ||
+          (referenceVersion != null &&
+              batch.referenceVersion != referenceVersion) ||
           batch.snapshotAt != version ||
           batch.snapshotAt !=
               (overview.meta['refreshed_at']?.toString() ?? '') ||

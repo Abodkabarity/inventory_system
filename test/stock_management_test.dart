@@ -428,10 +428,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.descendant(
-        of: details,
-        matching: find.text('SKU 16-01-00362  •  BAUSCH & LOMB'),
-      ),
+      find.descendant(of: details, matching: find.text('SKU 16-01-00362')),
       findsOneWidget,
     );
     expect(find.text('Monthly sales & momentum'), findsOneWidget);

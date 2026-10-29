@@ -1,5 +1,7 @@
 import 'dart:math' as math;
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../core/utils/stock_excel_export.dart';
 import '../../../core/utils/stock_item_added_date.dart';
 import '../../../core/utils/store_branch_identity_registry.dart';
@@ -8,10 +10,12 @@ import '../../../domain/entities/stock_catalog.dart';
 import '../../../domain/entities/stock_daily_sales.dart';
 import '../../../domain/entities/stock_management.dart';
 import '../widgets/stock_catalog_visuals.dart';
+import '../widgets/stock_chart_pair.dart';
 import '../widgets/stock_sales_summary.dart';
 import '../widgets/stock_distribution_widgets.dart';
 import '../widgets/stock_product_image.dart';
 import '../widgets/stock_daily_sales_chart.dart';
+import '../../../core/utils/stock_catalog_export.dart';
 
 class StockCatalogProductDialog extends StatefulWidget {
   final StockCatalogItem item;
@@ -46,6 +50,8 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
   bool _uncoveredOnly = false;
   Map<String, dynamic>? _dailyData;
   StockDailySalesMix? _dailySales;
+  bool _itemCodeCopied = false;
+  Timer? _copyFeedbackTimer;
   @override
   void initState() {
     super.initState();
@@ -61,10 +67,21 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
 
   @override
   void dispose() {
+    _copyFeedbackTimer?.cancel();
     _search.dispose();
     _scroll.dispose();
     _branchScroll.dispose();
     super.dispose();
+  }
+
+  Future<void> _copyItemCode() async {
+    await Clipboard.setData(ClipboardData(text: widget.item.code));
+    if (!mounted) return;
+    _copyFeedbackTimer?.cancel();
+    setState(() => _itemCodeCopied = true);
+    _copyFeedbackTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _itemCodeCopied = false);
+    });
   }
 
   Future<void> _save(List<Map<String, dynamic>> rows, String name) async {
@@ -191,13 +208,11 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                                 const SizedBox(height: 16),
                                 _stock(item),
                               ] else
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(flex: 7, child: _monthly(item)),
-                                    const SizedBox(width: 16),
-                                    Expanded(flex: 3, child: _stock(item)),
-                                  ],
+                                StockChartPair(
+                                  key: const ValueKey(
+                                    'monthly-stock-chart-pair',
+                                  ),
+                                  children: [_monthly(item), _stock(item)],
                                 ),
                               const SizedBox(height: 18),
                               _daily(item),
@@ -207,13 +222,9 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                                 const SizedBox(height: 16),
                                 _facts(item),
                               ] else
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(child: _annual(item)),
-                                    const SizedBox(width: 16),
-                                    Expanded(child: _facts(item)),
-                                  ],
+                                StockChartPair(
+                                  leftFraction: .5,
+                                  children: [_annual(item), _facts(item)],
                                 ),
                               const SizedBox(height: 18),
                               if (compact) ...[
@@ -336,13 +347,75 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                 runSpacing: 8,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  SelectableText(
-                    'SKU ${widget.item.code}  •  ${widget.item.text('company')}',
-                    style: const TextStyle(
-                      color: Color(0xFFD2DFF2),
-                      fontSize: 12,
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: SelectableText(
+                          'SKU ${widget.item.code}',
+                          maxLines: 1,
+                          style: const TextStyle(
+                            color: Color(0xFFD2DFF2),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        key: const ValueKey('product-copy-item-code'),
+                        tooltip: _itemCodeCopied
+                            ? 'Item code copied'
+                            : 'Copy item code',
+                        onPressed: widget.item.code.isEmpty
+                            ? null
+                            : _copyItemCode,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 28,
+                          height: 28,
+                        ),
+                        padding: const EdgeInsets.all(4),
+                        icon: Icon(
+                          _itemCodeCopied
+                              ? Icons.check_rounded
+                              : Icons.copy_rounded,
+                          color: _itemCodeCopied
+                              ? const Color(0xFF8BE6D9)
+                              : const Color(0xFFD2DFF2),
+                          size: 16,
+                        ),
+                      ),
+                    ],
                   ),
+                  if (widget.item.text('company').isNotEmpty)
+                    SelectableText(
+                      '• ${widget.item.text('company')}',
+                      style: const TextStyle(
+                        color: Color(0xFFD2DFF2),
+                        fontSize: 12,
+                      ),
+                    ),
+                  if (widget.item.isCdReceipt)
+                    ValueListenableBuilder<Map<String, String>>(
+                      valueListenable: StoreBranchIdentityRegistry.groups,
+                      builder: (context, _, _) => Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: .12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: SelectableText(
+                          'Warehouse  ${StoreBranchIdentityRegistry.displayName(widget.item.warehouse).toUpperCase()}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
                   FutureBuilder<StockCatalogItem>(
                     future: _future,
                     builder: (context, snapshot) {
@@ -400,6 +473,31 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                         ),
                         child: SelectableText(
                           'Reference  $reference',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  FutureBuilder<StockCatalogItem>(
+                    future: _future,
+                    builder: (context, snapshot) {
+                      final item = snapshot.data ?? widget.item;
+                      return Container(
+                        key: const ValueKey('product-purchase-status'),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: .12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: SelectableText(
+                          'Purchase Status  ${item.purchaseStatus}',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 12,
@@ -541,21 +639,16 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
   }
 
   Widget _monthly(StockCatalogItem item) => CatalogPanel(
+    key: const ValueKey('monthly-sales-panel'),
     title: 'Monthly sales & momentum',
     subtitle:
         '2025 to ${catalogSalesYears(item).last} • All source branches • Hover or tap a month for exact values'
         '${stockMap(item.data['meta'])['monthly_current_source'] == 'sales_last_45_days' ? ' • Current month uses daily sales' : ''}',
     trailing: IconButton(
-      onPressed: () => _save([
-        for (final row in item.list('monthly_sales'))
-          {
-            ...row,
-            if (row['source'] != null)
-              'source': row['source'] == 'sales_last_45_days'
-                  ? 'Daily sales'
-                  : 'Monthly history',
-          },
-      ], '${item.code}_monthly_sales.xlsx'),
+      onPressed: () => _save(
+        catalogMonthlyExportRows(item),
+        '${item.code}_monthly_sales.xlsx',
+      ),
       tooltip: 'Export monthly sales',
       icon: const Icon(Icons.download_rounded, size: 19, color: catalogBlue),
     ),
@@ -588,6 +681,7 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
   }
 
   Widget _stock(StockCatalogItem item) => CatalogPanel(
+    key: const ValueKey('stock-sales-panel'),
     title: 'Stock / Sales',
     subtitle: 'Current stock against 45-day net sales',
     child: Column(
@@ -625,6 +719,7 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
     ),
   );
   Widget _annual(StockCatalogItem item) => CatalogPanel(
+    key: const ValueKey('annual-sales-panel'),
     title: 'Annual sales mix',
     subtitle: 'Cash • Insurance • Online — net Qty',
     child: Column(
@@ -676,6 +771,7 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
     ),
   );
   Widget _facts(StockCatalogItem item) => CatalogPanel(
+    key: const ValueKey('product-profile-panel'),
     title: 'Product profile',
     subtitle: 'Catalog facts from Item Report',
     child: Wrap(

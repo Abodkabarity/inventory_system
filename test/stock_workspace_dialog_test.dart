@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
 import 'package:daily_order/domain/entities/stock_management.dart';
 import 'package:daily_order/presentation/inventory_dashboard/page/stock_catalog_product_dialog.dart';
-import 'package:daily_order/presentation/inventory_dashboard/widgets/stock_catalog_visuals.dart';
+import 'package:daily_order/presentation/inventory_dashboard/widgets/stock_mrn_receipt_summary.dart';
 import 'package:daily_order/presentation/inventory_dashboard/page/stock_expiry_page.dart';
 import 'package:daily_order/presentation/inventory_dashboard/page/stock_management_page.dart';
 import 'package:flutter/material.dart';
@@ -86,6 +86,28 @@ void main() {
         await tester.tap(find.text('Open product'));
         await tester.pumpAndSettle();
         expect(find.byType(StockCatalogProductDialog), findsOneWidget);
+        expect(find.byType(StockMrnReceiptSummary), findsOneWidget);
+        if (size.width >= 1000) {
+          expect(
+            tester
+                .getSize(find.byKey(const ValueKey('monthly-sales-panel')))
+                .height,
+            closeTo(
+              tester
+                  .getSize(find.byKey(const ValueKey('stock-sales-panel')))
+                  .height,
+              .1,
+            ),
+          );
+          final annual = tester.getSize(
+            find.byKey(const ValueKey('annual-sales-panel')),
+          );
+          final profile = tester.getSize(
+            find.byKey(const ValueKey('product-profile-panel')),
+          );
+          expect(annual.height, closeTo(profile.height, .1));
+          expect(annual.width, closeTo(profile.width, .1));
+        }
         for (final label in [
           'Monthly sales & momentum',
           'Stock / Sales',
@@ -98,27 +120,22 @@ void main() {
         expect(find.text('MRN number'), findsNothing);
         expect(find.text('Expiry received Qty'), findsNothing);
         final receiptCards = find.byKey(const ValueKey('mrn-receipt-cards'));
-        final cardWidgets = tester
-            .widgetList<CatalogMetric>(
-              find.descendant(
-                of: receiptCards,
-                matching: find.byType(CatalogMetric),
-              ),
-            )
-            .toList();
-        expect(cardWidgets.map((c) => c.title), [
+        for (final label in [
           'LAST MRN',
           'VENDOR',
           'EXPIRY DATE',
           'ORDERED QTY',
-          'RECEIVED QTY',
-        ]);
-        expect(cardWidgets.every((c) => c.caption.isEmpty), isTrue);
-        final heights = find
-            .descendant(of: receiptCards, matching: find.byType(CatalogMetric))
-            .evaluate()
-            .map((e) => tester.getSize(find.byWidget(e.widget)).height)
-            .toSet();
+          'TOTAL QTY',
+        ]) {
+          expect(
+            find.descendant(of: receiptCards, matching: find.text(label)),
+            findsOneWidget,
+          );
+        }
+        final heights = <double>{
+          for (final id in ['date', 'vendor', 'expiry', 'ordered', 'total'])
+            tester.getSize(find.byKey(ValueKey('mrn-summary-$id'))).height,
+        };
         expect(heights.length, 1);
 
         expect(find.text('ABCDEFGHIJ'), findsOneWidget);
@@ -128,6 +145,18 @@ void main() {
           boundary,
           'mrn_shared_dialog_${size.width.toInt()}',
         );
+        if (size.width >= 1000) {
+          await tester.ensureVisible(
+            find.byKey(const ValueKey('monthly-sales-panel')),
+          );
+          await tester.pumpAndSettle();
+          await catalog.capture(tester, boundary, 'stock_stable_chart_pair');
+          await tester.ensureVisible(
+            find.byKey(const ValueKey('annual-sales-panel')),
+          );
+          await tester.pumpAndSettle();
+          await catalog.capture(tester, boundary, 'stock_equal_annual_profile');
+        }
         StoreBranchIdentityRegistry.groups.value = {
           'ALPHA': 'APG',
           'BETA': '71',
@@ -145,6 +174,44 @@ void main() {
         expect(table.rows.length, 1);
         expect((table.rows.single.cells.first.child as Text).data, '71 Beta');
         expect(tester.takeException(), isNull);
+        await tester.tap(find.byTooltip('Close details'));
+        await tester.pumpAndSettle();
+
+        await catalog.app(
+          tester,
+          SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: StockMrnReceiptSummary(
+                item: const StockManagementItem({
+                  'last_mrn_date': '2026-10-29',
+                  'last_mrn_no': '107144',
+                  'vendor': 'AL HIKMA MEDICINE & MEDICAL SUPPLIES TRADING',
+                  'expiry_date': '2027-05-01',
+                  'ordered_quantity': 300,
+                  'total_qty': 360,
+                  'bonus': 60,
+                }),
+              ),
+            ),
+          ),
+          size: Size(size.width, size.width > 1000 ? 280 : 600),
+          boundary: boundary,
+        );
+        expect(find.text('360'), findsOneWidget);
+        expect(find.text('Bonus 60 included'), findsOneWidget);
+        expect(find.text('420'), findsNothing);
+        final bonusHeights = <double>{
+          for (final id in ['date', 'vendor', 'expiry', 'ordered', 'total'])
+            tester.getSize(find.byKey(ValueKey('mrn-summary-$id'))).height,
+        };
+        expect(bonusHeights.length, 1);
+        expect(tester.takeException(), isNull);
+        await catalog.capture(
+          tester,
+          boundary,
+          'mrn_receipt_summary_${size.width.toInt()}',
+        );
       },
     );
   }
@@ -174,6 +241,19 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Receipt evidence (1)'), findsOneWidget);
+      for (final (id, value) in [
+        ('total', '25'),
+        ('ordered', '30'),
+        ('date', '03 Oct 2026'),
+      ]) {
+        expect(
+          find.descendant(
+            of: find.byKey(ValueKey('mrn-summary-$id')),
+            matching: find.text(value),
+          ),
+          findsOneWidget,
+        );
+      }
       expect(find.text('Monthly sales & momentum'), findsOneWidget);
       final note = find.byKey(const ValueKey('expiry-note-field'));
       final toolbar = find.byKey(const ValueKey('expiry-note-toolbar'));

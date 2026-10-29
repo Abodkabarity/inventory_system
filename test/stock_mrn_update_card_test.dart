@@ -29,7 +29,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.binding.setSurfaceSize(null);
   });
-  testWidgets('shows the converted server last success while an import is running', (
+  testWidgets('shows server last success in Dubai while an import is running', (
     tester,
   ) async {
     await tester.pumpWidget(

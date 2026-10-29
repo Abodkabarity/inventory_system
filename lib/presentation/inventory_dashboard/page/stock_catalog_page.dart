@@ -783,18 +783,19 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
         ),
         SizedBox(
           height: 46,
-          width: 42,
+          width: 46,
           child: IconButton.filledTonal(
+            key: const ValueKey('catalog-clear-filters'),
             onPressed: _clear,
             tooltip: 'Clear filters',
             style: IconButton.styleFrom(
               foregroundColor: AppColors.primaryColor,
-              backgroundColor: AppColors.primaryColor.withValues(alpha: .09),
+              backgroundColor: AppColors.primaryColor.withValues(alpha: .08),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            icon: const Icon(Icons.restart_alt_rounded, size: 21),
+            icon: const Icon(Icons.filter_alt_off_outlined, size: 20),
           ),
         ),
         SizedBox(

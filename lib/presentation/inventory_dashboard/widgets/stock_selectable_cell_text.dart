@@ -1,5 +1,29 @@
 import 'package:flutter/material.dart';
 
+/// A consistent centered presentation for both single- and multi-line references.
+class StockReferenceCell extends StatelessWidget {
+  final String reference;
+  final TextStyle style;
+  const StockReferenceCell(this.reference, {super.key, required this.style});
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: reference,
+    child: Align(
+      alignment: Alignment.center,
+      child: SizedBox(
+        width: double.infinity,
+        child: StockSelectableCellText(
+          reference.isEmpty ? '—' : reference,
+          textAlign: TextAlign.center,
+          maxLines: 3,
+          style: style,
+        ),
+      ),
+    ),
+  );
+}
+
 /// Keeps the row's normal click action while its text remains selectable.
 class StockCellTapScope extends InheritedWidget {
   final VoidCallback onTap;

@@ -1,3 +1,5 @@
+import '../../../domain/entities/stock_supply_insight.dart';
+import 'stock_supply_insight_widgets.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -11,6 +13,8 @@ import 'stock_expiry_grid.dart' show expiryRemainingLabel;
 import 'stock_management_formatters.dart';
 import 'stock_selectable_cell_text.dart';
 import 'stock_sales_summary.dart';
+import 'stock_receipt_quantity.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 
 const _ink = Color(0xFF142C40);
 const _muted = Color(0xFF64748B);
@@ -52,12 +56,14 @@ bool stockMrnExpiryIsNear(DateTime? expiry, DateTime today) =>
     ).isBefore(_sixMonthsAfter(today));
 
 class StockManagementGrid extends StatefulWidget {
+  final bool showWarehouse;
   final List<StockManagementItem> items;
   final ScrollController horizontalController;
   final ValueChanged<StockManagementItem> onOpen;
   final void Function(int visible, bool filtered) onViewChanged;
   const StockManagementGrid({
     super.key,
+    this.showWarehouse = false,
     required this.items,
     required this.horizontalController,
     required this.onOpen,
@@ -79,8 +85,17 @@ class StockManagementGridState extends State<StockManagementGrid> {
     super.initState();
     source = StockManagementGridSource(
       widget.items,
+      showWarehouse: widget.showWarehouse,
       onOpen: (item) => widget.onOpen(item),
     );
+    _publishCount();
+    if (widget.showWarehouse) {
+      StoreBranchIdentityRegistry.groups.addListener(_refreshBranchLabels);
+    }
+  }
+
+  void _refreshBranchLabels() {
+    source.update(widget.items);
     _publishCount();
   }
 
@@ -111,6 +126,9 @@ class StockManagementGridState extends State<StockManagementGrid> {
 
   @override
   void dispose() {
+    if (widget.showWarehouse) {
+      StoreBranchIdentityRegistry.groups.removeListener(_refreshBranchLabels);
+    }
     source.dispose();
     super.dispose();
   }
@@ -141,7 +159,11 @@ class StockManagementGridState extends State<StockManagementGrid> {
         allowMultiColumnSorting: true,
         allowColumnsResizing: true,
         columnWidthMode: ColumnWidthMode.none,
-        frozenColumnsCount: size.maxWidth >= 650 ? 1 : 0,
+        frozenColumnsCount: size.maxWidth >= 950 && widget.showWarehouse
+            ? 2
+            : size.maxWidth >= 650
+            ? 1
+            : 0,
         gridLinesVisibility: GridLinesVisibility.both,
         headerGridLinesVisibility: GridLinesVisibility.both,
         isScrollbarAlwaysShown: true,
@@ -157,7 +179,7 @@ class StockManagementGridState extends State<StockManagementGrid> {
           if (index < 0 || index >= source.effectiveRows.length) return;
           widget.onOpen(source.itemFor(source.effectiveRows[index]));
         },
-        columns: StockManagementGridSource.columns
+        columns: source.visibleColumns
             .map(
               (c) => GridColumn(
                 columnName: c.$1,
@@ -200,16 +222,19 @@ class StockManagementGridState extends State<StockManagementGrid> {
 class StockManagementGridSource extends DataGridSource {
   static const columns = <(String, String, double)>[
     ('item_name', 'PRODUCT / SUPPLIER', 350),
+    ('reference', 'Reference', 190),
     ('last_mrn_date', 'MRN date', 175),
     ('expiry_date', 'Expiry date', 200),
     ('ordered_quantity', 'Ordered Qty', 150),
-    ('received_quantity', 'Received Qty', 155),
+    ('received_quantity', 'Total Qty', 190),
     ('vendor', 'Vendor', 160),
     ('store_stock', 'Store', 115),
     ('branches_stock', 'Branches', 140),
     ('total_stock', 'Total stock', 155),
+    ('supply_review', 'STORE history', 210),
     ('store_total_percent', 'Store / Total stock', 180),
     ('days_on_hand', 'Days on hand', 175),
+    ('purchase_status_items', 'Purchase Status', 220),
     ('sales_2025', '2025 sales · qty', 300),
     ('sales_2026', '2026 sales · qty', 300),
     ('best_months', 'Best month · 25 / 26', 235),
@@ -221,12 +246,18 @@ class StockManagementGridSource extends DataGridSource {
     ('stock_status', 'Stock status', 175),
   ];
   List<DataGridRow> _rows = [];
+  final bool showWarehouse;
+  List<(String, String, double)> get visibleColumns => [
+    if (showWarehouse) ('warehouse', 'Warehouse', 190),
+    ...columns,
+  ];
   final ValueChanged<StockManagementItem> onOpen;
   final _items = <DataGridRow, StockManagementItem>{};
   final _indexes = <DataGridRow, int>{};
   StockManagementGridSource(
     List<StockManagementItem> items, {
     required this.onOpen,
+    this.showWarehouse = false,
   }) {
     _replaceRows(items);
   }
@@ -239,7 +270,7 @@ class StockManagementGridSource extends DataGridSource {
       for (var index = 0; index < items.length; index++)
         DataGridRow(
           cells: [
-            for (final c in columns)
+            for (final c in visibleColumns)
               DataGridCell<dynamic>(
                 columnName: c.$1,
                 value: _value(items[index], c.$1),
@@ -263,13 +294,21 @@ class StockManagementGridSource extends DataGridSource {
 
   dynamic _value(StockManagementItem item, String key) => switch (key) {
     'item_name' => item.name.toUpperCase(),
+    'warehouse' => StoreBranchIdentityRegistry.displayName(
+      item.warehouse,
+    ).toUpperCase(),
+    'purchase_status_items' => item.purchaseStatus,
     'last_mrn_date' || 'expiry_date' => _calendarDate(item.text(key)),
-    'item_code' => item.text(key),
+    'item_code' || 'reference' => item.text(key),
     'added_date_time' => stockItemAddedDate(item.data[key]),
     'supplier' || 'company' || 'category' => item.text(key).toUpperCase(),
     'stock_status' => item.status,
-    'ordered_quantity' || 'received_quantity' => item.number(key),
-    'total_stock' || 'store_stock' || 'branches_stock' => item.number(key),
+    'supply_review' => StockSupplyInsight.of(item).label,
+    'received_quantity' => item.receiptTotal,
+    'ordered_quantity' => item.number(key),
+    'total_stock' ||
+    'store_stock' ||
+    'branches_stock' => item.stockAvailable ? item.number(key) : null,
     'vendor' => formatStockVendor(item.data['vendor']),
     'store_total_percent' => item.storeTotalPercent,
     'days_on_hand' => item.days,
@@ -318,6 +357,22 @@ class StockManagementGridSource extends DataGridSource {
   Widget _cell(StockManagementItem item, DataGridCell<dynamic> cell) {
     final key = cell.columnName, value = cell.value;
     switch (key) {
+      case 'warehouse':
+        return Tooltip(
+          message: value.toString(),
+          child: _text(value.toString(), lines: 3, strong: true),
+        );
+      case 'purchase_status_items':
+        return Tooltip(
+          message: item.purchaseStatus,
+          child: _text(item.purchaseStatus, lines: 3),
+        );
+      case 'reference':
+        final reference = item.text('reference');
+        return StockReferenceCell(
+          reference,
+          style: const TextStyle(color: _ink, fontSize: 14, fontWeight: FontWeight.w500),
+        );
       case 'item_name':
         return _stack([
           Tooltip(
@@ -361,7 +416,7 @@ class StockManagementGridSource extends DataGridSource {
           ),
           const SizedBox(height: 3),
           _text(
-            'Received ${_qty(item.number('last_mrn_qty'))}${item.number('receipt_count') > 1 ? ' · ${item.number('receipt_count').toInt()} MRNs' : ''}',
+            'Total ${_qty(item.receiptTotal)}${item.number('receipt_count') > 1 ? ' · ${item.number('receipt_count').toInt()} MRNs' : ''}',
             color: _muted,
             size: 11,
           ),
@@ -435,11 +490,16 @@ class StockManagementGridSource extends DataGridSource {
             color,
           ),
         );
+      case 'supply_review':
+        return StockSupplyReviewCell(item: item);
       case 'received_quantity':
         return Tooltip(
           message:
-              'Total received across all MRNs and expiry dates on the latest receipt day. Open the product for each receipt. This is historical received Qty.',
-          child: _text(_qty(value), strong: true, size: 16),
+              'Reported total_qty across the latest receipt day. Bonus is a note only.',
+          child: StockReceiptQuantity(
+            quantity: item.receiptTotal,
+            bonus: item.receiptBonus,
+          ),
         );
       case 'ordered_quantity':
         return Tooltip(

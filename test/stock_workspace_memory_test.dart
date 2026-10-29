@@ -15,6 +15,9 @@ class WorkspaceServer {
   String revision = 'r1', details = 'd1', note = '';
   int stock = 10, rows = 2, scans = 0, logins = 0;
   bool fail = false, missing = false, legacy = false, changeDuringLoad = false;
+  bool historyDuplicate = false,
+      historyChanged = false,
+      historyTruncated = false;
   Completer<void>? delay;
   final started = Completer<void>();
   late final client = SupabaseClient(
@@ -126,6 +129,31 @@ class WorkspaceServer {
             if (!started.isCompleted) started.complete();
             await delay?.future;
             result = missing ? null : product(p['p_item_code']);
+          case 'get_stock_management_receipt_history':
+            expect(p['p_limit'], 5000);
+            final offset = p['p_offset'] as int;
+            result = {
+              'item_code': p['p_item_code'],
+              'rows': [
+                if (!(historyTruncated && offset > 0))
+                  for (var i = offset; i < rows && i < offset + 5000; i++)
+                    {
+                      'line_id': historyDuplicate && offset > 0 ? '0' : '$i',
+                      'mrn_date': '2026-10-26',
+                      'mrn_no': '$i',
+                      'received_qty': 1,
+                    },
+              ],
+              'total': rows,
+              'mrn_count': rows,
+              'day_count': 1,
+              'received_qty': rows,
+              'from': '2026-10-26',
+              'through': '2026-10-26',
+              'snapshot_version': historyChanged && offset > 0
+                  ? 'changed'
+                  : revision,
+            };
           case 'get_stock_expiry_item':
             result = missing ? null : alert();
           case 'save_stock_expiry_review':
@@ -157,6 +185,45 @@ void main() {
   tearDown(() async {
     await server.client.dispose();
   });
+
+  test(
+    'receipt history loads every 5000-row page and caches complete history',
+    () async {
+      server.rows = 5001;
+      final results = await Future.wait([
+        server.mrn.fetchReceiptHistory('A'),
+        server.mrn.fetchReceiptHistory('A'),
+      ]);
+      expect(results.first.lines.length, 5001);
+      expect(results.first.receivedQty, 5001);
+      expect(server.count('get_stock_management_receipt_history'), 2);
+      await server.mrn.fetchReceiptHistory('A');
+      expect(server.count('get_stock_management_receipt_history'), 2);
+      server.details = 'd2';
+      server.revision = 'r2';
+      await server.mrn.fetchReceiptHistory('A');
+      expect(server.count('get_stock_management_receipt_history'), 4);
+    },
+  );
+  for (final failure in ['duplicate', 'changed', 'truncated']) {
+    test(
+      'receipt history rejects $failure pages and never caches a partial result',
+      () async {
+        server.rows = 5001;
+        server.historyDuplicate = failure == 'duplicate';
+        server.historyChanged = failure == 'changed';
+        server.historyTruncated = failure == 'truncated';
+        await expectLater(
+          server.mrn.fetchReceiptHistory('A'),
+          throwsStateError,
+        );
+        server.historyDuplicate = server.historyChanged =
+            server.historyTruncated = false;
+        expect((await server.mrn.fetchReceiptHistory('A')).lines.length, 5001);
+        expect(server.count('get_stock_management_receipt_history'), 4);
+      },
+    );
+  }
 
   test(
     'MRN caches only a complete 5000-row register and validates every reopen',
