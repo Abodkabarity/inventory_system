@@ -898,7 +898,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('Reference  IN26217285'), findsOneWidget);
-      expect(find.text('Annual sales mix'), findsOneWidget);
+      expect(find.text('Sales history'), findsOneWidget);
       expect(find.text('MRN receipt details'), findsNothing);
       expect(find.byKey(const ValueKey('mrn-receipt-cards')), findsOneWidget);
       expect(find.text('1,360.33'), findsWidgets);

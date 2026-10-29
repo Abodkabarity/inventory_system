@@ -720,8 +720,8 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
   );
   Widget _annual(StockCatalogItem item) => CatalogPanel(
     key: const ValueKey('annual-sales-panel'),
-    title: 'Annual sales mix',
-    subtitle: 'Cash • Insurance • Online — net Qty',
+    title: 'Sales history',
+    subtitle: 'Cash • Insurance • Online',
     child: Column(
       children: [
         for (final year in catalogSalesYears(item))

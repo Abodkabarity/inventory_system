@@ -435,7 +435,7 @@ void main() {
     expect(find.text('Best 2025: 09/2025 • 3,309.67 Qty'), findsOneWidget);
     expect(find.text('Best 2026: 04/2026 • 2,466 Qty'), findsOneWidget);
     expect(find.textContaining('Reference  IN26217285'), findsOneWidget);
-    expect(find.text('Annual sales mix'), findsOneWidget);
+    expect(find.text('Sales history'), findsOneWidget);
     expect(find.text('Created date  01/01/2025'), findsOneWidget);
     expect(find.text('MRN receipt details'), findsNothing);
     expect(find.byKey(const ValueKey('mrn-receipt-cards')), findsOneWidget);
