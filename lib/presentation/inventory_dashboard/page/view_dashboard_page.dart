@@ -13,7 +13,7 @@ import 'stock_expiry_page.dart';
 import 'stock_management_page.dart';
 
 /// A separate shell keeps inventory loaders, subscriptions and write actions
-/// out of the view role's session. Only these five pages can be selected.
+/// out of the view role's session. Only the listed pages can be selected.
 class ViewDashboardPage extends StatefulWidget {
   final String runDate;
   const ViewDashboardPage({super.key, required this.runDate});
@@ -21,6 +21,7 @@ class ViewDashboardPage extends StatefulWidget {
   static const pages = {
     InventoryPageType.stockManagement,
     InventoryPageType.mrnOverview,
+    InventoryPageType.mrnCdOverview,
     InventoryPageType.nearExpiry,
     InventoryPageType.availabilityKpi,
     InventoryPageType.fillRateKpi,
@@ -44,6 +45,7 @@ class _ViewDashboardPageState extends State<ViewDashboardPage> {
     InventoryPageType.mrnOverview => StockManagementPage(
       onOpenExpiry: () => _select(InventoryPageType.nearExpiry),
     ),
+    InventoryPageType.mrnCdOverview => const StockManagementPage(cd: true),
     InventoryPageType.nearExpiry => StockExpiryPage(
       dataSource: StockExpiryRemoteDs(Supabase.instance.client),
       embedded: true,
