@@ -102,11 +102,11 @@ class WorkspaceServer {
               'meta': {'snapshot_at': '2026-10-20T00:00:00Z'},
             };
           case 'get_stock_management_register_batch':
-            expect(p['p_limit'], 5000);
+            expect(p['p_limit'], 4000);
             final offset = p['p_offset'] as int;
             result = {
               'rows': [
-                for (var i = offset; i < rows && i < offset + 5000; i++)
+                for (var i = offset; i < rows && i < offset + 4000; i++)
                   product('$i'),
               ],
               'total': rows,
@@ -117,7 +117,7 @@ class WorkspaceServer {
               changeDuringLoad = false;
             }
           case 'get_stock_expiry_page':
-            expect(p['p_limit'], 5000);
+            expect(p['p_limit'], 4000);
             result = {
               'rows': [alert()],
               'total': 1,
@@ -130,13 +130,13 @@ class WorkspaceServer {
             await delay?.future;
             result = missing ? null : product(p['p_item_code']);
           case 'get_stock_management_receipt_history':
-            expect(p['p_limit'], 5000);
+            expect(p['p_limit'], 4000);
             final offset = p['p_offset'] as int;
             result = {
               'item_code': p['p_item_code'],
               'rows': [
                 if (!(historyTruncated && offset > 0))
-                  for (var i = offset; i < rows && i < offset + 5000; i++)
+                  for (var i = offset; i < rows && i < offset + 4000; i++)
                     {
                       'line_id': historyDuplicate && offset > 0 ? '0' : '$i',
                       'mrn_date': '2026-10-26',
@@ -187,7 +187,7 @@ void main() {
   });
 
   test(
-    'receipt history loads every 5000-row page and caches complete history',
+    'receipt history loads every 4000-row page and caches complete history',
     () async {
       server.rows = 5001;
       final results = await Future.wait([
@@ -226,7 +226,7 @@ void main() {
   }
 
   test(
-    'MRN caches only a complete 5000-row register and validates every reopen',
+    'MRN caches only a complete 4000-row register and validates every reopen',
     () async {
       server.rows = 5001;
       final first = await server.mrn.fetchAll();

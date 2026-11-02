@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:daily_order/core/config/stock_management_load_config.dart';
 import 'package:daily_order/data/datasources/remote/stock_check_kpi_adjustment_remote_ds.dart';
 import 'package:daily_order/domain/entities/stock_check_campaign.dart';
 import 'package:daily_order/domain/entities/stock_check_kpi_adjustment.dart';
@@ -86,7 +87,7 @@ void main() {
     },
   );
   test(
-    '5000-row bulk pages preserve signed quantities and one consistent date/snapshot',
+    'shared-size bulk pages preserve signed quantities and one consistent date/snapshot',
     () async {
       final requests = <Map<String, dynamic>>[];
       final client = SupabaseClient(
@@ -99,17 +100,23 @@ void main() {
             request.url.path,
             endsWith('/rpc/stock_check_kpi_adjustments'),
           );
-          expect(params['p_limit'], 5000);
+          expect(params['p_limit'], StockManagementLoadConfig.batchSize);
           final body = requests.length == 1
               ? page(
                   [
-                    for (var i = 0; i < 5000; i++)
+                    for (
+                      var i = 0;
+                      i < StockManagementLoadConfig.batchSize;
+                      i++
+                    )
                       row('P${i.toString().padLeft(5, '0')}'),
                   ],
-                  total: 5001,
+                  total: StockManagementLoadConfig.batchSize + 1,
                   more: true,
                 )
-              : page([row('P05000', qty: -3.005, count: 2)], total: 5001);
+              : page([
+                  row('P-LAST', qty: -3.005, count: 2),
+                ], total: StockManagementLoadConfig.batchSize + 1);
           return http.Response(
             jsonEncode(body),
             200,
@@ -120,12 +127,15 @@ void main() {
       );
       addTearDown(client.dispose);
       final data = await StockCheckKpiAdjustmentRemoteDs(client).load(projects);
-      expect(data.values.length, 5001);
-      expect(data.forItem(' RAW BRANCH ', 'p05000')!.quantity, -3.005);
+      expect(data.values.length, StockManagementLoadConfig.batchSize + 1);
+      expect(data.forItem(' RAW BRANCH ', 'p-last')!.quantity, -3.005);
       expect(data.period, '2026-07-08 → 2026-10-28');
       expect(requests[1]['p_snapshot'], 'snapshot');
       expect(requests[1]['p_through'], '2026-10-28');
-      expect(requests[1]['p_after_code'], 'P04999');
+      expect(
+        requests[1]['p_after_code'],
+        'P${(StockManagementLoadConfig.batchSize - 1).toString().padLeft(5, '0')}',
+      );
       expect(requests[1]['p_after_branch'], 'Raw Branch');
     },
   );

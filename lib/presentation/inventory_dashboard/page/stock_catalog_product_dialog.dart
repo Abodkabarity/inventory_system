@@ -25,6 +25,8 @@ class StockCatalogProductDialog extends StatefulWidget {
   final VoidCallback? onClose;
   final bool allowSavedFallback;
   final Future<String?> Function(String)? resolveImage;
+  final Future<List<String>> Function(String)? resolveImageGallery;
+  final Future<List<String>> Function(String, Uint8List)? uploadProductImage;
   const StockCatalogProductDialog({
     super.key,
     required this.item,
@@ -34,6 +36,8 @@ class StockCatalogProductDialog extends StatefulWidget {
     this.onClose,
     this.allowSavedFallback = false,
     this.resolveImage,
+    this.resolveImageGallery,
+    this.uploadProductImage,
   }) : assert(source != null || loadItem != null);
   @override
   State<StockCatalogProductDialog> createState() =>
@@ -144,7 +148,9 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                           ),
                         ),
                         FilledButton.icon(
-                          onPressed: () => setState(() => _future = _load()),
+                          onPressed: () => setState(() {
+                            _future = _load();
+                          }),
                           icon: const Icon(Icons.refresh),
                           label: const Text('Retry'),
                         ),
@@ -185,8 +191,9 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                                     subtitle:
                                         'Showing saved receipt facts. ${snapshot.error}',
                                     trailing: TextButton(
-                                      onPressed: () =>
-                                          setState(() => _future = _load()),
+                                      onPressed: () => setState(() {
+                                        _future = _load();
+                                      }),
                                       child: const Text('Retry'),
                                     ),
                                     child: const Text(
@@ -318,6 +325,8 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
           StockProductImage(
             sku: widget.item.code,
             resolve: widget.resolveImage!,
+            resolveGallery: widget.resolveImageGallery,
+            uploadImage: widget.uploadProductImage,
           ),
         Expanded(
           child: Column(

@@ -1,4 +1,4 @@
-/// Shared bulk-loading policy for Overview, MRN Overview and Near Expiry.
+/// Shared bulk-loading policy for Overview, MRN, MRN CD and Near Expiry.
 abstract final class StockManagementLoadConfig {
-  static const batchSize = 5000;
+  static const batchSize = 4000;
 }

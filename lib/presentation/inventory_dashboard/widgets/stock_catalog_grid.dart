@@ -1,4 +1,5 @@
 import '../../../domain/entities/stock_supply_insight.dart';
+import 'dart:async';
 import 'stock_supply_insight_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_core/theme.dart';
@@ -14,12 +15,14 @@ import 'stock_selectable_cell_text.dart';
 class StockCatalogGrid extends StatefulWidget {
   final List<StockCatalogItem> items;
   final ValueChanged<StockCatalogItem> onOpen;
+  final ValueChanged<StockCatalogItem>? onImageHover;
   final void Function(List<StockCatalogItem> rows, bool filtered)?
   onViewChanged;
   const StockCatalogGrid({
     super.key,
     required this.items,
     required this.onOpen,
+    this.onImageHover,
     this.onViewChanged,
   });
   @override
@@ -31,6 +34,15 @@ class StockCatalogGridState extends State<StockCatalogGrid> {
   final _scroll = ScrollController();
   final _widths = <String, double>{};
   bool _viewScheduled = false;
+  Timer? _imageHoverTimer;
+  void _hoverImage(StockCatalogItem item) {
+    _imageHoverTimer?.cancel();
+    if (widget.onImageHover == null) return;
+    _imageHoverTimer = Timer(const Duration(milliseconds: 350), () {
+      if (mounted) widget.onImageHover?.call(item);
+    });
+  }
+
   List<StockCatalogItem> get visibleItems => [
     for (final row in _source.effectiveRows) _source.itemFor(row),
   ];
@@ -65,6 +77,8 @@ class StockCatalogGridState extends State<StockCatalogGrid> {
     _source = _CatalogGridSource(
       widget.items,
       onOpen: (item) => widget.onOpen(item),
+      onImageHover: _hoverImage,
+      onImageExit: () => _imageHoverTimer?.cancel(),
     );
     _publishView();
   }
@@ -73,6 +87,7 @@ class StockCatalogGridState extends State<StockCatalogGrid> {
   void didUpdateWidget(covariant StockCatalogGrid oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.items, widget.items)) {
+      _imageHoverTimer?.cancel();
       _source.update(widget.items);
       _publishView();
     }
@@ -80,6 +95,7 @@ class StockCatalogGridState extends State<StockCatalogGrid> {
 
   @override
   void dispose() {
+    _imageHoverTimer?.cancel();
     _source.dispose();
     _scroll.dispose();
     super.dispose();
@@ -184,6 +200,8 @@ class StockCatalogGridState extends State<StockCatalogGrid> {
 
 class _CatalogGridSource extends DataGridSource {
   final ValueChanged<StockCatalogItem> _onOpen;
+  final ValueChanged<StockCatalogItem> _onImageHover;
+  final VoidCallback _onImageExit;
   List<DataGridRow> _rows = [];
   final _identity = <DataGridRow, StockCatalogItem>{};
   final _positions = <DataGridRow, int>{};
@@ -292,7 +310,11 @@ class _CatalogGridSource extends DataGridSource {
   _CatalogGridSource(
     List<StockCatalogItem> items, {
     required ValueChanged<StockCatalogItem> onOpen,
-  }) : _onOpen = onOpen {
+    required ValueChanged<StockCatalogItem> onImageHover,
+    required VoidCallback onImageExit,
+  }) : _onOpen = onOpen,
+       _onImageHover = onImageHover,
+       _onImageExit = onImageExit {
     _replaceRows(items);
   }
   StockCatalogItem itemFor(DataGridRow row) => _identity[row]!;
@@ -368,232 +390,239 @@ class _CatalogGridSource extends DataGridSource {
           : const Color(0xFFFAFCFF),
       cells: [
         for (final c in columns)
-          Container(
-            alignment: c.$1 == 'product'
-                ? Alignment.centerLeft
-                : Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            child: switch (c.$1) {
-              'reference' => StockCellTapScope(
-                onTap: () => _onOpen(item),
-                child: StockReferenceCell(item.text('reference'), style: const TextStyle(color: catalogInk, fontSize: 12)),
-              ),
-              'purchase_status_items' => Tooltip(
-                message: item.purchaseStatus,
-                child: StockCellTapScope(
+          MouseRegion(
+            onEnter: (_) => _onImageHover(item),
+            onExit: (_) => _onImageExit(),
+            child: Container(
+              alignment: c.$1 == 'product'
+                  ? Alignment.centerLeft
+                  : Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              child: switch (c.$1) {
+                'reference' => StockCellTapScope(
                   onTap: () => _onOpen(item),
-                  child: StockSelectableCellText(
-                    item.purchaseStatus,
-                    maxLines: 3,
-                    textAlign: TextAlign.center,
+                  child: StockReferenceCell(
+                    item.text('reference'),
                     style: const TextStyle(color: catalogInk, fontSize: 12),
                   ),
                 ),
-              ),
-              'category' ||
-              'supplier' ||
-              'main_ingredient' ||
-              'indication' ||
-              'sub_category' => Tooltip(
-                message: item.text(c.$1),
-                child: Text(
-                  item.text(c.$1).isEmpty ? '—' : item.text(c.$1),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: catalogInk,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              'product' => Row(
-                children: [
-                  Container(
-                    width: 4,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: color,
-                      borderRadius: BorderRadius.circular(4),
+                'purchase_status_items' => Tooltip(
+                  message: item.purchaseStatus,
+                  child: StockCellTapScope(
+                    onTap: () => _onOpen(item),
+                    child: StockSelectableCellText(
+                      item.purchaseStatus,
+                      maxLines: 3,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: catalogInk, fontSize: 12),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          item.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: catalogInk,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 13,
+                ),
+                'category' ||
+                'supplier' ||
+                'main_ingredient' ||
+                'indication' ||
+                'sub_category' => Tooltip(
+                  message: item.text(c.$1),
+                  child: Text(
+                    item.text(c.$1).isEmpty ? '—' : item.text(c.$1),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: catalogInk,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                'product' => Row(
+                  children: [
+                    Container(
+                      width: 4,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: color,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: catalogInk,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${item.code}  ·  ${item.text('company')}',
+                          const SizedBox(height: 4),
+                          Text(
+                            '${item.code}  ·  ${item.text('company')}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: catalogMuted,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: catalogMuted,
+                      size: 18,
+                    ),
+                  ],
+                ),
+                'supply_review' => StockSupplyReviewCell(item: item),
+                'status' => Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Tooltip(
+                      message: item.signal,
+                      child: CatalogPill(item.signal, color: color),
+                    ),
+                    if ((item.surge || item.newDemand) && item.salesExceedStock)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 6),
+                        child: Text(
+                          'Sales > stock',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: catalogRose,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                'reorder_branches' || 'final_order_branches' => Tooltip(
+                  message: item.distributionStatus.orderDataAvailable
+                      ? '${item.distributionStatus.known ? 'Complete' : 'Partial'} Daily Order data • ${stockMap(item.data['distribution'])['run_date']}'
+                      : 'Current Daily Order data unavailable',
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        _value(item, c.$1) == null
+                            ? '—'
+                            : '${_value(item, c.$1)}',
+                        style: const TextStyle(
+                          color: catalogInk,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      if (item.distributionStatus.orderDataAvailable) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Qty ${catalogQty(c.$1 == 'reorder_branches' ? item.distributionStatus.reorderQuantity : item.distributionStatus.finalQuantity)}${item.distributionStatus.known ? '' : ' · partial'}',
                           style: const TextStyle(
                             color: catalogMuted,
                             fontSize: 11,
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                  const Icon(
-                    Icons.chevron_right_rounded,
-                    color: catalogMuted,
-                    size: 18,
-                  ),
-                ],
-              ),
-              'supply_review' => StockSupplyReviewCell(item: item),
-              'status' => Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Tooltip(
-                    message: item.signal,
-                    child: CatalogPill(item.signal, color: color),
-                  ),
-                  if ((item.surge || item.newDemand) && item.salesExceedStock)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 6),
-                      child: Text(
-                        'Sales > stock',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: catalogRose,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              'reorder_branches' || 'final_order_branches' => Tooltip(
-                message: item.distributionStatus.orderDataAvailable
-                    ? '${item.distributionStatus.known ? 'Complete' : 'Partial'} Daily Order data • ${stockMap(item.data['distribution'])['run_date']}'
-                    : 'Current Daily Order data unavailable',
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      _value(item, c.$1) == null
-                          ? '—'
-                          : '${_value(item, c.$1)}',
-                      style: const TextStyle(
-                        color: catalogInk,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    if (item.distributionStatus.orderDataAvailable) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        'Qty ${catalogQty(c.$1 == 'reorder_branches' ? item.distributionStatus.reorderQuantity : item.distributionStatus.finalQuantity)}${item.distributionStatus.known ? '' : ' · partial'}',
-                        style: const TextStyle(
-                          color: catalogMuted,
-                          fontSize: 11,
-                        ),
-                      ),
                     ],
-                  ],
+                  ),
                 ),
-              ),
-              'added_date_time' => Text(
-                formatStockItemAddedDate(item.data['added_date_time']),
-                style: const TextStyle(
-                  color: catalogInk,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              'item_status' => Tooltip(
-                message: item.itemStatus.isEmpty
-                    ? 'Not specified'
-                    : item.itemStatus,
-                child: Text(
-                  item.itemStatus.isEmpty ? '—' : item.itemStatus,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
+                'added_date_time' => Text(
+                  formatStockItemAddedDate(item.data['added_date_time']),
                   style: const TextStyle(
                     color: catalogInk,
-                    fontSize: 12,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-              ),
-              'cover' => Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    catalogCover(item),
-                    style: TextStyle(
-                      color: item.days != null && item.days! < 30
-                          ? catalogRose
-                          : catalogTeal,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
+                'item_status' => Tooltip(
+                  message: item.itemStatus.isEmpty
+                      ? 'Not specified'
+                      : item.itemStatus,
+                  child: Text(
+                    item.itemStatus.isEmpty ? '—' : item.itemStatus,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: catalogInk,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  SizedBox(
-                    width: 100,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(5),
-                      child: LinearProgressIndicator(
-                        value: item.days == null
-                            ? 0
-                            : (item.days! / 90).clamp(0, 1),
-                        minHeight: 5,
+                ),
+                'cover' => Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      catalogCover(item),
+                      style: TextStyle(
                         color: item.days != null && item.days! < 30
                             ? catalogRose
                             : catalogTeal,
-                        backgroundColor: const Color(0xFFE9EFF7),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
                       ),
                     ),
+                    const SizedBox(height: 6),
+                    SizedBox(
+                      width: 100,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(5),
+                        child: LinearProgressIndicator(
+                          value: item.days == null
+                              ? 0
+                              : (item.days! / 90).clamp(0, 1),
+                          minHeight: 5,
+                          color: item.days != null && item.days! < 30
+                              ? catalogRose
+                              : catalogTeal,
+                          backgroundColor: const Color(0xFFE9EFF7),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                'ratio' => Text(
+                  item.storeTotalPercent == null
+                      ? '—'
+                      : '${item.storeTotalPercent!.toStringAsFixed(1)}%',
+                  style: const TextStyle(
+                    color: catalogBlue,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
                   ),
-                ],
-              ),
-              'ratio' => Text(
-                item.storeTotalPercent == null
-                    ? '—'
-                    : '${item.storeTotalPercent!.toStringAsFixed(1)}%',
-                style: const TextStyle(
-                  color: catalogBlue,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
                 ),
-              ),
-              'sales_2025' => StockSalesSummary(
-                data: item.year(2025),
-                totalColor: catalogBlue,
-              ),
-              'sales_2026' => StockSalesSummary(
-                data: item.year(2026),
-                totalColor: catalogTeal,
-              ),
-              _ => Text(
-                catalogQty(item.number(c.$1)),
-                style: TextStyle(
-                  color:
-                      c.$1 == 'last_3_sales' && (item.surge || item.newDemand)
-                      ? catalogPurple
-                      : catalogInk,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
+                'sales_2025' => StockSalesSummary(
+                  data: item.year(2025),
+                  totalColor: catalogBlue,
                 ),
-              ),
-            },
+                'sales_2026' => StockSalesSummary(
+                  data: item.year(2026),
+                  totalColor: catalogTeal,
+                ),
+                _ => Text(
+                  catalogQty(item.number(c.$1)),
+                  style: TextStyle(
+                    color:
+                        c.$1 == 'last_3_sales' && (item.surge || item.newDemand)
+                        ? catalogPurple
+                        : catalogInk,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              },
+            ),
           ),
       ],
     );

@@ -40,6 +40,35 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
   bool _loading = true, _refreshing = false, _exporting = false;
   String? _error, _refreshError;
   StockDistributionRules _distributionRules = const StockDistributionRules();
+  bool _hoverImageBusy = false;
+  Future<void> _prepareHoverImage(StockCatalogItem item) async {
+    final source = _source;
+    if (_hoverImageBusy ||
+        !StockProductImageConfig.enabled ||
+        source is! StockCatalogRemoteDs) {
+      return;
+    }
+    _hoverImageBusy = true;
+    try {
+      final images = await StockProductImageService.forClient(
+        source.client,
+      ).gallery(item.code);
+      if (!mounted || images.isEmpty) return;
+      await precacheImage(
+        NetworkImage(
+          images.first,
+          webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+        ),
+        context,
+        onError: (_, _) {},
+      ).timeout(const Duration(seconds: 15));
+    } catch (_) {
+      /* Hovering never blocks product navigation. */
+    } finally {
+      _hoverImageBusy = false;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -456,6 +485,7 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
                               )
                             : StockCatalogGrid(
                                 key: _gridKey,
+                                onImageHover: _prepareHoverImage,
                                 items: _result!.rows,
                                 onViewChanged: (rows, filtered) {
                                   setState(
@@ -473,6 +503,21 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
                                         ? StockProductImageService.forClient(
                                             _source.client,
                                           ).resolve
+                                        : null,
+                                    resolveImageGallery:
+                                        StockProductImageConfig.enabled &&
+                                            _source is StockCatalogRemoteDs
+                                        ? StockProductImageService.forClient(
+                                            _source.client,
+                                          ).gallery
+                                        : null,
+                                    uploadProductImage:
+                                        !widget.readOnly &&
+                                            StockProductImageConfig.enabled &&
+                                            _source is StockCatalogRemoteDs
+                                        ? StockProductImageService.forClient(
+                                            _source.client,
+                                          ).addImage
                                         : null,
                                   ),
                                 ),

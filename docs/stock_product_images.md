@@ -1,5 +1,47 @@
 # Overview product images
 
+## Archived galleries (November 2026)
+
+The new authenticated `stock-product-gallery` endpoint returns all archived
+images first using seven-day signed URLs for the private bucket. Only a miss
+triggers an exact-SKU website lookup. Website URLs render immediately while
+all matched image files are archived by `EdgeRuntime.waitUntil`. A failed
+external lookup stays a retryable unavailable result. Original source images
+are never deleted or overwritten. The old `stock-product-image` endpoint is
+retained for compatibility with previously published clients.
+
+Inventory users see **Add image** in the empty image area, choose a local file
+(JPEG/PNG/WebP/GIF/AVIF, maximum 10 MB), and receive the saved gallery after the
+upload completes. Files are checked by their bytes server-side. Database audit
+fields record the verified uploader and manual source. View users can read
+galleries but cannot upload. Unrelated/inactive roles are rejected. Archive
+metadata and the Storage bucket remain private and service-only.
+
+Client galleries use a separate v2 cache scoped to the signed-in user, with
+in-flight request deduplication, expiry before the signed URLs expire, and a
+one-minute negative cache. New uploads update the local cache immediately.
+The primary image appears in the existing header. A count badge opens a gallery
+with previous/next controls; only the selected full image downloads. Stock data
+queries remain independent. No master push is performed by this change.
+
+An Overview row held under the mouse for 350 ms warms its gallery URLs and
+primary image. Brief hovers are cancelled; only one hover lookup/download is
+active at a time. Opening the product starts background warming of all remaining
+gallery images with at most two active downloads. These use the same
+`NetworkImage` cache identity as the header/viewer, including web fallback.
+The visible primary image starts before secondary downloads. Closing or
+switching the dialog cancels queued warming; failures do not block other images
+or product data. Full gallery requests are never added to bulk stock loading.
+
+Checks: `flutter test test/stock_product_image_test.dart`,
+`deno test supabase/functions/stock-product-gallery/archive_test.ts`,
+`deno check supabase/functions/stock-product-gallery/index.ts`, and
+`python automation/validate_stock_product_gallery.py` (live private Storage
+signing, download, exact item binding and duplicate-upload preservation).
+
+The sections below describe the original single-image resolver retained for
+older clients.
+
 Overview starts the optional image lookup when a product dialog opens. Stock
 details load independently. A small spinner says `Searching…` while locating a
 matching product, then `Loading image…` once its image URL is found. Missing

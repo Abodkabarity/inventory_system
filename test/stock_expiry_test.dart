@@ -494,14 +494,14 @@ void main() {
     expect(result.total, 10005);
     expect(result.rows.length, 10005);
     expect(result.rows.map((row) => row.key).toSet().length, 10005);
-    expect(source.queries.map((q) => q.offset), [0, 5000, 10000]);
+    expect(source.queries.map((q) => q.offset), [0, 4000, 8000]);
     expect(
       source.queries.every(
-        (q) => q.limit == 5000 && q.search == 'ITEM' && q.urgency == 'soon',
+        (q) => q.limit == 4000 && q.search == 'ITEM' && q.urgency == 'soon',
       ),
       isTrue,
     );
-    expect(progress, [5000, 10000, 10005]);
+    expect(progress, [4000, 8000, 10005]);
   });
   for (final mode in ['error', 'empty', 'duplicate', 'count']) {
     test('complete register refuses a partial $mode response', () async {
@@ -1049,7 +1049,7 @@ void main() {
       tester.widget<SfDataGrid>(find.byType(SfDataGrid)).source.rows.length,
       31,
     );
-    expect(source.queries.single.limit, 5000);
+    expect(source.queries.single.limit, 4000);
     await tester.enterText(find.byType(TextField), 'ITEM-3');
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();

@@ -350,14 +350,14 @@ void main() {
     addTearDown(client.dispose);
     final batch = await StockManagementRemoteDs(
       client,
-    ).fetchRegisterBatch(5000);
+    ).fetchRegisterBatch(4000);
     expect(
       requests.single.url.path,
       '/rest/v1/rpc/get_stock_management_register_batch',
     );
     expect(jsonDecode(requests.single.body), {
-      'p_offset': 5000,
-      'p_limit': 5000,
+      'p_offset': 4000,
+      'p_limit': 4000,
     });
     expect(batch.rows.single.text('expiry_date'), '2026-12-01');
     expect(batch.total, 9581);

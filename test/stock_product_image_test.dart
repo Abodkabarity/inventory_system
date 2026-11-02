@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
+import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
 import 'package:daily_order/data/datasources/remote/stock_product_image_service.dart';
 import 'package:daily_order/presentation/inventory_dashboard/widgets/stock_product_image.dart';
 import 'package:flutter/material.dart';
@@ -8,12 +10,40 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _ImageClient implements HttpClient {
+  static final requestedUrls = <String>[];
   @override
   bool autoUncompress = true;
   @override
-  Future<HttpClientRequest> getUrl(Uri url) async => _ImageRequest();
+  Future<HttpClientRequest> getUrl(Uri url) async {
+    requestedUrls.add(url.toString());
+    return _ImageRequest();
+  }
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _Picker extends FilePicker {
+  @override
+  Future<FilePickerResult?> pickFiles({
+    String? dialogTitle,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    Function(FilePickerStatus)? onFileLoading,
+    bool allowCompression = true,
+    int compressionQuality = 30,
+    bool allowMultiple = false,
+    bool withData = false,
+    bool withReadStream = false,
+    bool lockParentWindow = false,
+    bool readSequential = false,
+  }) async => FilePickerResult([
+    PlatformFile(
+      name: 'photo.png',
+      size: 4,
+      bytes: Uint8List.fromList([1, 2, 3, 4]),
+    ),
+  ]);
 }
 
 class _ImageRequest implements HttpClientRequest {
@@ -55,7 +85,9 @@ void main() {
       'https://alainpharmacy-ae.gumlet.io/media/catalog/product/1/6/16-02-07700__1_.jpg';
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    FilePicker.platform = _Picker();
     _ImageRequest.response = null;
+    _ImageClient.requestedUrls.clear();
   });
 
   testWidgets(
@@ -87,6 +119,10 @@ void main() {
                       StockProductImage(
                         sku: sku,
                         resolve: (_) => lookup.future,
+                        resolveGallery: (_) async {
+                          final url = await lookup.future;
+                          return [url!, '$url?second'];
+                        },
                       ),
                       const Expanded(child: Text('Product details')),
                     ],
@@ -115,6 +151,8 @@ void main() {
           const Size(90, 76),
         );
         expect(find.text('Product details'), findsOneWidget);
+        // Secondary bytes are already requested before opening the gallery.
+        expect(_ImageClient.requestedUrls, contains('$image?second'));
         await tester.tap(find.byKey(const ValueKey('enlarge-product-image')));
         await tester.pumpAndSettle();
         expect(
@@ -122,6 +160,16 @@ void main() {
           findsOneWidget,
         );
         expect(find.text('100%'), findsOneWidget);
+        expect(find.text('1 / 2'), findsOneWidget);
+        await tester.tap(find.byTooltip('Next image'));
+        await tester.runAsync(() async {
+          await tester.pump();
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        });
+        await tester.pumpAndSettle();
+        expect(find.text('2 / 2'), findsOneWidget);
+        await tester.tap(find.byTooltip('Previous image'));
+        await tester.pumpAndSettle();
         await tester.tap(find.byTooltip('Zoom in'));
         await tester.pump();
         expect(find.text('150%'), findsOneWidget);
@@ -174,6 +222,135 @@ void main() {
       expect(await restored.resolve(sku), image);
     },
   );
+
+  test(
+    'saved gallery URLs cache in order; upload replaces a missing result immediately',
+    () async {
+      const saved =
+          'https://rzvxjkbraufqbfhvftcy.supabase.co/storage/v1/object/sign/stock-product-images/A/a.jpg?token=signed';
+      var calls = 0;
+      final service = StockProductImageService(
+        lookup: (code) async {
+          calls++;
+          return {'sku': code, 'status': 'not_found'};
+        },
+        upload: (code, bytes) async {
+          expect(code, sku);
+          expect(bytes, [1, 2, 3]);
+          return {
+            'sku': code,
+            'status': 'found',
+            'images': [saved, '$saved&second=1'],
+          };
+        },
+      );
+      expect(await service.gallery(sku), isEmpty);
+      expect(await service.addImage(sku, Uint8List.fromList([1, 2, 3])), [
+        saved,
+        '$saved&second=1',
+      ]);
+      expect(await service.resolve(sku), saved);
+      expect(await service.gallery(sku), [saved, '$saved&second=1']);
+      expect(calls, 1);
+      expect(
+        StockProductImageService.validImage(
+          saved.replaceFirst(
+            'rzvxjkbraufqbfhvftcy.supabase.co',
+            'attacker.test',
+          ),
+        ),
+        false,
+      );
+    },
+  );
+
+  testWidgets(
+    'missing image offers Add and upload failure keeps retry available',
+    (tester) async {
+      final previous = FilePicker.platform;
+      FilePicker.platform = _Picker();
+      addTearDown(() => FilePicker.platform = previous);
+      var uploads = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StockProductImage(
+              sku: sku,
+              resolve: (_) async => null,
+              uploadImage: (code, bytes) async {
+                expect(code, sku);
+                expect(bytes, [1, 2, 3, 4]);
+                uploads++;
+                // Test upload feedback without starting an actual image download.
+                throw StateError('Offline');
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Add image'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('add-product-image')));
+      await tester.pumpAndSettle();
+      expect(uploads, 1);
+      expect(find.textContaining('Could not add image.'), findsOneWidget);
+      expect(find.text('Add image'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('successful manual upload displays the saved image immediately', (
+    tester,
+  ) async {
+    FilePicker.platform = _Picker();
+    debugNetworkImageHttpClientProvider = () => _ImageClient();
+    addTearDown(() => debugNetworkImageHttpClientProvider = null);
+    const saved =
+        'https://rzvxjkbraufqbfhvftcy.supabase.co/storage/v1/object/sign/stock-product-images/A/manual.png?token=signed';
+    await tester.runAsync(() async {
+      final recorder = ui.PictureRecorder();
+      Canvas(recorder).drawColor(Colors.teal, BlendMode.src);
+      final pic = recorder.endRecording();
+      final bitmap = await pic.toImage(8, 8);
+      _ImageResponse.bytes = (await bitmap.toByteData(
+        format: ui.ImageByteFormat.png,
+      ))!.buffer.asUint8List();
+      bitmap.dispose();
+      pic.dispose();
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StockProductImage(
+            sku: sku,
+            resolve: (_) async => null,
+            uploadImage: (code, bytes) async {
+              expect(code, sku);
+              return [saved];
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Add image'), findsOneWidget);
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('add-product-image')));
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('enlarge-product-image')), findsOneWidget);
+    expect(find.text('Add image'), findsNothing);
+    expect(
+      (tester.widget<Image>(find.byType(Image)).image as NetworkImage).url,
+      saved,
+    );
+      debugNetworkImageHttpClientProvider = null;
+    expect(tester.takeException(), isNull);
+  });
 
   test(
     'missing products are cached and mismatched SKU or hosts never display',
