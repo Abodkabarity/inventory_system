@@ -32,8 +32,13 @@ class StockExpiryAlert {
   bool get reviewed => data['is_reviewed'] == true;
   bool get newReceipts => data['new_receipts'] == true;
   String get note => text('note');
-  StockManagementItem get product =>
-      StockManagementItem({...data, ...stockMap(data['product_data'])});
+  StockManagementItem get product => StockManagementItem({
+    ...data,
+    ...stockMap(data['product_data']),
+    'last_mrn_date': mrnDate,
+    'last_mrn_no': text('mrn_numbers'),
+    'expiry_date': expiry,
+  });
   String? get reviewVersion => data['review_updated_at']?.toString();
   List<Map<String, dynamic>> get receipts =>
       (data['receipts'] as List? ?? []).map(stockMap).toList();

@@ -442,7 +442,11 @@ class StockExpiryGridSource extends DataGridSource {
         final reference = a.text('reference');
         return StockReferenceCell(
           reference,
-          style: const TextStyle(color: _ink, fontSize: 14, fontWeight: FontWeight.w500),
+          style: const TextStyle(
+            color: _ink,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
         );
       case 'item_name':
         return _stack([
@@ -492,12 +496,6 @@ class StockExpiryGridSource extends DataGridSource {
               ),
               _ink,
             ),
-            if (a.text('last_receipt_date') != p.text('last_mrn_date'))
-              _text(
-                'Latest: ${_date(DateTime.tryParse(p.text('last_mrn_date')))}',
-                color: _muted,
-                size: 11,
-              ),
           ]),
         );
       case 'added_date_time':

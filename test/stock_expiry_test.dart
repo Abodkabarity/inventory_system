@@ -241,6 +241,29 @@ Future<void> revealExpiryNote(WidgetTester tester) async {
 
 void main() {
   test(
+    'expiry product keeps original MRN identity alongside current stock',
+    () {
+      final alert = StockExpiryAlert({
+        ...expiryAlert(mrnDate: '2026-10-03').data,
+        'mrn_numbers': 'ORIGINAL-104784',
+        'product_data': {
+          ...expiryAlert().product.data,
+          'last_mrn_date': '2026-10-30',
+          'last_mrn_no': 'NEWER-107181',
+          'expiry_date': '2028-06-01',
+          'total_stock': 321,
+        },
+      });
+      expect(alert.product.text('last_mrn_date'), '2026-10-03');
+      expect(alert.product.text('last_mrn_no'), 'ORIGINAL-104784');
+      expect(alert.product.text('expiry_date'), '2026-11-01');
+      expect(alert.product.number('total_stock'), 321);
+      final row = stockExpiryExportRow(alert);
+      expect(row['MRN date'], '03/10/2026');
+      expect(row['MRN number'], 'ORIGINAL-104784');
+    },
+  );
+  test(
     'same expiry on separate receipt days keeps separate keys and exports',
     () async {
       final source = FakeExpirySource()
@@ -873,7 +896,7 @@ void main() {
       }
       expect(find.text('6 days overdue'), findsOneWidget);
       expect(find.text('03 Oct 2026'), findsNWidgets(2));
-      expect(find.text('Latest: 06 Oct 2026'), findsNWidgets(2));
+      expect(find.text('Latest: 06 Oct 2026'), findsNothing);
       expect(
         tester
             .getRect(find.byKey(ValueKey('mrn-date:${source.items.first.key}')))
