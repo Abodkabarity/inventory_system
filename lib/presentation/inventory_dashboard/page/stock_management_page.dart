@@ -125,6 +125,7 @@ class _StockManagementPageState extends State<StockManagementPage> {
   int _gridVisible = 0;
   bool _gridFiltered = false;
   bool _loading = true, _refreshing = false, _focusView = false;
+  bool _previewing = false;
   bool _exporting = false;
   String? _error;
 
@@ -145,6 +146,11 @@ class _StockManagementPageState extends State<StockManagementPage> {
         (widget.dataSource == null && !widget.cd
             ? StockExpiryRemoteDs(Supabase.instance.client)
             : null);
+    if (_source is StockManagementRemoteDs) {
+      _result = _source.previewRegister;
+      _previewing = _result != null;
+      if (_previewing) _applyFilters();
+    }
     _load();
     _resumeRefresh();
     _autoRefreshCheck = Timer.periodic(
@@ -289,6 +295,7 @@ class _StockManagementPageState extends State<StockManagementPage> {
       if (!mounted || request != _request) return;
       setState(() {
         _result = result;
+        _previewing = false;
         _loading = false;
       });
       _applyFilters();
@@ -296,6 +303,12 @@ class _StockManagementPageState extends State<StockManagementPage> {
       if (!mounted || request != _request) return;
       setState(() {
         _error = 'Could not load stock data. $error';
+        if (_previewing) {
+          _result = null;
+          _filtered = const [];
+          _gridVisible = 0;
+          _previewing = false;
+        }
         _loading = false;
       });
     }
@@ -358,9 +371,10 @@ class _StockManagementPageState extends State<StockManagementPage> {
       _expiryError = null;
     });
     try {
-      final data = await _expirySource!.fetchPage(
-        const StockExpiryQuery(limit: 1),
-      );
+      final source = _expirySource!;
+      final data = source is StockExpiryRemoteDs
+          ? await source.fetchSummary()
+          : await source.fetchPage(const StockExpiryQuery(limit: 1));
       if (mounted && request == _expiryRequest) {
         setState(() {
           _expirySummary = data.summary;
@@ -1132,7 +1146,9 @@ class _StockManagementPageState extends State<StockManagementPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              _loading
+              _loading && result != null
+                  ? 'Checking latest data…'
+                  : _loading
                   ? 'Loading ${_qty(_loaded)} / ${_qty(_loadTotal)} products…'
                   : 'Showing ${_qty(_gridVisible)} of ${_qty(total)}${_gridFiltered ? ' · column filters active' : ''}',
               style: const TextStyle(color: _muted, fontSize: 14),

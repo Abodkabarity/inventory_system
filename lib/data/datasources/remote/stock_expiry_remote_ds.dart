@@ -25,10 +25,8 @@ extension StockExpiryCompleteRegister on StockExpiryDataSource {
     if (this is StockExpiryRemoteDs) {
       final remote = this as StockExpiryRemoteDs;
       final state = await remote.memory.prepareExpiry();
-      final key =
-          'expiry:register:${query.search}:${query.reviewState}:${query.urgency}';
       final result = await remote.memory.read(
-        key,
+        remote._registerKey(query),
         'expiry',
         () => _loadExpiryRegister(
           remote._fetchPage,
@@ -109,6 +107,24 @@ class StockExpiryRemoteDs implements StockExpiryDataSource {
   final SupabaseClient client;
   const StockExpiryRemoteDs(this.client);
   StockWorkspaceMemory get memory => StockWorkspaceMemory.forClient(client);
+
+  String _registerKey(StockExpiryQuery query) =>
+      'expiry:register:${query.search}:${query.reviewState}:${query.urgency}';
+
+  StockExpiryResult? previewRegister(StockExpiryQuery query) =>
+      memory.preview<StockExpiryResult>(_registerKey(query));
+
+  /// The dashboard summary shares receipt discovery and revision validation.
+  Future<StockExpiryResult> fetchSummary() async {
+    final state = await memory.prepareExpiry();
+    return memory.read(
+      'expiry:summary',
+      'expiry',
+      () => _fetchPage(const StockExpiryQuery(limit: 1)),
+      validatedState: state,
+    );
+  }
+
   @override
   Future<StockExpiryResult> fetchPage(StockExpiryQuery query) async {
     await client.rpc('refresh_stock_expiry_watch');

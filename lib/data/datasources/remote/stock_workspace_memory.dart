@@ -17,6 +17,14 @@ class StockWorkspaceMemory {
   static StockWorkspaceMemory forClient(SupabaseClient client) =>
       _clients[client] ??= StockWorkspaceMemory._(client);
 
+  /// A previously validated complete value, for display during revalidation.
+  /// Callers must still use [read] before enabling exports or writes.
+  T? preview<T extends Object>(String key) {
+    _synchronize();
+    final value = _saved[key]?.$2;
+    return value is T ? value : null;
+  }
+
   void clear() {
     _generation++;
     _saved.clear();
@@ -46,7 +54,10 @@ class StockWorkspaceMemory {
       final data = await client.rpc('get_stock_workspace_cache_state');
       return data is Map ? Map<String, dynamic>.from(data) : {};
     } on PostgrestException catch (e) {
-      if (!missingRpc(e)) rethrow;
+      if (!missingRpc(e)) {
+        clear();
+        rethrow;
+      }
       return {}; // Compatibility with servers before the cache migration.
     }
   }
@@ -64,9 +75,15 @@ class StockWorkspaceMemory {
       );
       state = result is Map ? Map<String, dynamic>.from(result) : {};
     } on PostgrestException catch (e) {
-      if (!missingRpc(e)) rethrow;
+      if (!missingRpc(e)) {
+        if (generation == _generation) clear();
+        rethrow;
+      }
       await client.rpc('refresh_stock_expiry_watch');
       state = await _state();
+    } catch (_) {
+      if (generation == _generation) clear();
+      rethrow;
     }
     _check(generation);
     _discovery = state['discovery']?.toString();
@@ -115,6 +132,10 @@ class StockWorkspaceMemory {
           }
         }
         return result;
+      } catch (_) {
+        // A failed validation must not be previewed on the next visit.
+        if (generation == _generation) _saved.remove(key);
+        rethrow;
       } finally {
         if (identical(_pending[key], request)) _pending.remove(key);
       }

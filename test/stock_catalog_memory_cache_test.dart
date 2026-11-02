@@ -129,6 +129,28 @@ class CatalogServer {
 
 void main() {
   test(
+    'register previews are cleared on account changes and explicit refresh',
+    () async {
+      final server = CatalogServer();
+      addTearDown(server.client.dispose);
+      expect(server.source.previewRegister, isNull);
+      await server.client.auth.signInWithPassword(
+        email: 'one@example.com',
+        password: 'test',
+      );
+      await server.source.fetchAll();
+      expect(server.source.previewRegister?.rows.length, 2);
+      await server.client.auth.signInWithPassword(
+        email: 'two@example.com',
+        password: 'test',
+      );
+      expect(server.source.previewRegister, isNull);
+      await server.source.fetchAll();
+      await server.source.requestRefresh();
+      expect(server.source.previewRegister, isNull);
+    },
+  );
+  test(
     'reopening Overview validates header but reuses the complete rows',
     () async {
       final server = CatalogServer();

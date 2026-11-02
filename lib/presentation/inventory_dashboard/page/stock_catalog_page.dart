@@ -38,6 +38,7 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
   String _itemStatus = '';
   int _request = 0, _loaded = 0, _loadTotal = 0;
   bool _loading = true, _refreshing = false, _exporting = false;
+  bool _previewing = false;
   String? _error, _refreshError;
   StockDistributionRules _distributionRules = const StockDistributionRules();
   bool _hoverImageBusy = false;
@@ -76,6 +77,11 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
         widget.dataSource ?? StockCatalogRemoteDs(Supabase.instance.client);
     if (widget.dataSource == null) {
       unawaited(StoreBranchIdentityRegistry.load(Supabase.instance.client));
+    }
+    if (_source is StockCatalogRemoteDs) {
+      _complete = _source.previewRegister;
+      _previewing = _complete != null;
+      if (_previewing) _applyFilters();
     }
     _load();
     if (widget.dataSource == null) unawaited(_restoreDistributionRules());
@@ -145,6 +151,7 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
       if (!mounted || request != _request) return;
       setState(() {
         _complete = result;
+        _previewing = false;
         _loading = false;
       });
       _applyFilters();
@@ -152,6 +159,12 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
       if (mounted && request == _request) {
         setState(() {
           _error = 'Unable to load Overview. $e';
+          if (_previewing) {
+            _complete = null;
+            _result = null;
+            _columnRows = null;
+            _previewing = false;
+          }
           _loading = false;
         });
       }
@@ -402,7 +415,7 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
                         ),
                       ),
                     ),
-                    if (_refreshing)
+                    if (_refreshing || (_loading && _complete != null))
                       const Padding(
                         padding: EdgeInsets.only(top: 10),
                         child: LinearProgressIndicator(minHeight: 3),
@@ -445,7 +458,7 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
                                   ],
                                 ),
                               )
-                            : _loading
+                            : _loading && _complete == null
                             ? Center(
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,

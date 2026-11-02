@@ -83,9 +83,16 @@ class _StockExpiryPageState extends State<StockExpiryPage> {
   String? _error;
   int _request = 0;
   bool _loading = true, _focusView = false;
+  bool _previewing = false;
   @override
   void initState() {
     super.initState();
+    final source = widget.dataSource;
+    if (source is StockExpiryRemoteDs) {
+      _result = source.previewRegister(const StockExpiryQuery());
+      _previewing = _result != null;
+      _visibleRows = _result?.rows.length ?? 0;
+    }
     _load();
   }
 
@@ -156,6 +163,7 @@ class _StockExpiryPageState extends State<StockExpiryPage> {
       if (!mounted || request != _request) return;
       setState(() {
         _result = data;
+        _previewing = false;
         if (!_hasColumnFilters) _visibleRows = data.rows.length;
         _loading = false;
       });
@@ -164,6 +172,11 @@ class _StockExpiryPageState extends State<StockExpiryPage> {
         setState(() {
           _loading = false;
           _error = 'Could not load expiry alerts. $e';
+          if (_previewing) {
+            _result = null;
+            _visibleRows = 0;
+            _previewing = false;
+          }
         });
       }
     }
@@ -178,7 +191,7 @@ class _StockExpiryPageState extends State<StockExpiryPage> {
   }
 
   Future<void> _review(StockExpiryAlert alert, String action) async {
-    if (widget.readOnly || _busy.contains(alert.key)) return;
+    if (_loading || widget.readOnly || _busy.contains(alert.key)) return;
     setState(() => _busy.add(alert.key));
     try {
       final saved = await widget.dataSource.save(
@@ -781,7 +794,7 @@ class _StockExpiryPageState extends State<StockExpiryPage> {
           child: StockExpiryGrid(
             key: _gridKey,
             alerts: data.rows,
-            readOnly: widget.readOnly,
+            readOnly: widget.readOnly || _loading,
             busy: Set.of(_busy),
             fading: Set.of(_fading),
             horizontalController: _horizontal,

@@ -12,6 +12,9 @@ class StockCatalogMemoryCache {
 
   int get generation => _generation;
 
+  /// Last complete result for immediate display while its revision is checked.
+  StockCatalogResult? get previewRegister => _register;
+
   void clear() {
     _generation++;
     _register = null;

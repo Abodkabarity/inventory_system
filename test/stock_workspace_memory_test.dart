@@ -187,6 +187,36 @@ void main() {
   });
 
   test(
+    'register previews are account scoped and invalidated by review writes',
+    () async {
+      await server.mrn.fetchAll();
+      final expiry = await server.expiry.fetchAll(const StockExpiryQuery());
+      expect(server.mrn.previewRegister?.rows.length, 2);
+      expect(
+        server.expiry.previewRegister(const StockExpiryQuery()),
+        same(expiry),
+      );
+      expect(
+        StockManagementRemoteDs(server.client, cd: true).previewRegister,
+        isNull,
+      );
+      await server.expiry.save(
+        expiry.rows.single,
+        note: 'Changed',
+        action: 'note',
+      );
+      expect(server.mrn.previewRegister, isNull);
+      expect(server.expiry.previewRegister(const StockExpiryQuery()), isNull);
+      await server.mrn.fetchAll();
+      await server.client.auth.signInWithPassword(
+        email: 'other@example.com',
+        password: 'test',
+      );
+      expect(server.mrn.previewRegister, isNull);
+    },
+  );
+
+  test(
     'receipt history loads every 4000-row page and caches complete history',
     () async {
       server.rows = 5001;

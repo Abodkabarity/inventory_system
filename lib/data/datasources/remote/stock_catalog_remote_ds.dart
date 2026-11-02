@@ -131,6 +131,9 @@ class StockCatalogRemoteDs implements StockCatalogDataSource {
   static final _memories = Expando<_CatalogClientMemory>();
   final SupabaseClient client;
   const StockCatalogRemoteDs(this.client);
+
+  StockCatalogResult? get previewRegister => _memory.previewRegister;
+
   StockCatalogMemoryCache get _memory {
     final existing = _memories[client];
     if (existing != null) {

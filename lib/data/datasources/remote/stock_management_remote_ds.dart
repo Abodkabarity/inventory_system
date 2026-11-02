@@ -181,6 +181,9 @@ class StockManagementRemoteDs implements StockManagementDataSource {
       : this;
   StockWorkspaceMemory get memory => StockWorkspaceMemory.forClient(client);
 
+  StockManagementResult? get previewRegister =>
+      memory.preview<StockManagementResult>('$namespace:register');
+
   @override
   Future<StockManagementResult> fetchPage(StockManagementQuery query) async {
     final data = await client.rpc('${_rpc}_page', params: query.params);
