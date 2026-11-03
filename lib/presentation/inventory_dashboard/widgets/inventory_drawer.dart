@@ -359,15 +359,15 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
                       });
                     },
                     children: [
+                      _menuItem(
+                        context: context,
+                        state: state,
+                        page: InventoryPageType.salesReport,
+                        icon: Icons.receipt_long_rounded,
+                        title: 'Sales Report',
+                        nested: true,
+                      ),
                       if (!viewOnly) ...[
-                        _menuItem(
-                          context: context,
-                          state: state,
-                          page: InventoryPageType.salesReport,
-                          icon: Icons.receipt_long_rounded,
-                          title: 'Sales Report',
-                          nested: true,
-                        ),
                         _menuItem(
                           context: context,
                           state: state,

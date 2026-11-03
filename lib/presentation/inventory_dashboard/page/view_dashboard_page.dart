@@ -8,6 +8,7 @@ import '../../widgets/retained_page_stack.dart';
 import '../widgets/inventory_drawer.dart';
 import 'availability_kpi_page.dart';
 import 'fill_rate_kpi_page.dart';
+import 'sales_report_page.dart';
 import 'stock_catalog_page.dart';
 import 'stock_expiry_page.dart';
 import 'stock_management_page.dart';
@@ -25,6 +26,7 @@ class ViewDashboardPage extends StatefulWidget {
     InventoryPageType.nearExpiry,
     InventoryPageType.availabilityKpi,
     InventoryPageType.fillRateKpi,
+    InventoryPageType.salesReport,
   };
 
   @override
@@ -55,6 +57,7 @@ class _ViewDashboardPageState extends State<ViewDashboardPage> {
       runDate: widget.runDate,
     ),
     InventoryPageType.fillRateKpi => const FillRateKpiPage(),
+    InventoryPageType.salesReport => const SalesReportPage(),
     _ => const SizedBox.shrink(),
   };
 

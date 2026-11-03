@@ -1,6 +1,7 @@
 import 'package:daily_order/domain/entities/inventory_page.dart';
 import 'package:daily_order/presentation/auth/bloc/auth_bloc.dart';
 import 'package:daily_order/presentation/auth/bloc/auth_state.dart';
+import 'package:daily_order/presentation/inventory_dashboard/page/view_dashboard_page.dart';
 import 'package:daily_order/presentation/inventory_dashboard/widgets/inventory_drawer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -13,6 +14,18 @@ class _AuthBloc extends Cubit<AuthState> implements AuthBloc {
 }
 
 void main() {
+  test('view shell accepts Sales Report and retains its read-only page list', () {
+    expect(ViewDashboardPage.pages, {
+      InventoryPageType.stockManagement,
+      InventoryPageType.mrnOverview,
+      InventoryPageType.mrnCdOverview,
+      InventoryPageType.nearExpiry,
+      InventoryPageType.availabilityKpi,
+      InventoryPageType.fillRateKpi,
+      InventoryPageType.salesReport,
+    });
+  });
+
   testWidgets(
     'view drawer exposes the requested read-only pages including MRN CD',
     (tester) async {
@@ -48,6 +61,7 @@ void main() {
         ('MRN Overview', InventoryPageType.mrnOverview),
         ('MRN CD Overview', InventoryPageType.mrnCdOverview),
         ('Near Expiry', InventoryPageType.nearExpiry),
+        ('Sales Report', InventoryPageType.salesReport),
         ('Availability KPI', InventoryPageType.availabilityKpi),
         ('Fill Rate KPI', InventoryPageType.fillRateKpi),
       ]) {
@@ -57,7 +71,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(page, target);
       }
-      expect(selections.length, 6);
+      expect(selections.length, 7);
       for (final title in [
         'Dashboard',
         'ORDER MANAGEMENT',

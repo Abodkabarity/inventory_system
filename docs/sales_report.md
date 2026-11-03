@@ -5,6 +5,12 @@ months and press **Download CSV once** for one complete file. If preparation
 is needed, the page requests it and starts the download automatically when ready.
 Completed 2025 months read `public.sales_history_2025`; other completed months read `public.sales_history`. The calendar-current month reads `public.sales_last_45_days`, grouped by raw branch and item, with ten consistent sales columns. `created_at` is omitted from CSV exports.
 
+View Dashboard → Analytics & Reports → Sales Report uses the same page and
+global prepared files as Inventory, including 2025, other available years, the
+current month and Sales 45 Days. Only active View accounts receive this report
+access. The server reads the authoritative role; no client-selected scope or
+additional Inventory write permissions are granted. Zonal scopes remain separate.
+
 Zonal Manager → Sales Report uses the same page and controls. The server derives
 its scope from the signed-in active user's role, `get_my_effective_zones()` and
 active authoritative branch assignments. Permanent and currently effective
