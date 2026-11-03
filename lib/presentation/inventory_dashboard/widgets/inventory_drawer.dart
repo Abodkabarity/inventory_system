@@ -16,17 +16,30 @@ import 'branch_tracker_badge_controller.dart';
 import 'stock_management_navigation.dart';
 
 class InventoryDrawer extends StatefulWidget {
-  const InventoryDrawer({super.key}) : viewPage = null, onViewSelected = null;
+  const InventoryDrawer({super.key})
+    : viewPage = null,
+      onViewSelected = null,
+      categoryOnly = false;
 
   const InventoryDrawer.view({
     super.key,
     required InventoryPageType selectedPage,
     required ValueChanged<InventoryPageType> onSelected,
   }) : viewPage = selectedPage,
-       onViewSelected = onSelected;
+       onViewSelected = onSelected,
+       categoryOnly = false;
+
+  const InventoryDrawer.category({
+    super.key,
+    required InventoryPageType selectedPage,
+    required ValueChanged<InventoryPageType> onSelected,
+  }) : viewPage = selectedPage,
+       onViewSelected = onSelected,
+       categoryOnly = true;
 
   final InventoryPageType? viewPage;
   final ValueChanged<InventoryPageType>? onViewSelected;
+  final bool categoryOnly;
 
   @override
   State<InventoryDrawer> createState() => _InventoryDrawerState();
@@ -208,7 +221,11 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
       ),
       child: Column(
         children: [
-          const _Header(),
+          _Header(
+            title: widget.categoryOnly
+                ? 'Category Dashboard'
+                : 'Inventory Management',
+          ),
 
           Expanded(
             child: SingleChildScrollView(
@@ -341,10 +358,31 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
 
                     const SizedBox(height: 12),
                   ],
-                  StockManagementNavigation(
-                    selectedPage: currentPage,
-                    onSelected: (page) => _selectPage(context, page),
-                  ),
+                  if (widget.categoryOnly) ...[
+                    _drawerSection(
+                      title: 'OPERATIONS',
+                      icon: Icons.settings_suggest_rounded,
+                      expanded: _operationsExpanded,
+                      active: currentPage == InventoryPageType.itemsTracker,
+                      onToggle: () => setState(
+                        () => _operationsExpanded = !_operationsExpanded,
+                      ),
+                      children: [
+                        _menuItem(
+                          context: context,
+                          state: state,
+                          page: InventoryPageType.itemsTracker,
+                          icon: Icons.track_changes_rounded,
+                          title: 'Items Tracker',
+                          nested: true,
+                        ),
+                      ],
+                    ),
+                  ] else
+                    StockManagementNavigation(
+                      selectedPage: currentPage,
+                      onSelected: (page) => _selectPage(context, page),
+                    ),
 
                   const SizedBox(height: 12),
 
@@ -411,22 +449,24 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
                           nested: true,
                         ),
                       ],
-                      _menuItem(
-                        context: context,
-                        state: state,
-                        page: InventoryPageType.availabilityKpi,
-                        icon: Icons.monitor_heart_rounded,
-                        title: 'Availability KPI',
-                        nested: true,
-                      ),
-                      _menuItem(
-                        context: context,
-                        state: state,
-                        page: InventoryPageType.fillRateKpi,
-                        icon: Icons.local_shipping_rounded,
-                        title: 'Fill Rate KPI',
-                        nested: true,
-                      ),
+                      if (!widget.categoryOnly) ...[
+                        _menuItem(
+                          context: context,
+                          state: state,
+                          page: InventoryPageType.availabilityKpi,
+                          icon: Icons.monitor_heart_rounded,
+                          title: 'Availability KPI',
+                          nested: true,
+                        ),
+                        _menuItem(
+                          context: context,
+                          state: state,
+                          page: InventoryPageType.fillRateKpi,
+                          icon: Icons.local_shipping_rounded,
+                          title: 'Fill Rate KPI',
+                          nested: true,
+                        ),
+                      ],
                     ],
                   ),
 
@@ -457,7 +497,11 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
 
                   const SizedBox(height: 12),
 
-                  const _DrawerFooter(),
+                  _DrawerFooter(
+                    title: widget.categoryOnly
+                        ? 'Category Workspace'
+                        : 'Inventory Control',
+                  ),
 
                   const SizedBox(height: 14),
 
@@ -465,7 +509,11 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
 
                   const SizedBox(height: 14),
 
-                  const _InventoryLogoutButton(),
+                  _InventoryLogoutButton(
+                    workspaceName: widget.categoryOnly
+                        ? 'Category Dashboard'
+                        : 'Inventory Management',
+                  ),
                 ],
               ),
             ),
@@ -726,7 +774,8 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
 }
 
 class _Header extends StatelessWidget {
-  const _Header();
+  const _Header({required this.title});
+  final String title;
 
   @override
   Widget build(BuildContext context) {
@@ -756,10 +805,10 @@ class _Header extends StatelessWidget {
 
           const SizedBox(height: 8),
 
-          const Text(
-            'Inventory Management',
+          Text(
+            title,
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 15,
               color: Color(0xFF1F2937),
               fontWeight: FontWeight.w800,
@@ -784,7 +833,8 @@ class _Header extends StatelessWidget {
 }
 
 class _DrawerFooter extends StatelessWidget {
-  const _DrawerFooter();
+  const _DrawerFooter({required this.title});
+  final String title;
 
   @override
   Widget build(BuildContext context) {
@@ -828,9 +878,9 @@ class _DrawerFooter extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Inventory Control',
-                  style: TextStyle(
+                Text(
+                  title,
+                  style: const TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w800,
                     color: Color(0xFF263244),
@@ -857,7 +907,8 @@ class _DrawerFooter extends StatelessWidget {
 }
 
 class _InventoryLogoutButton extends StatelessWidget {
-  const _InventoryLogoutButton();
+  const _InventoryLogoutButton({required this.workspaceName});
+  final String workspaceName;
 
   Future<bool> _confirmLogout(BuildContext context) async {
     return await showDialog<bool>(
@@ -888,9 +939,9 @@ class _InventoryLogoutButton extends StatelessWidget {
                 ),
               ],
             ),
-            content: const Text(
-              'You will return to the sign-in page. Any unsaved changes in Inventory Management will be lost.',
-              style: TextStyle(
+            content: Text(
+              'You will return to the sign-in page. Any unsaved changes in $workspaceName will be lost.',
+              style: const TextStyle(
                 color: Color(0xFF64748B),
                 height: 1.45,
                 fontWeight: FontWeight.w600,

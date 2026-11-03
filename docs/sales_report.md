@@ -11,6 +11,13 @@ current month and Sales 45 Days. Only active View accounts receive this report
 access. The server reads the authoritative role; no client-selected scope or
 additional Inventory write permissions are granted. Zonal scopes remain separate.
 
+Category Dashboard uses the Inventory drawer styling with Items Tracker under
+Operations and Sales Report under Analytics & Reports. Its existing tracker
+permissions are retained; switching pages preserves filters and loaded state.
+The menu collapses on desktop and opens as a drawer on narrower screens.
+Active Category accounts share Inventory/View's global reports and download
+authorization for all available years, the current month and Sales 45 Days.
+
 Zonal Manager → Sales Report uses the same page and controls. The server derives
 its scope from the signed-in active user's role, `get_my_effective_zones()` and
 active authoritative branch assignments. Permanent and currently effective
