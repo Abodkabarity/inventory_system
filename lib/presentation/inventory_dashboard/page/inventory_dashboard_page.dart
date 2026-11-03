@@ -19,6 +19,7 @@ import 'inventory_additional_orders_page.dart';
 import 'allocation_page.dart';
 import 'availability_kpi_page.dart';
 import 'fill_rate_kpi_page.dart';
+import 'sales_report_page.dart';
 import 'assortment_page.dart';
 import 'branch_submission_tracker_page.dart';
 import 'branch_setting_page.dart';
@@ -313,6 +314,8 @@ Widget _buildPage(
       return AvailabilityKpiPage(runDate: runDate);
     case InventoryPageType.fillRateKpi:
       return const FillRateKpiPage();
+    case InventoryPageType.salesReport:
+      return const SalesReportPage();
     case InventoryPageType.branchSetting:
       return const BranchSettingPage();
   }

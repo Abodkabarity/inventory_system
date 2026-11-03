@@ -28,6 +28,7 @@ import '../../auth/bloc/auth_event.dart';
 import '../../auth/bloc/auth_state.dart';
 import '../../inventory_dashboard/page/additional_order_analysis_page.dart'
     show AdditionalAnalysisDateRangePickerDialog;
+import '../../inventory_dashboard/page/sales_report_page.dart';
 import '../../orders/widgets/orders_grid_controller.dart';
 import '../../orders/widgets/orders_table.dart';
 
@@ -170,6 +171,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     _PageDef(Icons.inventory_2_outlined, 'Non Received'),
     _PageDef(Icons.download_rounded, 'Daily Order History'),
     _PageDef(Icons.handshake_outlined, 'Zone Handover'),
+    _PageDef(Icons.receipt_long_rounded, 'Sales Report'),
   ];
 
   @override
@@ -1694,6 +1696,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
   }
 
   Widget _buildBody() {
+    if (_page == 10) return const SalesReportPage(zonal: true);
     return Column(
       children: [
         _ZoneHeader(
@@ -1766,11 +1769,15 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     6 => buildZoneStockCheckPage(),
     7 => buildZoneNonReceivedPage(),
     8 => buildZoneDailyOrderHistoryPage(),
+    10 => const SalesReportPage(zonal: true),
     _ => buildZoneHandoverPage(),
   };
 }
 
 class _ZoneDrawer extends StatelessWidget {
+  // Drawer order is independent of the page IDs used by navigation and loaders.
+  static const _pageOrder = [0, 1, 2, 3, 4, 5, 10, 6, 7, 8, 9];
+
   final int currentPage;
   final String zoneName;
   final ValueChanged<int> onChanged;
@@ -1841,14 +1848,15 @@ class _ZoneDrawer extends StatelessWidget {
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.symmetric(horizontal: 14),
-              itemCount: _ZoneManagerPageState._pages.length,
+              itemCount: _pageOrder.length,
               itemBuilder: (_, index) {
-                final page = _ZoneManagerPageState._pages[index];
-                final selected = currentPage == index;
+                final pageId = _pageOrder[index];
+                final page = _ZoneManagerPageState._pages[pageId];
+                final selected = currentPage == pageId;
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: InkWell(
-                    onTap: () => onChanged(index),
+                    onTap: () => onChanged(pageId),
                     borderRadius: BorderRadius.circular(18),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 220),

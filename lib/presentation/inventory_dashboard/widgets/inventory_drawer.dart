@@ -70,6 +70,7 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
     InventoryPageType.shortage,
     InventoryPageType.availabilityKpi,
     InventoryPageType.fillRateKpi,
+    InventoryPageType.salesReport,
   };
 
   static const Set<InventoryPageType> _configurationPages = {
@@ -359,6 +360,14 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
                     },
                     children: [
                       if (!viewOnly) ...[
+                        _menuItem(
+                          context: context,
+                          state: state,
+                          page: InventoryPageType.salesReport,
+                          icon: Icons.receipt_long_rounded,
+                          title: 'Sales Report',
+                          nested: true,
+                        ),
                         _menuItem(
                           context: context,
                           state: state,

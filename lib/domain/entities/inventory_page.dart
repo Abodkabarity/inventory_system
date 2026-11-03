@@ -23,4 +23,5 @@ enum InventoryPageType {
   availabilityKpi,
   fillRateKpi,
   branchSetting,
+  salesReport,
 }
