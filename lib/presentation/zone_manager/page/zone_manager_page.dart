@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:html' as html;
 
 import 'package:archive/archive.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter/services.dart';

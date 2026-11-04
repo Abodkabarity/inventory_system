@@ -13,6 +13,7 @@ import 'package:daily_order/domain/usecases/sign_out.dart';
 import 'package:daily_order/presentation/auth/bloc/auth_bloc.dart';
 import 'package:daily_order/presentation/zone_manager/page/zone_manager_page.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -129,7 +130,7 @@ void main() {
   tearDownAll(() => Supabase.instance.dispose());
 
   testWidgets(
-    'two-zone alerts and project details have matching counts and refresh labels',
+    'recent two-zone alerts refresh labels and older requests stay in Stock Check',
     (tester) async {
       final originalErrorHandler = FlutterError.onError;
       FlutterError.onError = (details) {
@@ -149,11 +150,41 @@ void main() {
         tester.view.resetPhysicalSize();
         tester.view.resetDevicePixelRatio();
       });
+      final now = DateTime.now().toUtc();
+      final recentSentAt = now.subtract(const Duration(days: 3)).toIso8601String();
+      final recentExpiry = now.subtract(const Duration(days: 1)).toIso8601String();
       fixture = Fixture([
         for (var i = 0; i < 1200; i++)
-          {...task(i), 'system_qty': 10, 'actual_qty': 11},
+          {
+            ...task(i),
+            'system_qty': 10,
+            'actual_qty': 11,
+            'sent_at': recentSentAt,
+            'expires_at': recentExpiry,
+          },
         for (var i = 1200; i < 1205; i++)
-          {...task(i, branch: 'Other Branch'), 'status': 'pending'},
+          {
+            ...task(i, branch: 'Other Branch'),
+            'status': 'pending',
+            'sent_at': recentSentAt,
+            'expires_at': recentExpiry,
+          },
+        {
+          ...task(1205),
+          'batch_id': 'old-campaign',
+          'title': 'Old Stock Check',
+          'status': 'pending',
+          'sent_at': now.subtract(const Duration(days: 4)).toIso8601String(),
+        },
+        for (var i = 1206; i < 1208; i++)
+          {
+            ...task(i),
+            'batch_id': 'recent-campaign-$i',
+            'title': 'Recent Stock Check $i',
+            'status': 'pending',
+            'sent_at': recentSentAt,
+            'expires_at': now.add(const Duration(days: 1)).toIso8601String(),
+          },
       ], cap: 500);
       final authRepo = _UnusedAuthRepository();
       final authBloc = AuthBloc(
@@ -179,6 +210,7 @@ void main() {
       expect(find.text('20 pending'), findsOneWidget);
       expect(find.text('5 pending'), findsOneWidget);
       expect(find.text('25 items'), findsOneWidget);
+      expect(find.text('Old Stock Check'), findsNothing);
       StoreBranchIdentityRegistry.groups.value = const {
         'OTHER BRANCH': '71',
         'NADD AL HAMAR - DXB': 'APG',
@@ -186,6 +218,29 @@ void main() {
       await tester.pump();
       expect(find.text('71 Other Branch'), findsWidgets);
       expect(find.text('Nadd Al Hamar - DXB'), findsWidgets);
+
+      final alerts = find.byKey(const ValueKey('zone-stock-check-alerts'));
+      final alertScrollable = tester.state<ScrollableState>(
+        find.descendant(of: alerts, matching: find.byType(Scrollable)).first,
+      );
+      expect(alertScrollable.position.maxScrollExtent, greaterThan(0));
+      final dragStart = tester.getTopLeft(alerts) + const Offset(350, 20);
+      await tester.dragFrom(
+        dragStart,
+        const Offset(-400, 0),
+        kind: PointerDeviceKind.mouse,
+      );
+      await settle(tester);
+      final afterLeftDrag = alertScrollable.position.pixels;
+      expect(afterLeftDrag, greaterThan(0));
+      await tester.dragFrom(
+        dragStart,
+        const Offset(400, 0),
+        kind: PointerDeviceKind.mouse,
+      );
+      await settle(tester);
+      expect(alertScrollable.position.pixels, lessThan(afterLeftDrag));
+      expect(find.text('Back to Projects'), findsNothing);
 
       // A selected branch must also filter Stock Check dashboard alerts.
       await tester.tap(find.byType(DropdownButtonFormField<String>).first);
@@ -196,7 +251,7 @@ void main() {
       expect(find.text('5 pending'), findsNothing);
       expect(find.text('20 items'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('Open Stock Check project'));
+      await tester.tap(find.byTooltip('Open Stock Check project').first);
       await settle(tester);
       expect(find.text('1205'), findsWidgets);
       expect(find.text('25'), findsWidgets);
@@ -206,6 +261,7 @@ void main() {
 
       await tester.tap(find.text('Back to Projects'));
       await settle(tester);
+      expect(find.text('Old Stock Check'), findsWidgets);
       final search = find.byWidgetPredicate(
         (widget) =>
             widget is TextField &&

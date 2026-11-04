@@ -1388,9 +1388,14 @@ class _ZdStockCheckAlert {
   bool get isExpired => branches.any((branch) => branch.isExpired);
 
   static List<_ZdStockCheckAlert> fromTasks(List<StockCheckTask> tasks) {
+    final cutoff = DateTime.now().subtract(const Duration(days: 4));
     final batches = <String, List<StockCheckTask>>{};
     for (final task in tasks) {
       if (!task.isPending || task.branchName.trim().isEmpty) continue;
+      // Limit home-page reminders to 96 hours from sending. Older requests
+      // remain available in Stock Check, including their pending status.
+      final sentAt = task.sentAt;
+      if (sentAt == null || !sentAt.isAfter(cutoff)) continue;
       final batchKey = task.batchId.trim().isNotEmpty
           ? task.batchId.trim()
           : '${task.title}|${task.sentAt?.toIso8601String() ?? ''}';
@@ -1532,6 +1537,7 @@ class _ZdStockCheckAlertStrip extends StatefulWidget {
 class _ZdStockCheckAlertStripState extends State<_ZdStockCheckAlertStrip>
     with SingleTickerProviderStateMixin {
   late final AnimationController _pulse;
+  final _scrollController = ScrollController();
 
   bool get _hasDanger => widget.alerts.any((alert) => alert.isDanger);
 
@@ -1560,6 +1566,7 @@ class _ZdStockCheckAlertStripState extends State<_ZdStockCheckAlertStrip>
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _pulse.dispose();
     super.dispose();
   }
@@ -1575,22 +1582,42 @@ class _ZdStockCheckAlertStripState extends State<_ZdStockCheckAlertStrip>
                   : (constraints.maxWidth * .72).clamp(560.0, 780.0))
             : constraints.maxWidth;
         return SizedBox(
-          height: 82,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            physics: multiple
-                ? const BouncingScrollPhysics()
-                : const NeverScrollableScrollPhysics(),
-            itemCount: widget.alerts.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 12),
-            itemBuilder: (context, index) => SizedBox(
-              width: cardWidth.toDouble(),
-              child: AnimatedBuilder(
-                animation: _pulse,
-                builder: (context, _) => _ZdStockCheckAlertCard(
-                  alert: widget.alerts[index],
-                  pulse: widget.alerts[index].isDanger ? _pulse.value : 0,
-                  onTap: () => widget.onOpen(widget.alerts[index].batchId),
+          height: multiple ? 96 : 82,
+          child: ScrollConfiguration(
+            behavior: ScrollConfiguration.of(context).copyWith(
+              dragDevices: {
+                ...ScrollConfiguration.of(context).dragDevices,
+                PointerDeviceKind.mouse,
+              },
+              scrollbars: false,
+            ),
+            child: Scrollbar(
+              controller: _scrollController,
+              thumbVisibility: multiple,
+              interactive: true,
+              scrollbarOrientation: ScrollbarOrientation.bottom,
+              notificationPredicate: (notification) => notification.depth == 0,
+              child: ListView.separated(
+                key: const ValueKey('zone-stock-check-alerts'),
+                controller: _scrollController,
+                primary: false,
+                padding: EdgeInsets.only(bottom: multiple ? 14 : 0),
+                scrollDirection: Axis.horizontal,
+                physics: multiple
+                    ? const ClampingScrollPhysics()
+                    : const NeverScrollableScrollPhysics(),
+                itemCount: widget.alerts.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 12),
+                itemBuilder: (context, index) => SizedBox(
+                  width: cardWidth.toDouble(),
+                  child: AnimatedBuilder(
+                    animation: _pulse,
+                    builder: (context, _) => _ZdStockCheckAlertCard(
+                      alert: widget.alerts[index],
+                      pulse: widget.alerts[index].isDanger ? _pulse.value : 0,
+                      onTap: () => widget.onOpen(widget.alerts[index].batchId),
+                    ),
+                  ),
                 ),
               ),
             ),
