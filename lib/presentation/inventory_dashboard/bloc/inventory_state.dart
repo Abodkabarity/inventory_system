@@ -5,7 +5,6 @@ import '../../../domain/entities/allocation_result_row.dart';
 import '../../../domain/entities/allocation_source_row.dart';
 import '../../../domain/entities/branch_allocation_task.dart';
 import '../../../domain/entities/branch_setting.dart';
-import '../../../domain/entities/daily_order_row.dart';
 import '../../../domain/entities/inventory_edit_item.dart';
 import '../../../domain/entities/inventory_page.dart';
 import '../../../domain/entities/mismatch_item.dart';
@@ -88,22 +87,6 @@ class InventoryState extends Equatable {
   final String assortmentSearch;
 
   final List<Map<String, dynamic>> assortmentHistory;
-
-  final List<DailyOrderRow> allOrders;
-
-  final bool isOrdersLoading;
-
-  final List<DailyOrderRow> cachedOrders;
-
-  final bool isBackgroundLoading;
-
-  final bool allDataLoaded;
-
-  final int loadedCount;
-
-  final int currentOrdersPage;
-
-  final bool isSearching;
 
   final String mismatchBranch;
 
@@ -234,14 +217,6 @@ class InventoryState extends Equatable {
     required this.filteredAssortment,
     required this.assortmentSearch,
     required this.assortmentHistory,
-    required this.allOrders,
-    required this.isOrdersLoading,
-    required this.cachedOrders,
-    required this.isBackgroundLoading,
-    required this.allDataLoaded,
-    required this.loadedCount,
-    required this.currentOrdersPage,
-    required this.isSearching,
     required this.mismatchBranch,
     required this.mismatchDate,
     required this.additionalCount,
@@ -369,14 +344,6 @@ class InventoryState extends Equatable {
       filteredAssortment: [],
       assortmentSearch: '',
       assortmentHistory: [],
-      allOrders: [],
-      isOrdersLoading: false,
-      cachedOrders: [],
-      isBackgroundLoading: false,
-      allDataLoaded: false,
-      loadedCount: 0,
-      currentOrdersPage: 0,
-      isSearching: false,
       mismatchBranch: 'ALL',
       mismatchDate: 'today',
       additionalCount: 0,
@@ -485,14 +452,6 @@ class InventoryState extends Equatable {
     List<Map<String, dynamic>>? filteredAssortment,
     String? assortmentSearch,
     List<Map<String, dynamic>>? assortmentHistory,
-    List<DailyOrderRow>? allOrders,
-    bool? isOrdersLoading,
-    List<DailyOrderRow>? cachedOrders,
-    bool? isBackgroundLoading,
-    bool? allDataLoaded,
-    int? loadedCount,
-    int? currentOrdersPage,
-    bool? isSearching,
     String? mismatchBranch,
     String? mismatchDate,
     int? additionalCount,
@@ -610,14 +569,6 @@ class InventoryState extends Equatable {
       formularyHasMore: formularyHasMore ?? this.formularyHasMore,
       isFormularyLoading: isFormularyLoading ?? this.isFormularyLoading,
       assortmentHistory: assortmentHistory ?? this.assortmentHistory,
-      allOrders: allOrders ?? this.allOrders,
-      isOrdersLoading: isOrdersLoading ?? this.isOrdersLoading,
-      cachedOrders: cachedOrders ?? this.cachedOrders,
-      isBackgroundLoading: isBackgroundLoading ?? this.isBackgroundLoading,
-      allDataLoaded: allDataLoaded ?? this.allDataLoaded,
-      loadedCount: loadedCount ?? this.loadedCount,
-      currentOrdersPage: currentOrdersPage ?? this.currentOrdersPage,
-      isSearching: isSearching ?? this.isSearching,
       mismatchBranch: mismatchBranch ?? this.mismatchBranch,
       mismatchDate: mismatchDate ?? this.mismatchDate,
       additionalCount: additionalCount ?? this.additionalCount,
@@ -735,14 +686,6 @@ class InventoryState extends Equatable {
     formularyTotalRows,
     assortmentSearch,
     assortmentHistory,
-    allOrders,
-    isOrdersLoading,
-    cachedOrders,
-    isBackgroundLoading,
-    allDataLoaded,
-    loadedCount,
-    currentOrdersPage,
-    isSearching,
     mismatchBranch,
     mismatchDate,
     additionalCount,

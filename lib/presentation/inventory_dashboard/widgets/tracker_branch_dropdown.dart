@@ -12,6 +12,7 @@ class TrackerBranchDropdown extends StatelessWidget {
   final List<String> items;
   final ValueChanged<String> onChanged;
   final double? height;
+  final bool compact;
 
   const TrackerBranchDropdown({
     super.key,
@@ -19,6 +20,7 @@ class TrackerBranchDropdown extends StatelessWidget {
     required this.items,
     required this.onChanged,
     this.height,
+    this.compact = false,
   });
 
   static String _label(String branch) => branch == 'ALL'
@@ -38,6 +40,12 @@ class TrackerBranchDropdown extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final popupWidth = math.min(360.0, MediaQuery.sizeOf(context).width - 32);
+    final fieldBorder = compact
+        ? const OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(10)),
+            borderSide: BorderSide.none,
+          )
+        : _border();
     return ValueListenableBuilder<Map<String, String>>(
       valueListenable: StoreBranchIdentityRegistry.groups,
       builder: (context, _, _) => Theme(
@@ -78,52 +86,74 @@ class TrackerBranchDropdown extends StatelessWidget {
             decoratorProps: DropDownDecoratorProps(
               decoration: InputDecoration(
                 filled: height == null,
-                fillColor: height == null
+                fillColor: compact
+                    ? Colors.white
+                    : height == null
                     ? const Color(0xffF5FAFD)
                     : Colors.transparent,
                 isDense: true,
-                contentPadding: const EdgeInsets.symmetric(
+                contentPadding: EdgeInsets.symmetric(
                   horizontal: 12,
-                  vertical: 8,
+                  vertical: compact ? 12 : 8,
                 ),
-                border: height == null ? _border() : InputBorder.none,
-                enabledBorder: height == null ? _border() : InputBorder.none,
+                border: height == null ? fieldBorder : InputBorder.none,
+                enabledBorder: height == null ? fieldBorder : InputBorder.none,
                 focusedBorder: height == null
-                    ? _border(focused: true)
+                    ? fieldBorder.copyWith(
+                        borderSide: BorderSide(
+                          color: compact
+                              ? const Color(0xFF63D9C7)
+                              : AppColors.primaryColor,
+                          width: compact ? 2 : 1.5,
+                        ),
+                      )
                     : InputBorder.none,
-                prefixIcon: Padding(
-                  padding: const EdgeInsets.only(left: 10, right: 10),
-                  child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryColor.withValues(alpha: .12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(
-                      Icons.storefront_rounded,
-                      size: 18,
-                      color: AppColors.primaryColor,
-                    ),
-                  ),
+                prefixIcon: compact
+                    ? const Icon(
+                        Icons.storefront_outlined,
+                        size: 19,
+                        color: Color(0xFF196D73),
+                      )
+                    : Padding(
+                        padding: const EdgeInsets.only(left: 10, right: 10),
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryColor.withValues(
+                              alpha: .12,
+                            ),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(
+                            Icons.storefront_rounded,
+                            size: 18,
+                            color: AppColors.primaryColor,
+                          ),
+                        ),
+                      ),
+                prefixIconConstraints: BoxConstraints(
+                  minHeight: compact ? 40 : 32,
+                  minWidth: compact ? 38 : 0,
                 ),
-                prefixIconConstraints: const BoxConstraints(minHeight: 32),
               ),
             ),
             dropdownBuilder: (context, selected) => Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'BRANCH',
-                  style: TextStyle(
-                    color: AppColors.subText,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: .8,
+                if (!compact) ...[
+                  const Text(
+                    'BRANCH',
+                    style: TextStyle(
+                      color: AppColors.subText,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: .8,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 3),
+                  const SizedBox(height: 3),
+                ],
                 Text(
                   _label(selected ?? 'ALL'),
                   maxLines: 1,

@@ -9,7 +9,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../../core/cache/daily_order_cache_service.dart';
 import '../../../core/utils/allocation_excel_exporter.dart';
 import '../../../core/utils/branch_csv_display.dart';
 import '../../../core/utils/store_branch_identity_registry.dart';
@@ -26,7 +25,7 @@ import '../../../core/utils/web_notification.dart';
 import '../../../domain/entities/additional_request_group.dart';
 import '../../../domain/entities/allocation_result_row.dart';
 import '../../../domain/entities/allocation_source_row.dart';
-import '../../../domain/entities/daily_order_row.dart';
+import '../../../domain/entities/daily_order_query.dart';
 import '../../../domain/entities/inventory_page.dart';
 import '../../../domain/entities/mismatch_item.dart';
 import '../../../domain/repositories/inventory_repository.dart';
@@ -42,9 +41,6 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   RealtimeChannel? maxAdjChannel;
   RealtimeChannel? assortmentChannel;
   RealtimeChannel? formularyChannel;
-  static final Map<String, List<DailyOrderRow>> ordersCache = {};
-  String? _ordersLoadingRunDate;
-  int _ordersLoadToken = 0;
   int _formularyLoadToken = 0;
   int _maxAdjLoadToken = 0;
   bool _maxAdjImportRunning = false;
@@ -104,7 +100,6 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
     on<LoadOrderEditSalesPerformance>(_onLoadOrderEditSalesPerformance);
     on<ImportFormularyExcel>(_onImportFormulary);
     on<ResolveImportDuplicates>(_onResolveImportDuplicates);
-    on<LoadOrdersPage>(_onLoadOrdersPage);
     on<ImportTmaExcel>(_onImportTma);
     on<AdditionalRequestInsertedRealtime>(_onAdditionalInsertedRealtime);
     on<AdditionalRequestDeletedRealtime>(_onAdditionalDeletedRealtime);
@@ -568,7 +563,11 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           ? List<String>.from(orders_state.OrdersState.defaultColumnOrder)
           : List<String>.from(state.columnOrder);
 
-      final filtered = list.where((e) => e != 'additional_request').toList();
+      final filtered = list
+          .where(
+            (key) => key == 'row_no' || DailyOrderField.fields.containsKey(key),
+          )
+          .toList();
 
       final oldIndex = event.oldIndex.clamp(0, filtered.length - 1);
       final newIndex = event.newIndex.clamp(0, filtered.length);
@@ -590,248 +589,6 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           columnOrder: orders_state.OrdersState.defaultColumnOrder.toList(),
         ),
       );
-    });
-    on<LoadInventoryOrders>((event, emit) async {
-      final cacheKey = event.runDate;
-
-      if (_ordersLoadingRunDate == cacheKey) {
-        final rows = state.cachedOrders;
-        emit(
-          state.copyWith(
-            allOrders: rows.take(1000).toList(),
-            loadedCount: rows.length,
-            isOrdersLoading: false,
-            isBackgroundLoading: true,
-          ),
-        );
-        return;
-      }
-
-      emit(state.copyWith(isOrdersLoading: true));
-
-      // CACHE HIT
-      if (ordersCache.containsKey(cacheKey)) {
-        const pageSize = 1000;
-        final rows = ordersCache[cacheKey]!;
-        emit(
-          state.copyWith(
-            cachedOrders: rows,
-            allOrders: rows.take(pageSize).toList(),
-            loadedCount: rows.length,
-            currentOrdersPage: 0,
-            hasMorePages: false,
-            isOrdersLoading: false,
-            allDataLoaded: true,
-          ),
-        );
-        return;
-      }
-
-      try {
-        final diskRows = await DailyOrderCacheService.instance.readRows(
-          event.runDate,
-        );
-
-        if (diskRows != null && diskRows.isNotEmpty) {
-          const pageSize = 1000;
-          ordersCache[cacheKey] = diskRows;
-
-          emit(
-            state.copyWith(
-              cachedOrders: diskRows,
-              allOrders: diskRows.take(pageSize).toList(),
-              loadedCount: diskRows.length,
-              currentOrdersPage: 0,
-              hasMorePages: false,
-              isOrdersLoading: false,
-              isBackgroundLoading: false,
-              allDataLoaded: true,
-            ),
-          );
-          return;
-        }
-
-        const int batchSize = 10000;
-        const int concurrent = 3;
-        _ordersLoadingRunDate = cacheKey;
-        final loadToken = ++_ordersLoadToken;
-
-        // FIRST BATCH
-        final firstBatch = await _fetchOrdersPageSafe(
-          runDate: event.runDate,
-          from: 0,
-          to: batchSize - 1,
-        );
-        if (!_isCurrentOrdersLoad(cacheKey, loadToken) || emit.isDone) return;
-
-        final firstRows = firstBatch.map(DailyOrderRow.fromMap).toList();
-        await DailyOrderCacheService.instance.startWrite(event.runDate);
-        if (!_isCurrentOrdersLoad(cacheKey, loadToken) || emit.isDone) return;
-        await DailyOrderCacheService.instance.appendBatch(
-          event.runDate,
-          firstBatch,
-        );
-        if (!_isCurrentOrdersLoad(cacheKey, loadToken) || emit.isDone) return;
-
-        emit(
-          state.copyWith(
-            cachedOrders: firstRows,
-            allOrders: firstRows.take(1000).toList(),
-            loadedCount: firstRows.length,
-            isOrdersLoading: false,
-            isBackgroundLoading: firstRows.length >= batchSize,
-          ),
-        );
-
-        // LOAD REMAINING DATA
-        List<DailyOrderRow> all = List.from(firstRows);
-
-        int offset = batchSize;
-
-        while (true) {
-          if (!_isCurrentOrdersLoad(cacheKey, loadToken) || emit.isDone) {
-            return;
-          }
-
-          final offsets = List.generate(
-            concurrent,
-            (i) => offset + i * batchSize,
-          );
-
-          final results = await Future.wait(
-            offsets.map(
-              (from) => _fetchOrdersPageSafe(
-                runDate: event.runDate,
-                from: from,
-                to: from + batchSize - 1,
-              ),
-            ),
-          );
-          if (!_isCurrentOrdersLoad(cacheKey, loadToken) || emit.isDone) {
-            return;
-          }
-
-          bool anyData = false;
-          bool lastWasShort = false;
-
-          for (final batch in results) {
-            if (batch.isEmpty) {
-              lastWasShort = true;
-              break;
-            }
-
-            anyData = true;
-
-            all.addAll(batch.map(DailyOrderRow.fromMap));
-            await DailyOrderCacheService.instance.appendBatch(
-              event.runDate,
-              batch,
-            );
-            if (!_isCurrentOrdersLoad(cacheKey, loadToken) || emit.isDone) {
-              return;
-            }
-
-            if (batch.length < batchSize) {
-              lastWasShort = true;
-              break;
-            }
-          }
-
-          if (!_isCurrentOrdersLoad(cacheKey, loadToken) || emit.isDone) {
-            return;
-          }
-
-          emit(
-            state.copyWith(
-              cachedOrders: all,
-              allOrders: all.take(1000).toList(),
-              loadedCount: all.length,
-              isBackgroundLoading: true,
-            ),
-          );
-
-          if (!anyData || lastWasShort) {
-            break;
-          }
-
-          offset += concurrent * batchSize;
-        }
-
-        ordersCache[cacheKey] = all;
-        await DailyOrderCacheService.instance.markComplete(event.runDate);
-
-        if (!_isCurrentOrdersLoad(cacheKey, loadToken) || emit.isDone) return;
-
-        emit(
-          state.copyWith(
-            cachedOrders: all,
-            allOrders: all.take(1000).toList(),
-            loadedCount: all.length,
-            isBackgroundLoading: false,
-            allDataLoaded: true,
-          ),
-        );
-        if (_isCurrentOrdersLoad(cacheKey, loadToken)) {
-          _ordersLoadingRunDate = null;
-        }
-      } catch (e) {
-        if (emit.isDone) return;
-        if (_ordersLoadingRunDate == cacheKey) {
-          _ordersLoadingRunDate = null;
-        }
-
-        emit(
-          state.copyWith(isOrdersLoading: false, isBackgroundLoading: false),
-        );
-
-        print("LOAD ORDERS ERROR = $e");
-      }
-    });
-    on<SearchInventoryOrders>((event, emit) async {
-      final q = event.query.trim();
-
-      // ── CLEAR → restore page 0 from cache ─────────────────────
-      if (q.isEmpty) {
-        const pageSize = 1000;
-        final total = state.cachedOrders.length;
-        final pageRows = total == 0
-            ? <DailyOrderRow>[]
-            : state.cachedOrders.sublist(0, total.clamp(0, pageSize));
-        emit(state.copyWith(allOrders: pageRows, currentOrdersPage: 0));
-        return;
-      }
-
-      // ── LOCAL SEARCH — search everything in cache ──────────────
-      final ql = q.toLowerCase();
-      final local = state.cachedOrders.where((e) {
-        return e.itemName.toLowerCase().contains(ql) ||
-            e.itemCode.toLowerCase().contains(ql) ||
-            e.branch.toLowerCase().contains(ql) ||
-            (e.barcode?.toLowerCase().contains(ql) ?? false);
-      }).toList();
-
-      // If we have local results OR all data is loaded → return local
-      if (local.isNotEmpty || state.allDataLoaded) {
-        emit(state.copyWith(allOrders: local, currentOrdersPage: 0));
-        return;
-      }
-
-      // ── SERVER FALLBACK — only when cache is still loading ─────
-      emit(state.copyWith(isSearching: true));
-
-      try {
-        final remote = await repo.searchOrders(runDate: runDate, query: q);
-        final rows = remote.map(DailyOrderRow.fromMap).toList();
-        emit(
-          state.copyWith(
-            allOrders: rows,
-            currentOrdersPage: 0,
-            isSearching: false,
-          ),
-        );
-      } catch (_) {
-        emit(state.copyWith(allOrders: local, isSearching: false));
-      }
     });
     on<StartAssortmentRealtime>((event, emit) {
       assortmentChannel = Supabase.instance.client
@@ -4089,89 +3846,6 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
 
       emit(state.copyWith(isExporting: false, exportMessage: "Export failed"));
     }
-  }
-
-  bool _isCurrentOrdersLoad(String runDate, int token) {
-    return _ordersLoadingRunDate == runDate && _ordersLoadToken == token;
-  }
-
-  Future<List<Map<String, dynamic>>> _fetchOrdersPageSafe({
-    required String runDate,
-    required int from,
-    required int to,
-    int attempt = 0,
-  }) async {
-    try {
-      return await repo.fetchOrdersPage(runDate: runDate, from: from, to: to);
-    } catch (e) {
-      final isTimeout =
-          e is PostgrestException &&
-          (e.code == '57014' ||
-              e.message.toLowerCase().contains('statement timeout'));
-
-      if (!isTimeout) rethrow;
-
-      final size = to - from + 1;
-
-      if (size > 1000) {
-        final mid = from + (size ~/ 2) - 1;
-        final left = await _fetchOrdersPageSafe(
-          runDate: runDate,
-          from: from,
-          to: mid,
-          attempt: 0,
-        );
-        final right = await _fetchOrdersPageSafe(
-          runDate: runDate,
-          from: mid + 1,
-          to: to,
-          attempt: 0,
-        );
-        return [...left, ...right];
-      }
-
-      if (attempt < 3) {
-        await Future.delayed(Duration(milliseconds: 450 * (attempt + 1)));
-        return _fetchOrdersPageSafe(
-          runDate: runDate,
-          from: from,
-          to: to,
-          attempt: attempt + 1,
-        );
-      }
-
-      rethrow;
-    }
-  }
-
-  Future<void> _onLoadOrdersPage(
-    LoadOrdersPage event,
-    Emitter<InventoryState> emit,
-  ) async {
-    // Pure local slice — zero network calls, instant page flip
-    const pageSize = 30000;
-
-    final total = state.cachedOrders.length;
-    final page = event.page.clamp(
-      0,
-      ((total / pageSize).ceil() - 1).clamp(0, 999999),
-    );
-
-    final start = page * pageSize;
-    final end = (start + pageSize).clamp(0, total);
-
-    final pageRows = total == 0
-        ? <DailyOrderRow>[]
-        : state.cachedOrders.sublist(start, end);
-
-    emit(
-      state.copyWith(
-        allOrders: pageRows,
-        currentOrdersPage: page,
-        hasMorePages: false,
-        isOrdersLoading: false,
-      ),
-    );
   }
 
   Future<void> _onLoadAdditionalOrderAnalysis(

@@ -14,6 +14,7 @@ class DailyOrderRow {
 
   final num extraQtyMoreThanMonth;
   final num maxAdjustment30d;
+  final bool hasMaxAdjustment;
   final num demandFor30Days;
 
   final String finalReorderQtyStoreStockGt0;
@@ -88,6 +89,7 @@ class DailyOrderRow {
     this.isLimitedStock,
     required this.extraQtyMoreThanMonth,
     required this.maxAdjustment30d,
+    this.hasMaxAdjustment = true,
     required this.demandFor30Days,
     required this.finalReorderQtyStoreStockGt0,
     required this.qty30DaysFromLast45d,
@@ -145,6 +147,7 @@ class DailyOrderRow {
     bool? isLimitedStock,
     num? extraQtyMoreThanMonth,
     num? maxAdjustment30d,
+    bool? hasMaxAdjustment,
     num? demandFor30Days,
     String? finalReorderQtyStoreStockGt0,
     num? qty30DaysFromLast45d,
@@ -202,6 +205,9 @@ class DailyOrderRow {
       extraQtyMoreThanMonth:
           extraQtyMoreThanMonth ?? this.extraQtyMoreThanMonth,
       maxAdjustment30d: maxAdjustment30d ?? this.maxAdjustment30d,
+      hasMaxAdjustment:
+          hasMaxAdjustment ??
+          (maxAdjustment30d != null || this.hasMaxAdjustment),
       demandFor30Days: demandFor30Days ?? this.demandFor30Days,
       finalReorderQtyStoreStockGt0:
           finalReorderQtyStoreStockGt0 ?? this.finalReorderQtyStoreStockGt0,
@@ -262,6 +268,9 @@ class DailyOrderRow {
     num parseNum(dynamic v) => num.tryParse((v ?? '0').toString()) ?? 0;
 
     String str(dynamic v) => (v ?? '').toString();
+    final recordedMax = num.tryParse(
+      map['max_adjustment_30d']?.toString() ?? '',
+    );
 
     return DailyOrderRow(
       /// 🔹 BASIC
@@ -277,7 +286,8 @@ class DailyOrderRow {
 
       /// 🔹 DEMAND
       extraQtyMoreThanMonth: parseNum(map['extra_qty_more_than_month']),
-      maxAdjustment30d: parseNum(map['max_adjustment_30d']),
+      maxAdjustment30d: recordedMax ?? 0,
+      hasMaxAdjustment: recordedMax != null,
       demandFor30Days: parseNum(map['demand_for_30_days']),
 
       /// 🔹 REORDER

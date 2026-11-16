@@ -134,12 +134,6 @@ class StartAdditionalRealtime extends InventoryEvent {
   StartAdditionalRealtime();
 }
 
-class LoadInventoryOrders extends InventoryEvent {
-  final String runDate;
-
-  LoadInventoryOrders(this.runDate);
-}
-
 class InventorySetColumnVisible extends InventoryEvent {
   final String columnKey;
   final bool visible;
@@ -349,25 +343,6 @@ class UpdateExportDailyProgress extends InventoryEvent {
 
   @override
   List<Object> get props => [progress, message];
-}
-
-class LoadMoreInventoryOrders extends InventoryEvent {}
-
-class SearchInventoryOrders extends InventoryEvent {
-  final String query;
-
-  SearchInventoryOrders(this.query);
-}
-
-class LoadOrdersPage extends InventoryEvent {
-  final String runDate;
-
-  final int page;
-
-  LoadOrdersPage({required this.runDate, required this.page});
-
-  @override
-  List<Object?> get props => [runDate, page];
 }
 
 class LoadAdditionalOrderAnalysis extends InventoryEvent {

@@ -5,6 +5,7 @@ import '../../domain/entities/allocation_result_row.dart';
 import '../../domain/entities/allocation_source_row.dart';
 import '../../domain/entities/branch_allocation_task.dart';
 import '../../domain/entities/branch_setting.dart';
+import '../../domain/entities/daily_order_query.dart';
 import '../../domain/entities/inventory_edit_item.dart';
 import '../../domain/entities/mismatch_item.dart';
 import '../../domain/repositories/inventory_repository.dart';
@@ -970,17 +971,29 @@ class InventoryRepositoryImpl implements InventoryRepository {
         .eq('item_code', itemCode)
         .eq('branch_name', branch);
   }
-  // ====================================
-  // DAILY ORDER PAGINATION
-  // ====================================
+  @override
+  Future<DailyOrderBatch> fetchDailyOrderBatch(
+    DailyOrderQuery query, {
+    DailyOrderCursor? after,
+  }) {
+    return remote.fetchDailyOrderBatch(query, after: after);
+  }
 
   @override
-  Future<List<Map<String, dynamic>>> fetchOrdersPage({
-    required String runDate,
-    required int from,
-    required int to,
+  Future<DailyOrderFilterValues> fetchDailyOrderFilterValues(
+    DailyOrderQuery query, {
+    required DailyOrderField field,
+    required String lookup,
+    List<String> lookupBranches = const [],
+    String? after,
   }) {
-    return remote.fetchOrdersPage(runDate: runDate, from: from, to: to);
+    return remote.fetchDailyOrderFilterValues(
+      query,
+      field: field,
+      lookup: lookup,
+      lookupBranches: lookupBranches,
+      after: after,
+    );
   }
 
   @override
@@ -991,14 +1004,6 @@ class InventoryRepositoryImpl implements InventoryRepository {
   @override
   Future<void> deleteMaxAdjBulk(List<Map<String, dynamic>> rows) {
     return remote.deleteMaxAdjBulk(rows);
-  }
-
-  @override
-  Future<List<Map<String, dynamic>>> searchOrders({
-    required String runDate,
-    required String query,
-  }) {
-    return remote.searchOrders(runDate: runDate, query: query);
   }
 
   @override

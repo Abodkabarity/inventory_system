@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../domain/entities/daily_order_query.dart';
 import '../../orders/bloc/order_bloc/orders_state.dart';
 import '../../orders/widgets/orders_table.dart';
 import '../bloc/inventory_bloc.dart';
@@ -36,9 +37,10 @@ class _InventoryColumnsPanelState extends State<InventoryColumnsPanel> {
                 ? OrdersState.defaultVisibleInTable.toSet()
                 : s.visibleColumns.toSet();
 
-            final filtered = all.where((k) => k != 'additional_request').where((
-              k,
-            ) {
+            final available = all.where(
+              (k) => k == 'row_no' || DailyOrderField.fields.containsKey(k),
+            );
+            final filtered = available.where((k) {
               final title =
                   OrdersTable.titles[k] ?? OrdersTable.optionalTitles[k] ?? k;
               final q = _query.trim().toLowerCase();
@@ -108,11 +110,7 @@ class _InventoryColumnsPanelState extends State<InventoryColumnsPanel> {
                       : ReorderableListView.builder(
                           padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
                           itemCount: filtered.length,
-                          onReorder: (oldIndex, newIndex) {
-                            if (newIndex > oldIndex) {
-                              newIndex -= 1;
-                            }
-
+                          onReorderItem: (oldIndex, newIndex) {
                             context.read<InventoryBloc>().add(
                               InventoryReorderColumns(
                                 oldIndex: oldIndex,

@@ -6,48 +6,21 @@ import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../../domain/entities/daily_order_row.dart';
-import '../../orders/widgets/orders_grid_controller.dart';
 import '../../orders/widgets/orders_table.dart';
 
-// ─────────────────────────────────────────────
-// COLUMN GROUPS  — identical palette to OrdersTable
-// ─────────────────────────────────────────────
-enum _ColGroup { identity, stock, sales, rules, ordering, other }
+enum _ColGroup {
+  identity(Color(0xFFE9F0FB), Color(0xFF244971), Color(0xFF7CA5D5)),
+  stock(Color(0xFFE3F5EF), Color(0xFF14594D), Color(0xFF60BBA5)),
+  sales(Color(0xFFFFF2DB), Color(0xFF704A18), Color(0xFFDFAD60)),
+  rules(Color(0xFFEDF0FA), Color(0xFF424E7B), Color(0xFF9DA8D3)),
+  ordering(Color(0xFFF2EAFB), Color(0xFF61388B), Color(0xFFAF89D6)),
+  other(Color(0xFFF0F4F8), Color(0xFF3E5268), Color(0xFFB0C2D5));
 
-extension _ColGroupStyle on _ColGroup {
-  Color get headerBg {
-    switch (this) {
-      case _ColGroup.identity:
-        return const Color(0xFFEFF6FF);
-      case _ColGroup.stock:
-        return const Color(0xFFEFFAF3);
-      case _ColGroup.sales:
-        return const Color(0xFFFFF7E6);
-      case _ColGroup.rules:
-        return const Color(0xFFF3F0FF);
-      case _ColGroup.ordering:
-        return const Color(0xFFFFEEF2);
-      case _ColGroup.other:
-        return const Color(0xFFF6F7FB);
-    }
-  }
+  const _ColGroup(this.background, this.foreground, this.accent);
 
-  Color get headerFg {
-    switch (this) {
-      case _ColGroup.identity:
-        return const Color(0xFF0B2A4A);
-      case _ColGroup.stock:
-        return const Color(0xFF0F3D1F);
-      case _ColGroup.sales:
-        return const Color(0xFF5A3A00);
-      case _ColGroup.rules:
-        return const Color(0xFF2B1C5A);
-      case _ColGroup.ordering:
-        return const Color(0xFF5A1025);
-      case _ColGroup.other:
-        return AppColors.headerText;
-    }
-  }
+  final Color background;
+  final Color foreground;
+  final Color accent;
 }
 
 _ColGroup _groupFor(String key) {
@@ -99,84 +72,156 @@ _ColGroup _groupFor(String key) {
   return _ColGroup.other;
 }
 
-// ─────────────────────────────────────────────
-// HEADER CELL  — matches OrdersTable._HeaderCell
-// ─────────────────────────────────────────────
 class _HeaderCell extends StatelessWidget {
-  final String title;
-  final Color bg;
-  final Color fg;
-  final bool alignCenter;
-
   const _HeaderCell({
     required this.title,
-    required this.bg,
-    required this.fg,
-    required this.alignCenter,
+    required this.group,
+    required this.sorted,
+    required this.ascending,
+    required this.filtered,
+    this.onSort,
+    this.onFilter,
   });
+
+  final String title;
+  final _ColGroup group;
+  final bool sorted;
+  final bool ascending;
+  final bool filtered;
+  final VoidCallback? onSort;
+  final ValueChanged<Rect>? onFilter;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: bg,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      alignment: alignCenter ? Alignment.center : Alignment.centerLeft,
-      child: Tooltip(
-        message: title.replaceAll('\n', ' '),
-        child: Text(
-          title,
-          maxLines: 3,
-          overflow: TextOverflow.visible,
-          softWrap: true,
-          textAlign: alignCenter ? TextAlign.center : TextAlign.left,
-          style: TextStyle(
-            fontSize: 12.8,
-            fontWeight: FontWeight.w900,
-            color: fg,
-            height: 1.15,
-            letterSpacing: 0.2,
-          ),
+    final name = title.replaceAll('\n', ' ');
+    return Material(
+      color: group.background,
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: group.accent, width: 2)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: InkWell(
+                onTap: onSort,
+                child: Tooltip(
+                  message: onSort == null
+                      ? name
+                      : 'Sort $name ${sorted && ascending ? 'descending' : 'ascending'}',
+                  child: Padding(
+                    padding: const EdgeInsets.only(
+                      left: 12,
+                      right: 4,
+                      top: 6,
+                      bottom: 6,
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                              color: group.foreground,
+                              height: 1.15,
+                              letterSpacing: .2,
+                            ),
+                          ),
+                        ),
+                        if (onSort != null)
+                          Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: sorted
+                                ? BoxDecoration(
+                                    color: group.foreground,
+                                    borderRadius: BorderRadius.circular(5),
+                                  )
+                                : null,
+                            child: Icon(
+                              sorted
+                                  ? (ascending
+                                        ? Icons.arrow_upward
+                                        : Icons.arrow_downward)
+                                  : Icons.unfold_more,
+                              size: 13,
+                              color: sorted
+                                  ? Colors.white
+                                  : group.foreground.withValues(alpha: .65),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            if (onFilter != null)
+              IconButton(
+                onPressed: () {
+                  final header = context.findRenderObject()! as RenderBox;
+                  onFilter!(header.localToGlobal(Offset.zero) & header.size);
+                },
+                tooltip: 'Filter $name',
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 36),
+                padding: EdgeInsets.zero,
+                style: filtered
+                    ? IconButton.styleFrom(
+                        backgroundColor: group.accent.withValues(alpha: .3),
+                      )
+                    : null,
+                icon: Icon(
+                  filtered ? Icons.filter_alt : Icons.filter_alt_outlined,
+                  size: 17,
+                  color: group.foreground.withValues(alpha: filtered ? 1 : .78),
+                ),
+              ),
+          ],
         ),
       ),
     );
   }
 }
 
-// ─────────────────────────────────────────────
-// WIDGET
-// ─────────────────────────────────────────────
 class InventoryOrdersTable extends StatefulWidget {
-  final List<DailyOrderRow> rows;
-  final bool isLoading;
-  final List<String> orderedColumns;
-  final Map<String, double> columnWidths;
-  final OrdersGridController gridController;
-  final DataGridController? controller;
-  final void Function(String columnKey, double width) onColumnResized;
-  final ValueChanged<Map<String, List<FilterCondition>>>? onFilterChanged;
-
   const InventoryOrdersTable({
     super.key,
     required this.rows,
-    required this.isLoading,
+    required this.resultsVersion,
     required this.orderedColumns,
     required this.columnWidths,
-    required this.gridController,
+    required this.verticalScrollController,
     required this.onColumnResized,
-    this.onFilterChanged,
-    this.controller,
+    required this.sortColumn,
+    required this.ascending,
+    required this.filteredColumns,
+    required this.onSort,
+    required this.onFilter,
   });
 
-  static List<String> get allColumns => OrdersTable.allColumns;
-
-  static Map<String, String> get titles => OrdersTable.titles;
+  final List<DailyOrderRow> rows;
+  final int resultsVersion;
+  final List<String> orderedColumns;
+  final Map<String, double> columnWidths;
+  final ScrollController verticalScrollController;
+  final void Function(String columnKey, double width) onColumnResized;
+  final String sortColumn;
+  final bool ascending;
+  final Set<String> filteredColumns;
+  final ValueChanged<String> onSort;
+  final void Function(String column, Rect bounds) onFilter;
+  static const headerHeight = 54.0;
 
   @override
   State<InventoryOrdersTable> createState() => _InventoryOrdersTableState();
 }
 
 class _InventoryOrdersTableState extends State<InventoryOrdersTable> {
-  late _InventoryOrdersDataSource _source;
+  late final _InventoryOrdersDataSource _source;
 
   @override
   void initState() {
@@ -185,32 +230,26 @@ class _InventoryOrdersTableState extends State<InventoryOrdersTable> {
       rows: widget.rows,
       columns: widget.orderedColumns,
     );
-    widget.gridController.attachSource(_source);
   }
 
   @override
   void didUpdateWidget(covariant InventoryOrdersTable oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (_sameRows(oldWidget.rows, widget.rows) &&
-        listEquals(oldWidget.orderedColumns, widget.orderedColumns)) {
-      return;
+    if (oldWidget.resultsVersion != widget.resultsVersion ||
+        !listEquals(oldWidget.orderedColumns, widget.orderedColumns)) {
+      _source.replace(widget.rows, widget.orderedColumns);
+    } else if (oldWidget.rows.length < widget.rows.length) {
+      _source.append(widget.rows, oldWidget.rows.length);
     }
-
-    _source.update(rows: widget.rows, columns: widget.orderedColumns);
   }
 
-  bool _sameRows(List<DailyOrderRow> oldRows, List<DailyOrderRow> newRows) {
-    if (identical(oldRows, newRows)) return true;
-    if (oldRows.length != newRows.length) return false;
-
-    for (var i = 0; i < oldRows.length; i++) {
-      if (!identical(oldRows[i], newRows[i])) return false;
-    }
-
-    return true;
+  @override
+  void dispose() {
+    _source.dispose();
+    super.dispose();
   }
 
-  double _widthFor(String key) {
+  double _widthFor(String key, {required bool compact}) {
     if (widget.columnWidths.containsKey(key)) {
       return widget.columnWidths[key]!;
     }
@@ -220,13 +259,13 @@ class _InventoryOrdersTableState extends State<InventoryOrdersTable> {
         return 60;
 
       case 'branch':
-        return 160;
+        return compact ? 116 : 160;
 
       case 'item_code':
-        return 160;
+        return compact ? 116 : 160;
 
       case 'item_name':
-        return 320;
+        return compact ? 246 : 320;
 
       case 'goods_received_last_7_days':
         return 190;
@@ -284,154 +323,114 @@ class _InventoryOrdersTableState extends State<InventoryOrdersTable> {
     }
   }
 
-  int _frozenCount() {
-    int n = 0;
-    if (widget.orderedColumns.contains('row_no')) n++;
-    if (widget.orderedColumns.contains('branch')) n++;
-    if (widget.orderedColumns.contains('item_code')) n++;
-    if (widget.orderedColumns.contains('item_name')) n++;
-    return n;
-  }
-
   @override
   Widget build(BuildContext context) {
-    if (widget.rows.isEmpty && !widget.isLoading) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.inbox_outlined, size: 60, color: Colors.grey.shade300),
-            const SizedBox(height: 14),
-            Text(
-              'No orders loaded',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey.shade400,
+    return LayoutBuilder(
+      builder: (context, constraints) => SfDataGridTheme(
+        data: SfDataGridThemeData(
+          headerColor: const Color(0xFFF0F4F8),
+          gridLineColor: const Color(0xFFE7EDF4),
+          selectionColor: const Color(0xFFEAF2FF),
+        ),
+        child: SfDataGrid(
+          source: _source,
+          verticalScrollController: widget.verticalScrollController,
+          allowColumnsResizing: true,
+          gridLinesVisibility: GridLinesVisibility.horizontal,
+          headerGridLinesVisibility: GridLinesVisibility.both,
+          columnWidthMode: ColumnWidthMode.none,
+          frozenColumnsCount: constraints.maxWidth >= 940
+              ? widget.orderedColumns
+                    .takeWhile(
+                      const {
+                        'row_no',
+                        'branch',
+                        'item_code',
+                        'item_name',
+                      }.contains,
+                    )
+                    .length
+              : 0,
+          rowHeight: 45,
+          headerRowHeight: InventoryOrdersTable.headerHeight,
+          onColumnResizeUpdate: (details) {
+            setState(() {
+              widget.onColumnResized(details.column.columnName, details.width);
+            });
+            return true;
+          },
+          columns: [
+            for (final key in widget.orderedColumns)
+              GridColumn(
+                columnName: key,
+                width: _widthFor(key, compact: constraints.maxWidth < 600),
+                minimumWidth: 90,
+                label: _HeaderCell(
+                  title:
+                      OrdersTable.titles[key] ??
+                      OrdersTable.optionalTitles[key] ??
+                      key,
+                  group: _groupFor(key),
+                  sorted: widget.sortColumn == key,
+                  ascending: widget.ascending,
+                  filtered: widget.filteredColumns.contains(key),
+                  onSort: key == 'row_no' ? null : () => widget.onSort(key),
+                  onFilter: key == 'row_no'
+                      ? null
+                      : (bounds) => widget.onFilter(key, bounds),
+                ),
               ),
-            ),
           ],
         ),
-      );
-    }
-
-    return Stack(
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(14),
-          child: SfDataGridTheme(
-            data: SfDataGridThemeData(
-              headerColor: const Color(0xFFF6F7FB),
-              gridLineColor: AppColors.border.withValues(alpha: .8),
-              selectionColor: const Color(0xFFEAF2FF),
-            ),
-            child: SfDataGrid(
-              source: _source,
-              controller: widget.controller,
-              allowFiltering: true,
-              allowSorting: true,
-              allowColumnsResizing: true,
-              gridLinesVisibility: GridLinesVisibility.both,
-              headerGridLinesVisibility: GridLinesVisibility.both,
-              columnWidthMode: ColumnWidthMode.none,
-              frozenColumnsCount: _frozenCount(),
-              rowHeight: 52,
-              headerRowHeight: 72,
-              onColumnResizeUpdate: (details) {
-                widget.onColumnResized(
-                  details.column.columnName,
-                  details.width,
-                );
-                return true;
-              },
-              onFilterChanged: (_) {
-                widget.onFilterChanged?.call(
-                  Map<String, List<FilterCondition>>.from(
-                    _source.filterConditions,
-                  ),
-                );
-              },
-              columns: widget.orderedColumns.map((key) {
-                final group = _groupFor(key);
-                final title = OrdersTable.titles[key] ?? key;
-                return GridColumn(
-                  columnName: key,
-                  width: _widthFor(key),
-                  minimumWidth: 80,
-                  label: _HeaderCell(
-                    title: title,
-                    bg: group.headerBg,
-                    fg: group.headerFg,
-                    alignCenter: key != 'item_name',
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-        ),
-
-        if (widget.isLoading)
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.65),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const CircularProgressIndicator(
-                    color: AppColors.primaryColor,
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    'Loading orders…',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primaryColor,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-      ],
+      ),
     );
   }
 }
 
-// ─────────────────────────────────────────────
-// DATA SOURCE
-// ─────────────────────────────────────────────
+class _InventoryGridRow extends DataGridRow {
+  const _InventoryGridRow({required super.cells, required this.shaded});
+
+  final bool shaded;
+}
+
 class _InventoryOrdersDataSource extends DataGridSource {
-  List<String> _columns = [];
+  List<String> _columns;
   List<DataGridRow> _gridRows = [];
 
   _InventoryOrdersDataSource({
     required List<DailyOrderRow> rows,
     required List<String> columns,
-  }) {
-    update(rows: rows, columns: columns);
+  }) : _columns = columns {
+    _gridRows = List.generate(
+      rows.length,
+      (index) => _makeRow(rows[index], index),
+    );
   }
 
-  void update({
-    required List<DailyOrderRow> rows,
-    required List<String> columns,
-  }) {
+  void replace(List<DailyOrderRow> rows, List<String> columns) {
     _columns = columns;
-    _gridRows = rows.asMap().entries.map((entry) {
-      final idx = entry.key;
-      final row = entry.value;
-      return DataGridRow(
-        cells: _columns.map((c) {
-          return DataGridCell(columnName: c, value: _value(row, c, idx));
-        }).toList(),
-      );
-    }).toList();
-
+    _gridRows = List.generate(
+      rows.length,
+      (index) => _makeRow(rows[index], index),
+    );
     notifyListeners();
   }
+
+  void append(List<DailyOrderRow> rows, int start) {
+    _gridRows.addAll([
+      for (var index = start; index < rows.length; index++)
+        _makeRow(rows[index], index),
+    ]);
+    notifyListeners();
+  }
+
+  DataGridRow _makeRow(DailyOrderRow row, int index) => _InventoryGridRow(
+    shaded: index.isOdd,
+    cells: [
+      for (final column in _columns)
+        DataGridCell(columnName: column, value: _value(row, column, index)),
+    ],
+  );
 
   dynamic _value(DailyOrderRow r, String key, int index) {
     switch (key) {
@@ -456,7 +455,7 @@ class _InventoryOrdersDataSource extends DataGridSource {
       case 'extra_qty_more_than_month':
         return r.extraQtyMoreThanMonth;
       case 'max_adjustment_30d':
-        return r.maxAdjustment30d;
+        return r.hasMaxAdjustment ? r.maxAdjustment30d : null;
       case 'reason_for_max_adjustment_30d':
         return r.reason ?? '';
       case 'demand_for_30_days':
@@ -605,22 +604,31 @@ class _InventoryOrdersDataSource extends DataGridSource {
   @override
   DataGridRowAdapter buildRow(DataGridRow row) {
     return DataGridRowAdapter(
+      color: (row as _InventoryGridRow).shaded
+          ? const Color(0xFFF7FAFD)
+          : Colors.white,
       cells: row.getCells().map((cell) {
         final key = cell.columnName;
         final raw = cell.value;
-        final text = key == 'branch'
-            ? StoreBranchIdentityRegistry.displayName(raw?.toString())
-            : (raw ?? '').toString().trim();
-
-        final align = key == 'item_name'
-            ? Alignment.centerLeft
-            : Alignment.center;
+        if (key == 'max_adjustment_30d' && raw == null) {
+          return const SizedBox.shrink();
+        }
+        if (key == 'branch') {
+          return ValueListenableBuilder<Map<String, String>>(
+            valueListenable: StoreBranchIdentityRegistry.groups,
+            builder: (context, groups, child) => _valueCell(
+              key,
+              StoreBranchIdentityRegistry.displayName(raw?.toString(), groups),
+            ),
+          );
+        }
+        final text = (raw ?? '').toString().trim();
 
         // ── ITEM NAME ──────────────────────────────────────────
         if (key == 'item_name') {
           return Container(
             alignment: Alignment.centerLeft,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Tooltip(
               message: text,
               child: Text(
@@ -630,7 +638,7 @@ class _InventoryOrdersDataSource extends DataGridSource {
                 style: const TextStyle(
                   fontSize: 12.8,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.text,
+                  color: Color(0xFF1F3650),
                 ),
               ),
             ),
@@ -667,26 +675,49 @@ class _InventoryOrdersDataSource extends DataGridSource {
           );
         }
 
-        // ── DEFAULT CELL ───────────────────────────────────────
-        final color = _textColorFor(key, text);
-
-        return Container(
-          alignment: align,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: Tooltip(
-            message: text,
-            child: SelectableText(
-              text.isEmpty ? '—' : text,
-              maxLines: 1,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                color: color,
+        if (key == 'final_reorder_qty_store_stock_gt_0' &&
+            (num.tryParse(text) ?? 0) > 0) {
+          return Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1E7FB),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: SelectableText(
+                text,
+                maxLines: 1,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF61388B),
+                ),
               ),
             ),
-          ),
-        );
+          );
+        }
+
+        return _valueCell(key, text);
       }).toList(),
     );
   }
+
+  Widget _valueCell(String column, String text) => Container(
+    alignment: column == 'branch' || column == 'item_code'
+        ? Alignment.centerLeft
+        : Alignment.center,
+    padding: const EdgeInsets.symmetric(horizontal: 12),
+    child: Tooltip(
+      message: text,
+      child: SelectableText(
+        text.isEmpty ? '—' : text,
+        maxLines: 1,
+        style: TextStyle(
+          fontSize: 12.5,
+          fontWeight: FontWeight.w600,
+          color: _textColorFor(column, text),
+        ),
+      ),
+    ),
+  );
 }

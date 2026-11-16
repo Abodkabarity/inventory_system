@@ -5,6 +5,7 @@ import '../entities/allocation_result_row.dart';
 import '../entities/allocation_source_row.dart';
 import '../entities/branch_allocation_task.dart';
 import '../entities/branch_setting.dart';
+import '../entities/daily_order_query.dart';
 import '../entities/inventory_edit_item.dart';
 import '../entities/mismatch_item.dart';
 
@@ -148,15 +149,16 @@ abstract class InventoryRepository {
     required String itemCode,
     required String branch,
   });
-  Future<List<Map<String, dynamic>>> fetchOrdersPage({
-    required String runDate,
-    required int from,
-    required int to,
+  Future<DailyOrderBatch> fetchDailyOrderBatch(
+    DailyOrderQuery query, {
+    DailyOrderCursor? after,
   });
-
-  Future<List<Map<String, dynamic>>> searchOrders({
-    required String runDate,
-    required String query,
+  Future<DailyOrderFilterValues> fetchDailyOrderFilterValues(
+    DailyOrderQuery query, {
+    required DailyOrderField field,
+    required String lookup,
+    List<String> lookupBranches = const [],
+    String? after,
   });
   Future<List<String>> fetchDailyOrderExportDates();
   Future<String?> fetchDailyOrderExportFileUrl({required String runDate});

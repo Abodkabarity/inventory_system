@@ -4,8 +4,11 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../domain/entities/branch_setting.dart';
+import '../../../domain/entities/daily_order_query.dart';
+import '../../../domain/entities/daily_order_row.dart';
 import '../../../core/utils/purchase_shortage_report.dart';
 import '../../../core/utils/max_adj_search.dart';
+import 'inventory_daily_order_query.dart';
 
 class InventoryRemoteDs {
   final SupabaseClient client;
@@ -1299,71 +1302,104 @@ stock_cover_text
     return List<Map<String, dynamic>>.from(res);
   }
 
-  Future<List<Map<String, dynamic>>> fetchOrdersPage({
-    required String runDate,
+  static const _dailyOrderPageSize = 120;
+  static const _dailyOrderValuesSize = 100;
 
-    required int from,
-
-    required int to,
+  Future<DailyOrderBatch> fetchDailyOrderBatch(
+    DailyOrderQuery query, {
+    DailyOrderCursor? after,
   }) async {
-    const cols = '''
-run_date,
-branch,
-item_code,
-item_name,
-goods_received_last_7_days,
-branch_stock,
-mismatch_stock,
-store_stock,
-pending_stock_received,
-extra_qty_more_than_month,
-max_adjustment_30d,
-demand_for_30_days,
-reorder_point_min,
-reorder_max,
-reorder_qty_num,
-reorder_qty,
-final_reorder_qty_store_stock_gt_0,
-date_of_last_qty_received_in_branch,
-qty_30_days_from_last_45d,
-branch_formulary,
-assortment_qty_base_stock,
-assortment_by,
-reason,
-assortment_start,
-assortment_end,
-tma_qty,
-tma_start,
-tma_end,
-item_purchase_type,
-sales_orientation,
-category,
-sub_category,
-company,
-supplier,
-indication,
-active_ingredient,
-pack_size,
-concentration,
-product_type_form,
-retail_price,
-vat,
-is_upp,
-max_type,
-item_minimum_order_unit,
-barcode,
-store_item_classifications
-''';
+    // Interactive scroll window. The extra row indicates more data without
+    // running a count or requiring another request at the end.
+    final request = InventoryDailyOrderQuery(query);
+    if (query.filters.values.any((filter) => filter.values != null && filter.isActive)) {
+      final rows = await _readDailyOrderFilters({
+        ...request.filterRequest,
+        if (after != null) 'cursor': request.cursorValues(after),
+      });
+      return _dailyOrderBatch(
+        rows.cast<Map<String, dynamic>>(),
+        request.sortColumn,
+      );
+    }
 
-    final res = await client
-        .from('daily_order')
-        .select(cols)
-        .eq('run_date', runDate)
-        .order('item_code', ascending: true)
-        .order('branch', ascending: true)
-        .range(from, to);
+    var read = client
+        .from('inventory_daily_order_rows')
+        .select(InventoryDailyOrderQuery.selectColumns)
+        .eq('run_date', query.runDate);
+    if (query.branch != null) read = read.eq('branch', query.branch!);
+    for (final predicate in request.predicates) {
+      read = read.or(predicate);
+    }
+    if (after != null) {
+      // Give the date/code and date/branch indexes a direct seek bound.
+      if (request.sortColumn == 'item_code' || request.sortColumn == 'branch') {
+        final value = request.sortColumn == 'item_code'
+            ? after.itemCode
+            : after.branch;
+        read = query.ascending
+            ? read.gte(request.sortColumn, value)
+            : read.lte(request.sortColumn, value);
+      }
+      read = read.or(request.after(after));
+    }
 
-    return List<Map<String, dynamic>>.from(res);
+    final sort = request.orderColumns;
+    var ordered = read.order(sort.first, ascending: query.ascending);
+    for (final column in sort.skip(1)) {
+      ordered = ordered.order(column, ascending: true);
+    }
+    final result = await ordered.limit(_dailyOrderPageSize + 1);
+    return _dailyOrderBatch(result, request.sortColumn);
+  }
+
+  Future<DailyOrderFilterValues> fetchDailyOrderFilterValues(
+    DailyOrderQuery query, {
+    required DailyOrderField field,
+    required String lookup,
+    List<String> lookupBranches = const [],
+    String? after,
+  }) async {
+    final request = InventoryDailyOrderQuery(query);
+    final values = (await _readDailyOrderFilters({
+      ...request.filterRequest,
+      'facet': field.column,
+      'lookup': lookup,
+      'lookup_branches': lookupBranches,
+      'value_after': after,
+    })).cast<String?>();
+    return DailyOrderFilterValues(
+      values.take(_dailyOrderValuesSize).toList(growable: false),
+      values.length > _dailyOrderValuesSize ? values[_dailyOrderValuesSize - 1] : null,
+    );
+  }
+
+  Future<List<dynamic>> _readDailyOrderFilters(Map<String, dynamic> request) async {
+    final result = await client.rpc(
+      'inventory_daily_order_filter_read',
+      params: {'p_request': request},
+    );
+    return result as List<dynamic>;
+  }
+
+  DailyOrderBatch _dailyOrderBatch(
+    List<Map<String, dynamic>> result,
+    String sortColumn,
+  ) {
+    final visible = result.take(_dailyOrderPageSize);
+    final last = result.length > _dailyOrderPageSize
+        ? result[_dailyOrderPageSize - 1]
+        : null;
+    return DailyOrderBatch(
+      visible.map(DailyOrderRow.fromMap).toList(growable: false),
+      last == null
+          ? null
+          : (
+              itemCode: last['item_code'] as String,
+              branch: last['branch'] as String,
+              sortValue: last[sortColumn],
+            ),
+    );
   }
 
   Future<void> importAssortmentBulk(List<Map<String, dynamic>> rows) async {
@@ -1448,18 +1484,6 @@ end_date
     };
   }
 
-  Future<List<Map<String, dynamic>>> searchOrders({
-    required String runDate,
-    required String query,
-  }) async {
-    final result = await client.rpc(
-      'search_daily_orders',
-      params: {'p_run_date': runDate, 'p_query': query},
-    );
-
-    return List<Map<String, dynamic>>.from(result);
-  }
-
   Future<List<String>> fetchDailyOrderExportDates() async {
     final res = await client
         .from('daily_order_exports')
@@ -1491,9 +1515,14 @@ end_date
     final storagePath = row['storage_path']?.toString().trim();
     if (storagePath == null || storagePath.isEmpty) return null;
 
-    return client.storage
+    final signedUrl = await client.storage
         .from('daily-order-exports')
         .createSignedUrl(storagePath, 60);
+    final uri = Uri.parse(signedUrl);
+    return uri.replace(queryParameters: {
+      ...uri.queryParameters,
+      'download': storagePath.split('/').last,
+    }).toString();
   }
 
   Future<Map<String, dynamic>> fetchAdditionalOrderAnalysis({
