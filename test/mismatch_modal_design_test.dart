@@ -90,6 +90,26 @@ void main() {
     expect(find.text('Missing: Qty 1. Check with the branch.'), findsOneWidget);
     expect(find.text('Stock Movement Timeline'), findsOneWidget);
     expect(find.byType(BackdropFilter), findsOneWidget);
+    String? copiedItemCode;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copiedItemCode = (call.arguments as Map)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('mismatch-copy-item-code')));
+    await tester.pumpAndSettle();
+    expect(copiedItemCode, '16-02-00525');
+    expect(find.byTooltip('Item code copied'), findsOneWidget);
     StoreBranchIdentityRegistry.groups.value = {'RABDAN2-AD': '71'};
     await tester.pumpAndSettle();
     expect(find.text('71 Rabdan2-AD'), findsWidgets);

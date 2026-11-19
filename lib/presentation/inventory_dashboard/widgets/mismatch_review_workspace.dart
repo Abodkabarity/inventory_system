@@ -1584,6 +1584,7 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
   String? _error;
   int _generation = 0;
   bool _loading = true;
+  bool _codeCopied = false;
   @override
   void initState() {
     super.initState();
@@ -1614,6 +1615,7 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
   @override
   void didUpdateWidget(covariant MismatchReviewDetail old) {
     super.didUpdateWidget(old);
+    if (old.row.code != widget.row.code) _codeCopied = false;
     if (_loadedKey != widget.controller.detailKey(widget.row)) {
       _load();
     }
@@ -1862,13 +1864,59 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
                   },
                 ),
                 const SizedBox(height: 5),
-                SelectableText(
-                  '${row.code}  ·  ${_reportEventLabel(analysis)}: ${_date(analysis['event_at'])}',
-                  style: const TextStyle(
-                    color: Color(0xFFF1FAFF),
-                    fontSize: 14,
-                    height: 1.3,
-                  ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 3,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SelectableText(
+                          row.code,
+                          style: const TextStyle(
+                            color: Color(0xFFF1FAFF),
+                            fontSize: 14,
+                            height: 1.3,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          key: const ValueKey('mismatch-copy-item-code'),
+                          tooltip: _codeCopied
+                              ? 'Item code copied'
+                              : 'Copy item code',
+                          icon: Icon(
+                            _codeCopied
+                                ? Icons.check_rounded
+                                : Icons.copy_outlined,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                          constraints: const BoxConstraints.tightFor(
+                            width: 24,
+                            height: 24,
+                          ),
+                          padding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () async {
+                            await Clipboard.setData(
+                              ClipboardData(text: row.code),
+                            );
+                            if (mounted) setState(() => _codeCopied = true);
+                          },
+                        ),
+                      ],
+                    ),
+                    Text(
+                      '·  ${_reportEventLabel(analysis)}: ${_date(analysis['event_at'])}',
+                      style: const TextStyle(
+                        color: Color(0xFFF1FAFF),
+                        fontSize: 14,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
