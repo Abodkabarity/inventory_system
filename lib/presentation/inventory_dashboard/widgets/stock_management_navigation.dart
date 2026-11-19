@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
+import '../../../core/config/online_overview_local_config.dart';
 import '../../../domain/entities/inventory_page.dart';
 
 /// An independent workspace section, with room for later stock review tools.
 class StockManagementNavigation extends StatefulWidget {
   final InventoryPageType selectedPage;
   final ValueChanged<InventoryPageType> onSelected;
+  final bool showOnlineOverview;
+  final String? onlineUserId;
   const StockManagementNavigation({
     super.key,
     required this.selectedPage,
     required this.onSelected,
+    this.showOnlineOverview = true,
+    this.onlineUserId,
   });
   @override
   State<StockManagementNavigation> createState() =>
@@ -17,11 +22,18 @@ class StockManagementNavigation extends StatefulWidget {
 
 class _StockManagementNavigationState extends State<StockManagementNavigation> {
   bool _expanded = true;
+  bool get _onlineAllowed =>
+      widget.showOnlineOverview &&
+      OnlineOverviewLocalConfig.canAccess(
+        widget.onlineUserId ?? OnlineOverviewLocalConfig.currentUserId,
+      );
   bool get _active =>
       widget.selectedPage == InventoryPageType.stockManagement ||
       widget.selectedPage == InventoryPageType.mrnOverview ||
       widget.selectedPage == InventoryPageType.mrnCdOverview ||
-      widget.selectedPage == InventoryPageType.nearExpiry;
+      widget.selectedPage == InventoryPageType.nearExpiry ||
+      (_onlineAllowed &&
+          widget.selectedPage == InventoryPageType.onlineOverview);
   @override
   void didUpdateWidget(covariant StockManagementNavigation oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -31,7 +43,12 @@ class _StockManagementNavigationState extends State<StockManagementNavigation> {
   }
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => StreamBuilder(
+    stream: OnlineOverviewLocalConfig.authChanges,
+    builder: (context, _) => _body(context),
+  );
+
+  Widget _body(BuildContext context) => Container(
     decoration: BoxDecoration(
       color: Colors.white,
       borderRadius: BorderRadius.circular(18),
@@ -146,6 +163,15 @@ class _StockManagementNavigationState extends State<StockManagementNavigation> {
                         'Expiry checks & notes',
                         Icons.event_available_outlined,
                       ),
+                      if (_onlineAllowed && widget.showOnlineOverview) ...[
+                        const SizedBox(height: 5),
+                        _entry(
+                          InventoryPageType.onlineOverview,
+                          'Online Overview',
+                          'Online assortment & purchase status',
+                          Icons.shopping_bag_outlined,
+                        ),
+                      ],
                     ],
                   ),
                 )

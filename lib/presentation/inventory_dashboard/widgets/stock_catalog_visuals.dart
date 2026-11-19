@@ -498,7 +498,12 @@ class CatalogMotion extends StatelessWidget {
 
 class CatalogMonthlyChart extends StatefulWidget {
   final StockCatalogItem item;
-  const CatalogMonthlyChart({super.key, required this.item});
+  final bool showStockDetails;
+  const CatalogMonthlyChart({
+    super.key,
+    required this.item,
+    this.showStockDetails = true,
+  });
   @override
   State<CatalogMonthlyChart> createState() => _CatalogMonthlyChartState();
 }
@@ -653,7 +658,9 @@ class _CatalogMonthlyChartState extends State<CatalogMonthlyChart> {
   Widget build(BuildContext context) {
     final series = catalogMonthlySeries(widget.item);
     final averages = catalogMovingAverage(series);
-    final supply = StockSupplyInsight.of(widget.item);
+    final supply = widget.showStockDetails
+        ? StockSupplyInsight.of(widget.item)
+        : const StockSupplyInsight({});
     final hasGaps = series.any((row) => supply.chartMarksMonth(row['month']));
     final arrivals = supply.chartArrivals;
     final supplySemantics = !hasGaps
@@ -679,7 +686,9 @@ class _CatalogMonthlyChartState extends State<CatalogMonthlyChart> {
       }
     }
     final summary = active == null
-        ? 'Hover or tap a month to see sales and receipt details.'
+        ? widget.showStockDetails
+              ? 'Hover or tap a month to see sales and receipt details.'
+              : 'Tap a month to see the Qty sold online.'
         : '${active['month']}  ·  ${catalogQty(active['total'])} Qty  ·  3-month average: ${averages[_hover!] == null ? '—' : '${catalogQty(averages[_hover!])} Qty'}${source.isEmpty ? '' : '  ·  $source'}';
     final description =
         active != null && supply.chartMarksMonth(active['month'])
@@ -701,7 +710,10 @@ class _CatalogMonthlyChartState extends State<CatalogMonthlyChart> {
           spacing: 16,
           runSpacing: 8,
           children: [
-            const CatalogPill('Monthly net Qty', color: catalogOrange),
+            CatalogPill(
+              widget.showStockDetails ? 'Monthly net Qty' : 'Qty sold',
+              color: catalogOrange,
+            ),
             const Tooltip(
               message:
                   'Average monthly net Qty for the selected month and the two preceding months.',
@@ -738,7 +750,7 @@ class _CatalogMonthlyChartState extends State<CatalogMonthlyChart> {
         const SizedBox(height: 8),
         SizedBox(
           key: const ValueKey('monthly-selection-info'),
-          height: 100 * scale,
+          height: (widget.showStockDetails ? 100 : 40) * scale,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -764,23 +776,24 @@ class _CatalogMonthlyChartState extends State<CatalogMonthlyChart> {
                   ),
                 ),
               ),
-              SizedBox(
-                height: 20 * scale,
-                child: Tooltip(
-                  message: description,
-                  child: Text(
-                    description,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: catalogRose,
-                      fontSize: 12,
-                      height: 1.3,
+              if (widget.showStockDetails)
+                SizedBox(
+                  height: 20 * scale,
+                  child: Tooltip(
+                    message: description,
+                    child: Text(
+                      description,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: catalogRose,
+                        fontSize: 12,
+                        height: 1.3,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              if (active != null)
+              if (active != null && widget.showStockDetails)
                 SizedBox(
                   height: 36 * scale,
                   child: TextButton.icon(
@@ -1214,7 +1227,12 @@ class _MonthlyPainter extends CustomPainter {
 
 class CatalogStockChart extends StatelessWidget {
   final StockManagementItem item;
-  const CatalogStockChart({super.key, required this.item});
+  final bool onlineSales;
+  const CatalogStockChart({
+    super.key,
+    required this.item,
+    this.onlineSales = false,
+  });
   @override
   Widget build(BuildContext context) {
     final stock = math.max(0.0, item.number('total_stock'));
@@ -1225,7 +1243,7 @@ class CatalogStockChart extends StatelessWidget {
       children: [
         Semantics(
           label:
-              'Current stock divided by 45-day sales: ${percent == null ? 'unavailable' : '${percent.toStringAsFixed(1)} percent'}',
+              'Current stock divided by 45-day ${onlineSales ? 'online ' : ''}sales: ${percent == null ? 'unavailable' : '${percent.toStringAsFixed(1)} percent'}',
           child: CatalogMotion(
             builder: (p) => CustomPaint(
               size: const Size(280, 145),
@@ -1248,9 +1266,12 @@ class CatalogStockChart extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        const Text(
-          'Current stock ÷ 45-day net Qty • Gauge capped at 100%',
-          style: TextStyle(color: catalogMuted, fontSize: 11),
+        Text(
+          onlineSales
+              ? 'Online stock + Store stock, divided by 45 days of online sales'
+              : 'Current stock ÷ 45-day net Qty • Gauge capped at 100%',
+          style: const TextStyle(color: catalogMuted, fontSize: 11),
+          textAlign: TextAlign.center,
         ),
         const SizedBox(height: 24),
         for (final entry in [
@@ -1259,7 +1280,11 @@ class CatalogStockChart extends StatelessWidget {
             item.stockAvailable ? item.number('total_stock') : 0.0,
             catalogBlue,
           ),
-          ('Sales (45D)', item.number('recent_sales'), catalogOrange),
+          (
+            onlineSales ? 'Online sales (45D)' : 'Sales (45D)',
+            item.number('recent_sales'),
+            catalogOrange,
+          ),
         ])
           Padding(
             padding: const EdgeInsets.only(bottom: 14),

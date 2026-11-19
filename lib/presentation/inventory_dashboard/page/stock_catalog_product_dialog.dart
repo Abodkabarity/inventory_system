@@ -22,6 +22,9 @@ class StockCatalogProductDialog extends StatefulWidget {
   final StockCatalogDataSource? source;
   final Future<StockCatalogItem> Function()? loadItem;
   final Widget Function(StockCatalogItem)? detailsSection;
+  final ({Widget summary, Widget monthly, Widget stock, Widget annual})
+  Function(StockCatalogItem)?
+  salesPanels;
   final VoidCallback? onClose;
   final bool allowSavedFallback;
   final Future<String?> Function(String)? resolveImage;
@@ -33,6 +36,7 @@ class StockCatalogProductDialog extends StatefulWidget {
     this.source,
     this.loadItem,
     this.detailsSection,
+    this.salesPanels,
     this.onClose,
     this.allowSavedFallback = false,
     this.resolveImage,
@@ -173,6 +177,11 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                       padding: const EdgeInsets.all(20),
                       child: LayoutBuilder(
                         builder: (context, size) {
+                          final salesPanels = widget.salesPanels?.call(item);
+                          final monthly =
+                              salesPanels?.monthly ?? _monthly(item);
+                          final stock = salesPanels?.stock ?? _stock(item);
+                          final annual = salesPanels?.annual ?? _annual(item);
                           final compact = size.maxWidth < 850;
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -180,6 +189,17 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                               if (widget.detailsSection != null) ...[
                                 widget.detailsSection!(item),
                                 const SizedBox(height: 18),
+                              ],
+                              if (salesPanels != null) ...[
+                                const Text(
+                                  'Product overview · Online branches',
+                                  style: TextStyle(
+                                    color: catalogInk,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
                               ],
                               if (!snapshot.hasData) ...[
                                 if (snapshot.connectionState ==
@@ -202,39 +222,53 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                                   ),
                                 const SizedBox(height: 12),
                               ],
-                              _alerts(item),
-                              const SizedBox(height: 16),
-                              _metrics(item, size.maxWidth),
-                              if (item.distributionStatus.isNew) ...[
-                                const SizedBox(height: 18),
-                                StockDistributionPanel(item: item),
+                              if (salesPanels != null)
+                                salesPanels.summary
+                              else ...[
+                                _alerts(item),
+                                const SizedBox(height: 16),
+                                _metrics(item, size.maxWidth),
+                                if (item.distributionStatus.isNew) ...[
+                                  const SizedBox(height: 18),
+                                  StockDistributionPanel(item: item),
+                                ],
                               ],
                               const SizedBox(height: 18),
                               if (compact) ...[
-                                _monthly(item),
+                                monthly,
                                 const SizedBox(height: 16),
-                                _stock(item),
+                                stock,
                               ] else
                                 StockChartPair(
                                   key: const ValueKey(
                                     'monthly-stock-chart-pair',
                                   ),
-                                  children: [_monthly(item), _stock(item)],
+                                  children: [monthly, stock],
                                 ),
                               const SizedBox(height: 18),
-                              _daily(item),
-                              const SizedBox(height: 18),
+                              if (salesPanels == null) ...[
+                                _daily(item),
+                                const SizedBox(height: 18),
+                              ],
                               if (compact) ...[
-                                _annual(item),
+                                annual,
                                 const SizedBox(height: 16),
                                 _facts(item),
                               ] else
                                 StockChartPair(
                                   leftFraction: .5,
-                                  children: [_annual(item), _facts(item)],
+                                  children: [annual, _facts(item)],
                                 ),
                               const SizedBox(height: 18),
-                              if (compact) ...[
+                              if (salesPanels != null)
+                                _ranking(
+                                  item,
+                                  'stock',
+                                  'Online branches with most stock',
+                                  'Current stock Qty',
+                                  catalogTeal,
+                                )
+                              else if (compact) ...[
                                 _ranking(
                                   item,
                                   'recent_sales',
@@ -276,15 +310,17 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                                   ],
                                 ),
                               const SizedBox(height: 18),
-                              _branches(item),
-                              const SizedBox(height: 18),
-                              Text(
-                                'Snapshot ${catalogDate(stockMap(item.data['meta'])['refreshed_at'])} • Stock ${catalogDate(stockMap(item.data['meta'])['stock_updated_at'])} • Annual branch totals are loaded live. All quantities are net Qty.',
-                                style: const TextStyle(
-                                  color: catalogMuted,
-                                  fontSize: 11,
+                              _branches(item, online: salesPanels != null),
+                              if (salesPanels == null) ...[
+                                const SizedBox(height: 18),
+                                Text(
+                                  'Snapshot ${catalogDate(stockMap(item.data['meta'])['refreshed_at'])} • Stock ${catalogDate(stockMap(item.data['meta'])['stock_updated_at'])} • Annual branch totals are loaded live. All quantities are net Qty.',
+                                  style: const TextStyle(
+                                    color: catalogMuted,
+                                    fontSize: 11,
+                                  ),
                                 ),
-                              ),
+                              ],
                             ],
                           );
                         },
@@ -922,8 +958,9 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
     );
   }
 
-  Widget _branches(StockCatalogItem item) {
-    final hasDistribution = stockMap(item.data['distribution']).isNotEmpty;
+  Widget _branches(StockCatalogItem item, {bool online = false}) {
+    final hasDistribution =
+        !online && stockMap(item.data['distribution']).isNotEmpty;
     final rows =
         catalogBranchRows(item)
             .where(
@@ -971,27 +1008,34 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
         ('reorder_qty', 'Reorder qty'),
         ('final_qty', 'Final order qty'),
       ],
-      ('recent_sales', 'Sales 45D'),
-      ('last_3_sales', 'Last 3D'),
-      ('baseline_daily', '42D avg/day'),
+      ('recent_sales', online ? 'Sold in last 3 full months' : 'Sales 45D'),
+      if (!online) ...[
+        ('last_3_sales', 'Last 3D'),
+        ('baseline_daily', '42D avg/day'),
+      ],
       ('sales_2025', 'Sales 2025'),
       ('sales_2026', 'Sales 2026'),
-      ('cover', 'Cover days'),
+      if (!online) ('cover', 'Cover days'),
     ];
     return CatalogPanel(
-      title: 'Branch intelligence',
-      subtitle:
-          '${rows.length} active branches • Stock and recent demand share one snapshot • Click a column to rank',
+      title: online ? 'Online branches' : 'Branch intelligence',
+      subtitle: online
+          ? '${rows.length} online branches · Sales and stock Qty'
+          : '${rows.length} active branches • Stock and recent demand share one snapshot • Click a column to rank',
       trailing: IconButton(
         onPressed: () => _save([
           for (final r in rows)
             {
-              ...r,
+              if (online)
+                for (final column in columns) column.$1: r[column.$1]
+              else
+                ...r,
               'item_code': item.code,
               'item_name': item.name,
-              'baseline_daily': baselineDays > 0
-                  ? stockNumber(r['baseline_sales']) / baselineDays
-                  : null,
+              if (!online)
+                'baseline_daily': baselineDays > 0
+                    ? stockNumber(r['baseline_sales']) / baselineDays
+                    : null,
             },
         ], '${item.code}_branches.xlsx'),
         tooltip: 'Export visible branches',
@@ -1019,7 +1063,10 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                 ),
               ),
               for (final entry in [
-                ('recent_sales', 'Top sellers (45D)'),
+                (
+                  'recent_sales',
+                  online ? 'Top sellers (3 months)' : 'Top sellers (45D)',
+                ),
                 ('sales_2026', 'Top sellers (2026)'),
                 ('stock', 'Highest stock'),
               ])
@@ -1080,7 +1127,13 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                 ],
                 rows: [
                   for (final row in rows)
-                    _branchRow(row, baselineDays, recentDays, hasDistribution),
+                    _branchRow(
+                      row,
+                      baselineDays,
+                      recentDays,
+                      hasDistribution,
+                      online: online,
+                    ),
                 ],
               ),
             ),
@@ -1093,11 +1146,12 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                 style: TextStyle(color: catalogMuted),
               ),
             ),
-          const SizedBox(height: 10),
-          const Text(
-            'Branch stock includes Final Reorder from the latest Daily Order. Red balance: 45-day sales exceed this balance. Coverage uses this balance and branch demand. Negative quantities retain returns.',
-            style: TextStyle(color: catalogMuted, fontSize: 11),
-          ),
+          if (!online) const SizedBox(height: 10),
+          if (!online)
+            const Text(
+              'Branch stock includes Final Reorder from the latest Daily Order. Red balance: 45-day sales exceed this balance. Coverage uses this balance and branch demand. Negative quantities retain returns.',
+              style: TextStyle(color: catalogMuted, fontSize: 11),
+            ),
         ],
       ),
     );
@@ -1107,8 +1161,9 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
     Map<String, dynamic> row,
     double baselineDays,
     double recentDays,
-    bool hasDistribution,
-  ) {
+    bool hasDistribution, {
+    bool online = false,
+  }) {
     final stock = stockNumber(row['stock']),
         sales = stockNumber(row['recent_sales']);
     final days = baselineDays + recentDays;
@@ -1121,17 +1176,18 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
       row['stock'],
       if (hasDistribution) ...[row['reorder_qty'], row['final_qty']],
       row['recent_sales'],
-      row['last_3_sales'],
-      baselineDays > 0
-          ? stockNumber(row['baseline_sales']) / baselineDays
-          : null,
+      if (!online) row['last_3_sales'],
+      if (!online)
+        baselineDays > 0
+            ? stockNumber(row['baseline_sales']) / baselineDays
+            : null,
       row['sales_2025'],
       row['sales_2026'],
-      cover,
+      if (!online) cover,
     ];
     return DataRow(
       color: WidgetStatePropertyAll(
-        sales > stock ? const Color(0xFFFFF4F6) : Colors.white,
+        !online && sales > stock ? const Color(0xFFFFF4F6) : Colors.white,
       ),
       cells: [
         DataCell(
@@ -1149,7 +1205,9 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
             Text(
               values[i] == null ? '—' : catalogQty(values[i]),
               style: TextStyle(
-                color: i == 0 && sales > stock ? catalogRose : catalogInk,
+                color: !online && i == 0 && sales > stock
+                    ? catalogRose
+                    : catalogInk,
                 fontWeight: FontWeight.w600,
                 fontSize: 12,
               ),

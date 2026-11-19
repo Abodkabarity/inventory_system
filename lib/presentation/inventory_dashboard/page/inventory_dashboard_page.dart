@@ -1,3 +1,5 @@
+import '../widgets/online_overview_user_gate.dart';
+import 'online_overview_page.dart';
 import 'package:daily_order/presentation/inventory_dashboard/page/tma_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -308,6 +310,8 @@ Widget _buildPage(
         dataSource: StockExpiryRemoteDs(Supabase.instance.client),
         embedded: true,
       );
+    case InventoryPageType.onlineOverview:
+      return const OnlineOverviewUserGate(child: OnlineOverviewPage());
     case InventoryPageType.shortage:
       return PurchaseShortagePage(runDate: runDate);
     case InventoryPageType.availabilityKpi:

@@ -1,3 +1,4 @@
+import '../../../core/config/online_overview_local_config.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -381,6 +382,11 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
                   ] else
                     StockManagementNavigation(
                       selectedPage: currentPage,
+                      showOnlineOverview:
+                          !viewOnly &&
+                          OnlineOverviewLocalConfig.canAccess(
+                            OnlineOverviewLocalConfig.currentUserId,
+                          ),
                       onSelected: (page) => _selectPage(context, page),
                     ),
 

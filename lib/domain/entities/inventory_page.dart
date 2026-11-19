@@ -19,6 +19,7 @@ enum InventoryPageType {
   mrnOverview,
   mrnCdOverview,
   nearExpiry,
+  onlineOverview,
   shortage,
   availabilityKpi,
   fillRateKpi,
