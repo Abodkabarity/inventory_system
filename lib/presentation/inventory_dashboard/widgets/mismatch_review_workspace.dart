@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,11 +13,12 @@ import '../../../domain/entities/mismatch_review.dart';
 import '../../../domain/entities/mismatch_stock_journey.dart';
 import '../../widgets/app_date_range_picker_dialog.dart';
 import 'tracker_branch_dropdown.dart';
+import 'mismatch_dashboard_visuals.dart';
 
-const _ink = Color(0xFF122D40),
-    _teal = Color(0xFF087F8C),
+const _ink = Color(0xFF07283E),
+    _teal = Color(0xFF007F90),
     _muted = Color(0xFF64748B),
-    _line = Color(0xFFE3EAF0);
+    _line = Color(0xFFC6DAED);
 
 class MismatchReviewWorkspace extends StatefulWidget {
   const MismatchReviewWorkspace({
@@ -36,6 +38,8 @@ class MismatchReviewWorkspace extends StatefulWidget {
 class _MismatchReviewWorkspaceState extends State<MismatchReviewWorkspace> {
   late final MismatchReviewController _controller;
   final _search = TextEditingController();
+  final _rowScroll = ScrollController(), _columnScroll = ScrollController();
+  int _page = 0, _pageSize = 50;
   String _branch = 'ALL', _risk = 'all';
   DateTimeRange? _reportRange;
   bool _recentFirst = false, _exporting = false;
@@ -58,6 +62,10 @@ class _MismatchReviewWorkspaceState extends State<MismatchReviewWorkspace> {
     _projectionKey = key;
     _scopedRows = _scope();
     _visibleRows = _visible(_scopedRows);
+    _page = _page.clamp(
+      0,
+      math.max(0, (_visibleRows.length / _pageSize).ceil() - 1),
+    );
     _followups = _scopedRows.where((r) => r.needsFollowup).length;
     _adjustmentReviews = _scopedRows
         .where((r) => r.status == 'adjustment_review')
@@ -93,6 +101,8 @@ class _MismatchReviewWorkspaceState extends State<MismatchReviewWorkspace> {
   @override
   void dispose() {
     _search.dispose();
+    _rowScroll.dispose();
+    _columnScroll.dispose();
     if (widget.controller == null) _controller.dispose();
     super.dispose();
   }
@@ -128,7 +138,7 @@ class _MismatchReviewWorkspaceState extends State<MismatchReviewWorkspace> {
       ),
     );
     if (range != null && mounted) {
-      setState(
+      _filterChanged(
         () => _reportRange = DateTimeRange(
           start: DateUtils.dateOnly(range.start),
           end: DateUtils.dateOnly(range.end),
@@ -164,6 +174,12 @@ class _MismatchReviewWorkspaceState extends State<MismatchReviewWorkspace> {
     return result;
   }
 
+  void _filterChanged(VoidCallback change) => setState(() {
+    change();
+    _page = 0;
+    if (_rowScroll.hasClients) _rowScroll.jumpTo(0);
+  });
+
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: _controller,
@@ -172,62 +188,79 @@ class _MismatchReviewWorkspaceState extends State<MismatchReviewWorkspace> {
       builder: (context, _, _) => LayoutBuilder(
         builder: (context, box) {
           _project();
-          final scope = _scopedRows, visible = _visibleRows;
+          final inset = box.maxWidth < 700 ? 16.0 : 26.0;
           return ColoredBox(
-            color: const Color(0xFFF4F7FA),
-            child: Padding(
-              padding: EdgeInsets.all(box.maxWidth < 700 ? 12 : 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _header(box.maxWidth),
-                  const SizedBox(height: 16),
-                  _metrics(scope, box.maxWidth),
-                  const SizedBox(height: 16),
-                  _filters(),
-                  const SizedBox(height: 12),
-                  if (_controller.error != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: _notice(
-                        Icons.cloud_off_outlined,
-                        _controller.error!,
-                        const Color(0xFFB45309),
+            color: const Color(0xFF003E4C),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _header(box.maxWidth),
+                Expanded(
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(28),
+                      ),
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Color(0xFFF5FAFF),
+                          Color(0xFFEDF5FD),
+                          Color(0xFFF4F9FF),
+                        ],
                       ),
                     ),
-                  if (_controller.lastChangedId != null &&
-                      _controller.lastChangedAt != null &&
-                      DateTime.now()
-                              .difference(_controller.lastChangedAt!)
-                              .inMinutes <
-                          2)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: _activity(),
-                    ),
-                  Expanded(
-                    child: _controller.loading
-                        ? const Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                CircularProgressIndicator(),
-                                SizedBox(height: 16),
-                                Text(
-                                  'Loading mismatch entries and stock history…',
-                                ),
-                              ],
+                    padding: EdgeInsets.fromLTRB(inset, 18, inset, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _metrics(_scopedRows, box.maxWidth),
+                        const SizedBox(height: 24),
+                        _filters(),
+                        const SizedBox(height: 14),
+                        if (_controller.error != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _notice(
+                              Icons.cloud_off_outlined,
+                              _controller.error!,
+                              const Color(0xFFB45309),
                             ),
-                          )
-                        : _table(visible),
+                          ),
+                        if (_controller.lastChangedId != null &&
+                            _controller.lastChangedAt != null &&
+                            DateTime.now()
+                                    .difference(_controller.lastChangedAt!)
+                                    .inMinutes <
+                                2)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _activity(),
+                          ),
+                        Expanded(
+                          child: _controller.loading
+                              ? const Center(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      CircularProgressIndicator(color: _teal),
+                                      SizedBox(height: 16),
+                                      Text(
+                                        'Loading mismatch entries and stock history…',
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : _table(_visibleRows),
+                        ),
+                        const SizedBox(height: 12),
+                        _pagination(_visibleRows.length),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${visible.length} shown · ${scope.length} in scope · ${_controller.rows.length} active records  |  Updated ${_controller.syncedAt == null ? '—' : DateFormat('HH:mm:ss').format(_controller.syncedAt!)}',
-                    style: const TextStyle(fontSize: 11, color: _muted),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           );
         },
@@ -235,64 +268,972 @@ class _MismatchReviewWorkspaceState extends State<MismatchReviewWorkspace> {
     ),
   );
 
-  Widget _header(double width) => Container(
-    padding: const EdgeInsets.all(22),
-    decoration: BoxDecoration(
-      gradient: const LinearGradient(
-        colors: [Color(0xFF122D40), Color(0xFF154B5C)],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ),
-      borderRadius: BorderRadius.circular(20),
-    ),
-    child: Wrap(
-      alignment: WrapAlignment.spaceBetween,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: 20,
-      runSpacing: 14,
+  Widget _header(double width) {
+    final compact = width < 850;
+    final title = Row(
       children: [
-        SizedBox(
-          width: math.min(width - 100, 620),
+        Container(
+          width: compact ? 58 : 74,
+          height: compact ? 58 : 74,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(19),
+            border: Border.all(color: const Color(0xFF1396A5)),
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF08899B), Color(0xFF006071)],
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x18001F2C),
+                blurRadius: 14,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Center(
+            child: MismatchCubeIcon(
+              color: Colors.white,
+              size: compact ? 34 : 43,
+            ),
+          ),
+        ),
+        const SizedBox(width: 22),
+        Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
                 'INVENTORY / RECONCILIATION',
                 style: TextStyle(
-                  color: Color(0xFF8CCCD7),
-                  fontSize: 10,
+                  color: Color(0xFFD2F3F8),
+                  fontSize: 11,
                   fontWeight: FontWeight.w700,
-                  letterSpacing: 1.8,
+                  letterSpacing: 1.6,
                 ),
               ),
-              const SizedBox(height: 8),
-              const Text(
+              const SizedBox(height: 3),
+              Text(
                 'Mismatch Report',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 28,
+                  fontSize: compact ? 26 : 32,
+                  height: 1.15,
                   fontWeight: FontWeight.w800,
-                  letterSpacing: -.8,
+                  letterSpacing: -.5,
                 ),
               ),
               const SizedBox(height: 5),
               const Text(
                 'Every mismatch has a story. Follow the stock, then decide what needs attention.',
-                style: TextStyle(color: Color(0xFFCCDDE5), fontSize: 13),
+                style: TextStyle(
+                  color: Color(0xFFECFAFF),
+                  fontSize: 14,
+                  height: 1.25,
+                ),
               ),
             ],
           ),
         ),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
+      ],
+    );
+    final coverage = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 11),
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFF28CDD4), width: 1.3),
+        borderRadius: BorderRadius.circular(13),
+        color: const Color(0x30004D5B),
+        boxShadow: const [
+          BoxShadow(color: Color(0x2200E9E0), blurRadius: 12, spreadRadius: -5),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.calendar_today_outlined,
+            color: Colors.white,
+            size: 20,
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
               'Movement coverage · ${_coverageLabel()}',
-              style: const TextStyle(color: Color(0xFFCCDDE5), fontSize: 12),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
+          ),
+        ],
+      ),
+    );
+    return MismatchHeaderBackdrop(
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 20 : 38,
+          vertical: 16,
+        ),
+        child: compact
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [title, const SizedBox(height: 14), coverage],
+              )
+            : Row(
+                children: [
+                  Expanded(child: title),
+                  const SizedBox(width: 25),
+                  coverage,
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _metrics(List<MismatchReview> rows, double width) {
+    final cards = [
+      (
+        'Active mismatch entries',
+        rows.length,
+        Icons.inventory_2_outlined,
+        const Color(0xFF00518C),
+        'all',
+        const Color(0xFFEEF8FE),
+        const Color(0xFFCFE7F5),
+      ),
+      (
+        'Needs follow-up',
+        _followups,
+        Icons.outlined_flag_rounded,
+        const Color(0xFFCA3207),
+        'attention',
+        const Color(0xFFFFF9F4),
+        const Color(0xFFFFEAD9),
+      ),
+      (
+        'Adjustments to review',
+        _adjustmentReviews,
+        Icons.tune_rounded,
+        const Color(0xFF5E39B2),
+        'adjustment_review',
+        const Color(0xFFFAF6FF),
+        const Color(0xFFE6DDFB),
+      ),
+      (
+        'Evidence gaps',
+        _evidenceGaps,
+        Icons.fact_check_outlined,
+        const Color(0xFF09666B),
+        'data',
+        const Color(0xFFF0FBFC),
+        const Color(0xFFCFECEE),
+      ),
+    ];
+    return LayoutBuilder(
+      builder: (context, c) {
+        final columns = c.maxWidth >= 880 ? 4 : 2;
+        final gap = c.maxWidth < 700 ? 12.0 : 16.0;
+        final cardWidth = (c.maxWidth - gap * (columns - 1)) / columns;
+        final small = cardWidth < 250;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final x in cards)
+              SizedBox(
+                width: cardWidth,
+                height: small ? 82 : 86,
+                child: MismatchMetricCard(
+                  key: ValueKey('mismatch-metric-${x.$5}'),
+                  id: x.$5,
+                  title: x.$1,
+                  count: x.$2,
+                  icon: x.$3,
+                  color: x.$4,
+                  background: [x.$6, x.$7],
+                  small: small,
+                  selected: _risk == x.$5 && _risk != 'all',
+                  cube: x.$5 == 'all',
+                  onTap: () => _filterChanged(() => _risk = x.$5),
+                ),
+              ),
           ],
+        );
+      },
+    );
+  }
+
+  Widget _filters() => LayoutBuilder(
+    builder: (context, box) {
+      final wide = box.maxWidth >= 1120;
+      final fieldWidth = (box.maxWidth - 16) / 2;
+      final available = box.maxWidth - 80;
+      return Wrap(
+        spacing: wide ? 20 : 16,
+        runSpacing: 12,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          SizedBox(
+            width: wide ? available * .400 : box.maxWidth,
+            height: 52,
+            child: TextField(
+              controller: _search,
+              onChanged: (_) => _filterChanged(() {}),
+              style: const TextStyle(color: _ink, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'Search product, code or branch...',
+                hintStyle: const TextStyle(
+                  color: Color(0xFF3B5D80),
+                  fontSize: 14,
+                ),
+                prefixIcon: const Icon(
+                  Icons.search_rounded,
+                  size: 24,
+                  color: _teal,
+                ),
+                filled: true,
+                fillColor: const Color(0xFFEAF4FC),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 18,
+                ),
+                border: _filterBorder(),
+                enabledBorder: _filterBorder(),
+                focusedBorder: _filterBorder(focused: true),
+                suffixIcon: _search.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Clear search',
+                        icon: const Icon(Icons.close, size: 18),
+                        onPressed: () => _filterChanged(_search.clear),
+                      ),
+              ),
+            ),
+          ),
+          SizedBox(
+            width: wide ? available * .182 : fieldWidth,
+            height: 52,
+            child: TrackerBranchDropdown(
+              value: _branch,
+              items: ['ALL', ..._branches],
+              height: 52,
+              accentColor: const Color(0xFF008DAA),
+              label: 'Branch',
+              plainIcon: true,
+              onChanged: (value) => _filterChanged(() => _branch = value),
+            ),
+          ),
+          SizedBox(
+            width: wide ? available * .183 : fieldWidth,
+            height: 52,
+            child: _reportDateFilter(),
+          ),
+          SizedBox(
+            width: wide ? available * .131 : math.min(180, fieldWidth),
+            height: 52,
+            child: OutlinedButton(
+              onPressed: () =>
+                  _filterChanged(() => _recentFirst = !_recentFirst),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _ink,
+                backgroundColor: const Color(0xFFF6FAFF),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                side: const BorderSide(color: _line),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(13),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    _recentFirst ? Icons.schedule_rounded : Icons.sort_rounded,
+                    size: 22,
+                    color: _teal,
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Text(
+                      _recentFirst ? 'Newest first' : 'Priority first',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 21,
+                    color: _teal,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SizedBox(
+            width: wide ? available * .104 : math.min(150, fieldWidth),
+            height: 52,
+            child: PopupMenuButton<String>(
+              enabled: !_exporting && !widget.exportInProgress,
+              onSelected: (value) async {
+                if (value == 'legacy') {
+                  widget.onLegacyExport?.call(_branch, _search.text);
+                  return;
+                }
+                setState(() => _exporting = true);
+                try {
+                  await MismatchReviewExporter.export(
+                    _visibleRows.map((r) => r.exportRow()).toList(),
+                  );
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text('$e')));
+                  }
+                } finally {
+                  if (mounted) setState(() => _exporting = false);
+                }
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                  value: 'review',
+                  child: Text('Export visible reviews · Excel'),
+                ),
+                if (widget.onLegacyExport != null)
+                  const PopupMenuItem(
+                    value: 'legacy',
+                    child: Text('Original records / history · Excel'),
+                  ),
+              ],
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(color: const Color(0xFF087B89)),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0xFF006C7A), Color(0xFF004652)],
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x10004E5E),
+                      blurRadius: 10,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      _exporting || widget.exportInProgress
+                          ? Icons.hourglass_top
+                          : Icons.file_download_outlined,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                    const SizedBox(width: 10),
+                    const Text(
+                      'Export',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    },
+  );
+
+  OutlineInputBorder _filterBorder({bool focused = false}) =>
+      OutlineInputBorder(
+        borderRadius: BorderRadius.circular(13),
+        borderSide: BorderSide(
+          color: focused ? _teal : _line,
+          width: focused ? 1.5 : 1.2,
+        ),
+      );
+
+  Widget _table(List<MismatchReview> rows) {
+    final start = _page * _pageSize;
+    final pageRows = rows.skip(start).take(_pageSize).toList(growable: false);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: 57,
+          child: Row(
+            children: [
+              const Icon(
+                Icons.view_list_outlined,
+                size: 25,
+                color: Color(0xFF003E52),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Review Queue',
+                style: TextStyle(
+                  fontSize: 21,
+                  color: _ink,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -.5,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${NumberFormat.decimalPattern().format(rows.length)} records',
+                style: const TextStyle(fontSize: 14, color: Color(0xFF3B5D80)),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF9FCFF),
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(color: _line),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x09004669),
+                  blurRadius: 18,
+                  offset: Offset(0, 7),
+                ),
+              ],
+            ),
+            child: rows.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.filter_alt_off_outlined,
+                          size: 40,
+                          color: _muted,
+                        ),
+                        const SizedBox(height: 12),
+                        const Text('No mismatch entries match these filters'),
+                        TextButton(
+                          onPressed: () => _filterChanged(() {
+                            _branch = 'ALL';
+                            _risk = 'all';
+                            _reportRange = null;
+                            _search.clear();
+                          }),
+                          child: const Text('Clear filters'),
+                        ),
+                      ],
+                    ),
+                  )
+                : LayoutBuilder(
+                    builder: (context, b) => Scrollbar(
+                      controller: _columnScroll,
+                      thumbVisibility: b.maxWidth < 1390,
+                      notificationPredicate: (notification) =>
+                          notification.metrics.axis == Axis.horizontal,
+                      child: SingleChildScrollView(
+                        controller: _columnScroll,
+                        scrollDirection: Axis.horizontal,
+                        child: SizedBox(
+                          width: math.max(b.maxWidth, 1390),
+                          child: Column(
+                            children: [
+                              Container(
+                                height: 45,
+                                decoration: const BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [
+                                      Color(0xFF107987),
+                                      Color(0xFF005563),
+                                      Color(0xFF004858),
+                                    ],
+                                  ),
+                                ),
+                                child: _columns([
+                                  _column('#'),
+                                  _column('Product'),
+                                  _column('Branch', Icons.storefront_outlined),
+                                  _column('System Qty'),
+                                  _column('Actual Qty'),
+                                  _column('Difference'),
+                                  _column('Review', Icons.chat_outlined),
+                                  _column(
+                                    'Latest Incoming',
+                                    Icons.local_shipping_outlined,
+                                  ),
+                                  _column(
+                                    'Report Date',
+                                    Icons.calendar_today_outlined,
+                                  ),
+                                  const SizedBox(),
+                                ], header: true),
+                              ),
+                              Expanded(
+                                child: ListView.builder(
+                                  controller: _rowScroll,
+                                  itemCount: pageRows.length,
+                                  itemExtent: 52,
+                                  itemBuilder: (context, i) =>
+                                      _tableRow(pageRows[i], start + i),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+          ),
         ),
       ],
+    );
+  }
+
+  Widget _column(String label, [IconData? icon]) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      if (icon != null) ...[
+        Icon(icon, color: Colors.white, size: 20),
+        const SizedBox(width: 9),
+      ],
+      Flexible(
+        child: Text(
+          label,
+          maxLines: 1,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    ],
+  );
+
+  Widget _columns(List<Widget> cells, {bool header = false}) {
+    Widget cell(int i) => Container(
+      height: double.infinity,
+      alignment: i == 0 || i == 3 || i == 4 || i == 5 || i == 9
+          ? Alignment.center
+          : Alignment.centerLeft,
+      padding: EdgeInsets.symmetric(horizontal: i == 0 || i == 9 ? 5 : 12),
+      decoration: header
+          ? BoxDecoration(
+              border: Border(
+                right: BorderSide(color: Colors.white.withValues(alpha: .09)),
+              ),
+            )
+          : null,
+      child: cells[i],
+    );
+    return Row(
+      children: [
+        SizedBox(width: 54, child: cell(0)),
+        Expanded(flex: 6, child: cell(1)),
+        Expanded(flex: 3, child: cell(2)),
+        SizedBox(width: 100, child: cell(3)),
+        SizedBox(width: 100, child: cell(4)),
+        SizedBox(width: 106, child: cell(5)),
+        Expanded(flex: 4, child: cell(6)),
+        Expanded(flex: 3, child: cell(7)),
+        SizedBox(width: 143, child: cell(8)),
+        SizedBox(width: 49, child: cell(9)),
+      ],
+    );
+  }
+
+  Widget _tableRow(MismatchReview r, int index) => Material(
+    color: index.isEven ? const Color(0xFFF7FAFE) : const Color(0xFFF0F5FB),
+    child: InkWell(
+      onTap: () => _open(r),
+      hoverColor: const Color(0xFFE4F3F8),
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: Color(0xFFE0EAF4))),
+        ),
+        child: SelectionArea(
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () => _open(r),
+            child: _columns([
+              Container(
+                width: 32,
+                height: 32,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE1EAF6),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${index + 1}',
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    r.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _ink,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    r.code,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF46617E),
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDDF2F9),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.location_on_outlined,
+                        size: 16,
+                        color: Color(0xFF005068),
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          StoreBranchIdentityRegistry.displayName(r.branch),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: _ink,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Text(
+                _n(r.raw['system_stock']),
+                key: ValueKey('mismatch-system-qty-${r.id}'),
+                style: const TextStyle(
+                  color: _ink,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              Text(
+                _n(r.raw['actual_stock']),
+                key: ValueKey('mismatch-actual-qty-${r.id}'),
+                style: const TextStyle(
+                  color: _ink,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: r.number('diff') < 0
+                      ? const Color(0xFFFFE4E8)
+                      : const Color(0xFFDEF3F1),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(
+                  'Diff ${_n(r.raw['diff'], signed: true)}',
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: r.number('diff') < 0
+                        ? const Color(0xFFD50018)
+                        : _teal,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: ReviewBadge(status: r.status),
+              ),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    r.stale
+                        ? '—'
+                        : 'Qty ${_n(r.analysis['receipt_qty'])} · ${_date(r.analysis['last_receipt'])}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: _ink, fontSize: 13),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    (r.analysis['receipt_types'] as List? ?? []).join(', '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF46617E),
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.calendar_month_outlined,
+                    size: 19,
+                    color: Color(0xFF006074),
+                  ),
+                  const SizedBox(width: 9),
+                  Flexible(
+                    child: Text(
+                      _date(r.eventAt),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: _ink, fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                width: 33,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FBFF),
+                  border: Border.all(color: const Color(0xFFD2E1F0)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.chevron_right_rounded,
+                  color: Color(0xFF00517A),
+                  size: 25,
+                ),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  void _goToPage(int page) => setState(() {
+    _page = page;
+    if (_rowScroll.hasClients) _rowScroll.jumpTo(0);
+  });
+
+  Widget _pagination(int total) => LayoutBuilder(
+    builder: (context, box) {
+      final pages = math.max(1, (total / _pageSize).ceil());
+      final from = total == 0 ? 0 : _page * _pageSize + 1;
+      final to = math.min(total, (_page + 1) * _pageSize);
+      final label = Text(
+        'Showing ${_n(from)} – ${_n(to)} of ${_n(total)} records',
+        style: const TextStyle(color: Color(0xFF3B5D80), fontSize: 13),
+      );
+      final sizePicker = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'Rows per page:',
+            style: TextStyle(color: Color(0xFF3B5D80), fontSize: 13),
+          ),
+          const SizedBox(width: 12),
+          Container(
+            height: 36,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF9FCFF),
+              border: Border.all(color: _line),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<int>(
+                key: const ValueKey('mismatch-page-size'),
+                value: _pageSize,
+                isDense: true,
+                icon: const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: _ink,
+                  size: 20,
+                ),
+                style: Theme.of(context).textTheme.bodyMedium!.copyWith(
+                  color: _ink,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+                items: [25, 50, 100]
+                    .map(
+                      (size) =>
+                          DropdownMenuItem(value: size, child: Text('$size')),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) _filterChanged(() => _pageSize = value);
+                },
+              ),
+            ),
+          ),
+        ],
+      );
+      final buttons = box.maxWidth < 500 ? 3 : 5;
+      final first = math.max(
+        0,
+        math.min(_page - buttons ~/ 2, pages - buttons),
+      );
+      final numbered = List.generate(
+        math.min(pages, buttons),
+        (i) => first + i,
+      );
+      final controls = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _pageButton(
+            icon: Icons.keyboard_double_arrow_left_rounded,
+            tooltip: 'First page',
+            onTap: _page == 0 ? null : () => _goToPage(0),
+          ),
+          if (first > 0)
+            _pageButton(
+              icon: Icons.chevron_left_rounded,
+              tooltip: 'Previous page',
+              onTap: () => _goToPage(_page - 1),
+            ),
+          for (final page in numbered)
+            _pageButton(
+              text: '${page + 1}',
+              selected: page == _page,
+              tooltip: 'Page ${page + 1}',
+              onTap: () => _goToPage(page),
+            ),
+          if (box.maxWidth >= 500 && numbered.last < pages - 1) ...[
+            const SizedBox(
+              width: 28,
+              child: Center(
+                child: Text('...', style: TextStyle(color: _ink)),
+              ),
+            ),
+            _pageButton(
+              text: '$pages',
+              tooltip: 'Page $pages',
+              onTap: () => _goToPage(pages - 1),
+            ),
+          ],
+          _pageButton(
+            icon: Icons.chevron_right_rounded,
+            tooltip: 'Next page',
+            onTap: _page >= pages - 1 ? null : () => _goToPage(_page + 1),
+          ),
+        ],
+      );
+      if (box.maxWidth >= 1050) {
+        return SizedBox(
+          height: 64,
+          child: Row(
+            children: [
+              Expanded(child: label),
+              sizePicker,
+              const SizedBox(width: 26),
+              controls,
+            ],
+          ),
+        );
+      }
+      return Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 14,
+        runSpacing: 10,
+        children: [label, sizePicker, controls],
+      );
+    },
+  );
+
+  Widget _pageButton({
+    String? text,
+    IconData? icon,
+    required String tooltip,
+    bool selected = false,
+    VoidCallback? onTap,
+  }) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 3),
+    child: Tooltip(
+      message: tooltip,
+      child: Material(
+        color: selected ? const Color(0xFF00616E) : const Color(0xFFF6FAFF),
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            width: 35,
+            height: 35,
+            alignment: Alignment.center,
+            decoration: selected
+                ? BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF007B88), Color(0xFF004B58)],
+                    ),
+                  )
+                : null,
+            child: icon != null
+                ? Icon(
+                    icon,
+                    size: 23,
+                    color: onTap == null
+                        ? const Color(0xFF9DC5D8)
+                        : const Color(0xFF00567A),
+                  )
+                : Text(
+                    text!,
+                    style: TextStyle(
+                      color: selected ? Colors.white : _ink,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+          ),
+        ),
+      ),
     ),
   );
 
@@ -315,7 +1256,7 @@ class _MismatchReviewWorkspaceState extends State<MismatchReviewWorkspace> {
         if (p['complete'] == true &&
             p['expected_rows'] == p['committed_rows'] &&
             !from.isAfter(end.add(const Duration(days: 1)))) {
-          end = to;
+          if (to.isAfter(end)) end = to;
         }
       }
       ends.add(end);
@@ -323,291 +1264,6 @@ class _MismatchReviewWorkspaceState extends State<MismatchReviewWorkspace> {
     ends.sort();
     return DateFormat('dd MMM yyyy').format(ends.first);
   }
-
-  Widget _metrics(List<MismatchReview> rows, double width) {
-    final cards = [
-      (
-        'Active mismatch entries',
-        rows.length,
-        Icons.inventory_2_outlined,
-        _ink,
-        'all',
-      ),
-      (
-        'Needs follow-up',
-        _followups,
-        Icons.flag_outlined,
-        const Color(0xFFB45309),
-        'attention',
-      ),
-      (
-        'Adjustments to review',
-        _adjustmentReviews,
-        Icons.tune_rounded,
-        const Color(0xFF6D5DAD),
-        'adjustment_review',
-      ),
-      (
-        'Evidence gaps',
-        _evidenceGaps,
-        Icons.fact_check_outlined,
-        _teal,
-        'data',
-      ),
-    ];
-    return LayoutBuilder(
-      builder: (context, c) {
-        final cardWidth =
-            (c.maxWidth - (c.maxWidth < 800 ? 12 : 36)) /
-            (c.maxWidth < 800 ? 2 : 4);
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: cards
-              .map(
-                (x) => SizedBox(
-                  width: cardWidth,
-                  child: Material(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(15),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(15),
-                      onTap: () => setState(() => _risk = x.$5),
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                            color: _risk == x.$5
-                                ? x.$4.withValues(alpha: .45)
-                                : _line,
-                          ),
-                          borderRadius: BorderRadius.circular(15),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(11),
-                              decoration: BoxDecoration(
-                                color: x.$4.withValues(alpha: .08),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Icon(x.$3, color: x.$4, size: 22),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '${x.$2}',
-                                    style: TextStyle(
-                                      color: x.$4,
-                                      fontSize: 25,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                  Text(
-                                    x.$1,
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      color: _muted,
-                                    ),
-                                    maxLines: 2,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              )
-              .toList(),
-        );
-      },
-    );
-  }
-
-  Widget _filters() {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _line),
-      ),
-      child: LayoutBuilder(
-        builder: (context, box) {
-          final wide = box.maxWidth >= 1100;
-          final fieldWidth = box.maxWidth >= 650
-              ? (box.maxWidth - 12) / 2
-              : box.maxWidth;
-          return Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              SizedBox(
-                width: wide ? box.maxWidth - 918 : box.maxWidth,
-                height: 56,
-                child: TextField(
-                  controller: _search,
-                  onChanged: (_) => setState(() {}),
-                  style: const TextStyle(color: _ink, fontSize: 13),
-                  decoration: InputDecoration(
-                    labelText: 'SEARCH',
-                    floatingLabelBehavior: FloatingLabelBehavior.always,
-                    labelStyle: const TextStyle(color: _muted, fontSize: 11),
-                    hintText: 'Product, code or branch',
-                    hintStyle: const TextStyle(color: _muted, fontSize: 13),
-                    prefixIcon: const Icon(
-                      Icons.search_rounded,
-                      size: 21,
-                      color: _teal,
-                    ),
-                    isDense: true,
-                    filled: true,
-                    fillColor: const Color(0xFFF5FAFD),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 20,
-                    ),
-                    border: _filterBorder(),
-                    enabledBorder: _filterBorder(),
-                    focusedBorder: _filterBorder(focused: true),
-                    suffixIcon: _search.text.isEmpty
-                        ? null
-                        : IconButton(
-                            icon: const Icon(Icons.close, size: 17),
-                            onPressed: () => setState(_search.clear),
-                          ),
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: wide ? 270 : fieldWidth,
-                height: 56,
-                child: TrackerBranchDropdown(
-                  value: _branch,
-                  items: ['ALL', ..._branches],
-                  height: 56,
-                  onChanged: (value) => setState(() => _branch = value),
-                ),
-              ),
-              SizedBox(
-                width: wide ? 300 : fieldWidth,
-                height: 56,
-                child: _reportDateFilter(),
-              ),
-              SizedBox(
-                width: 160,
-                height: 56,
-                child: OutlinedButton.icon(
-                  onPressed: () => setState(() => _recentFirst = !_recentFirst),
-                  icon: Icon(
-                    _recentFirst ? Icons.schedule_rounded : Icons.sort_rounded,
-                    size: 19,
-                  ),
-                  label: Text(_recentFirst ? 'Newest first' : 'Priority first'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _ink,
-                    side: const BorderSide(color: _line),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    textStyle: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 140,
-                height: 56,
-                child: PopupMenuButton<String>(
-                  enabled: !_exporting && !widget.exportInProgress,
-                  onSelected: (value) async {
-                    if (value == 'legacy') {
-                      widget.onLegacyExport?.call(_branch, _search.text);
-                      return;
-                    }
-                    setState(() => _exporting = true);
-                    try {
-                      await MismatchReviewExporter.export(
-                        _visibleRows.map((r) => r.exportRow()).toList(),
-                      );
-                    } catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(
-                          context,
-                        ).showSnackBar(SnackBar(content: Text('$e')));
-                      }
-                    } finally {
-                      if (mounted) setState(() => _exporting = false);
-                    }
-                  },
-                  itemBuilder: (_) => [
-                    const PopupMenuItem(
-                      value: 'review',
-                      child: Text('Export visible reviews · Excel'),
-                    ),
-                    if (widget.onLegacyExport != null)
-                      const PopupMenuItem(
-                        value: 'legacy',
-                        child: Text('Original records / history · Excel'),
-                      ),
-                  ],
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _ink,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          _exporting || widget.exportInProgress
-                              ? Icons.hourglass_top
-                              : Icons.download_outlined,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 7),
-                        const Text(
-                          'Export',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  OutlineInputBorder _filterBorder({bool focused = false}) =>
-      OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(
-          color: focused ? _teal : _line,
-          width: focused ? 1.5 : 1,
-        ),
-      );
 
   Widget _reportDateFilter() {
     final range = _reportRange;
@@ -639,7 +1295,7 @@ class _MismatchReviewWorkspaceState extends State<MismatchReviewWorkspace> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'REPORT DATES',
+                      'Report Dates',
                       style: TextStyle(
                         color: _muted,
                         fontSize: 10,
@@ -664,7 +1320,7 @@ class _MismatchReviewWorkspaceState extends State<MismatchReviewWorkspace> {
               if (range != null)
                 IconButton(
                   tooltip: 'Clear report dates',
-                  onPressed: () => setState(() => _reportRange = null),
+                  onPressed: () => _filterChanged(() => _reportRange = null),
                   constraints: const BoxConstraints(
                     minWidth: 28,
                     minHeight: 32,
@@ -725,360 +1381,50 @@ class _MismatchReviewWorkspaceState extends State<MismatchReviewWorkspace> {
     );
   }
 
-  Widget _table(List<MismatchReview> rows) => Container(
-    decoration: BoxDecoration(
-      color: Colors.white,
-      border: Border.all(color: _line),
-      borderRadius: BorderRadius.circular(16),
-    ),
-    clipBehavior: Clip.antiAlias,
-    child: Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          child: Row(
-            children: [
-              const Icon(Icons.view_list_outlined, size: 19, color: _ink),
-              const SizedBox(width: 8),
-              const Text(
-                'Review queue',
-                style: TextStyle(fontWeight: FontWeight.w800, color: _ink),
-              ),
-              const Spacer(),
-              Text(
-                '${rows.length} records',
-                style: const TextStyle(fontSize: 12, color: _muted),
-              ),
-            ],
-          ),
-        ),
-        const Divider(height: 1, color: _line),
-        Expanded(
-          child: rows.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.filter_alt_off_outlined,
-                        size: 40,
-                        color: _muted,
-                      ),
-                      const SizedBox(height: 12),
-                      const Text('No mismatch entries match these filters'),
-                      TextButton(
-                        onPressed: () => setState(() {
-                          _branch = 'ALL';
-                          _risk = 'all';
-                          _reportRange = null;
-                          _search.clear();
-                        }),
-                        child: const Text('Clear filters'),
-                      ),
-                    ],
-                  ),
-                )
-              : LayoutBuilder(
-                  builder: (context, b) => SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: SizedBox(
-                      width: math.max(b.maxWidth, 1120),
-                      child: Column(
-                        children: [
-                          Container(
-                            color: const Color(0xFFF7F9FB),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                            child: const Row(
-                              children: [
-                                Expanded(
-                                  flex: 6,
-                                  child: Text('PRODUCT', style: _columnStyle),
-                                ),
-                                Expanded(
-                                  flex: 3,
-                                  child: Text('BRANCH', style: _columnStyle),
-                                ),
-                                Expanded(
-                                  flex: 2,
-                                  child: Text('STOCK', style: _columnStyle),
-                                ),
-                                Expanded(
-                                  flex: 4,
-                                  child: Text('REVIEW', style: _columnStyle),
-                                ),
-                                Expanded(
-                                  flex: 3,
-                                  child: Text(
-                                    'LATEST INCOMING',
-                                    style: _columnStyle,
-                                  ),
-                                ),
-                                Expanded(
-                                  flex: 2,
-                                  child: Text(
-                                    'REPORT DATE',
-                                    style: _columnStyle,
-                                  ),
-                                ),
-                                SizedBox(width: 30),
-                              ],
-                            ),
-                          ),
-                          Expanded(
-                            child: ListView.builder(
-                              itemCount: rows.length,
-                              itemExtent: 88,
-                              itemBuilder: (context, index) {
-                                final r = rows[index];
-                                return Material(
-                                  color: r.needsFollowup
-                                      ? (r.status == 'priority_followup'
-                                            ? const Color(0xFFFFF0EB)
-                                            : const Color(0xFFFFF8E8))
-                                      : r.status == 'adjustment_review'
-                                      ? const Color(0xFFF6F2FC)
-                                      : Colors.white,
-                                  child: InkWell(
-                                    onTap: () => _open(r),
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        border: Border(
-                                          bottom: const BorderSide(
-                                            color: _line,
-                                          ),
-                                          left: BorderSide(
-                                            width: 3,
-                                            color: r.needsFollowup
-                                                ? reviewColor(r.status)
-                                                : Colors.transparent,
-                                          ),
-                                        ),
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 13,
-                                        vertical: 12,
-                                      ),
-                                      child: SelectionArea(
-                                        child: GestureDetector(
-                                          behavior: HitTestBehavior.translucent,
-                                          onTap: () => _open(r),
-                                          child: Row(
-                                            children: [
-                                              Expanded(
-                                                flex: 6,
-                                                child: Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                        right: 14,
-                                                      ),
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    mainAxisAlignment:
-                                                        MainAxisAlignment
-                                                            .center,
-                                                    children: [
-                                                      Text(
-                                                        r.name,
-                                                        style: const TextStyle(
-                                                          color: _ink,
-                                                          fontSize: 13,
-                                                          fontWeight:
-                                                              FontWeight.w700,
-                                                        ),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                      ),
-                                                      const SizedBox(height: 5),
-                                                      Text(
-                                                        r.code,
-                                                        style: const TextStyle(
-                                                          color: _muted,
-                                                          fontSize: 11,
-                                                        ),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ),
-                                              Expanded(
-                                                flex: 3,
-                                                child: Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                        right: 12,
-                                                      ),
-                                                  child: Text(
-                                                    StoreBranchIdentityRegistry.displayName(
-                                                      r.branch,
-                                                    ),
-                                                    maxLines: 2,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: const TextStyle(
-                                                      color: _ink,
-                                                      fontSize: 14,
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                              Expanded(
-                                                flex: 2,
-                                                child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  mainAxisAlignment:
-                                                      MainAxisAlignment.center,
-                                                  children: [
-                                                    Text(
-                                                      '${_n(r.raw['system_stock'])} → ${_n(r.raw['actual_stock'])}',
-                                                      style: const TextStyle(
-                                                        color: _ink,
-                                                        fontSize: 13,
-                                                        fontWeight:
-                                                            FontWeight.w700,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(height: 4),
-                                                    Text(
-                                                      'Diff ${_n(r.raw['diff'], signed: true)}',
-                                                      style: TextStyle(
-                                                        color:
-                                                            r.number('diff') < 0
-                                                            ? const Color(
-                                                                0xFFBE4B35,
-                                                              )
-                                                            : _teal,
-                                                        fontSize: 11,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                              Expanded(
-                                                flex: 4,
-                                                child: Align(
-                                                  alignment:
-                                                      Alignment.centerLeft,
-                                                  child: ReviewBadge(
-                                                    status: r.status,
-                                                  ),
-                                                ),
-                                              ),
-                                              Expanded(
-                                                flex: 3,
-                                                child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  mainAxisAlignment:
-                                                      MainAxisAlignment.center,
-                                                  children: [
-                                                    Text(
-                                                      r.stale
-                                                          ? '—'
-                                                          : 'Qty ${_n(r.analysis['receipt_qty'])} · ${_date(r.analysis['last_receipt'])}',
-                                                      style: const TextStyle(
-                                                        color: _ink,
-                                                        fontSize: 11,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(height: 4),
-                                                    Text(
-                                                      (r.analysis['receipt_types']
-                                                                  as List? ??
-                                                              [])
-                                                          .join(', '),
-                                                      style: const TextStyle(
-                                                        color: _muted,
-                                                        fontSize: 10,
-                                                      ),
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                              Expanded(
-                                                flex: 2,
-                                                child: Text(
-                                                  _date(r.eventAt),
-                                                  style: const TextStyle(
-                                                    color: _muted,
-                                                    fontSize: 11,
-                                                  ),
-                                                ),
-                                              ),
-                                              const SizedBox(
-                                                width: 30,
-                                                child: Icon(
-                                                  Icons.chevron_right_rounded,
-                                                  color: _muted,
-                                                  size: 19,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-        ),
-      ],
-    ),
-  );
-
   Future<void> _open(MismatchReview row) async {
     await showDialog<void>(
       context: context,
-      builder: (_) => Dialog(
-        insetPadding: EdgeInsets.all(
-          MediaQuery.sizeOf(context).width < 700 ? 10 : 28,
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: SelectionArea(
-          child: SizedBox(
-            width: 1320,
-            height: MediaQuery.sizeOf(context).height - 56,
-            child: AnimatedBuilder(
-              animation: _controller,
-              builder: (context, _) {
-                final current = _controller.rows
-                    .where((r) => r.id == row.id)
-                    .firstOrNull;
-                return current == null
-                    ? const Center(
-                        child: Text('This mismatch is no longer active.'),
-                      )
-                    : ValueListenableBuilder(
-                        valueListenable: StoreBranchIdentityRegistry.groups,
-                        builder: (context, _, _) => MismatchReviewDetail(
-                          row: current,
-                          controller: _controller,
-                          revision: _controller.revision,
-                          onClose: () => Navigator.pop(context),
-                        ),
-                      );
-              },
+      barrierColor: const Color(0x8800192C),
+      builder: (_) => BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 3.5, sigmaY: 3.5),
+        child: Dialog(
+          alignment: const Alignment(0, -.7),
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          shadowColor: const Color(0x9900172B),
+          elevation: 28,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(26),
+          ),
+          insetPadding: EdgeInsets.all(
+            MediaQuery.sizeOf(context).width < 700 ? 10 : 28,
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: SelectionArea(
+            child: SizedBox(
+              width: 1028,
+              height: math.min(900, MediaQuery.sizeOf(context).height - 86),
+              child: AnimatedBuilder(
+                animation: _controller,
+                builder: (context, _) {
+                  final current = _controller.rows
+                      .where((r) => r.id == row.id)
+                      .firstOrNull;
+                  return current == null
+                      ? const Center(
+                          child: Text('This mismatch is no longer active.'),
+                        )
+                      : ValueListenableBuilder(
+                          valueListenable: StoreBranchIdentityRegistry.groups,
+                          builder: (context, _, _) => MismatchReviewDetail(
+                            row: current,
+                            controller: _controller,
+                            revision: _controller.revision,
+                            onClose: () => Navigator.pop(context),
+                          ),
+                        );
+                },
+              ),
             ),
           ),
         ),
@@ -1094,9 +1440,9 @@ const _columnStyle = TextStyle(
   letterSpacing: .6,
 );
 Color reviewColor(String status) => switch (status) {
-  'priority_followup' => const Color(0xFFB5432E),
+  'priority_followup' => const Color(0xFFCC071B),
   'recent_receipt_followup' => const Color(0xFFA56512),
-  'adjustment_review' => const Color(0xFF7561AC),
+  'adjustment_review' => const Color(0xFF6B43B4),
   'data_review' || 'pending' || 'analysis_error' => _teal,
   _ => _muted,
 };
@@ -1108,21 +1454,46 @@ class ReviewBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = reviewColor(status);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: .08),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: .14)),
-      ),
-      child: Text(
-        reviewTitle(status),
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: color,
+        color: status == 'priority_followup'
+            ? const Color(0xFFFFE6E9)
+            : color.withValues(alpha: .08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: status == 'priority_followup'
+              ? const Color(0xFFFFBAC3)
+              : color.withValues(alpha: .18),
         ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            switch (status) {
+              'priority_followup' ||
+              'recent_receipt_followup' => Icons.outlined_flag_rounded,
+              'adjustment_review' => Icons.tune_rounded,
+              'resolved' => Icons.check_circle_outline_rounded,
+              _ => Icons.fact_check_outlined,
+            },
+            size: 16,
+            color: color,
+          ),
+          const SizedBox(width: 7),
+          Flexible(
+            child: Text(
+              reviewTitle(status),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1296,63 +1667,7 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            color: const Color(0xFFF5F9FB),
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Text('MISMATCH REVIEW', style: _columnStyle),
-                    const Spacer(),
-                    IconButton(
-                      onPressed: widget.onClose,
-                      icon: const Icon(Icons.close_rounded, size: 19),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ],
-                ),
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.storefront_rounded,
-                      color: _teal,
-                      size: 22,
-                    ),
-                    const SizedBox(width: 9),
-                    Expanded(
-                      child: Text(
-                        StoreBranchIdentityRegistry.displayName(row.branch),
-                        style: const TextStyle(
-                          color: _teal,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  row.name,
-                  style: const TextStyle(
-                    color: _ink,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 7),
-                SelectableText(
-                  '${row.code}  ·  ${_reportEventLabel(a)}: ${_date(a['event_at'])}',
-                  style: const TextStyle(color: _muted, fontSize: 13),
-                ),
-                const SizedBox(height: 12),
-                ReviewBadge(status: status),
-              ],
-            ),
-          ),
+          _detailHeader(row, a, status),
           const Divider(height: 1, color: _line),
           Expanded(
             child: _loading
@@ -1400,25 +1715,41 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
                     child: Builder(
                       builder: (context) => Column(
                         children: [
-                          TabBar(
-                            isScrollable: true,
-                            tabAlignment: TabAlignment.start,
-                            labelColor: _teal,
-                            unselectedLabelColor: _muted,
-                            indicatorColor: _teal,
-                            labelStyle: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                            ),
-                            tabs: [
-                              const Tab(text: 'Case summary'),
-                              const Tab(text: 'Movements'),
-                              Tab(
-                                text:
-                                    'Stock corrections (${_journey!.adjustments.length})',
+                          DecoratedBox(
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [Color(0xFFF8FBFF), Color(0xFFEEF5FC)],
                               ),
-                              const Tab(text: 'Mismatch history'),
-                            ],
+                            ),
+                            child: TabBar(
+                              isScrollable: true,
+                              tabAlignment: TabAlignment.start,
+                              labelColor: _teal,
+                              unselectedLabelColor: const Color(0xFF35547B),
+                              dividerColor: _line,
+                              indicatorWeight: 4,
+                              indicatorSize: TabBarIndicatorSize.tab,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                              ),
+                              labelPadding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                              ),
+                              indicatorColor: _teal,
+                              labelStyle: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              tabs: [
+                                const Tab(text: 'Case summary'),
+                                const Tab(text: 'Movements'),
+                                Tab(
+                                  text:
+                                      'Stock corrections (${_journey!.adjustments.length})',
+                                ),
+                                const Tab(text: 'Mismatch history'),
+                              ],
+                            ),
                           ),
                           Expanded(
                             child: AnimatedBuilder(
@@ -1444,6 +1775,123 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
     );
   }
 
+  Widget _detailHeader(
+    MismatchReview row,
+    Map<String, dynamic> analysis,
+    String status,
+  ) => ClipRRect(
+    borderRadius: const BorderRadius.vertical(bottom: Radius.circular(19)),
+    child: MismatchHeaderBackdrop(
+      modal: true,
+      child: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(34, 18, 44, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'MISMATCH REVIEW',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    height: 1.2,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: .4,
+                  ),
+                ),
+                const SizedBox(height: 9),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.storefront_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        StoreBranchIdentityRegistry.displayName(row.branch),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          height: 1.2,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                LayoutBuilder(
+                  builder: (context, box) {
+                    final title = Text(
+                      row.name,
+                      key: const ValueKey('mismatch-detail-product'),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        height: 1.2,
+                      ),
+                    );
+                    final badge = DecoratedBox(
+                      key: const ValueKey('mismatch-detail-review-badge'),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: ReviewBadge(status: status),
+                    );
+                    return box.maxWidth >= 560
+                        ? Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Flexible(child: title),
+                              const SizedBox(width: 16),
+                              badge,
+                            ],
+                          )
+                        : Wrap(
+                            spacing: 12,
+                            runSpacing: 8,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [title, badge],
+                          );
+                  },
+                ),
+                const SizedBox(height: 5),
+                SelectableText(
+                  '${row.code}  ·  ${_reportEventLabel(analysis)}: ${_date(analysis['event_at'])}',
+                  style: const TextStyle(
+                    color: Color(0xFFF1FAFF),
+                    fontSize: 14,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            top: 14,
+            right: 16,
+            child: IconButton(
+              tooltip: 'Close review',
+              onPressed: widget.onClose,
+              icon: const Icon(
+                Icons.close_rounded,
+                color: Colors.white,
+                size: 23,
+              ),
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
   Widget _decision(
     Map<String, dynamic> a,
     String status,
@@ -1465,10 +1913,10 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
         : 'No later rows in archive';
     return LayoutBuilder(
       builder: (context, box) => ListView(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.fromLTRB(24, 14, 24, 24),
         children: [
           _caseStory(a, journey, status),
-          const SizedBox(height: 18),
+          const SizedBox(height: 12),
           _notice(
             widget.row.needsFollowup
                 ? Icons.flag_outlined
@@ -1476,13 +1924,13 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
             reviewRecommendation(status, customerReturn: returns),
             reviewColor(status),
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 14),
           const Text(
-            'STOCK MOVEMENT TIMELINE',
+            'Stock Movement Timeline',
             style: TextStyle(
               color: _ink,
               fontWeight: FontWeight.w800,
-              fontSize: 17,
+              fontSize: 20,
             ),
           ),
           const SizedBox(height: 6),
@@ -1513,7 +1961,7 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
               a['last_receipt'] == null
                   ? 'No stock received before this report entry.'
                   : '+${_n(a['receipt_qty'])} qty\n${(a['receipt_types'] as List? ?? []).join(', ')}',
-              Icons.south_west_rounded,
+              Icons.check_rounded,
               _teal,
             ),
             _journeyCard(
@@ -1522,7 +1970,9 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
               movementTitle,
               journey.receiptDay == null
                   ? 'Cannot define the comparison period.'
-                  : 'Sold ${_n(journey.sold)} · Transferred ${_n(journey.transferredOut)}\nOther outgoing ${_n(journey.otherOut)}\nStock corrections ${journey.laterAdjustments}'
+                  : 'Sold ${_n(journey.sold)} · Transferred ${_n(journey.transferredOut)}'
+                        '${journey.otherOut == 0 ? '' : '\nOther outgoing ${_n(journey.otherOut)}'}'
+                        '${journey.laterAdjustments == 0 ? '' : '\nStock corrections ${journey.laterAdjustments}'}'
                         '${journey.laterMovements.isEmpty ? '' : '\nLast: ${_date(journey.laterMovements.last['trans_date'])}'}',
               journey.noLaterMovementEstablished
                   ? Icons.pause_circle_outline
@@ -1533,7 +1983,7 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
               '04',
               _reportEventLabel(a),
               '${_date(a['event_at'])}${journey.daysToCount != null && journey.daysToCount! >= 0 ? '\nAfter ${journey.elapsedEnglish}' : ''}',
-              'System stock ${_n(widget.row.raw['system_stock'])} → Branch stock ${_n(widget.row.raw['actual_stock'])}\nDifference ${_n(widget.row.raw['diff'], signed: true)}',
+              'System Qty ${_n(widget.row.raw['system_stock'])} · Actual Qty ${_n(widget.row.raw['actual_stock'])}\nDifference ${_n(widget.row.raw['diff'], signed: true)}',
               Icons.fact_check_outlined,
               reviewColor(status),
             ),
@@ -1549,69 +1999,70 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
             ),
           ],
           const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF6F2FC),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFFE2D8F1)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(
-                      Icons.tune_rounded,
-                      color: Color(0xFF7561AC),
-                      size: 24,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            adjustments.isEmpty
-                                ? 'No INVAdjustment found in available history'
-                                : 'Previously adjusted · ${adjustments.length} INVAdjustment entries',
-                            style: const TextStyle(
-                              color: _ink,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
+          if (adjustments.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF6F2FC),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE2D8F1)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.tune_rounded,
+                        color: Color(0xFF7561AC),
+                        size: 24,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              adjustments.isEmpty
+                                  ? 'No INVAdjustment found in available history'
+                                  : 'Previously adjusted · ${adjustments.length} INVAdjustment entries',
+                              style: const TextStyle(
+                                color: _ink,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            lastAdj == null
-                                ? 'Checked 1-1-2026 through the report date. History before 2026 is unavailable.'
-                                : 'Latest: ${_date(lastAdj['trans_date'])}  ·  Qty ${_n(MismatchStockJourney.quantity(lastAdj), signed: true)}  ·  Adj No ${lastAdj['trans_no'] ?? '—'}\n${journey.adjustmentTiming(lastAdj)}',
-                            style: const TextStyle(
-                              color: _muted,
-                              fontSize: 13,
-                              height: 1.6,
+                            const SizedBox(height: 6),
+                            Text(
+                              lastAdj == null
+                                  ? 'Checked 1-1-2026 through the report date. History before 2026 is unavailable.'
+                                  : 'Latest: ${_date(lastAdj['trans_date'])}  ·  Qty ${_n(MismatchStockJourney.quantity(lastAdj), signed: true)}  ·  Adj No ${lastAdj['trans_no'] ?? '—'}\n${journey.adjustmentTiming(lastAdj)}',
+                              style: const TextStyle(
+                                color: _muted,
+                                fontSize: 13,
+                                height: 1.6,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (adjustments.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: TextButton.icon(
+                        onPressed: () =>
+                            DefaultTabController.of(context).animateTo(2),
+                        icon: const Icon(Icons.history_rounded, size: 18),
+                        label: const Text('View all previous adjustments'),
                       ),
                     ),
-                  ],
-                ),
-                if (adjustments.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: TextButton.icon(
-                      onPressed: () =>
-                          DefaultTabController.of(context).animateTo(2),
-                      icon: const Icon(Icons.history_rounded, size: 18),
-                      label: const Text('View all previous adjustments'),
-                    ),
-                  ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 14),
           const Text(
             'EXPECTED STOCK AND PREVIOUS SHORTAGE',
             style: _columnStyle,
@@ -1651,7 +2102,7 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
             ],
           ),
           if (issues.isNotEmpty) ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: 7),
             const Text('EVIDENCE TO RESOLVE', style: _columnStyle),
             const SizedBox(height: 8),
             ...issues.map(
@@ -1703,58 +2154,86 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
     String body,
     IconData icon,
     Color color,
-  ) => Container(
-    constraints: const BoxConstraints(minHeight: 212),
-    padding: const EdgeInsets.all(18),
-    decoration: BoxDecoration(
-      color: color.withValues(alpha: .035),
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: color.withValues(alpha: .2)),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+  ) {
+    final displayBody = step == '04'
+        ? ''
+        : step == '02'
+        ? body.split('\n').first
+        : body;
+    final headlineText = Text(
+      headline,
+      style: TextStyle(
+        color: color,
+        fontSize: 22,
+        fontWeight: FontWeight.w800,
+        height: 1.15,
+        letterSpacing: -.3,
+      ),
+    );
+    return Tooltip(
+      message: '$title\n$headline\n$body',
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 146),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color.lerp(Colors.white, color, .025)!,
+              Color.lerp(Colors.white, color, .10)!,
+            ],
+          ),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: .28)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: color, size: 23),
-            const Spacer(),
+            Row(
+              children: [
+                Icon(icon, color: color, size: 23),
+                const Spacer(),
+                Text(
+                  step,
+                  style: TextStyle(
+                    color: color.withValues(alpha: .5),
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 7),
             Text(
-              step,
-              style: TextStyle(
-                color: color.withValues(alpha: .5),
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
+              title,
+              style: const TextStyle(
+                color: _ink,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
               ),
             ),
+            const SizedBox(height: 8),
+            if (headline == 'No later movement')
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: headlineText,
+              )
+            else
+              headlineText,
+            if (displayBody.isNotEmpty) ...[
+              const SizedBox(height: 7),
+              Text(
+                displayBody,
+                style: const TextStyle(color: _ink, fontSize: 13, height: 1.35),
+              ),
+            ],
           ],
         ),
-        const SizedBox(height: 16),
-        Text(
-          title,
-          style: const TextStyle(
-            color: _muted,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          headline,
-          style: TextStyle(
-            color: color,
-            fontSize: 21,
-            fontWeight: FontWeight.w800,
-            height: 1.3,
-          ),
-        ),
-        const SizedBox(height: 10),
-        Text(
-          body,
-          style: const TextStyle(color: _ink, fontSize: 13, height: 1.6),
-        ),
-      ],
-    ),
-  );
+      ),
+    );
+  }
 
   Widget _caseStory(
     Map<String, dynamic> a,
@@ -1825,11 +2304,24 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
     return Directionality(
       textDirection: TextDirection.ltr,
       child: Container(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: .045),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: status == 'priority_followup'
+                ? [const Color(0xFFFFF5F7), const Color(0xFFFFEFF2)]
+                : [
+                    Color.lerp(Colors.white, color, .025)!,
+                    Color.lerp(Colors.white, color, .065)!,
+                  ],
+          ),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: .25)),
+          border: Border.all(
+            color: status == 'priority_followup'
+                ? const Color(0xFFFFBAC4)
+                : color.withValues(alpha: .25),
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1848,47 +2340,64 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
               style: const TextStyle(
                 color: _ink,
                 fontSize: 16,
-                height: 1.8,
-                fontWeight: FontWeight.w600,
+                height: 1.35,
+                fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: 6),
             Text(
               '$previous\n$movements\n$outcome',
-              style: const TextStyle(color: _ink, fontSize: 14, height: 1.9),
+              style: const TextStyle(color: _ink, fontSize: 14, height: 1.45),
             ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                _storyNumber('Received', received, _teal),
-                _storyNumber('Sold after receipt', j.sold, _ink),
-                _storyNumber('Transferred out', j.transferredOut, _ink),
-                _storyNumber('Other stock removed', j.otherOut, _muted),
-                _storyNumber('Expected system stock', expected, _teal),
-                _storyNumber('Branch stock', actual, color),
-              ],
+            const SizedBox(height: 10),
+            LayoutBuilder(
+              builder: (context, box) {
+                final columns = box.maxWidth >= 840
+                    ? 6
+                    : box.maxWidth >= 500
+                    ? 3
+                    : 2;
+                final width = (box.maxWidth - (columns - 1) * 8) / columns;
+                final facts = [
+                  ('Received', received, _teal),
+                  ('Sold after receipt', j.sold, _ink),
+                  ('Transferred out', j.transferredOut, _ink),
+                  ('Other stock removed', j.otherOut, _ink),
+                  ('Expected system stock', expected, _teal),
+                  ('Branch stock', actual, color),
+                ];
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final fact in facts)
+                      SizedBox(
+                        width: width,
+                        child: _storyNumber(fact.$1, fact.$2, fact.$3),
+                      ),
+                  ],
+                );
+              },
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 10),
             Text(
               verdict,
               style: TextStyle(
                 color: color,
                 fontWeight: FontWeight.w800,
                 fontSize: 16,
-                height: 1.7,
+                height: 1.4,
               ),
             ),
             if (a['old_shortage'] != null && a['added_shortage'] != null)
               Padding(
-                padding: const EdgeInsets.only(top: 6),
+                padding: const EdgeInsets.only(top: 3),
                 child: Text(
                   'Previously missing: ${qty(older)}. Additional missing in this report entry: ${qty(added)}.',
                   style: const TextStyle(
                     color: _muted,
                     fontSize: 13,
-                    height: 1.7,
+                    height: 1.4,
                   ),
                 ),
               ),
@@ -1900,7 +2409,7 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
                   style: const TextStyle(
                     color: Color(0xFFA56512),
                     fontSize: 13,
-                    height: 1.7,
+                    height: 1.4,
                   ),
                 ),
               ),
@@ -1912,7 +2421,7 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
                   style: const TextStyle(
                     color: Color(0xFFA56512),
                     fontSize: 13,
-                    height: 1.7,
+                    height: 1.4,
                   ),
                 ),
               ),
@@ -1921,7 +2430,7 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
                 padding: EdgeInsets.only(top: 8),
                 child: Text(
                   'The latest stock received includes a customer return. Check the return document; it is not a new warehouse transfer.',
-                  style: TextStyle(color: _muted, fontSize: 13, height: 1.7),
+                  style: TextStyle(color: _muted, fontSize: 13, height: 1.4),
                 ),
               ),
           ],
@@ -1931,23 +2440,34 @@ class _MismatchReviewDetailState extends State<MismatchReviewDetail> {
   }
 
   Widget _storyNumber(String title, num? value, Color color) => Container(
-    width: 168,
-    padding: const EdgeInsets.all(12),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    constraints: const BoxConstraints(minHeight: 80),
     decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(10),
+      color: const Color(0xFFFCFDFF),
+      borderRadius: BorderRadius.circular(12),
       border: Border.all(color: _line),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: const TextStyle(color: _muted, fontSize: 12)),
-        const SizedBox(height: 5),
+        SizedBox(
+          height: 28,
+          child: Text(
+            title,
+            maxLines: 2,
+            style: const TextStyle(
+              color: Color(0xFF35547B),
+              fontSize: 11,
+              height: 1.2,
+            ),
+          ),
+        ),
         Text(
           _n(value),
           style: TextStyle(
             color: color,
             fontSize: 24,
+            height: 1.1,
             fontWeight: FontWeight.w800,
           ),
         ),

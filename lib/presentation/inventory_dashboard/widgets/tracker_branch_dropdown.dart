@@ -13,6 +13,9 @@ class TrackerBranchDropdown extends StatelessWidget {
   final ValueChanged<String> onChanged;
   final double? height;
   final bool compact;
+  final Color? accentColor;
+  final String label;
+  final bool plainIcon;
 
   const TrackerBranchDropdown({
     super.key,
@@ -21,6 +24,9 @@ class TrackerBranchDropdown extends StatelessWidget {
     required this.onChanged,
     this.height,
     this.compact = false,
+    this.accentColor,
+    this.label = 'BRANCH',
+    this.plainIcon = false,
   });
 
   static String _label(String branch) => branch == 'ALL'
@@ -39,6 +45,7 @@ class TrackerBranchDropdown extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final accent = accentColor ?? AppColors.primaryColor;
     final popupWidth = math.min(360.0, MediaQuery.sizeOf(context).width - 32);
     final fieldBorder = compact
         ? const OutlineInputBorder(
@@ -51,8 +58,8 @@ class TrackerBranchDropdown extends StatelessWidget {
       builder: (context, _, _) => Theme(
         data: theme.copyWith(
           colorScheme: theme.colorScheme.copyWith(
-            primary: AppColors.primaryColor,
-            secondary: AppColors.primaryColor,
+            primary: accent,
+            secondary: accent,
             onPrimary: Colors.white,
             surface: Colors.white,
             surfaceTint: Colors.transparent,
@@ -71,7 +78,9 @@ class TrackerBranchDropdown extends StatelessWidget {
                   color: const Color(0xffF5FAFD),
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
-                    color: AppColors.primaryColor.withValues(alpha: .22),
+                    color: accentColor == null
+                        ? AppColors.primaryColor.withValues(alpha: .22)
+                        : const Color(0xFFC6DAED),
                   ),
                 ),
           child: DropdownSearch<String>(
@@ -94,7 +103,11 @@ class TrackerBranchDropdown extends StatelessWidget {
                 isDense: true,
                 contentPadding: EdgeInsets.symmetric(
                   horizontal: 12,
-                  vertical: compact ? 12 : 8,
+                  vertical: compact
+                      ? 12
+                      : plainIcon
+                      ? 6
+                      : 8,
                 ),
                 border: height == null ? fieldBorder : InputBorder.none,
                 enabledBorder: height == null ? fieldBorder : InputBorder.none,
@@ -108,7 +121,9 @@ class TrackerBranchDropdown extends StatelessWidget {
                         ),
                       )
                     : InputBorder.none,
-                prefixIcon: compact
+                prefixIcon: plainIcon
+                    ? Icon(Icons.storefront_outlined, size: 23, color: accent)
+                    : compact
                     ? const Icon(
                         Icons.storefront_outlined,
                         size: 19,
@@ -134,7 +149,11 @@ class TrackerBranchDropdown extends StatelessWidget {
                       ),
                 prefixIconConstraints: BoxConstraints(
                   minHeight: compact ? 40 : 32,
-                  minWidth: compact ? 38 : 0,
+                  minWidth: plainIcon
+                      ? 46
+                      : compact
+                      ? 38
+                      : 0,
                 ),
               ),
             ),
@@ -143,8 +162,8 @@ class TrackerBranchDropdown extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (!compact) ...[
-                  const Text(
-                    'BRANCH',
+                  Text(
+                    label,
                     style: TextStyle(
                       color: AppColors.subText,
                       fontSize: 10,
@@ -175,9 +194,12 @@ class TrackerBranchDropdown extends StatelessWidget {
                 padding: const EdgeInsets.all(4),
                 constraints: const BoxConstraints(minWidth: 28, minHeight: 32),
               ),
-              dropdownButtonProps: const DropdownButtonProps(
-                iconClosed: Icon(Icons.keyboard_arrow_down_rounded, size: 20),
-                color: AppColors.primaryColor,
+              dropdownButtonProps: DropdownButtonProps(
+                iconClosed: const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 20,
+                ),
+                color: accent,
                 padding: EdgeInsets.all(4),
                 constraints: BoxConstraints(minWidth: 28, minHeight: 32),
               ),

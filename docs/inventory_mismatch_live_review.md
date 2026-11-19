@@ -39,6 +39,41 @@ earlier offline Python report is not required to use this screen.
 
 ## Review rules
 
+### Daily archive coverage repair (2026-11-19)
+
+`inventory_audit.coverage_periods()` combines intact monthly checkpoints with
+verified daily publication receipts. Replacing a day intentionally invalidates
+its original monthly-file checkpoint; the review must not stop at September
+when newer daily receipts are available. Incomplete months are never relabeled
+complete. Every intervening day must be covered before the cutoff can advance.
+A daily source requested on its report date is partial and cannot establish
+full-day coverage; refresh that date after it ends in Dubai. Verified empty days
+count, while missing or inconsistent publication receipts do not.
+
+The source version includes every daily snapshot, including partial-day writes,
+so the 45-second screen poll invalidates old reviews after a daily replacement.
+Its hash is independent of the SQL connection timezone. The page uses the same
+coverage periods, and overlapping daily periods cannot shorten the displayed
+cutoff. The existing red/amber classifications and branch identity formatting
+are unchanged.
+
+Migration: `20261119051157_inventory_mismatch_daily_coverage.sql`.
+`python -m unittest test_mismatch_daily_coverage -v` in `automation/` tests the
+actual review rules in a disposable schema with rollback, including missing
+days, partial days, empty days, signed quantities and source invalidation.
+
+Live repair verified 98 company/day receipts from October 1 through November
+18 against 1,156,926 stored movement rows and exact signed quantity sums. The
+October 1–20 sources and partial October 30/November 18 sources were refreshed
+through the validated daily publisher. Both companies then had contiguous
+coverage through November 18. All 11,609 active reviews were refreshed with no
+missing, stale or failed analyses: 131 priority follow-ups, including 31 dated
+October/November, and 151 recent-receipt follow-ups, including 20 dated since
+October. November 19 entries still require that day's completed movement source.
+`automation/repair_mismatch_review_cache.py --refresh --output <path>` repeats
+the bounded cache repair; it never changes branch counts. Its inspection and
+result snapshot is saved in `outputs/mismatch-review-coverage-repair-20261119.json`.
+
 The previous audit's conservative reconstruction rules are implemented in
 `inventory_audit.compute_review`: January 1 system reference, signed IN/OUT,
 single inclusion of adjustments, source/company validation, exact numeric
@@ -49,9 +84,9 @@ numbers. Missing baseline is unknown, never zero. `INVAdjustment` is explicit;
 
 The classification concerns the latest add/update of the active count. The
 original `update_date` can be unchanged after an edit. An unchanged discrepancy
-is not automatically a new loss. The current archive covers through October
-21, 2026: a new October 22 count is still analyzed immediately, but cannot get
-a reliable movement-based verdict until its event date is covered. The page
+is not automatically a new loss. Each new count is analyzed immediately, but
+cannot get a reliable movement-based verdict until its event date is covered
+by completed source periods. The page
 shows this limitation and the exact coverage date. A system zero or a priority
 flag never proves physical zero or branch responsibility.
 
@@ -61,9 +96,23 @@ Summary cards filter active counts, follow-ups, adjustments and evidence gaps.
 Search uses product name/code and raw/displayed branch names. Branch/date/risk
 filters and priority/newest sorting work locally across the complete snapshot.
 The queue uses a virtualized list with a separate, prominent branch column.
-Priority follow-ups have a pale red row and red edge; recent receipts use amber,
-and adjustment reviews use purple. Selecting a row always opens a centered
-dialog up to 1,320 pixels wide, with the branch name above the product.
+The teal dashboard follows the supplied November 19 visual reference, with a
+dark teal wave header, four pastel gradient metric cards, branch pills and a
+teal table header. It has no product images. System Qty, Actual Qty and Difference
+are separate columns. Priority follow-ups use red badges, recent receipts amber,
+and adjustment reviews purple. Metric cards lift and scale gently on mouse hover with a small icon tilt,
+number movement and animated mini-bars. Motion is local to each card, stops at
+rest, respects reduced-motion preferences and preserves the cards' filter action.
+Local pagination defaults to 50 rows, with 25/100
+options. Search, filters, counts and visible-review exports still use the entire
+loaded result rather than the current page. Selecting a row opens a 1,028-pixel
+modal with a teal wave header and a dimmed, blurred backdrop. The branch name
+appears above the product. A light tab strip leads to the pink/teal case summary,
+six responsive Qty cards and four compact timeline checkpoints. Full receipt
+type and recorded System/Actual Qty context remain available in checkpoint
+tooltips and the original evidence tabs. Additional stock reference values and
+evidence warnings remain below the timeline; nonempty adjustment summaries keep
+their dedicated panel. The layout scrolls on smaller viewports.
 Visible wording uses "mismatch report" for report entries/dates and "branch
 stock" for the physical quantity. The baseline is labeled "1-1-2026 stock".
 The receipt card shows only its date. The report-event card shows "Added to
@@ -135,6 +184,8 @@ Verification:
 
 ```powershell
 flutter test --no-pub test/mismatch_review_workspace_test.dart test/mismatch_stock_journey_test.dart
+flutter test --no-pub test/mismatch_teal_dashboard_test.dart test/tracker_branch_dropdown_test.dart
+flutter test --no-pub test/mismatch_modal_design_test.dart
 flutter analyze --no-pub lib/domain/entities/mismatch_review.dart lib/data/repositories/mismatch_review_repository.dart lib/presentation/inventory_dashboard/page/mismatch_page.dart lib/presentation/inventory_dashboard/widgets/mismatch_review_workspace.dart
 flutter build web --no-pub
 ```
@@ -151,3 +202,8 @@ uncertainty, and source-version refresh of an open dialog without row changes.
 A synthetic 11,000-row widget test asserts opening/closing does not re-run
 search over the list and reopening makes only one detail request. Cache tests
 cover request deduplication, in-flight invalidation, source changes and eviction.
+Teal dashboard checks cover separate Qty values, page navigation, page-size
+changes and searching an item outside the current page. Desktop (1721 px), tablet
+(640 px) and mobile (360 px) renders are under `outputs/mismatch-teal-dashboard-*`.
+Modal checks exercise the evidence tabs, late group-71 metadata and dismissal.
+Modal previews at 1672/1000/640/360 pixels are under `outputs/mismatch-teal-modal-*`.

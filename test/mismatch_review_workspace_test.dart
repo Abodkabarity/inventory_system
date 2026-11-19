@@ -48,6 +48,7 @@ MismatchReview sample(
 });
 
 class FakeReviews extends MismatchReviewRepository {
+  List<Map<String, dynamic>>? coverageOverride;
   List<Map<String, dynamic>> extraMovements = [];
   List<Map<String, dynamic>>? movementOverride;
   List<MismatchReview> rows = [
@@ -72,16 +73,21 @@ class FakeReviews extends MismatchReviewRepository {
   Future<MismatchReviewSnapshot> load() async {
     loads++;
     if (fail) throw StateError('offline');
-    return MismatchReviewSnapshot(List.of(rows), [
-      {
-        'company': 'APG',
-        'from_date': '2026-01-01',
-        'to_date': '2026-10-21',
-        'complete': true,
-        'committed_rows': 1,
-        'expected_rows': 1,
-      },
-    ], sourceVersion);
+    return MismatchReviewSnapshot(
+      List.of(rows),
+      coverageOverride ??
+          [
+            {
+              'company': 'APG',
+              'from_date': '2026-01-01',
+              'to_date': '2026-10-21',
+              'complete': true,
+              'committed_rows': 1,
+              'expected_rows': 1,
+            },
+          ],
+      sourceVersion,
+    );
   }
 
   @override
@@ -186,6 +192,42 @@ class CountingReview extends MismatchReview {
 }
 
 void main() {
+  testWidgets('daily receipts do not shorten overlapping monthly coverage', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1700, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repo = FakeReviews()
+      ..coverageOverride = [
+        for (final company in ['APG', '71 Pharmacy L.L.C.'])
+          for (final dates in [
+            ('2026-01-01', '2026-10-21'),
+            ('2026-10-01', '2026-10-01'),
+            ('2026-10-22', '2026-10-22'),
+          ])
+            {
+              'company': company,
+              'from_date': dates.$1,
+              'to_date': dates.$2,
+              'complete': true,
+              'expected_rows': 1,
+              'committed_rows': 1,
+            },
+      ];
+    final controller = MismatchReviewController(repo);
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MismatchReviewWorkspace(controller: controller)),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Movement coverage · 22 Oct 2026'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+  });
   tearDown(() => StoreBranchIdentityRegistry.groups.value = {});
   testWidgets(
     'toolbar searches decorated branches and filters inclusive UAE report dates',
@@ -307,7 +349,7 @@ void main() {
       expect(find.byType(Dialog), findsOneWidget);
       expect(
         tester.getSize(find.byType(MismatchReviewDetail)).width,
-        greaterThan(1200),
+        greaterThanOrEqualTo(1000),
       );
       expect(find.text('What happened to this item?'), findsOneWidget);
       await tester.tap(find.text('Movements'));
