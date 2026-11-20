@@ -20,7 +20,6 @@ Map<String, dynamic> catalogExportRow(StockCatalogItem item) => {
   'Company': item.text('company'),
   'Branches stock': item.number('branches_stock'),
   'STORE stock': item.number('store_stock'),
-  'APG stock': item.number('apg_stock'),
   'APG branches only': item.number('apg_branches_stock'),
   '71 branches stock': item.number('stock_71'),
   'Total stock': item.number('total_stock'),

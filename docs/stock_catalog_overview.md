@@ -178,10 +178,12 @@ the dedicated Excel export contains every date, all five channels and total Qty.
 - Branches Stock: all active registered branches, excluding warehouses and STORE.
 - STORE Stock: STORE warehouse balance. Duplicate item/branch balances use MAX,
   matching the existing stock workspace. Signed balances remain signed.
-- APG Stock: **STORE + active branches with branches.branch_group in (APG, 71)**.
-  The UI/export label stays APG Stock without a group suffix.
-  It overlaps other columns. Total Stock = STORE + Branches; never add APG again.
-  APG branch-only and group 71 balances are available in exports/details.
+- Total Stock = STORE + Branches. The overlapping APG Stock column was removed
+  from the Overview register and export on 2026-11-20. APG branch-only and group
+  71 balances remain available in exports/details. The prepared `apg_stock`
+  field is retained for compatibility with existing clients and detail views.
+- Farabi MC belongs to APG; its authoritative `branches.branch_group` was
+  corrected from NULL to APG on 2026-11-20.
 - Annual 2025/2026 Cash, Insurance and Online are signed net units from
   sales_history_2025 and sales_history; annual totals include all source branches.
 - Recent demand: sales_last_45_days, active registered branches. All windows end

@@ -271,11 +271,11 @@ void main() {
       expect(raw.first['branch'], 'AL AIN');
       final exported = catalogExportRow(fixture());
       expect(exported['Item status'], fixture().itemStatus);
+      expect(exported, isNot(contains('APG stock')));
+      expect(exported['Total stock'], fixture().number('total_stock'));
       expect(
-        exported['APG stock'],
-        fixture().number('store_stock') +
-            fixture().number('apg_branches_stock') +
-            fixture().number('stock_71'),
+        exported['APG branches only'],
+        fixture().number('apg_branches_stock'),
       );
     },
   );

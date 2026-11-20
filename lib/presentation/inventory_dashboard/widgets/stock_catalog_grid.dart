@@ -239,12 +239,11 @@ class _CatalogGridSource extends DataGridSource {
       'All active registered branches. STORE is excluded.',
     ),
     ('store_stock', 'STORE STOCK', 145.0, 'Current STORE warehouse balance.'),
-    ('apg_stock', 'APG STOCK', 145.0, 'APG stock balance including STORE.'),
     (
       'total_stock',
       'TOTAL STOCK',
       150.0,
-      'STORE + all active branches. Do not add APG again.',
+      'STORE + all active branches.',
     ),
     (
       'supply_review',
