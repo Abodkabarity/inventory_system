@@ -15,3 +15,27 @@ also enforces the approved ID; restricted_user.sql remains the final explicit po
 The final result builder reads sources and publishes an atomic private generation.
 Training scripts and artifacts remain local; Update data rebuilds prepared results
 with the existing trained artifact rather than silently retraining it.
+
+## Recorded-sales update, approved 20 November 2026
+
+The same approved account now reads `get_local_online_overview_preview`, a single
+restricted RPC serving prepared recorded-sales ranks, stock, monthly and 45-day
+online sales, and branch availability. The `preview` name is an internal API name;
+the exact-ID and active Inventory guard applies in all build modes.
+
+`actual_sales_preview.sql`, `current_month_sales.sql` and `recent_sales.sql` version
+the deployed reader. Migration `20261120104231` installs these idempotent definitions
+and checks that the existing prepared snapshot and every transport page are ready.
+It does not modify product ranks, source data, original caches or scheduled jobs.
+Every response remains pinned to its base generation and approved online roster.
+Other Retail stock remains a single aggregate, with no branch-level detail access.
+
+The original read RPCs remain available with the same single-user restriction for
+older clients. Current-month charts replace current-month history with signed daily
+online delivery Qty, excluding insurance and future invoices. This display period
+does not enter classification or stock-cover calculations.
+
+The prepared recorded-sales snapshot is maintained separately from the original
+cache. After a base snapshot rebuild, prepare a matching recorded-sales generation
+and its exact transport pages before serving it. A stale generation is rejected.
+Local preparation/verification code and training data remain outside this release.

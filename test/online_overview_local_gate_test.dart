@@ -13,6 +13,7 @@ void main() {
   test(
     'access is restricted to exactly the approved ID in every build mode',
     () {
+      expect(OnlineOverviewLocalConfig.actualSalesPreview, isTrue);
       expect(
         OnlineOverviewLocalConfig.canAccess(
           OnlineOverviewLocalConfig.allowedUserId,

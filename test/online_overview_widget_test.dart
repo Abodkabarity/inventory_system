@@ -1,5 +1,6 @@
 import 'package:daily_order/core/config/online_overview_local_config.dart';
 import 'dart:io';
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:daily_order/core/utils/store_branch_identity_registry.dart';
@@ -8,6 +9,8 @@ import 'package:daily_order/domain/entities/online_overview.dart';
 import 'package:daily_order/presentation/inventory_dashboard/page/online_overview_page.dart';
 import 'package:daily_order/presentation/inventory_dashboard/page/stock_catalog_product_dialog.dart';
 import 'package:daily_order/presentation/inventory_dashboard/widgets/online_overview_grid.dart';
+import 'package:daily_order/presentation/inventory_dashboard/widgets/online_product_insights.dart';
+import 'package:daily_order/presentation/inventory_dashboard/widgets/online_rank_guide_design.dart';
 import 'package:daily_order/presentation/inventory_dashboard/widgets/stock_catalog_visuals.dart';
 import 'package:daily_order/presentation/inventory_dashboard/widgets/stock_management_navigation.dart';
 import 'package:daily_order/presentation/widgets/inventory_dropdown.dart';
@@ -178,7 +181,26 @@ void main() {
       ]) {
         expect(tester.getTopLeft(find.text(label)).dy, secondRow);
       }
-      expect(find.textContaining('6 products · Stock as of'), findsOneWidget);
+      expect(find.textContaining('products · Stock as of'), findsNothing);
+      final productGrid = tester.widget<SfDataGrid>(find.byType(SfDataGrid));
+      expect(
+        productGrid.columns
+            .firstWhere((column) => column.columnName == 'days')
+            .visible,
+        isFalse,
+      );
+      expect(
+        productGrid.columns
+            .firstWhere((column) => column.columnName == 'value')
+            .visible,
+        isFalse,
+      );
+      expect(
+        productGrid.columns
+            .firstWhere((column) => column.columnName == 'forecast_value')
+            .visible,
+        isTrue,
+      );
       expect(tester.takeException(), isNull);
       await screenshot(tester, 'desktop');
       await tester.tap(find.byTooltip('What the letters mean'));
@@ -190,6 +212,390 @@ void main() {
       await screenshot(tester, 'rank_guide_desktop', dialog: true);
     },
   );
+
+  for (final recent in <Map<String, dynamic>>[
+    {},
+    {'qty': null, 'stock_day': '2026-11-17'},
+    {'qty': 0, 'from': '2026-10-04', 'through': '2026-11-17'},
+  ]) {
+    testWidgets('missing or zero 45-day sales show zero: $recent', (
+      tester,
+    ) async {
+      final source = FakeOnlineOverviewSource()..recentSales = recent;
+      await showPage(tester, source: source);
+      await tester.tap(find.text('FAST Product'));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find
+              .ancestor(
+                of: find.descendant(
+                  of: find.byType(OnlineProductSummary),
+                  matching: find.text('Online sales (45D)'),
+                ),
+                matching: find.byType(Container),
+              )
+              .first,
+          matching: find.text('0'),
+        ),
+        findsOneWidget,
+      );
+      final chart = tester.widget<CatalogStockChart>(
+        find.byType(CatalogStockChart),
+      );
+      expect(chart.item.number('recent_sales'), 0);
+      expect(chart.item.number('total_stock'), 45);
+      expect(chart.item.stockSalesPercent, isNull);
+      expect(find.text('No online sales in 45 days'), findsOneWidget);
+      expect(
+        find.textContaining('45 days of online sales are not available'),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final width in [1440.0, 360.0]) {
+    testWidgets(
+      'reference rank guide keeps examples inside their rank and supports large text at $width',
+      (tester) async {
+        tester.view.physicalSize = Size(width, 1000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.pumpWidget(
+          RepaintBoundary(
+            key: const ValueKey('online-app-preview'),
+            child: MaterialApp(
+              home: Builder(
+                builder: (context) => Scaffold(
+                  body: TextButton(
+                    onPressed: () => showDialog<void>(
+                      context: context,
+                      builder: (context) => MediaQuery(
+                        data: MediaQuery.of(
+                          context,
+                        ).copyWith(textScaler: const TextScaler.linear(1.3)),
+                        child: OnlineRankGuide(
+                          premiumRetail: 1000,
+                          forecastMeta: const {
+                            'basis': 'actual_sales',
+                            'status': 'ready',
+                            'A_qty_top_pct': 35,
+                            'A_value_top_pct': 15,
+                            'B_qty_top_pct': 60,
+                            'B_value_top_pct': 30,
+                            'minimum_A_branches': 10,
+                          },
+                          examples: {
+                            for (final rank in OnlineRank.values)
+                              rank: onlinePreparedRow(
+                                onlineItem('EXAMPLE-${rank.name}'),
+                                extra: {'rank': rank.name},
+                              ),
+                          },
+                        ),
+                      ),
+                    ),
+                    child: const Text('Open guide'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.text('Open guide'));
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<Dialog>(find.byType(Dialog)).backgroundColor,
+          Colors.white,
+        );
+        expect(find.byType(OnlineGuideRule), findsNWidgets(4));
+        final ruleText = tester.widgetList<Text>(
+          find.descendant(
+            of: find.byType(OnlineGuideRule),
+            matching: find.byType(Text),
+          ),
+        );
+        expect(
+          ruleText.every((text) => (text.style?.fontSize ?? 0) >= 18),
+          isTrue,
+        );
+        expect(
+          find.byType(OnlineGuideExample),
+          findsNWidgets(OnlineRank.values.length),
+        );
+        for (final rank in OnlineRank.values) {
+          final card = find.byKey(ValueKey('online-guide-card-${rank.name}'));
+          expect(card, findsOneWidget);
+          expect(
+            find.descendant(
+              of: card,
+              matching: find.byType(OnlineGuideSummary),
+            ),
+            findsOneWidget,
+          );
+          expect(
+            find.descendant(
+              of: card,
+              matching: find.byType(OnlineGuideExample),
+            ),
+            findsOneWidget,
+          );
+          final example = tester.widget<OnlineGuideExample>(
+            find.descendant(
+              of: card,
+              matching: find.byType(OnlineGuideExample),
+            ),
+          );
+          expect(example.product!.rank, rank);
+          expect(example.embedded, isTrue);
+        }
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('online-guide-card-b')),
+        );
+        await tester.pumpAndSettle();
+        await screenshot(
+          tester,
+          width == 1440
+              ? 'rank_examples_joined_desktop'
+              : 'rank_examples_joined_narrow',
+          dialog: true,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.ensureVisible(find.text('How we check new products'));
+        await tester.pumpAndSettle();
+        expect(
+          find.text('How we check new products').hitTestable(),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.tap(find.byTooltip('Close'));
+        await tester.pumpAndSettle();
+        expect(find.byType(Dialog), findsNothing);
+      },
+    );
+  }
+
+  for (final width in [1440.0, 360.0]) {
+    testWidgets(
+      'online monthly chart includes current daily month like Overview at $width',
+      (tester) async {
+        final source = FakeOnlineOverviewSource()
+          ..monthlyRows = [
+            {
+              'month': '10/2026',
+              'total': 30,
+              'source': 'sales_history',
+              'through': '2026-10-31',
+            },
+            {
+              'month': '11/2026',
+              'total': 8,
+              'source': 'sales_last_45_days',
+              'through': '2026-11-19',
+              'partial': true,
+            },
+          ];
+        await showPage(
+          tester,
+          source: source,
+          width: width,
+          height: width == 360 ? 740 : 900,
+        );
+        await tester.tap(find.text('FAST Product'));
+        await tester.pumpAndSettle();
+        final chart = tester.widget<CatalogMonthlyChart>(
+          find.byType(CatalogMonthlyChart),
+        );
+        expect(chart.showStockDetails, isFalse);
+        final months = chart.item.list('monthly_sales');
+        expect(months.last['month'], '11/2026');
+        expect(months.last['total'], 8);
+        expect(months.last['source'], 'sales_last_45_days');
+        expect(months.last['through'], '2026-11-19');
+        expect(
+          find.textContaining(
+            'Current month through 19 Nov 2026 · Not complete',
+          ),
+          findsNWidgets(2),
+        );
+        final annual = find.byKey(const ValueKey('annual-sales-panel'));
+        expect(
+          find.descendant(of: annual, matching: find.text('38 Qty')),
+          findsOneWidget,
+        );
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('online-monthly-sales-panel')),
+        );
+        await tester.pumpAndSettle();
+        final horizontal = tester.widget<SingleChildScrollView>(
+          find.descendant(
+            of: find.byType(CatalogMonthlyChart),
+            matching: find.byWidgetPredicate(
+              (widget) =>
+                  widget is SingleChildScrollView &&
+                  widget.scrollDirection == Axis.horizontal,
+            ),
+          ),
+        );
+        horizontal.controller!.jumpTo(
+          horizontal.controller!.position.maxScrollExtent,
+        );
+        await tester.pumpAndSettle();
+        final plot = find.descendant(
+          of: find.byType(CatalogMonthlyChart),
+          matching: find.byWidgetPredicate(
+            (widget) => widget is GestureDetector && widget.onTapDown != null,
+          ),
+        );
+        final origin = tester.getTopLeft(plot), plotSize = tester.getSize(plot);
+        await tester.tapAt(origin + Offset(plotSize.width - 30, 80));
+        await tester.pumpAndSettle();
+        expect(
+          find.textContaining('Daily sales through 19 Nov 2026'),
+          findsOneWidget,
+        );
+        await screenshot(
+          tester,
+          width == 360
+              ? 'current_month_online_narrow'
+              : 'current_month_online_desktop',
+          dialog: true,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'known rank opens immediately while details load, then exact sales appear',
+    (tester) async {
+      final ready = Completer<void>();
+      final source = FakeOnlineOverviewSource()..monthlyWait = ready.future;
+      await showPage(tester, source: source);
+      await tester.tap(find.text('FAST Product'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(find.byType(StockCatalogProductDialog), findsOneWidget);
+      expect(find.text('Why is this A?'), findsOneWidget);
+      expect(find.byType(LinearProgressIndicator), findsWidgets);
+      expect(find.byType(OnlineProductSummary), findsNothing);
+      expect(find.byType(CatalogStockChart), findsNothing);
+      ready.complete();
+      await tester.pumpAndSettle();
+      expect(find.byType(OnlineProductSummary), findsOneWidget);
+      final chart = tester.widget<CatalogStockChart>(
+        find.byType(CatalogStockChart),
+      );
+      expect(chart.item.number('recent_sales'), 50);
+      expect(chart.item.number('total_stock'), 45);
+      expect(source.monthlyLoads, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final width in [1440.0, 360.0]) {
+    testWidgets(
+      'actual sales ranks have simple rules and matching table facts at $width',
+      (tester) async {
+        const reason =
+            'Sold 24 Qty in 10 of 14 online branches over the last 6 full months. It sold every month. It gets A because it sells in many online branches.';
+        final source = FakeOnlineOverviewSource(
+          onlineSnapshot(
+            serverMeta: {
+              'actual_sales': {
+                'basis': 'actual_sales',
+                'status': 'ready',
+                'A_qty_top_pct': 35,
+                'A_value_top_pct': 15,
+                'B_qty_top_pct': 60,
+                'B_value_top_pct': 30,
+                'minimum_A_branches': 10,
+              },
+            },
+            branches: List.generate(
+              14,
+              (index) => OnlineBranch(
+                index == 0 ? 'Web Shop' : 'Online ${index + 1}',
+                index == 0 ? '71' : 'APG',
+              ),
+            ),
+            items: [
+              onlineItem(
+                'FAST',
+                extra: {
+                  'test_actual_reason': reason,
+                  'test_actual_sales': {
+                    'actual_qty': 24,
+                    'actual_value': 240,
+                    'selling_branches': 10,
+                    'selling_months': 6,
+                  },
+                },
+              ),
+            ],
+          ),
+        );
+        await showPage(
+          tester,
+          source: source,
+          width: width,
+          height: width == 360 ? 740 : 900,
+        );
+        final grid = tester.widget<SfDataGrid>(find.byType(SfDataGrid));
+        final cells = grid.source.rows.single.getCells();
+        expect(
+          cells.firstWhere((c) => c.columnName == 'forecast_qty').value,
+          24,
+        );
+        expect(
+          cells.firstWhere((c) => c.columnName == 'forecast_value').value,
+          240,
+        );
+        expect(
+          cells.firstWhere((c) => c.columnName == 'coverage').value,
+          '10 of 14',
+        );
+        expect(find.text('Sales value · 6 months (AED)'), findsWidgets);
+        await tester.tap(find.byTooltip('What the letters mean'));
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Last 6 full months · Online branches only'),
+          findsOneWidget,
+        );
+        expect(find.text('Sales in many branches'), findsOneWidget);
+        expect(find.text('High Qty sold'), findsOneWidget);
+        expect(find.text('High sales value'), findsOneWidget);
+        expect(find.textContaining('this means 10 branches'), findsOneWidget);
+        expect(find.textContaining('35 out of 100'), findsWidgets);
+        expect(find.textContaining('60 out of 100'), findsOneWidget);
+        expect(find.textContaining('Stock as of'), findsNothing);
+        expect(
+          find.byKey(const ValueKey('online-filter-toolbar')),
+          findsOneWidget,
+        );
+        expect(find.textContaining('Expected online sales'), findsNothing);
+        expect(find.textContaining(reason), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await screenshot(
+          tester,
+          width == 360
+              ? 'actual_rank_guide_narrow'
+              : 'actual_rank_guide_desktop',
+          dialog: true,
+        );
+        await tester.tap(find.byTooltip('Close'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('FAST Product'));
+        await tester.pumpAndSettle();
+        expect(find.text(reason), findsOneWidget);
+        expect(find.text('Next 6 months'), findsNothing);
+        expect(find.textContaining('Where to keep stock'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   for (final width in [1440.0, 360.0]) {
     testWidgets(

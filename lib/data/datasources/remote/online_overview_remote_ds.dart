@@ -43,6 +43,12 @@ class OnlineSourcePage {
   const OnlineSourcePage(this.rows, this.total);
 }
 
+typedef _OnlinePageResult = ({
+  OnlineSourcePage? page,
+  Object? error,
+  StackTrace? stack,
+});
+
 /// Advances by the actual response size, including servers with a smaller cap.
 /// Exact counts and unique keys are mandatory; never silently use a partial set.
 Future<List<Map<String, dynamic>>> loadOnlineSource({
@@ -50,20 +56,54 @@ Future<List<Map<String, dynamic>>> loadOnlineSource({
   required String Function(Map<String, dynamic>) identity,
   bool Function()? isCancelled,
   void Function(int loaded, int total)? onProgress,
+  int? expectedTotal,
 }) async {
   final rows = <Map<String, dynamic>>[];
   final keys = <String>{};
   int? total;
+  final pending = <int, Future<_OnlinePageResult>>{};
+  void prefetch(int offset) {
+    if (expectedTotal == null ||
+        offset >= expectedTotal ||
+        (isCancelled?.call() ?? false)) {
+      return;
+    }
+    pending.putIfAbsent(offset, () async {
+      try {
+        return (
+          page: await fetch(offset, OnlineOverviewLocalConfig.batchSize),
+          error: null,
+          stack: null,
+        );
+      } catch (error, stack) {
+        return (page: null, error: error, stack: stack);
+      }
+    });
+  }
+
+  // Metadata supplies exact counts. Keep at most two requests in flight;
+  // consumption still follows actual row counts if the server has a lower cap.
+  prefetch(0);
+  prefetch(OnlineOverviewLocalConfig.batchSize);
   do {
     if (isCancelled?.call() ?? false) {
       throw StateError('Online load cancelled.');
     }
-    final page = await fetch(rows.length, OnlineOverviewLocalConfig.batchSize);
+    final waiting = pending.remove(rows.length);
+    final result = waiting == null ? null : await waiting;
+    if (result?.error != null) {
+      Error.throwWithStackTrace(result!.error!, result.stack!);
+    }
+    final page =
+        result?.page ??
+        await fetch(rows.length, OnlineOverviewLocalConfig.batchSize);
     if (isCancelled?.call() ?? false) {
       throw StateError('Online load cancelled.');
     }
     total ??= page.total;
-    if (page.total != total || (page.rows.isEmpty && rows.length < total)) {
+    if ((expectedTotal != null && page.total != expectedTotal) ||
+        page.total != total ||
+        (page.rows.isEmpty && rows.length < total)) {
       throw StateError(
         'Source changed or is incomplete. Reload Online Overview.',
       );
@@ -79,6 +119,13 @@ Future<List<Map<String, dynamic>>> loadOnlineSource({
     }
     if (rows.length > total) throw StateError('Inconsistent source row count.');
     onProgress?.call(rows.length, total);
+    if (page.rows.length == OnlineOverviewLocalConfig.batchSize &&
+        pending.length < 2) {
+      prefetch(rows.length);
+      if (pending.length < 2) {
+        prefetch(rows.length + OnlineOverviewLocalConfig.batchSize);
+      }
+    }
   } while (rows.length < total);
   return rows;
 }
@@ -93,16 +140,36 @@ class OnlineSnapshotNotReady implements Exception {
 /// Reads only the completed server register. No raw sales/catalog/status scans.
 class OnlineOverviewRemoteDs implements OnlineOverviewDataSource {
   final SupabaseClient client;
+  final bool preview;
   final _saved = <String, OnlineOverviewSnapshot>{};
   String? _session;
-  OnlineOverviewRemoteDs(this.client);
+  OnlineOverviewRemoteDs(this.client, {this.preview = false});
+
+  Future<dynamic> _rpc(String name, {Map<String, dynamic>? params}) {
+    if (!preview) return client.rpc(name, params: params);
+    final action = const {
+      'get_local_online_overview_state': 'state',
+      'get_local_online_overview_batch': 'batch',
+      'get_local_online_overview_stock': 'stock',
+      'get_local_online_overview_monthly_sales': 'monthly_sales',
+      'get_local_online_overview_recent_sales': 'recent_sales',
+      'get_local_online_overview_forecast': 'forecast',
+      'get_local_online_overview_availability': 'availability',
+      'refresh_local_online_overview': 'refresh',
+    }[name];
+    if (action == null) throw StateError('Unknown Online Overview request.');
+    return client.rpc(
+      'get_local_online_overview_preview',
+      params: {'p_action': action, ...?params},
+    );
+  }
 
   @override
   Future<Map<String, dynamic>> forecastDetails(
     String code, {
     required String generation,
   }) async => stockMap(
-    await client.rpc(
+    await _rpc(
       'get_local_online_overview_forecast',
       params: {'p_generation': generation, 'p_item_code': code},
     ),
@@ -114,7 +181,7 @@ class OnlineOverviewRemoteDs implements OnlineOverviewDataSource {
     required String generation,
     required String branch,
   }) async => stockMap(
-    await client.rpc(
+    await _rpc(
       'get_local_online_overview_recent_sales',
       params: {
         'p_generation': generation,
@@ -130,7 +197,7 @@ class OnlineOverviewRemoteDs implements OnlineOverviewDataSource {
     required String generation,
     required String branch,
   }) async {
-    final raw = await client.rpc(
+    final raw = await _rpc(
       'get_local_online_overview_monthly_sales',
       params: {
         'p_generation': generation,
@@ -147,7 +214,7 @@ class OnlineOverviewRemoteDs implements OnlineOverviewDataSource {
     String? generation,
   }) async {
     final token = generation ?? (await refreshState())['generation'];
-    final raw = await client.rpc(
+    final raw = await _rpc(
       'get_local_online_overview_stock',
       params: {'p_generation': token, 'p_item_code': code},
     );
@@ -156,19 +223,19 @@ class OnlineOverviewRemoteDs implements OnlineOverviewDataSource {
 
   @override
   Future<Map<String, dynamic>> refreshState() async =>
-      stockMap(await client.rpc('get_local_online_overview_state'));
+      stockMap(await _rpc('get_local_online_overview_state'));
   @override
   Future<Map<String, dynamic>> branchAvailability({
     required String generation,
   }) async => stockMap(
-    await client.rpc(
+    await _rpc(
       'get_local_online_overview_availability',
       params: {'p_generation': generation},
     ),
   );
   @override
   Future<void> requestRefresh() async {
-    await client.rpc('refresh_local_online_overview');
+    await _rpc('refresh_local_online_overview');
   }
 
   @override
@@ -200,6 +267,9 @@ class OnlineOverviewRemoteDs implements OnlineOverviewDataSource {
     onProgress?.call('Loading products…');
     final state = await refreshState();
     check();
+    if (state['status'] == 'needs_update') {
+      throw StateError('The local sales preview needs an update.');
+    }
     final generation = '${state['generation'] ?? ''}';
     if (generation.isEmpty) throw OnlineSnapshotNotReady('${state['status']}');
     final meta = stockMap(state['meta']);
@@ -229,7 +299,7 @@ class OnlineOverviewRemoteDs implements OnlineOverviewDataSource {
     final raw = await loadOnlineSource(
       fetch: (offset, limit) async {
         final page = stockMap(
-          await client.rpc(
+          await _rpc(
             'get_local_online_overview_batch',
             params: {
               'p_generation': generation,
@@ -251,6 +321,7 @@ class OnlineOverviewRemoteDs implements OnlineOverviewDataSource {
         );
       },
       identity: (row) => '${row['code'] ?? ''}',
+      expectedTotal: stockNumber(meta['items']).toInt(),
       isCancelled: isCancelled,
       onProgress: (loaded, total) =>
           onProgress?.call('Loading products · $loaded of $total'),

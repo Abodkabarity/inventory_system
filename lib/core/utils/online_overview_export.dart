@@ -34,8 +34,21 @@ List<Map<String, dynamic>> onlineOverviewExportRows(
       'selling_months_2026': row.sellingMonths,
       'retail': row.priceKnown ? row.retail : null,
       'estimated_retail_value_2026': row.estimatedValue,
-      'value_basis':
-          'Net units x current retail; not actual historical revenue',
+      'value_basis': 'Net Qty x current Retail; not actual historical revenue',
+      if (row.usesActualSales) ...{
+        'ranking_sales_from': row.actualSales['sales_from'],
+        'rank_before_actual_sales_trial': row.classification['previous_rank'],
+        'ranking_sales_through': row.actualSales['sales_through'],
+        'online_qty_last_6_full_months': row.actualSales['actual_qty'],
+        'online_value_last_6_full_months_at_current_retail':
+            row.actualSales['actual_value'],
+        'selling_branches_last_6_full_months':
+            row.actualSales['selling_branches'],
+        'selling_months_last_6_full_months': row.actualSales['selling_months'],
+        'six_month_comparison_qty': row.actualSales['qty_score'],
+        'six_month_comparison_value': row.actualSales['value_score'],
+        'a_rules_met': (row.actualSales['routes'] as List? ?? []).join(' / '),
+      },
       'classification_basis': row.classification['basis'],
       'classification_version': row.classification['version'],
       'classification_rules_version': row.classification['rules_version'],

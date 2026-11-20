@@ -22,6 +22,7 @@ class StockCatalogProductDialog extends StatefulWidget {
   final StockCatalogDataSource? source;
   final Future<StockCatalogItem> Function()? loadItem;
   final Widget Function(StockCatalogItem)? detailsSection;
+  final Widget? loadingDetails;
   final ({Widget summary, Widget monthly, Widget stock, Widget annual})
   Function(StockCatalogItem)?
   salesPanels;
@@ -36,6 +37,7 @@ class StockCatalogProductDialog extends StatefulWidget {
     this.source,
     this.loadItem,
     this.detailsSection,
+    this.loadingDetails,
     this.salesPanels,
     this.onClose,
     this.allowSavedFallback = false,
@@ -163,6 +165,19 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                   );
                 }
                 if (!snapshot.hasData && !widget.allowSavedFallback) {
+                  if (widget.loadingDetails != null) {
+                    return SingleChildScrollView(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const LinearProgressIndicator(minHeight: 3),
+                          const SizedBox(height: 16),
+                          widget.loadingDetails!,
+                        ],
+                      ),
+                    );
+                  }
                   return const Center(child: CircularProgressIndicator());
                 }
                 final item = (snapshot.data ?? widget.item)

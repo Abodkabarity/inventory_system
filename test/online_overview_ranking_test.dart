@@ -10,6 +10,92 @@ import 'online_overview_fixtures.dart';
 
 void main() {
   tearDown(() => StoreBranchIdentityRegistry.groups.value = {});
+  test(
+    'grid reuses exact prepared cells while filtering and replaces changed product facts',
+    () {
+      final records = List.generate(
+        8915,
+        (index) => onlinePreparedRow(onlineItem('P$index')),
+      );
+      final grid = OnlineOverviewGridSource(onOpen: (_) {}, onAudit: (_) {});
+      addTearDown(grid.dispose);
+      final first = Stopwatch()..start();
+      grid.replace(records);
+      first.stop();
+      final original = grid.rows.first;
+      final values = original.getCells().map((c) => c.value).toList();
+      final repeat = Stopwatch()..start();
+      grid.replace(records);
+      repeat.stop();
+      expect(identical(grid.rows.first, original), isTrue);
+      expect(grid.rows.first.getCells().map((c) => c.value), values);
+      grid.replace([records.last]);
+      expect(grid.itemFor(grid.rows.single), same(records.last));
+      grid.replace(records);
+      expect(identical(grid.rows.first, original), isTrue);
+      final changed = onlinePreparedRow(onlineItem('P0', retail: 123));
+      grid.replace([changed]);
+      expect(identical(grid.rows.single, original), isFalse);
+      expect(
+        grid.rows.single
+            .getCells()
+            .firstWhere((c) => c.columnName == 'retail')
+            .value,
+        123,
+      );
+      final timing = File(
+        'outputs/online_overview/actual_sales_trial/grid_performance.json',
+      );
+      timing.parent.createSync(recursive: true);
+      timing.writeAsStringSync(
+        jsonEncode({
+          'rows': records.length,
+          'first_build_ms': first.elapsedMilliseconds,
+          'repeat_filter_ms': repeat.elapsedMilliseconds,
+        }),
+      );
+    },
+  );
+  test(
+    'recorded sales keep their own numbers and are not exported as a forecast',
+    () {
+      const facts = {
+        'actual_qty': 24,
+        'actual_value': 240,
+        'qty_score': 24,
+        'value_score': 240,
+        'selling_branches': 10,
+        'selling_months': 6,
+        'routes': ['wide_branch_sales'],
+        'sales_from': '2026-05-01',
+        'sales_through': '2026-10-31',
+      };
+      final item = onlineItem(
+        'FAST',
+        extra: {
+          'test_actual_sales': facts,
+          'test_actual_reason': 'Sold in 10 of 14 online branches.',
+        },
+      );
+      final row = onlinePreparedRow(item, networkBranches: 14);
+      expect(row.usesActualSales, isTrue);
+      expect(row.hasSalesForecast, isFalse);
+      expect(onlinePlainReason(row), 'Sold in 10 of 14 online branches.');
+      expect(onlinePriorityLabel(row), 'A · Sales in many branches');
+      final exported = onlineOverviewExportRows(
+        [row],
+        snapshot: onlineSnapshot(),
+        scope: OnlineSalesScope.onlineOnly,
+      ).single;
+      expect(exported['online_qty_last_6_full_months'], 24);
+      expect(
+        exported['online_value_last_6_full_months_at_current_retail'],
+        240,
+      );
+      expect(exported['forecast_qty'], isNull);
+      expect(exported['a_rules_met'], 'wide_branch_sales');
+    },
+  );
   test('prepared ranking preserves ABCNMTS and a stock review state', () {
     expect(OnlineRank.values.map((r) => r.label), [
       'A',

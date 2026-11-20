@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../../core/theme/app_colors.dart';
 import '../../../core/config/stock_product_image_config.dart';
+import '../../../core/config/online_overview_local_config.dart';
 import '../../../data/datasources/remote/stock_product_image_service.dart';
 import '../../../domain/entities/stock_catalog.dart';
 import '../../../core/utils/online_overview_export.dart';
@@ -34,6 +34,7 @@ class _OnlineOverviewPageState extends State<OnlineOverviewPage> {
   late final OnlineOverviewGridSource _grid;
   final _search = TextEditingController();
   final _audits = <String, OnlineProductAudit>{};
+  final _searchText = <OnlineOverviewRow, String>{};
   OnlineOverviewSnapshot? _snapshot;
   List<OnlineOverviewRow> _ranked = [];
   String _branch = '', _purchase = '', _rank = '';
@@ -51,7 +52,11 @@ class _OnlineOverviewPageState extends State<OnlineOverviewPage> {
   void initState() {
     super.initState();
     _source =
-        widget.dataSource ?? OnlineOverviewRemoteDs(Supabase.instance.client);
+        widget.dataSource ??
+        OnlineOverviewRemoteDs(
+          Supabase.instance.client,
+          preview: OnlineOverviewLocalConfig.actualSalesPreview,
+        );
     _grid = OnlineOverviewGridSource(
       onOpen: _open,
       onAudit: (row) => _check([row]),
@@ -124,11 +129,27 @@ class _OnlineOverviewPageState extends State<OnlineOverviewPage> {
   void _rebuild() {
     final snapshot = _snapshot;
     if (snapshot == null) return;
+    _searchText.clear();
+    final sortQty = <OnlineOverviewRow, double>{};
+    final actualRows = <OnlineOverviewRow>{};
+    for (final row in snapshot.preparedRows ?? const <OnlineOverviewRow>[]) {
+      _searchText[row] =
+          '${row.item.code} ${row.item.name} ${row.purchaseStatus} '
+                  '${row.item.text('supplier')} ${row.reason} ${row.action}'
+              .toLowerCase();
+      final actual = row.actualSales;
+      if (actual.isNotEmpty) actualRows.add(row);
+      sortQty[row] = actual.isNotEmpty
+          ? stockNumber(actual['actual_qty'])
+          : row.recentQty;
+    }
     _ranked = [...?snapshot.preparedRows]
       ..sort((a, b) {
         final rankOrder = a.rank.index.compareTo(b.rank.index);
         if (rankOrder != 0) return rankOrder;
-        final recent = b.recentQty.compareTo(a.recentQty);
+        final recent = actualRows.contains(a) && actualRows.contains(b)
+            ? sortQty[b]!.compareTo(sortQty[a]!)
+            : b.recentQty.compareTo(a.recentQty);
         return recent != 0 ? recent : a.item.code.compareTo(b.item.code);
       });
     if (_purchase.isNotEmpty &&
@@ -214,11 +235,7 @@ class _OnlineOverviewPageState extends State<OnlineOverviewPage> {
             (row) =>
                 (_rank.isEmpty || row.rank.name == _rank) &&
                 (_purchase.isEmpty || row.purchaseStatus == _purchase) &&
-                (search.isEmpty ||
-                    '${row.item.code} ${row.item.name} ${row.purchaseStatus} '
-                            '${row.item.text('supplier')} ${row.reason} ${row.action}'
-                        .toLowerCase()
-                        .contains(search)),
+                (search.isEmpty || _searchText[row]!.contains(search)),
           )
           .toList(),
     );
@@ -313,6 +330,9 @@ class _OnlineOverviewPageState extends State<OnlineOverviewPage> {
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, updateDialog) => StockCatalogProductDialog(
           item: row.item,
+          loadingDetails: RepaintBoundary(
+            child: OnlineProductInsights(row: row),
+          ),
           loadItem: () async {
             final (branches, months, recent, forecast) = await (
               _source.stockBreakdown(row.item.code, generation: generation),
@@ -420,7 +440,10 @@ class _OnlineOverviewPageState extends State<OnlineOverviewPage> {
     for (final row in _ranked) {
       examples.putIfAbsent(row.rank, () => row);
       if (row.rank == OnlineRank.a &&
-          row.classification['priority_route'] == 'forecast_quantity') {
+          const [
+            'forecast_quantity',
+            'high_sales_qty',
+          ].contains(row.classification['priority_route'])) {
         quantityExample ??= row;
       }
       if (row.rank == OnlineRank.c &&
@@ -436,7 +459,10 @@ class _OnlineOverviewPageState extends State<OnlineOverviewPage> {
       context: context,
       builder: (context) => OnlineRankGuide(
         premiumRetail: thresholds['premium_retail_aed'],
-        forecastMeta: stockMap(_snapshot?.serverMeta['forecast']),
+        forecastMeta: stockMap(
+          _snapshot?.serverMeta['actual_sales'] ??
+              _snapshot?.serverMeta['forecast'],
+        ),
         examples: examples,
       ),
     );
@@ -491,7 +517,9 @@ class _OnlineOverviewPageState extends State<OnlineOverviewPage> {
                   if (!_loading && _error == null) ...[
                     ConstrainedBox(
                       constraints: BoxConstraints(
-                        maxHeight: (size.maxHeight * .4).clamp(145.0, 330.0),
+                        maxHeight: compact
+                            ? (size.maxHeight * .52).clamp(145.0, 400.0)
+                            : (size.maxHeight * .4).clamp(145.0, 330.0),
                       ),
                       child: SingleChildScrollView(
                         child: Column(
@@ -624,9 +652,13 @@ class _OnlineOverviewPageState extends State<OnlineOverviewPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                compact &&
-                        stockMap(_snapshot?.serverMeta['forecast'])['status'] ==
-                            'ready'
+                _snapshot?.serverMeta['actual_sales'] != null
+                    ? 'Last 6 full months · Online sales'
+                    : compact &&
+                          stockMap(
+                                _snapshot?.serverMeta['forecast'],
+                              )['status'] ==
+                              'ready'
                     ? '6-month forecast trial'
                     : 'Stock Management',
                 style: const TextStyle(
@@ -701,6 +733,17 @@ class _OnlineOverviewPageState extends State<OnlineOverviewPage> {
 
   Widget _metrics(double width) {
     final rows = _grid.displayedRows;
+    final counts = <OnlineRank, int>{};
+    var value = 0.0;
+    var actual = false;
+    for (final row in rows) {
+      counts.update(row.rank, (count) => count + 1, ifAbsent: () => 1);
+      final useActual = row.usesActualSales;
+      actual = actual || useActual;
+      value += useActual
+          ? stockNumber(row.actualSales['actual_value'])
+          : row.estimatedValue ?? 0;
+    }
     const gap = 8.0;
     const minimumWidth = 800.0;
     final cards = [
@@ -713,7 +756,7 @@ class _OnlineOverviewPageState extends State<OnlineOverviewPage> {
       for (final rank in OnlineRank.values)
         _summaryCard(
           onlineRankTitle(rank),
-          catalogQty(rows.where((row) => row.rank == rank).length),
+          catalogQty(counts[rank] ?? 0),
           onlineRankColor(rank),
           () {
             _rank = _rank == rank.name ? '' : rank.name;
@@ -722,10 +765,8 @@ class _OnlineOverviewPageState extends State<OnlineOverviewPage> {
           selected: _rank == rank.name,
         ),
       _summaryCard(
-        'Estimated sales (AED)',
-        catalogQty(
-          rows.fold<double>(0, (sum, row) => sum + (row.estimatedValue ?? 0)),
-        ),
+        actual ? 'Sales value · 6 months (AED)' : 'Estimated sales (AED)',
+        catalogQty(value),
         catalogTeal,
         null,
       ),
@@ -807,180 +848,313 @@ class _OnlineOverviewPageState extends State<OnlineOverviewPage> {
 
   Widget _filters() => LayoutBuilder(
     builder: (context, size) {
+      const ink = Color(0xFF24365D);
+      const accent = Color(0xFF5364B5);
       final snapshot = _snapshot!;
       final visible = _grid.displayedRows;
       final statuses = _ranked.map((row) => row.purchaseStatus).toSet().toList()
         ..sort();
       final compact = size.maxWidth < 620;
-      final fieldWidth = compact ? size.maxWidth - 22 : 205.0;
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: AppColors.primaryColor.withValues(alpha: .18),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primaryColor.withValues(alpha: .035),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
+      final wide = size.maxWidth >= 1180;
+      final room = size.maxWidth - 24;
+      final fieldWidth = wide ? 230.0 : (room - 10) / 2;
+      final search = SizedBox(
+        height: 48,
+        child: TextField(
+          controller: _search,
+          cursorColor: accent,
+          style: const TextStyle(color: ink, fontSize: 15),
+          decoration: InputDecoration(
+            hintText: 'Search products',
+            hintStyle: const TextStyle(color: Color(0xFF7C89A2), fontSize: 15),
+            prefixIcon: const Icon(
+              Icons.search_rounded,
+              color: accent,
+              size: 22,
             ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                SizedBox(
-                  width: size.maxWidth >= 1320 ? 280 : size.maxWidth - 20,
-                  height: 46,
-                  child: TextField(
-                    controller: _search,
-                    cursorColor: AppColors.primaryColor,
-                    decoration: InputDecoration(
-                      hintText: 'Search products',
-                      hintStyle: const TextStyle(fontSize: 15),
-                      prefixIcon: const Icon(Icons.search_rounded, size: 21),
-                      isDense: true,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(
-                          color: AppColors.primaryColor.withValues(alpha: .18),
-                        ),
-                      ),
+            suffixIcon: _search.text.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Clear search',
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      size: 18,
+                      color: accent,
                     ),
-                    onChanged: (_) {
-                      _debounce?.cancel();
-                      _debounce = Timer(
-                        const Duration(milliseconds: 200),
-                        _filter,
-                      );
-                    },
-                  ),
-                ),
-                if (compact)
-                  TextButton.icon(
-                    onPressed: () => setState(
-                      () => _showMobileFilters = !_showMobileFilters,
-                    ),
-                    icon: const Icon(Icons.tune, size: 18),
-                    label: Text(
-                      _showMobileFilters ? 'Hide filters' : 'Filters',
-                    ),
-                  ),
-                if (!compact || _showMobileFilters) ...[
-                  _selector(
-                    label: 'Online branch',
-                    value: _branch,
-                    branches: true,
-                    width: fieldWidth,
-                    choices: [
-                      ('', 'All online branches'),
-                      for (final branch in snapshot.branches)
-                        (branch.name, branch.name),
-                    ],
-                    changed: (value) {
-                      _branch = value ?? '';
-                      unawaited(_load());
-                    },
-                  ),
-                  _selector(
-                    label: 'Purchase Status',
-                    value: _purchase,
-                    width: fieldWidth,
-                    choices: [
-                      ('', 'All purchase statuses'),
-                      for (final status in statuses)
-                        (status, onlinePurchaseLabel(status)),
-                    ],
-                    changed: (value) {
-                      _purchase = value ?? '';
+                    onPressed: () {
+                      _search.clear();
                       _filter();
                     },
                   ),
-                  SizedBox(
-                    height: 46,
-                    width: 46,
-                    child: IconButton.filledTonal(
-                      key: const ValueKey('online-clear-filters'),
-                      onPressed: _clear,
-                      tooltip: 'Clear filters',
-                      style: IconButton.styleFrom(
-                        foregroundColor: AppColors.primaryColor,
-                        backgroundColor: AppColors.primaryColor.withValues(
-                          alpha: .08,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      icon: const Icon(Icons.filter_alt_off_outlined, size: 20),
-                    ),
-                  ),
-                ],
-                SizedBox(
-                  height: 46,
-                  child: OutlinedButton.icon(
-                    onPressed: _refreshing ? null : _prepare,
-                    icon: const Icon(Icons.cloud_sync_outlined, size: 18),
-                    label: Text(
-                      _refreshing
-                          ? 'Updating…'
-                          : compact
-                          ? 'Update'
-                          : 'Update data',
-                    ),
-                  ),
-                ),
-                SizedBox(
-                  height: 46,
-                  child: FilledButton.icon(
-                    onPressed: visible.isEmpty || _checking || _exporting
-                        ? null
-                        : _export,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.primaryColor,
-                      foregroundColor: Colors.white,
-                      iconColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      textStyle: Theme.of(context).textTheme.labelLarge
-                          ?.copyWith(fontSize: 14, fontWeight: FontWeight.w700),
-                    ),
-                    icon: Icon(
-                      _exporting
-                          ? Icons.hourglass_top_rounded
-                          : Icons.download_rounded,
-                      size: 18,
-                    ),
-                    label: Text(
-                      _exporting
-                          ? 'Exporting…'
-                          : compact
-                          ? 'Excel'
-                          : 'Export Excel',
-                    ),
-                  ),
-                ),
-              ],
+            filled: true,
+            fillColor: const Color(0xFFF4F6FC),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 14,
             ),
-            const SizedBox(height: 8),
-            Text(
-              '${visible.length} products · '
-              'Stock as of ${catalogDate(snapshot.serverMeta['stock_day'])}.',
-              style: const TextStyle(color: catalogMuted, fontSize: 14),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(13),
+              borderSide: const BorderSide(color: Color(0xFFDEE4F1)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(13),
+              borderSide: const BorderSide(color: Color(0xFFDEE4F1)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(13),
+              borderSide: const BorderSide(color: accent, width: 1.5),
+            ),
+          ),
+          onChanged: (_) {
+            _debounce?.cancel();
+            _debounce = Timer(const Duration(milliseconds: 200), _filter);
+          },
+        ),
+      );
+      final branch = _selector(
+        label: 'Online branch',
+        value: _branch,
+        branches: true,
+        width: compact ? room : fieldWidth,
+        choices: [
+          ('', 'All online branches'),
+          for (final branch in snapshot.branches) (branch.name, branch.name),
+        ],
+        changed: (value) {
+          _branch = value ?? '';
+          unawaited(_load());
+        },
+      );
+      final purchase = _selector(
+        label: 'Purchase Status',
+        value: _purchase,
+        width: compact ? room : fieldWidth,
+        choices: [
+          ('', 'All purchase statuses'),
+          for (final status in statuses) (status, onlinePurchaseLabel(status)),
+        ],
+        changed: (value) {
+          _purchase = value ?? '';
+          _filter();
+        },
+      );
+      final clear = SizedBox(
+        height: 48,
+        width: 48,
+        child: IconButton.outlined(
+          key: const ValueKey('online-clear-filters'),
+          onPressed: _clear,
+          tooltip: 'Clear filters',
+          style: IconButton.styleFrom(
+            foregroundColor: accent,
+            backgroundColor: const Color(0xFFF3F5FC),
+            side: const BorderSide(color: Color(0xFFDFE5F3)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(13),
+            ),
+          ),
+          icon: const Icon(Icons.filter_alt_off_outlined, size: 21),
+        ),
+      );
+      final reload = SizedBox(
+        height: 48,
+        child: OutlinedButton.icon(
+          onPressed: _refreshing
+              ? null
+              : snapshot.serverMeta['actual_sales'] != null
+              ? _load
+              : _prepare,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: ink,
+            backgroundColor: Colors.white,
+            side: const BorderSide(color: Color(0xFFD6DEEE)),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(13),
+            ),
+            textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          icon: const Icon(Icons.sync_rounded, size: 20),
+          label: Text(
+            _refreshing
+                ? 'Updating…'
+                : snapshot.serverMeta['actual_sales'] != null
+                ? 'Reload view'
+                : compact
+                ? 'Update'
+                : 'Update data',
+          ),
+        ),
+      );
+      final canExport = visible.isNotEmpty && !_checking && !_exporting;
+      final export = SizedBox(
+        height: 48,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: canExport
+                  ? const [Color(0xFF24365D), Color(0xFF5364B5)]
+                  : const [Color(0xFFB7C1D8), Color(0xFFA6B2CF)],
+            ),
+            borderRadius: BorderRadius.circular(13),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x185364B5),
+                blurRadius: 12,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: FilledButton.icon(
+            onPressed: canExport ? _export : null,
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.transparent,
+              disabledBackgroundColor: Colors.transparent,
+              foregroundColor: Colors.white,
+              disabledForegroundColor: const Color(0xFFF1F4FA),
+              shadowColor: Colors.transparent,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(13),
+              ),
+              textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            icon: Icon(
+              _exporting
+                  ? Icons.hourglass_top_rounded
+                  : Icons.file_download_outlined,
+              size: 20,
+            ),
+            label: Text(
+              _exporting
+                  ? 'Exporting…'
+                  : compact
+                  ? 'Excel'
+                  : 'Export Excel',
+            ),
+          ),
+        ),
+      );
+      return Container(
+        key: const ValueKey('online-filter-toolbar'),
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Colors.white, Color(0xFFFAFBFF)],
+          ),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFDFE5F2)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0924365D),
+              blurRadius: 18,
+              offset: Offset(0, 5),
             ),
           ],
         ),
+        child: wide
+            ? Row(
+                children: [
+                  Expanded(child: search),
+                  const SizedBox(width: 12),
+                  branch,
+                  const SizedBox(width: 10),
+                  purchase,
+                  const SizedBox(width: 10),
+                  clear,
+                  const SizedBox(width: 14),
+                  SizedBox(width: 142, child: reload),
+                  const SizedBox(width: 10),
+                  SizedBox(width: 150, child: export),
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  search,
+                  const SizedBox(height: 10),
+                  if (compact) ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextButton.icon(
+                            onPressed: () => setState(
+                              () => _showMobileFilters = !_showMobileFilters,
+                            ),
+                            style: TextButton.styleFrom(
+                              foregroundColor: accent,
+                              minimumSize: const Size(0, 48),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                              ),
+                            ),
+                            icon: const Icon(Icons.tune_rounded, size: 20),
+                            label: Text('Filters'),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        clear,
+                        const SizedBox(width: 6),
+                        SizedBox(
+                          width: 48,
+                          height: 48,
+                          child: IconButton.outlined(
+                            tooltip: snapshot.serverMeta['actual_sales'] != null
+                                ? 'Reload view'
+                                : 'Update data',
+                            onPressed: _refreshing
+                                ? null
+                                : snapshot.serverMeta['actual_sales'] != null
+                                ? _load
+                                : _prepare,
+                            style: IconButton.styleFrom(
+                              foregroundColor: ink,
+                              side: const BorderSide(color: Color(0xFFD6DEEE)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(13),
+                              ),
+                            ),
+                            icon: const Icon(Icons.sync_rounded, size: 20),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        SizedBox(width: 94, child: export),
+                      ],
+                    ),
+                    if (_showMobileFilters) ...[
+                      const SizedBox(height: 10),
+                      branch,
+                      const SizedBox(height: 10),
+                      purchase,
+                    ],
+                  ] else
+                    Row(
+                      children: [
+                        Expanded(child: branch),
+                        const SizedBox(width: 10),
+                        Expanded(child: purchase),
+                      ],
+                    ),
+                  if (!compact) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        if (!compact) ...[clear, const SizedBox(width: 12)],
+                        Expanded(child: reload),
+                        const SizedBox(width: 10),
+                        Expanded(child: export),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
       );
     },
   );

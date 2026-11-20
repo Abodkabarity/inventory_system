@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -8,6 +9,7 @@ import '../../../domain/entities/online_overview.dart';
 import '../../../domain/entities/stock_catalog.dart';
 import '../../../domain/entities/stock_management.dart';
 import 'online_overview_grid.dart';
+import 'online_rank_guide_design.dart';
 import 'stock_catalog_visuals.dart';
 
 const _body = TextStyle(color: catalogInk, fontSize: 15, height: 1.4);
@@ -23,7 +25,8 @@ class OnlineRankGuide extends StatelessWidget {
     required this.examples,
   });
 
-  bool get forecast => forecastMeta['status'] == 'ready';
+  bool get actualSales => forecastMeta['basis'] == 'actual_sales';
+  bool get forecast => !actualSales && forecastMeta['status'] == 'ready';
 
   int? _topPercent(int index) {
     final policy = forecastMeta['policy'];
@@ -34,95 +37,122 @@ class OnlineRankGuide extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => Dialog(
-    backgroundColor: Colors.white,
-    surfaceTintColor: Colors.transparent,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-    clipBehavior: Clip.antiAlias,
-    insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
-    child: SizedBox(
-      width: 1040,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            padding: const EdgeInsets.fromLTRB(24, 22, 16, 20),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(bottom: BorderSide(color: Color(0xFFE6EBF2))),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEAF7F5),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: const Icon(
-                    Icons.menu_book_rounded,
-                    color: Color(0xFF087D76),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'What the letters mean',
-                        style: TextStyle(
-                          color: catalogInk,
-                          fontSize: 24,
-                          height: 1.15,
-                          fontWeight: FontWeight.w800,
-                        ),
+  Widget build(BuildContext context) => BackdropFilter(
+    filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+    child: Dialog(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      clipBehavior: Clip.antiAlias,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+      child: SizedBox(
+        width: 1120,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: EdgeInsets.fromLTRB(
+                MediaQuery.sizeOf(context).width < 600 ? 18 : 30,
+                24,
+                18,
+                22,
+              ),
+              decoration: const BoxDecoration(color: Colors.white),
+              child: Row(
+                children: [
+                  Container(
+                    width: MediaQuery.sizeOf(context).width < 600 ? 48 : 64,
+                    height: MediaQuery.sizeOf(context).width < 600 ? 48 : 64,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFF0FAF9), Color(0xFFD9F0ED)],
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        forecast
-                            ? '6-month sales trial · Online branches only'
-                            : 'Normal purchase products · Online branches only',
-                        style: const TextStyle(
-                          color: Color(0xFF65758C),
-                          fontSize: 14,
-                          height: 1.3,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(
+                      Icons.menu_book_rounded,
+                      color: Color(0xFF087D76),
+                      size: MediaQuery.sizeOf(context).width < 600 ? 27 : 32,
+                    ),
+                  ),
+                  if (MediaQuery.sizeOf(context).width >= 600) ...[
+                    const SizedBox(width: 24),
+                    Container(
+                      width: 1,
+                      height: 54,
+                      color: const Color(0xFFC9D3E0),
+                    ),
+                    const SizedBox(width: 24),
+                  ] else
+                    const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'What the letters mean',
+                          style: TextStyle(
+                            color: catalogInk,
+                            fontSize: MediaQuery.sizeOf(context).width < 600
+                                ? 24
+                                : 31,
+                            height: 1.15,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 6),
+                        Text(
+                          actualSales
+                              ? 'Last 6 full months · Online branches only'
+                              : forecast
+                              ? '6-month sales trial · Online branches only'
+                              : 'Normal purchase products · Online branches only',
+                          style: const TextStyle(
+                            color: Color(0xFF65758C),
+                            fontSize: 18,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  tooltip: 'Close',
-                  color: catalogInk,
-                  style: IconButton.styleFrom(
-                    backgroundColor: const Color(0xFFF3F6FA),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    tooltip: 'Close',
+                    color: catalogInk,
+                    style: IconButton.styleFrom(
+                      backgroundColor: const Color(0xFFF3F6FA),
+                    ),
+                    icon: const Icon(Icons.close_rounded),
                   ),
-                  icon: const Icon(Icons.close_rounded),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          Flexible(
-            child: Scrollbar(
-              child: SingleChildScrollView(
-                primary: true,
-                padding: const EdgeInsets.all(20),
-                child: LayoutBuilder(
-                  builder: (context, size) => _cards(size.maxWidth),
+            Flexible(
+              child: Scrollbar(
+                child: SingleChildScrollView(
+                  primary: true,
+                  padding: EdgeInsets.fromLTRB(
+                    MediaQuery.sizeOf(context).width < 600 ? 18 : 30,
+                    4,
+                    MediaQuery.sizeOf(context).width < 600 ? 18 : 30,
+                    30,
+                  ),
+                  child: LayoutBuilder(
+                    builder: (context, size) => _cards(size.maxWidth),
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     ),
   );
 
   Widget _cards(double width) {
+    if (actualSales) return _actualCards(width);
     const gap = 16.0;
     final compact = width < 600;
     final cardWidth = compact ? width : (width - gap) / 2;
@@ -353,6 +383,183 @@ class OnlineRankGuide extends StatelessWidget {
       ],
     );
   }
+
+  Widget _actualCards(double width) {
+    final half = width < 840 ? width : (width - 20) / 2;
+    final qtyA = forecastMeta['A_qty_top_pct'];
+    final valueA = forecastMeta['A_value_top_pct'];
+    final qtyB = forecastMeta['B_qty_top_pct'];
+    final valueB = forecastMeta['B_value_top_pct'];
+    final branches = forecastMeta['minimum_A_branches'];
+    return Wrap(
+      spacing: 20,
+      runSpacing: 26,
+      children: [
+        SizedBox(
+          width: width,
+          child: OnlineGuideFrame(
+            rank: OnlineRank.a,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const OnlineGuideSummary(
+                  embedded: true,
+                  rank: OnlineRank.a,
+                  title: 'High priority',
+                  body:
+                      'A sells well in many branches, sells a high Qty, or has a high sales value. We use the last 6 full months of online sales, after returns. A product needs only one of the rules below. Keep stock in all open online branches.',
+                ),
+                Padding(
+                  padding: EdgeInsets.all(width < 560 ? 18 : 26),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      LayoutBuilder(
+                        builder: (context, box) {
+                          final heading = Text(
+                            'Priority rules for A',
+                            style: onlineGuideText.copyWith(
+                              fontSize: box.maxWidth < 560 ? 24 : 26,
+                              fontWeight: FontWeight.w800,
+                              height: 1.2,
+                            ),
+                          );
+                          return box.maxWidth < 560
+                              ? heading
+                              : Row(
+                                  children: [
+                                    heading,
+                                    const SizedBox(width: 20),
+                                    const Expanded(
+                                      child: Divider(color: Color(0xFFC6D2E2)),
+                                    ),
+                                  ],
+                                );
+                        },
+                      ),
+                      const SizedBox(height: 6),
+                      OnlineGuideRule(
+                        icon: Icons.storefront_outlined,
+                        title: 'Sales in many branches',
+                        body:
+                            'Sold in at least 70% of online branches. With the current branch list, this means $branches branches.',
+                      ),
+                      OnlineGuideRule(
+                        icon: Icons.widgets_outlined,
+                        title: 'High Qty sold',
+                        body:
+                            'It sells more Qty than most products. We use the first $qtyA out of 100 products when sorted from highest to lowest Qty, with at least 3 Qty. It can get A even if only a few branches sell it.',
+                      ),
+                      OnlineGuideRule(
+                        icon: Icons.bar_chart_rounded,
+                        title: 'High sales value',
+                        body:
+                            'Its sales have a high value. We multiply Qty sold by the current Retail price, then use the first $valueA out of 100 products by that value. A product can get A with fewer sales if its price is higher.',
+                      ),
+                      const OnlineGuideRule(
+                        icon: Icons.sell_outlined,
+                        title: 'Retail AED 1,000 or more',
+                        body:
+                            'A product at this price can get A even when it sells a small Qty. We split the last year into 4 groups of 3 months. It must sell in at least 3 groups, including the latest. For example, 1 Qty every 3 months can be enough. Price alone does not give A.',
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.event_repeat_rounded,
+                            color: Color(0xFF087D7C),
+                            size: 25,
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Text(
+                              'The first 3 rules also need sales in at least 3 different months within the last 6 full months. A new product with only 2 available months needs sales in both months.',
+                              style: onlineGuideText,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 26),
+                      OnlineGuideNote(
+                        title: 'How do we compare products?',
+                        body:
+                            'We sort products with sales from highest to lowest. For A, we use about $qtyA out of 100 by Qty, or $valueA out of 100 by sales value. For B, we use about $qtyB out of 100 by Qty, or $valueB out of 100 by value, after checking A. These percentages compare products; they are not the share of branches or total sales. They are starting limits for this trial. A has other ways to get in, so more than $qtyA% of products can get A. Products with equal results stay together.',
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: Color(0xFFDCE8EA),
+                ),
+                OnlineGuideExample(
+                  product: examples[OnlineRank.a],
+                  embedded: true,
+                ),
+              ],
+            ),
+          ),
+        ),
+        for (final (rank, title, body) in [
+          (
+            OnlineRank.b,
+            'Medium sales',
+            'B has enough sales for the middle group, but does not meet A. It usually sells regularly in a smaller Qty or at a lower sales value than A. It needs sales in at least 2 of the last 6 full months. A new product with only 1 available month can use that month. Keep stock in the main online branches and the product’s 2 best branches.',
+          ),
+          (
+            OnlineRank.c,
+            'Low sales',
+            'C sells a small Qty, has a low sales value, or sells in too few months to get B. Each product shows its own reason. Keep stock in its 2 best online branches.',
+          ),
+          (
+            OnlineRank.n,
+            'New, no online stock',
+            'N is a new product with no current stock in online branches. Its first approved MRN was less than 6 months ago. Every online branch has 0 Qty, and STORE has stock to send. It can get N even if it sold before. INHOUSE gets S first.',
+          ),
+          (
+            OnlineRank.m,
+            'No stock or sales',
+            'M has no current online stock and no recorded online sales in 2025 or 2026. We check S and N first.',
+          ),
+          (
+            OnlineRank.t,
+            'Stock with no recent sales',
+            'T has stock in an online branch, but it has not sold online in the last 6 full months or the current month. Check why the stock is not selling.',
+          ),
+          (
+            OnlineRank.s,
+            'In-house',
+            'S is for products marked INHOUSE in Sales Orientation. They have their own group and get S before any other rank.',
+          ),
+          (
+            OnlineRank.review,
+            'Needs review',
+            'No online sales were found. Stock reports are missing or show stock below 0 Qty. Check these figures before choosing a sales rank.',
+          ),
+        ])
+          SizedBox(
+            width: rank == OnlineRank.review ? width : half,
+            child: OnlineGuideRankCard(
+              rank: rank,
+              title: title,
+              body: body,
+              product: examples[rank],
+            ),
+          ),
+        SizedBox(
+          width: width,
+          child: const OnlineGuideNote(
+            title: 'How we check new products',
+            icon: Icons.local_shipping_outlined,
+            body:
+                'New products: the first approved MRN tells us when the product first arrived. It is new for 6 months. With no MRN record, it counts as existing. For a newer product, we compare its average Qty sold per day since receipt, using at least 30 days. Months before it arrived do not count against it. We keep any earlier recorded sales. Sales value uses the current Retail price.',
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _RankGuideCard extends StatelessWidget {
@@ -510,10 +717,10 @@ class OnlineProductInsights extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             row.productAge['first_mrn'] == null
-                ? 'No MRN receipt by ${catalogDate(row.productAge['as_of'])}. Counted as an existing product.'
+                ? 'No MRN receipt was found by ${catalogDate(row.productAge['as_of'])}, so we treat it as an existing product.'
                 : row.productAge['status'] == 'new'
-                ? 'New until ${catalogDate(row.productAge['new_until'])}. Age checked through ${catalogDate(row.productAge['as_of'])}.'
-                : 'At least 6 months since the first MRN receipt, as of ${catalogDate(row.productAge['as_of'])}.',
+                ? 'First received less than 6 months ago. It stays new until ${catalogDate(row.productAge['new_until'])}.'
+                : 'First received at least 6 months ago, so it is an existing product.',
             style: _body,
           ),
           if (row.productAge['first_online_sale_month'] != null)
@@ -532,7 +739,29 @@ class OnlineProductInsights extends StatelessWidget {
             'Sales Orientation: ${row.item.text('sales_orientation')}',
             style: _body,
           ),
-        if (row.priorityBranches.isNotEmpty)
+        if (row.usesActualSales && row.priorityBranches.isNotEmpty)
+          Material(
+            color: Colors.transparent,
+            child: ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: Text(
+                'Where to keep stock · ${row.priorityBranches.length} branches',
+                style: _body.copyWith(fontWeight: FontWeight.w700),
+              ),
+              subtitle: Text(row.action, style: _body),
+              children: [
+                for (final branch in row.priorityBranches)
+                  ListTile(
+                    dense: true,
+                    title: Text(
+                      StoreBranchIdentityRegistry.displayName(branch),
+                      style: _body,
+                    ),
+                  ),
+              ],
+            ),
+          )
+        else if (row.priorityBranches.isNotEmpty)
           Text(
             'Top branches: ${row.priorityBranches.map(StoreBranchIdentityRegistry.displayName).join(', ')}',
             style: _body,
@@ -673,12 +902,20 @@ class OnlineProductSales extends StatelessWidget {
     final scope = branch.isEmpty
         ? 'All online branches'
         : StoreBranchIdentityRegistry.displayName(branch);
+    final current = months
+        .where((month) => month['source'] == 'sales_last_45_days')
+        .lastOrNull;
+    final period = current == null
+        ? 'Full months'
+        : current['through'] == null
+        ? 'Current month · No data uploaded'
+        : 'Current month through ${catalogDate(current['through'])} · Not complete';
     return CatalogPanel(
       key: ValueKey(
         annual ? 'annual-sales-panel' : 'online-monthly-sales-panel',
       ),
       title: annual ? 'Online sales by year' : 'Monthly online sales',
-      subtitle: '$scope · Full months',
+      subtitle: '$scope · $period',
       child: annual
           ? _OnlineYearSalesChart(months: months)
           : CatalogMonthlyChart(
@@ -812,7 +1049,7 @@ class OnlineProductSummary extends StatelessWidget {
             ),
             (
               'Online sales (45D)',
-              sales45,
+              sales45 ?? 0,
               catalogOrange,
               Icons.shopping_bag_outlined,
             ),
@@ -947,31 +1184,25 @@ class OnlineProductStock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final stock = row.combinedStock;
-    final sales = recent['qty'];
+    final sales = recent['qty'] ?? 0;
     String qty(double? value) => value == null ? 'Unknown' : catalogQty(value);
     return CatalogPanel(
       key: const ValueKey('stock-sales-panel'),
       title: 'Stock / Sales',
-      subtitle: sales == null
-          ? 'Online stock + Store stock'
-          : 'Online sales · ${catalogDate(recent['from'])} – ${catalogDate(recent['through'])}',
+      subtitle: recent['from'] != null && recent['through'] != null
+          ? 'Online sales · ${catalogDate(recent['from'])} – ${catalogDate(recent['through'])}'
+          : 'Online stock + Store stock',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (sales == null)
-            const Text(
-              '45 days of online sales are not available for this stock date.',
-              style: _body,
-            )
-          else
-            CatalogStockChart(
-              item: StockManagementItem({
-                'total_stock': stock,
-                'stock_unavailable': stock == null,
-                'recent_sales': sales,
-              }),
-              onlineSales: true,
-            ),
+          CatalogStockChart(
+            item: StockManagementItem({
+              'total_stock': stock,
+              'stock_unavailable': stock == null,
+              'recent_sales': sales,
+            }),
+            onlineSales: true,
+          ),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,

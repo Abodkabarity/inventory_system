@@ -129,7 +129,9 @@ OnlineOverviewRow onlinePreparedRow(
     'item': item.data,
     'code': code,
     'rank': rank,
-    'reason': '$rank from prepared network evidence',
+    'reason':
+        item.data['test_actual_reason'] ??
+        '$rank from prepared network evidence',
     'purchase_status': item.purchaseStatus,
     'supply': 'Stock in STORE',
     'action': item.purchaseStatus == 'OOS'
@@ -183,6 +185,11 @@ OnlineOverviewRow onlinePreparedRow(
         'score': .8,
         'use': 'advisory_only',
       },
+      if (item.data['test_actual_sales'] != null) ...{
+        'actual_sales': item.data['test_actual_sales'],
+        'priority_route': 'wide_branch_sales',
+        'priority_branches': branches,
+      },
     },
     ...extra,
   }, branches);
@@ -194,6 +201,8 @@ class FakeOnlineOverviewSource implements OnlineOverviewDataSource {
   int audits = 0;
   int monthlyLoads = 0;
   bool failMonthly = false;
+  Future<void>? monthlyWait;
+  List<Map<String, dynamic>>? monthlyRows;
   bool rebuilt = false;
   int refreshes = 0;
   bool failAvailability = false;
@@ -325,7 +334,9 @@ class FakeOnlineOverviewSource implements OnlineOverviewDataSource {
     String code, {
     required String generation,
     required String branch,
-  }) async => {
+  }) async => recentSales;
+
+  Map<String, dynamic> recentSales = {
     'qty': 50,
     'from': '2026-09-22',
     'through': '2026-11-05',
@@ -339,11 +350,13 @@ class FakeOnlineOverviewSource implements OnlineOverviewDataSource {
     required String branch,
   }) async {
     monthlyLoads++;
+    await monthlyWait;
     if (failMonthly) throw StateError('Monthly sales unavailable');
-    return [
-      {'month': '01/2025', 'total': 3},
-      {'month': '01/2026', 'total': 5},
-      {'month': '02/2026', 'total': -1},
-    ];
+    return monthlyRows ??
+        [
+          {'month': '01/2025', 'total': 3},
+          {'month': '01/2026', 'total': 5},
+          {'month': '02/2026', 'total': -1},
+        ];
   }
 }

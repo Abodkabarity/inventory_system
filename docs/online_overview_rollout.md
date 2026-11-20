@@ -14,7 +14,31 @@
   feature changes. Existing wider publication-hold instructions still apply.
 
 
-The published UI contains the current Online Overview, ABC/M/T/N/S ranks, product
-details, Other branch stock, exports and Branch availability dialog. No ranking
-logic changes are part of this rollout. The approved user's account must stay
-active with the Inventory role. Access is checked independently by the server.
+On 20 November 2026, the user explicitly approved publishing the latest Online
+Overview update to master for this SAME account only. This includes the recorded
+six-month sales trial, plain rank reasons, the redesigned guide with examples
+inside their rank cards, online-only current-month charts and performance work.
+
+Release/profile/debug builds use the prepared recorded-sales register. Navigation,
+route rendering and every server action retain the exact user ID plus active
+Inventory requirement. Other users do not see the feature and cannot read its RPCs.
+The newer Overview stock-column change on master is preserved.
+
+A has independent routes through sales in at least 70% of open online branches,
+top 35% by Qty, top 15% by current-Retail value, or the existing AED 1,000 premium
+repeat-sales rule. B uses top 60% by Qty or top 30% by value after A; C covers the
+remaining sales products. Repeat-sales conditions, MRN age handling and S/N/M/T
+precedence remain as reviewed. The page explains all rules with current examples.
+
+Current-month charts use signed daily online sales, replacing current-month
+history. Ranking and stock cover keep their existing completed-month periods.
+Prepared 5,000-row transport pages are copied exactly from the reviewed register;
+the client validates completeness, duplicates, order and generation while loading
+up to two pages concurrently. Charts wait for fresh detail responses, while the
+dialog immediately shows already-loaded rank facts.
+
+The release uses the already-prepared private snapshot. Its base generation must
+match the original cache; a mismatch fails closed and requires preparation of a new
+matching snapshot. Training scripts, saved input data and local artifacts are not
+part of this release. The migration checks readiness and reapplies the unchanged
+single-user server guard without rebuilding or changing source data.

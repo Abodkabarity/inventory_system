@@ -41,10 +41,14 @@ String onlinePriorityLabel(OnlineOverviewRow row) =>
       'premium_repeat' => 'A · Regular sales, high price',
       'forecast_quantity' => 'A · High expected Qty',
       'forecast_value' => 'A · High expected sales value',
+      'wide_branch_sales' => 'A · Sales in many branches',
+      'high_sales_qty' => 'A · High Qty sold',
+      'high_sales_value' => 'A · High sales value',
       _ => onlineRankTitle(row.rank),
     };
 
 String onlinePlainReason(OnlineOverviewRow row) {
+  if (row.usesActualSales) return row.reason;
   if (row.hasSalesForecast) return '${row.salesForecast['reason']}';
   final data = row.classification;
   final cuts = row.classThresholds;
@@ -232,6 +236,18 @@ class OnlineOverviewGridSource extends DataGridSource {
   final _identity = <DataGridRow, OnlineOverviewRow>{};
   final _positions = <DataGridRow, int>{};
   List<DataGridRow> _rows = [];
+  final _preparedGridRows = Expando<DataGridRow>('online-prepared-grid-row');
+  bool actualSales = false;
+  String columnTitle(String key, String fallback) => !actualSales
+      ? fallback
+      : switch (key) {
+          'coverage' => 'Branches with sales · 6 months',
+          'forecast_qty' => 'Sold · 6 months (Qty)',
+          'forecast_value' => 'Sales value · 6 months (AED)',
+          'plan_branches' => 'Branches to keep stock',
+          'months' => 'Months with sales · 6 months',
+          _ => fallback,
+        };
   static const columns = <(String, String, double)>[
     ('rank', 'Priority', 130),
     ('product', 'Product', 300),
@@ -270,21 +286,40 @@ class OnlineOverviewGridSource extends DataGridSource {
   Object? _value(OnlineOverviewRow row, String key) => switch (key) {
     'rank' => row.rank.label,
     'product' => '${row.item.name}\n${row.item.code}',
-    'coverage' => '${row.sellingBranches26} of ${row.networkBranchCount}',
+    'coverage' =>
+      row.usesActualSales
+          ? '${row.actualSales['selling_branches']} of ${row.networkBranchCount}'
+          : '${row.sellingBranches26} of ${row.networkBranchCount}',
     'item_status' => onlineItemLabel(row.item.itemStatus),
     'purchase_status' => row.purchaseStatus,
     'sales26' => row.sales26,
-    'forecast_qty' => row.hasSalesForecast ? row.salesForecast['qty'] : null,
+    'forecast_qty' =>
+      row.usesActualSales
+          ? row.actualSales['actual_qty']
+          : row.hasSalesForecast
+          ? row.salesForecast['qty']
+          : null,
     'forecast_value' =>
-      row.hasSalesForecast ? row.salesForecast['estimated_value'] : null,
+      row.usesActualSales
+          ? row.actualSales['actual_value']
+          : row.hasSalesForecast
+          ? row.salesForecast['estimated_value']
+          : null,
     'plan_branches' =>
-      row.hasSalesForecast ? row.forecastBranches.length : null,
+      row.usesActualSales
+          ? row.priorityBranches.length
+          : row.hasSalesForecast
+          ? row.forecastBranches.length
+          : null,
     'recent' => row.recentQty,
     'retail' => row.priceKnown ? row.retail : null,
     'value' => row.estimatedValue,
     'sales25' => row.sales25,
     'comparable25' => row.comparable25,
-    'months' => row.sellingMonths,
+    'months' =>
+      row.usesActualSales
+          ? row.actualSales['selling_months']
+          : row.sellingMonths,
     'store' => row.storeStock,
     'online_stock' => row.displayedStock,
     'other_branch_stock' => row.otherBranchStock,
@@ -304,11 +339,12 @@ class OnlineOverviewGridSource extends DataGridSource {
   };
 
   void replace(List<OnlineOverviewRow> rows) {
+    if (rows.isNotEmpty) actualSales = rows.any((row) => row.usesActualSales);
     _identity.clear();
     _positions.clear();
     _rows = [
       for (final row in rows)
-        DataGridRow(
+        _preparedGridRows[row] ??= DataGridRow(
           cells: [
             for (final column in columns)
               DataGridCell<dynamic>(
@@ -578,6 +614,7 @@ class _OnlineOverviewGridState extends State<OnlineOverviewGrid> {
           for (final column in OnlineOverviewGridSource.columns)
             GridColumn(
               columnName: column.$1,
+              visible: column.$1 != 'days' && column.$1 != 'value',
               width:
                   _widths[column.$1] ??
                   (size.maxWidth < 600
@@ -607,9 +644,9 @@ class _OnlineOverviewGridState extends State<OnlineOverviewGrid> {
                       ? switch (column.$1) {
                           'rank' => 'Rank',
                           'online_stock' => 'Stock',
-                          _ => column.$2,
+                          _ => widget.source.columnTitle(column.$1, column.$2),
                         }
-                      : column.$2,
+                      : widget.source.columnTitle(column.$1, column.$2),
                   textAlign: column.$1 == 'product'
                       ? TextAlign.start
                       : TextAlign.center,

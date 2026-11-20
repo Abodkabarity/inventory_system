@@ -377,6 +377,9 @@ class OnlineOverviewRow {
 
   Map<String, dynamic> get salesForecast =>
       stockMap(classification['forecast']);
+  Map<String, dynamic> get actualSales =>
+      stockMap(classification['actual_sales']);
+  bool get usesActualSales => actualSales.isNotEmpty;
   Map<String, dynamic> get productAge =>
       stockMap(classification['product_age'] ?? salesForecast['product_age']);
   bool get hasSalesForecast =>
@@ -404,6 +407,9 @@ class OnlineOverviewRow {
       stockNumber(classification['total_branches']).toInt();
   double get networkCoverage => stockNumber(classification['coverage_2026']);
   String? get aRouteLabel => switch (classification['priority_route']) {
+    'wide_branch_sales' => 'Sales in many branches',
+    'high_sales_qty' => 'High Qty sold',
+    'high_sales_value' => 'High sales value',
     'forecast_quantity' => 'High expected Qty',
     'forecast_value' => 'High expected sales value',
     'forecast_sales' => 'Expected online sales',
@@ -419,11 +425,14 @@ class OnlineOverviewRow {
           .toList();
   String get aQualification =>
       aRouteLabel ?? (rank == OnlineRank.a ? 'Earlier A rule' : '—');
-  String get repeatEvidence =>
-      classification['priority_route'] == 'premium_repeat'
+  String get repeatEvidence => usesActualSales
+      ? '${actualSales['selling_months']} months with sales in the last 6 full months'
+      : classification['priority_route'] == 'premium_repeat'
       ? '${classification['selling_periods_last_12']} of the last 4 three-month periods with online sales'
       : '${classification['selling_months_2026'] ?? sellingMonths} positive-selling months in 2026';
-  String get cExplanation => hasAbcmt
+  String get cExplanation => usesActualSales
+      ? reason
+      : hasAbcmt
       ? '$reason. $evidenceNote'
       : 'Rebuild the prepared data to use ABCMT.';
 

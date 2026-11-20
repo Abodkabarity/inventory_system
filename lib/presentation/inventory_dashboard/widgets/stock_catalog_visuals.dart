@@ -1257,7 +1257,11 @@ class CatalogStockChart extends StatelessWidget {
         ),
         Text(
           percent == null
-              ? (item.stockAvailable ? 'No recent sales' : 'Stock unavailable')
+              ? (item.stockAvailable
+                    ? (onlineSales
+                          ? 'No online sales in 45 days'
+                          : 'No recent sales')
+                    : 'Stock unavailable')
               : '${percent.toStringAsFixed(1)}% stock / sales',
           style: TextStyle(
             color: colour,

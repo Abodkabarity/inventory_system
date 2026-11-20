@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:daily_order/core/config/online_overview_local_config.dart';
 import 'package:daily_order/data/datasources/remote/online_overview_remote_ds.dart';
@@ -21,6 +23,195 @@ Map<String, dynamic> auditRow({Map<String, dynamic> extra = const {}}) => {
 };
 
 void main() {
+  test(
+    'two prepared batches load together and retain exact row order',
+    () async {
+      final first = Completer<OnlineSourcePage>();
+      final second = Completer<OnlineSourcePage>();
+      final calls = <int>[];
+      final progress = <int>[];
+      final load = loadOnlineSource(
+        expectedTotal: 8915,
+        identity: (row) => '${row['code']}',
+        onProgress: (loaded, _) => progress.add(loaded),
+        fetch: (offset, limit) {
+          expect(limit, 5000);
+          calls.add(offset);
+          return offset == 0 ? first.future : second.future;
+        },
+      );
+      expect(calls, [0, 5000]);
+      second.complete(
+        OnlineSourcePage(
+          List.generate(3915, (i) => {'code': '${i + 5000}'}),
+          8915,
+        ),
+      );
+      first.complete(
+        OnlineSourcePage(List.generate(5000, (i) => {'code': '$i'}), 8915),
+      );
+      final rows = await load;
+      expect(rows.map((r) => r['code']), List.generate(8915, (i) => '$i'));
+      expect(progress, [5000, 8915]);
+    },
+  );
+  test(
+    'parallel loader still consumes actual counts under a smaller server cap',
+    () async {
+      final rows = await loadOnlineSource(
+        expectedTotal: 6000,
+        identity: (row) => '${row['code']}',
+        fetch: (offset, limit) async => OnlineSourcePage(
+          List.generate(
+            math.min(1500, 6000 - offset),
+            (i) => {'code': '${i + offset}'},
+          ),
+          6000,
+        ),
+      );
+      expect(rows.map((r) => r['code']), List.generate(6000, (i) => '$i'));
+    },
+  );
+  for (final issue in ['duplicate', 'changed', 'empty', 'error']) {
+    test(
+      'parallel batch rejects $issue without returning partial data',
+      () async {
+        await expectLater(
+          loadOnlineSource(
+            expectedTotal: 6000,
+            identity: (row) => '${row['code']}',
+            fetch: (offset, limit) async {
+              if (offset == 0) {
+                return OnlineSourcePage(
+                  List.generate(5000, (i) => {'code': '$i'}),
+                  6000,
+                );
+              }
+              if (issue == 'error') throw StateError('Second request failed');
+              return OnlineSourcePage(
+                issue == 'empty'
+                    ? []
+                    : List.generate(
+                        1000,
+                        (i) => {
+                          'code': issue == 'duplicate' && i == 0
+                              ? '0'
+                              : '${i + offset}',
+                        },
+                      ),
+                issue == 'changed' ? 6001 : 6000,
+              );
+            },
+          ),
+          throwsStateError,
+        );
+      },
+    );
+  }
+  test('cancelled parallel load does not start requests', () async {
+    var calls = 0;
+    await expectLater(
+      loadOnlineSource(
+        expectedTotal: 6000,
+        isCancelled: () => true,
+        identity: (row) => '${row['code']}',
+        fetch: (offset, limit) async {
+          calls++;
+          return const OnlineSourcePage([], 0);
+        },
+      ),
+      throwsStateError,
+    );
+    expect(calls, 0);
+  });
+  test(
+    'debug preview reads prepared data and 45-day sales from its isolated RPC',
+    () async {
+      final calls = <String>[];
+      final client = SupabaseClient(
+        'https://online-test.invalid',
+        'test-anon',
+        httpClient: MockClient((request) async {
+          expect(
+            request.url.pathSegments.last,
+            'get_local_online_overview_preview',
+          );
+          final params = jsonDecode(request.body);
+          calls.add(params['p_action']);
+          final action = params['p_action'];
+          final Object result = switch (action) {
+            'state' => {
+              'status': 'complete',
+              'generation': 'preview-G',
+              'meta': {
+                'items': 1,
+                'branches': [
+                  {'name': 'Web Shop', 'group': '71'},
+                ],
+                'actual_sales': {'basis': 'actual_sales', 'status': 'ready'},
+              },
+            },
+            'batch' => {
+              'generation': 'preview-G',
+              'total': 1,
+              'rows': [
+                {
+                  'code': 'FAST',
+                  'item': onlineItem('FAST').data,
+                  'rank': 'a',
+                  'reason': 'Sales in many branches.',
+                  'classification': {
+                    'actual_sales': {'actual_qty': 24, 'selling_branches': 10},
+                  },
+                },
+              ],
+            },
+            'recent_sales' => {
+              'qty': 2,
+              'from': '2026-10-04',
+              'through': '2026-11-17',
+            },
+            'availability' => {'generation': 'preview-G', 'rows': []},
+            'refresh' => {'status': 'complete'},
+            _ => throw StateError('Unexpected preview action $action'),
+          };
+          if (action != 'state' && action != 'refresh') {
+            expect(params['p_generation'], 'preview-G');
+          }
+          if (action == 'batch') expect(params['p_limit'], 5000);
+          return http.Response(
+            jsonEncode(result),
+            200,
+            request: request,
+            headers: {'content-type': 'application/json'},
+          );
+        }),
+      );
+      addTearDown(client.dispose);
+      final source = OnlineOverviewRemoteDs(client, preview: true);
+      final result = await source.load();
+      expect(result.preparedRows!.single.usesActualSales, isTrue);
+      expect(result.generation, 'preview-G');
+      expect(
+        (await source.recentOnlineSales(
+          'FAST',
+          generation: 'preview-G',
+          branch: '',
+        ))['qty'],
+        2,
+      );
+      await source.branchAvailability(generation: 'preview-G');
+      await source.requestRefresh();
+      expect(calls, [
+        'state',
+        'batch',
+        'state',
+        'recent_sales',
+        'availability',
+        'refresh',
+      ]);
+    },
+  );
   test(
     'branch availability reads only the summary RPC for the visible generation',
     () async {
