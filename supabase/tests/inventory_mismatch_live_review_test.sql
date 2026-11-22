@@ -41,7 +41,8 @@ begin
   begin
     perform public.inventory_mismatch_review_page(0,5000,'stale-snapshot');
     raise exception 'Stale snapshot was accepted';
-  exception when serialization_failure then null;
+  exception when sqlstate 'PT409' then
+    assert sqlerrm='review_snapshot_changed','Snapshot conflict message changed';
   end;
   select (x->>'id')::bigint into sample_id from jsonb_array_elements(p->'rows')x limit 1;
   assert public.inventory_mismatch_review_detail(sample_id)->'evidence' is not null,'Authorized detail inaccessible';

@@ -45,6 +45,9 @@ class SupabaseMismatchReviewRepository implements MismatchReviewRepository {
   Future<MismatchReviewSnapshot> load() async {
     await StoreBranchIdentityRegistry.load(client);
     for (var attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await Future<void>.delayed(Duration(milliseconds: 250 * attempt));
+      }
       try {
         final rows = <MismatchReview>[];
         final ids = <int>{};
@@ -59,7 +62,7 @@ class SupabaseMismatchReviewRepository implements MismatchReviewRepository {
                   'inventory_mismatch_review_page',
                   params: {
                     'p_after': after,
-                    'p_limit': StockManagementLoadConfig.batchSize,
+                    'p_limit': 5000,
                     'p_snapshot': token,
                   },
                 )
@@ -98,7 +101,10 @@ class SupabaseMismatchReviewRepository implements MismatchReviewRepository {
         }
         return MismatchReviewSnapshot(rows, coverage, source, token);
       } on PostgrestException catch (e) {
-        if (e.code != '40001' || attempt == 2) rethrow;
+        final snapshotChanged =
+            e.code == '40001' ||
+            (e.code == 'PT409' && e.message == 'review_snapshot_changed');
+        if (!snapshotChanged || attempt == 2) rethrow;
       } on FormatException {
         if (attempt == 2) rethrow;
       }
