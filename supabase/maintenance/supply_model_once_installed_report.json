@@ -1,0 +1,28 @@
+{
+  "batch_size": 500,
+  "mismatches": 0,
+  "old_model_calls": 20013,
+  "new_model_calls": 12496,
+  "old_analysis_ms": 73819.603831,
+  "new_analysis_ms": 70068.199285,
+  "compared": 12637,
+  "mode": "installed",
+  "capture": {
+    "items": 12637,
+    "status": "complete",
+    "through": "2026-09-30"
+  },
+  "input_snapshot": {
+    "products": 12637,
+    "fingerprint": "8a4bdc1f6509102eeec76a64c91e8ccb"
+  },
+  "edge_cases": 15,
+  "output_hashes": {
+    "old": "08532a1f4ea5d4a98b69e547ab371d3e",
+    "new": "08532a1f4ea5d4a98b69e547ab371d3e"
+  },
+  "analysis_reduction_percent": 5.08,
+  "model_call_reduction_percent": 37.56,
+  "production_rows_written": 0,
+  "candidate_rolled_back": false
+}
