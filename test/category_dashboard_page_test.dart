@@ -7,6 +7,15 @@ import 'package:daily_order/presentation/auth/bloc/auth_state.dart';
 import 'package:daily_order/presentation/category_dashboard/page/category_dashboard_page.dart';
 import 'package:daily_order/presentation/inventory_dashboard/widgets/inventory_drawer.dart';
 import 'package:daily_order/presentation/items_tracker/page/items_tracker_page.dart';
+import 'package:daily_order/presentation/inventory_dashboard/page/stock_catalog_page.dart';
+import 'package:daily_order/presentation/inventory_dashboard/page/stock_management_page.dart';
+import 'package:daily_order/presentation/inventory_dashboard/page/stock_expiry_page.dart';
+import 'package:daily_order/data/datasources/remote/stock_catalog_remote_ds.dart';
+import 'package:daily_order/data/datasources/remote/stock_management_remote_ds.dart';
+import 'package:daily_order/data/datasources/remote/stock_expiry_remote_ds.dart';
+import 'package:daily_order/domain/entities/stock_catalog.dart';
+import 'package:daily_order/domain/entities/stock_management.dart';
+import 'package:daily_order/domain/entities/stock_expiry.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +23,34 @@ import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 
 class _AuthBloc extends Cubit<AuthState> implements AuthBloc {
   _AuthBloc() : super(AuthState.initial());
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _CatalogSource extends StockCatalogDataSource {
+  @override
+  Future<StockCatalogResult> fetchPage(StockCatalogQuery query) async =>
+      const StockCatalogResult(rows: [], summary: {'items': 0}, meta: {});
+  @override
+  Future<Map<String, dynamic>?> refreshState() async => null;
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _MrnSource extends StockManagementDataSource {
+  @override
+  Future<StockManagementResult> fetchPage(StockManagementQuery query) async =>
+      const StockManagementResult(rows: [], summary: {'items': 0}, meta: {});
+  @override
+  Future<Map<String, dynamic>?> refreshState() async => null;
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _ExpirySource extends StockExpiryDataSource {
+  @override
+  Future<StockExpiryResult> fetchPage(StockExpiryQuery query) async =>
+      const StockExpiryResult(rows: [], total: 0, summary: {}, meta: {});
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -103,6 +140,10 @@ void main() {
             home: CategoryDashboardPage(
               itemsRepository: repository,
               salesReportDataSource: sales,
+              stockCatalogDataSource: _CatalogSource(),
+              stockManagementDataSource: _MrnSource(),
+              stockCdDataSource: _MrnSource(),
+              stockExpiryDataSource: _ExpirySource(),
             ),
           ),
         ),
@@ -112,6 +153,10 @@ void main() {
       expect(CategoryDashboardPage.pages, [
         InventoryPageType.itemsTracker,
         InventoryPageType.salesReport,
+        InventoryPageType.stockManagement,
+        InventoryPageType.mrnOverview,
+        InventoryPageType.mrnCdOverview,
+        InventoryPageType.nearExpiry,
       ]);
       expect(find.text('Category Dashboard'), findsOneWidget);
       expect(
@@ -121,7 +166,6 @@ void main() {
       expect(repository.loads, 1);
       expect(sales.monthlyLoads, 0, reason: 'Reports load only on first visit');
       for (final title in [
-        'Overview',
         'Daily Order',
         'Branch Setting',
         'Stock Check',
@@ -139,6 +183,45 @@ void main() {
       final drawer = find.byType(InventoryDrawer);
       Finder menu(String title) =>
           find.descendant(of: drawer, matching: find.text(title));
+      for (final title in [
+        'Overview',
+        'MRN Overview',
+        'MRN CD Overview',
+        'Near Expiry',
+      ]) {
+        await tester.ensureVisible(menu(title));
+        await tester.tap(menu(title));
+        await tester.pumpAndSettle();
+        if (title == 'Overview') {
+          expect(
+            tester
+                .widget<StockCatalogPage>(find.byType(StockCatalogPage))
+                .readOnly,
+            isTrue,
+          );
+        } else if (title == 'Near Expiry') {
+          expect(
+            tester
+                .widget<StockExpiryPage>(find.byType(StockExpiryPage))
+                .readOnly,
+            isTrue,
+          );
+          expect(find.text('Save note'), findsNothing);
+        } else {
+          expect(
+            tester
+                .widget<StockManagementPage>(find.byType(StockManagementPage))
+                .cd,
+            title == 'MRN CD Overview',
+          );
+        }
+        expect(find.text('Online Overview'), findsNothing);
+        expect(tester.takeException(), isNull, reason: title);
+      }
+      await tester.ensureVisible(menu('Items Tracker'));
+      await tester.tap(menu('Items Tracker'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(menu('Sales Report'));
       await tester.tap(menu('Sales Report'));
       await tester.pumpAndSettle();
       expect(sales.monthlyLoads, 1);

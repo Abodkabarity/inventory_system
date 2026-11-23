@@ -379,7 +379,8 @@ class _InventoryDrawerState extends State<InventoryDrawer> {
                         ),
                       ],
                     ),
-                  ] else
+                    const SizedBox(height: 12),
+                  ],
                     StockManagementNavigation(
                       selectedPage: currentPage,
                       showOnlineOverview:

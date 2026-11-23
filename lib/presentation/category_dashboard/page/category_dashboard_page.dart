@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../data/datasources/remote/sales_report_remote_ds.dart';
+import '../../../data/datasources/remote/stock_catalog_remote_ds.dart';
+import '../../../data/datasources/remote/stock_management_remote_ds.dart';
+import '../../../data/datasources/remote/stock_expiry_remote_ds.dart';
 import '../../../domain/entities/inventory_page.dart';
 import '../../../domain/repositories/items_tracker_repository.dart';
 import '../../inventory_dashboard/page/sales_report_page.dart';
+import '../../inventory_dashboard/page/stock_catalog_page.dart';
+import '../../inventory_dashboard/page/stock_management_page.dart';
+import '../../inventory_dashboard/page/stock_expiry_page.dart';
 import '../../inventory_dashboard/widgets/inventory_drawer.dart';
 import '../../items_tracker/page/items_tracker_page.dart';
 import '../../widgets/retained_page_stack.dart';
@@ -14,14 +21,26 @@ class CategoryDashboardPage extends StatefulWidget {
     super.key,
     this.itemsRepository,
     this.salesReportDataSource,
+    this.stockCatalogDataSource,
+    this.stockManagementDataSource,
+    this.stockCdDataSource,
+    this.stockExpiryDataSource,
   });
 
   final ItemsTrackerRepository? itemsRepository;
   final SalesReportRemoteDs? salesReportDataSource;
+  final StockCatalogDataSource? stockCatalogDataSource;
+  final StockManagementDataSource? stockManagementDataSource;
+  final StockManagementDataSource? stockCdDataSource;
+  final StockExpiryDataSource? stockExpiryDataSource;
 
   static const pages = [
     InventoryPageType.itemsTracker,
     InventoryPageType.salesReport,
+    InventoryPageType.stockManagement,
+    InventoryPageType.mrnOverview,
+    InventoryPageType.mrnCdOverview,
+    InventoryPageType.nearExpiry,
   ];
 
   @override
@@ -45,6 +64,27 @@ class _CategoryDashboardPageState extends State<CategoryDashboardPage> {
     ),
     InventoryPageType.salesReport => SalesReportPage(
       dataSource: widget.salesReportDataSource,
+    ),
+    InventoryPageType.stockManagement => StockCatalogPage(
+      dataSource: widget.stockCatalogDataSource,
+      readOnly: true,
+    ),
+    InventoryPageType.mrnOverview => StockManagementPage(
+      dataSource: widget.stockManagementDataSource,
+      onOpenExpiry: () => _select(InventoryPageType.nearExpiry),
+    ),
+    InventoryPageType.mrnCdOverview => StockManagementPage(
+      cd: true,
+      dataSource: widget.stockCdDataSource,
+      onOpenExpiry: () => _select(InventoryPageType.nearExpiry),
+    ),
+    InventoryPageType.nearExpiry => StockExpiryPage(
+      dataSource:
+          widget.stockExpiryDataSource ??
+          StockExpiryRemoteDs(Supabase.instance.client),
+      productDataSource: widget.stockManagementDataSource,
+      embedded: true,
+      readOnly: true,
     ),
     _ => const SizedBox.shrink(),
   };

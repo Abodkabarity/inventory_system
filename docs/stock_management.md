@@ -2,7 +2,13 @@
 
 Inventory Dashboard → Stock Management → MRN Overview / Near Expiry (a separate
 expandable sidebar workspace, outside Operations). Access is restricted to
-the existing `inventory` role by RLS; no service credentials are shipped to Flutter.
+the existing `inventory` role for writes. Active `view` and `category` users have
+the same read-only access through stock SELECT policies and guarded read RPCs;
+no service credentials are shipped to Flutter. Category includes Overview,
+MRN Overview, MRN CD Overview and Near Expiry, with filtering, details, reload
+and exports. Note/review writes and snapshot rebuilds remain Inventory-only.
+Online Overview is excluded from Category navigation and its page allowlist;
+its server guard still requires the approved Inventory user ID.
 
 The separate **Overview** now includes the complete Item Report catalog. Its
 sources, formulas and verification are documented in `stock_catalog_overview.md`.
