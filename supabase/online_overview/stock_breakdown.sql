@@ -5,7 +5,7 @@ begin
  perform online_overview_private.assert_access();
  select meta into snapshot_meta from online_overview_private.state where singleton and generation=p_generation;
  if snapshot_meta is null or not online_overview_private.roster_is_allowed(snapshot_meta)
- then raise exception 'Online snapshot changed. Reload.' using errcode='40001'; end if;
+ then raise exception 'Online snapshot changed. Reload.' using errcode='PT409'; end if;
  select coalesce(jsonb_agg(jsonb_build_object('branch_name',branch,
    'stock',(payload->>'online_stock')::numeric,'stocked_days',(payload->>'stocked_days')::integer,
    'sales_2025',payload->'sales25','sales_2026',payload->'sales26',
@@ -32,7 +32,7 @@ begin
  perform online_overview_private.assert_access();
  select meta into snapshot_meta from online_overview_private.state where singleton and generation=p_generation;
  if snapshot_meta is null or not online_overview_private.roster_is_allowed(snapshot_meta) then
-  raise exception 'Online snapshot changed. Reload.' using errcode='40001';
+  raise exception 'Online snapshot changed. Reload.' using errcode='PT409';
  end if;
  if not exists(select 1 from online_overview_private.items where generation=p_generation and item_code=p_item_code)
   or p_branch is null
@@ -74,7 +74,7 @@ begin
  perform online_overview_private.assert_access();
  select meta into snapshot_meta from online_overview_private.state where singleton and generation=p_generation;
  if snapshot_meta is null or not online_overview_private.roster_is_allowed(snapshot_meta)
- then raise exception 'Online snapshot changed. Reload.' using errcode='40001'; end if;
+ then raise exception 'Online snapshot changed. Reload.' using errcode='PT409'; end if;
  if not exists(select 1 from online_overview_private.items where generation=p_generation and item_code=p_item_code)
   or p_branch is null
   or (p_branch<>'' and not exists(select 1 from jsonb_array_elements(snapshot_meta->'branches') b where b->>'name'=p_branch))

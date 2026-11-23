@@ -460,7 +460,7 @@ begin
   if p_expected_version is not null
     and v_old.row_version is distinct from p_expected_version then
     raise exception 'STALE_ITEM_VERSION'
-      using errcode = '40001';
+      using errcode = 'PT409';
   end if;
 
   if p_escalated_date is null then
@@ -618,7 +618,7 @@ begin
   if p_expected_version is not null
     and v_old.row_version is distinct from p_expected_version then
     raise exception 'STALE_ITEM_VERSION'
-      using errcode = '40001';
+      using errcode = 'PT409';
   end if;
 
   if nullif(btrim(coalesce(p_status_updated_to, '')), '') is null then

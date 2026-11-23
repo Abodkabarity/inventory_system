@@ -8,7 +8,7 @@ begin
  select meta into snapshot_meta from online_overview_private.state
  where singleton and generation=p_generation;
  if snapshot_meta is null or not online_overview_private.roster_is_allowed(snapshot_meta)
- then raise exception 'Online snapshot changed. Reload.' using errcode='40001';end if;
+ then raise exception 'Online snapshot changed. Reload.' using errcode='PT409';end if;
  with branches as materialized (
   select b->>'name' branch from jsonb_array_elements(snapshot_meta->'branches') b
  ), ranks as (select unnest(array['a','b','c']) rank),

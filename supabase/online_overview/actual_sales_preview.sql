@@ -31,14 +31,14 @@ begin
  if preview.generation is null or preview.base_generation is distinct from base->>'generation'
  then
   if p_action='state' then return jsonb_build_object('status','needs_update');end if;
-  raise exception 'The local preview needs an update. Reload.' using errcode='40001';
+  raise exception 'The local preview needs an update. Reload.' using errcode='PT409';
  end if;
  if p_action in ('state','refresh') then
   return base || jsonb_build_object('status','complete','generation',preview.generation,
    'meta',((base->'meta')-'forecast'-'model') || preview.meta);
  end if;
  if p_generation is distinct from preview.generation then
-  raise exception 'Online snapshot changed. Reload.' using errcode='40001';end if;
+  raise exception 'Online snapshot changed. Reload.' using errcode='PT409';end if;
  if p_branch is null or p_scope is distinct from 'onlineOnly'
   or (p_branch<>'' and not exists(select 1 from jsonb_array_elements(base#>'{meta,branches}') b
      where b->>'name'=p_branch)) then

@@ -160,7 +160,7 @@ begin
  perform online_overview_private.assert_access();
  select meta into snapshot_meta from online_overview_private.state where singleton and generation=p_generation;
  if snapshot_meta is null or not online_overview_private.roster_is_allowed(snapshot_meta)
- then raise exception 'Online snapshot changed. Reload.' using errcode='40001';end if;
+ then raise exception 'Online snapshot changed. Reload.' using errcode='PT409';end if;
  select payload#>>'{classification,forecast,run_id}' into forecast_id
  from online_overview_private.classification where generation=p_generation and item_code=p_item_code;
  select payload into result from online_overview_private.forecast_rows where run_id=forecast_id and item_code=p_item_code;

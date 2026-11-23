@@ -1,0 +1,94 @@
+[
+  {
+    "drop": "idx_daily_order_run_date_branch",
+    "keep": "idx_daily_order_allocation_fast_2"
+  },
+  {
+    "drop": "daily_order_run_branch_idx",
+    "keep": "idx_daily_order_allocation_fast_2"
+  },
+  {
+    "drop": "idx_daily_order_allocation_run_branch",
+    "keep": "idx_daily_order_allocation_fast_2"
+  },
+  {
+    "drop": "idx_daily_order_run_branch",
+    "keep": "idx_daily_order_allocation_fast_2"
+  },
+  {
+    "drop": "daily_order_run_date_item_code_idx",
+    "keep": "idx_daily_order_allocation_fast_1"
+  },
+  {
+    "drop": "daily_order_run_item_idx",
+    "keep": "idx_daily_order_allocation_fast_1"
+  },
+  {
+    "drop": "idx_daily_order_allocation_run_item",
+    "keep": "idx_daily_order_allocation_fast_1"
+  },
+  {
+    "drop": "idx_daily_order_run_date_item_code",
+    "keep": "idx_daily_order_allocation_fast_1"
+  },
+  {
+    "drop": "idx_daily_order_run_item",
+    "keep": "idx_daily_order_allocation_fast_1"
+  },
+  {
+    "drop": "idx_daily_order_allocation_run_status",
+    "keep": "idx_daily_order_allocation_fast_4"
+  },
+  {
+    "drop": "idx_daily_order_allocation_run_category",
+    "keep": "idx_daily_order_allocation_fast_3"
+  },
+  {
+    "drop": "idx_daily_order_allocation_run_min_unit",
+    "keep": "idx_daily_order_allocation_fast_5"
+  },
+  {
+    "drop": "idx_daily_order_branch_run_date",
+    "keep": "idx_daily_order_branch_run"
+  },
+  {
+    "drop": "daily_order_run_date_branch_item_code_idx",
+    "keep": "idx_daily_order_availability_lookup"
+  },
+  {
+    "drop": "idx_daily_order_exports_unique",
+    "keep": "daily_order_exports_run_date_uidx"
+  },
+  {
+    "drop": "daily_order_history_run_date_branch_idx1",
+    "keep": "daily_order_history_run_date_branch_idx"
+  },
+  {
+    "drop": "daily_order_history_run_date_branch_idx2",
+    "keep": "daily_order_history_run_date_branch_idx"
+  },
+  {
+    "drop": "daily_order_history_run_date_item_code_idx1",
+    "keep": "daily_order_history_run_date_item_code_idx"
+  },
+  {
+    "drop": "daily_order_history_run_date_item_code_idx2",
+    "keep": "daily_order_history_run_date_item_code_idx"
+  },
+  {
+    "drop": "daily_order_history_branch_run_date_idx1",
+    "keep": "daily_order_history_branch_run_date_idx"
+  },
+  {
+    "drop": "daily_order_history_run_date_branch_item_code_idx",
+    "keep": "idx_daily_order_history_export"
+  },
+  {
+    "drop": "idx_sales_90_days_branch_item",
+    "keep": "idx_sales_90_branch_item"
+  },
+  {
+    "drop": "idx_stk_mismatch_branch_item",
+    "keep": "stk_mismatch_review_branch_item_idx"
+  }
+]

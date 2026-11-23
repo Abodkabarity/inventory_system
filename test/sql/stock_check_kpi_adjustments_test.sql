@@ -57,7 +57,7 @@ begin
   begin
     perform public.stock_check_kpi_adjustments(projects,p_snapshot=>'stale-snapshot');
     raise exception 'Stale snapshot accepted';
-  exception when serialization_failure then null;
+  exception when sqlstate 'PT409' then null;
   end;
   if has_function_privilege('anon','public.stock_check_kpi_adjustments(uuid[],text,text,int,text,date)','EXECUTE') then
     raise exception 'Anonymous execute privilege exists'; end if;

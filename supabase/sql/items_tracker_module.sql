@@ -665,7 +665,7 @@ begin
   if p_expected_version is not null
     and v_old.row_version is distinct from p_expected_version then
     raise exception 'STALE_ITEM_VERSION'
-      using errcode = '40001';
+      using errcode = 'PT409';
   end if;
 
   if p_escalated_date is null then
@@ -831,7 +831,7 @@ begin
   if p_expected_version is not null
     and v_old.row_version is distinct from p_expected_version then
     raise exception 'STALE_ITEM_VERSION'
-      using errcode = '40001';
+      using errcode = 'PT409';
   end if;
 
   if v_old.follow_up_role is distinct from v_role then
@@ -914,7 +914,7 @@ begin
 
   if p_expected_version is not null
     and v_old.row_version is distinct from p_expected_version then
-    raise exception 'STALE_ITEM_VERSION' using errcode = '40001';
+    raise exception 'STALE_ITEM_VERSION' using errcode = 'PT409';
   end if;
 
   if v_old.case_status = v_status then
@@ -993,7 +993,7 @@ begin
   if p_expected_version is not null
     and v_old.row_version is distinct from p_expected_version then
     raise exception 'STALE_ITEM_VERSION'
-      using errcode = '40001';
+      using errcode = 'PT409';
   end if;
 
   if v_old.follow_up_role is distinct from v_role then

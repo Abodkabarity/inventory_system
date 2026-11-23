@@ -354,7 +354,7 @@ begin
  end if;
  if not exists(select 1 from online_overview_private.state where singleton and generation=p_generation
    and online_overview_private.roster_is_allowed(meta))
- then raise exception 'Online snapshot changed. Reload.' using errcode='40001'; end if;
+ then raise exception 'Online snapshot changed. Reload.' using errcode='PT409'; end if;
  if p_branch<>'' and not exists(select 1 from online_overview_private.operational_branches() where branch_name=p_branch)
  then raise insufficient_privilege using message='Branch is outside Online Overview'; end if;
  select jsonb_build_object('generation',p_generation,'total',(select count(*) from online_overview_private.results

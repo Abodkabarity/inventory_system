@@ -46,7 +46,7 @@ begin
   begin
     perform public.save_stock_expiry_review(a->>'item_code',(a->>'expiry_date')::date,
       a->>'receipt_fingerprint','Overwrite with stale version','note',null);
-  exception when serialization_failure then rejected:=true;
+  exception when sqlstate 'PT409' then rejected:=true;
   end;
   if not rejected then raise exception 'Stale review version was accepted'; end if;
   insert into expiry_watch_assertions values('inventory read/write, review state, note persistence and stale-version rejection',true);
