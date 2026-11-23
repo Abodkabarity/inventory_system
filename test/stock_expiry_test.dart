@@ -895,7 +895,7 @@ void main() {
         expect(grid.columns.any((c) => c.columnName == column), isFalse);
       }
       expect(find.text('6 days overdue'), findsOneWidget);
-      expect(find.text('03 Oct 2026'), findsNWidgets(2));
+      expect(find.text('03/10/2026'), findsNWidgets(2));
       expect(find.text('Latest: 06 Oct 2026'), findsNothing);
       expect(
         tester

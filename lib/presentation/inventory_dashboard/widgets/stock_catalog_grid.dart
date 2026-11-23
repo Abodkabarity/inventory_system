@@ -6,6 +6,7 @@ import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/stock_item_added_date.dart';
+import '../../../core/utils/stock_grid_date.dart';
 import '../../../domain/entities/stock_management.dart';
 import '../../../domain/entities/stock_catalog.dart';
 import 'stock_catalog_visuals.dart';
@@ -239,12 +240,7 @@ class _CatalogGridSource extends DataGridSource {
       'All active registered branches. STORE is excluded.',
     ),
     ('store_stock', 'STORE STOCK', 145.0, 'Current STORE warehouse balance.'),
-    (
-      'total_stock',
-      'TOTAL STOCK',
-      150.0,
-      'STORE + all active branches.',
-    ),
+    ('total_stock', 'TOTAL STOCK', 150.0, 'STORE + all active branches.'),
     (
       'supply_review',
       'STORE HISTORY',
@@ -332,7 +328,9 @@ class _CatalogGridSource extends DataGridSource {
     'main_ingredient' ||
     'indication' ||
     'sub_category' => item.text(column),
-    'added_date_time' => stockItemAddedDate(item.data['added_date_time']),
+    'added_date_time' => stockGridDate(
+      stockItemAddedDate(item.data['added_date_time']),
+    ),
     'reorder_branches' =>
       item.distributionStatus.orderDataAvailable
           ? item.distributionStatus.reorder

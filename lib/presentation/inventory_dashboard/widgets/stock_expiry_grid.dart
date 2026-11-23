@@ -8,6 +8,7 @@ import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 import '../../../domain/entities/stock_expiry.dart';
 import '../../../core/utils/stock_item_added_date.dart';
+import '../../../core/utils/stock_grid_date.dart';
 import 'stock_management_formatters.dart';
 import 'stock_selectable_cell_text.dart';
 import 'stock_sales_summary.dart';
@@ -332,15 +333,15 @@ class StockExpiryGridSource extends DataGridSource {
       case 'reference':
         return a.text(key);
       case 'added_date_time':
-        return stockItemAddedDate(p.data[key]);
+        return stockGridDate(stockItemAddedDate(p.data[key]));
       case 'supplier':
       case 'company':
       case 'category':
         return p.text(key).toUpperCase();
       case 'last_receipt_date':
-        return DateTime.tryParse(a.text(key));
+        return stockGridDate(DateTime.tryParse(a.text(key)));
       case 'expiry_date':
-        return DateTime.tryParse(a.expiry);
+        return stockGridDate(DateTime.tryParse(a.expiry));
       case 'ordered_qty':
         return _number(a.data[key]);
       case 'received_qty':
@@ -375,9 +376,11 @@ class StockExpiryGridSource extends DataGridSource {
         final year = key.endsWith('2025') ? 2025 : 2026;
         final y = p.year(year);
         final parts = y['best_month']?.toString().split('/') ?? [];
-        return parts.length == 2
-            ? DateTime.tryParse('${parts[1]}-${parts[0].padLeft(2, '0')}-01')
-            : null;
+        return stockGridDate(
+          parts.length == 2
+              ? DateTime.tryParse('${parts[1]}-${parts[0].padLeft(2, '0')}-01')
+              : null,
+        );
       default:
         return null;
     }
@@ -389,7 +392,7 @@ class StockExpiryGridSource extends DataGridSource {
   static String _qty(dynamic value) =>
       value == null ? '—' : NumberFormat('#,##0.##').format(value);
   static String _date(dynamic value) =>
-      value is DateTime ? DateFormat('dd MMM yyyy').format(value) : '—';
+      value is DateTime ? DateFormat('dd/MM/yyyy').format(value) : '—';
   static String _status(String status) => switch (status) {
     'no_stock' => 'No stock',
     'low_cover' => 'Below 30 days',
@@ -640,7 +643,7 @@ class StockExpiryGridSource extends DataGridSource {
         final y = p.year(key.endsWith('2025') ? 2025 : 2026);
         return _stack([
           _text(
-            value is DateTime ? DateFormat('MMM yyyy').format(value) : '—',
+            value is DateTime ? DateFormat('MM/yyyy').format(value) : '—',
             strong: true,
           ),
           const SizedBox(height: 3),

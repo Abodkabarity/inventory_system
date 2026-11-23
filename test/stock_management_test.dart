@@ -405,7 +405,7 @@ void main() {
     expect(find.byTooltip('Next page'), findsNothing);
     final dateBadge = find.byKey(const ValueKey('mrn-date:16-01-00362'));
     expect(
-      find.descendant(of: dateBadge, matching: find.text('06 Oct 2026')),
+      find.descendant(of: dateBadge, matching: find.text('06/10/2026')),
       findsOneWidget,
     );
     expect(

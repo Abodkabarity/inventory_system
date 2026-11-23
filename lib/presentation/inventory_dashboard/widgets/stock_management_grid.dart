@@ -9,6 +9,7 @@ import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 import '../../../domain/entities/stock_management.dart';
 import '../../../core/utils/stock_item_added_date.dart';
+import '../../../core/utils/stock_grid_date.dart';
 import 'stock_expiry_grid.dart' show expiryRemainingLabel;
 import 'stock_management_formatters.dart';
 import 'stock_selectable_cell_text.dart';
@@ -25,7 +26,7 @@ const _line = Color(0xFFE9E2D8);
 final _number = NumberFormat('#,##0.##');
 String _qty(dynamic value) => _number.format(stockNumber(value));
 String _date(DateTime? value) =>
-    value == null ? '—' : DateFormat('dd MMM yyyy').format(value);
+    value == null ? '—' : DateFormat('dd/MM/yyyy').format(value);
 DateTime? _calendarDate(String value) {
   final parsed = DateTime.tryParse(value);
   return parsed == null
@@ -298,9 +299,10 @@ class StockManagementGridSource extends DataGridSource {
       item.warehouse,
     ).toUpperCase(),
     'purchase_status_items' => item.purchaseStatus,
-    'last_mrn_date' || 'expiry_date' => _calendarDate(item.text(key)),
+    'last_mrn_date' ||
+    'expiry_date' => stockGridDate(_calendarDate(item.text(key))),
     'item_code' || 'reference' => item.text(key),
-    'added_date_time' => stockItemAddedDate(item.data[key]),
+    'added_date_time' => stockGridDate(stockItemAddedDate(item.data[key])),
     'supplier' || 'company' || 'category' => item.text(key).toUpperCase(),
     'stock_status' => item.status,
     'supply_review' => StockSupplyInsight.of(item).label,
@@ -371,7 +373,11 @@ class StockManagementGridSource extends DataGridSource {
         final reference = item.text('reference');
         return StockReferenceCell(
           reference,
-          style: const TextStyle(color: _ink, fontSize: 14, fontWeight: FontWeight.w500),
+          style: const TextStyle(
+            color: _ink,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
         );
       case 'item_name':
         return _stack([
