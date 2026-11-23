@@ -10,6 +10,34 @@ and exports. Note/review writes and snapshot rebuilds remain Inventory-only.
 Online Overview is excluded from Category navigation and its page allowlist;
 its server guard still requires the approved Inventory user ID.
 
+### Main zone read-only exception (2026-11-23)
+
+Active Zone Managers permanently assigned to Main also receive full-network
+Stock Management: Overview, MRN Overview, MRN CD Overview and Near Expiry.
+The server checks `app_user_zones`; only when there are no authoritative rows
+does it use the legacy `app_users.zone`. Temporary delegations never qualify.
+`can_read_main_zone_stock()` controls navigation; stock read policies and RPCs
+independently enforce the same check. A client zone/branch selection cannot
+broaden permission or limit the full-network stock workspace.
+
+The zone workspace reuses the existing stock pages with read-only controls,
+filters, details, exports, date formatting and branch-71 presentation. It does
+not include Online Overview. Main cannot rebuild snapshots, trigger expiry
+discovery or write expiry notes/reviews. Its ordinary zone screens and Sales
+Report continue to use their existing zone filters and scope.
+
+Two additional SELECT policies allow Main to read network sales evidence used
+by stock details from `sales_history` and `sales_last_45_days`; all other zones
+retain their existing source restrictions. The stock access check polls each
+minute and fails closed. An auth event immediately clears the visible stock
+workspace and reconfirms permission with the server.
+
+Verification: `supabase/tests/main_zone_stock_read_access_test.sql` checks Main
+read completeness against owner counts, out-of-zone sales, all four registers,
+all existing non-Main zone managers, write denial and Online Overview denial.
+`test/main_zone_stock_workspace_test.dart` verifies lazy navigation and removal
+of all retained stock pages when authorization is revoked.
+
 The separate **Overview** now includes the complete Item Report catalog. Its
 sources, formulas and verification are documented in `stock_catalog_overview.md`.
 

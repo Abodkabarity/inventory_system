@@ -30,6 +30,7 @@ import '../../auth/bloc/auth_state.dart';
 import '../../inventory_dashboard/page/additional_order_analysis_page.dart'
     show AdditionalAnalysisDateRangePickerDialog;
 import '../../inventory_dashboard/page/sales_report_page.dart';
+import '../widgets/zone_stock_workspace.dart';
 import '../../orders/widgets/orders_grid_controller.dart';
 import '../../orders/widgets/orders_table.dart';
 
@@ -73,6 +74,10 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
   bool _reportLoading = false;
   String? _error;
   int _page = 0;
+  bool _canReadAllStock = false;
+  int _stockAccessRequest = 0;
+  Timer? _stockAccessTimer;
+  StreamSubscription<dynamic>? _stockAuthSubscription;
   String _selectedBranch = 'ALL';
   String _query = '';
 
@@ -173,11 +178,25 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     _PageDef(Icons.download_rounded, 'Daily Order History'),
     _PageDef(Icons.handshake_outlined, 'Zone Handover'),
     _PageDef(Icons.receipt_long_rounded, 'Sales Report'),
+    _PageDef(Icons.warehouse_outlined, 'Stock Management'),
   ];
 
   @override
   void initState() {
     super.initState();
+    unawaited(_refreshStockAccess());
+    _stockAccessTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _refreshStockAccess(),
+    );
+    _stockAuthSubscription = _client.auth.onAuthStateChange.listen((_) {
+      if (!mounted) return;
+      setState(() {
+        _canReadAllStock = false;
+        if (_page == 11) _page = 0;
+      });
+      unawaited(_refreshStockAccess());
+    });
     StoreBranchIdentityRegistry.groups.addListener(_refreshBranchLabels);
     unawaited(StoreBranchIdentityRegistry.load(_client));
     final today = DateTime.now();
@@ -205,6 +224,9 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
 
   @override
   void dispose() {
+    _stockAccessRequest++;
+    _stockAccessTimer?.cancel();
+    _stockAuthSubscription?.cancel();
     StoreBranchIdentityRegistry.groups.removeListener(_refreshBranchLabels);
     _dashboardClock?.cancel();
     _stockCheckRealtimeDebounce?.cancel();
@@ -229,7 +251,32 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _refreshStockAccess() async {
+    final request = ++_stockAccessRequest;
+    final userId = _client.auth.currentUser?.id;
+    var allowed = false;
+    if (userId != null) {
+      try {
+        allowed = await _client.rpc('can_read_main_zone_stock') == true;
+      } catch (_) {
+        // Fail closed if the server cannot confirm the Main exception.
+      }
+    }
+    if (!mounted ||
+        request != _stockAccessRequest ||
+        userId != _client.auth.currentUser?.id) {
+      return;
+    }
+    if (_canReadAllStock != allowed) {
+      setState(() {
+        _canReadAllStock = allowed;
+        if (!allowed && _page == 11) _page = 0;
+      });
+    }
+  }
+
   Future<void> _load() async {
+    unawaited(_refreshStockAccess());
     final scopeVersion = ++_stockCheckScopeVersion;
     setState(() {
       _loading = true;
@@ -1149,7 +1196,8 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     final id = _text(record['id']);
     // DELETE events can carry only the primary key. Also refresh a known task
     // if an update moves it out of the manager's current branch scope.
-    final knownTask = id.isNotEmpty &&
+    final knownTask =
+        id.isNotEmpty &&
         (_stockChecks.any((task) => task.id == id) ||
             _dashboardStockChecks.any((task) => task.id == id));
     if (!mounted ||
@@ -1341,6 +1389,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
   }
 
   Future<void> _changePage(int page) async {
+    if (page == 11 && !_canReadAllStock) return;
     final leavingDailyOrder = _page == 3 && page != 3;
     if (_page != page) {
       _search.clear();
@@ -1672,6 +1721,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
                       currentPage: _page,
                       zoneName: _zoneLabel,
                       onChanged: _changePage,
+                      canReadAllStock: _canReadAllStock,
                     ),
                   ),
                 ),
@@ -1697,6 +1747,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
   }
 
   Widget _buildBody() {
+    if (_page == 11) return ZoneStockWorkspace(authorized: _canReadAllStock);
     if (_page == 10) return const SalesReportPage(zonal: true);
     return Column(
       children: [
@@ -1782,15 +1833,18 @@ class _ZoneDrawer extends StatelessWidget {
   final int currentPage;
   final String zoneName;
   final ValueChanged<int> onChanged;
+  final bool canReadAllStock;
 
   const _ZoneDrawer({
     required this.currentPage,
     required this.zoneName,
     required this.onChanged,
+    this.canReadAllStock = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final pageOrder = [..._pageOrder, if (canReadAllStock) 11];
     return Container(
       width: 270,
       color: Colors.white,
@@ -1849,9 +1903,9 @@ class _ZoneDrawer extends StatelessWidget {
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.symmetric(horizontal: 14),
-              itemCount: _pageOrder.length,
+              itemCount: pageOrder.length,
               itemBuilder: (_, index) {
-                final pageId = _pageOrder[index];
+                final pageId = pageOrder[index];
                 final page = _ZoneManagerPageState._pages[pageId];
                 final selected = currentPage == pageId;
                 return Padding(
@@ -3097,7 +3151,9 @@ class _ExportList extends StatelessWidget {
               ),
             ),
             title: Text(
-              StoreBranchIdentityRegistry.displayName(_text(row['branch_name'])),
+              StoreBranchIdentityRegistry.displayName(
+                _text(row['branch_name']),
+              ),
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
             subtitle: Text('Run date: ${_text(row['run_date'])}'),
@@ -6295,7 +6351,9 @@ class _AdditionalRequestCard extends StatelessWidget {
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
-                            StoreBranchIdentityRegistry.displayName(_text(row['branch_name'])),
+                            StoreBranchIdentityRegistry.displayName(
+                              _text(row['branch_name']),
+                            ),
                             style: const TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
