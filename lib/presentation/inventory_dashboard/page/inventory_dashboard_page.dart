@@ -1,5 +1,5 @@
 import '../widgets/online_overview_user_gate.dart';
-import 'online_overview_page.dart';
+import 'all_branches_trial_page.dart';
 import 'package:daily_order/presentation/inventory_dashboard/page/tma_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -323,7 +323,7 @@ Widget _buildPage(
         embedded: true,
       );
     case InventoryPageType.onlineOverview:
-      return const OnlineOverviewUserGate(child: OnlineOverviewPage());
+      return const OnlineOverviewUserGate(child: OnlineOverviewTrialSwitch());
     case InventoryPageType.shortage:
       return PurchaseShortagePage(runDate: runDate);
     case InventoryPageType.availabilityKpi:
