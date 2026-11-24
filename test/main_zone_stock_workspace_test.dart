@@ -6,6 +6,7 @@ import 'package:daily_order/domain/entities/stock_management.dart';
 import 'package:daily_order/domain/entities/stock_expiry.dart';
 import 'package:daily_order/domain/entities/inventory_page.dart';
 import 'package:daily_order/presentation/zone_manager/widgets/zone_stock_workspace.dart';
+import 'package:daily_order/presentation/inventory_dashboard/widgets/stock_management_navigation.dart';
 import 'package:daily_order/presentation/inventory_dashboard/page/stock_catalog_page.dart';
 import 'package:daily_order/presentation/inventory_dashboard/page/stock_management_page.dart';
 import 'package:daily_order/presentation/inventory_dashboard/page/stock_expiry_page.dart';
@@ -53,14 +54,38 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       final catalog = _Catalog();
+      var selectedPage = InventoryPageType.stockManagement;
       Widget app(bool allowed) => MaterialApp(
         home: Scaffold(
-          body: ZoneStockWorkspace(
-            authorized: allowed,
-            catalogSource: catalog,
-            mrnSource: _Mrn(),
-            cdSource: _Mrn(),
-            expirySource: _Expiry(),
+          body: StatefulBuilder(
+            builder: (_, setState) {
+              void select(InventoryPageType page) =>
+                  setState(() => selectedPage = page);
+              return Row(
+                children: [
+                  if (allowed)
+                    SizedBox(
+                      width: 270,
+                      child: StockManagementNavigation(
+                        selectedPage: selectedPage,
+                        showOnlineOverview: false,
+                        onSelected: select,
+                      ),
+                    ),
+                  Expanded(
+                    child: ZoneStockWorkspace(
+                      authorized: allowed,
+                      selectedPage: selectedPage,
+                      onSelected: select,
+                      catalogSource: catalog,
+                      mrnSource: _Mrn(),
+                      cdSource: _Mrn(),
+                      expirySource: _Expiry(),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       );
@@ -71,11 +96,19 @@ void main() {
       await tester.pumpWidget(app(true));
       await tester.pumpAndSettle();
       expect(catalog.loads, greaterThan(0));
+      final initialCatalogLoads = catalog.loads;
       expect(
         tester.widget<StockCatalogPage>(find.byType(StockCatalogPage)).readOnly,
         isTrue,
       );
-      expect(find.text('All branches · Read only'), findsOneWidget);
+      expect(find.byType(ChoiceChip), findsNothing);
+      expect(find.text('All branches · Read only'), findsNothing);
+      await tester.tap(find.text('Stock Management'));
+      await tester.pumpAndSettle();
+      expect(find.text('MRN Overview'), findsNothing);
+      await tester.tap(find.text('Stock Management'));
+      await tester.pumpAndSettle();
+      expect(find.text('MRN Overview'), findsOneWidget);
       expect(ZoneStockWorkspace.pages, [
         InventoryPageType.stockManagement,
         InventoryPageType.mrnOverview,
@@ -83,7 +116,12 @@ void main() {
         InventoryPageType.nearExpiry,
       ]);
       for (final label in ['MRN Overview', 'MRN CD Overview', 'Near Expiry']) {
-        await tester.tap(find.widgetWithText(ChoiceChip, label));
+        await tester.tap(
+          find.descendant(
+            of: find.byType(StockManagementNavigation),
+            matching: find.text(label),
+          ),
+        );
         await tester.pumpAndSettle();
         if (label == 'Near Expiry') {
           expect(
@@ -104,11 +142,21 @@ void main() {
         expect(find.text('Save note'), findsNothing);
         expect(tester.takeException(), isNull);
       }
+      await tester.tap(
+        find.descendant(
+          of: find.byType(StockManagementNavigation),
+          matching: find.text('Overview'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      // Drawer navigation keeps the already loaded Overview page in memory.
+      expect(catalog.loads, initialCatalogLoads);
       await tester.pumpWidget(app(false));
       await tester.pumpAndSettle();
       expect(find.byType(StockCatalogPage), findsNothing);
       expect(find.byType(StockExpiryPage), findsNothing);
       expect(find.byType(ChoiceChip), findsNothing);
+      expect(find.byType(StockManagementNavigation), findsNothing);
     },
   );
 }

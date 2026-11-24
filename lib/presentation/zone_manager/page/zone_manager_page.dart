@@ -23,6 +23,7 @@ import '../../../core/utils/stock_check_excel_exporter.dart';
 import '../../../data/datasources/remote/orders_remote_ds.dart';
 import '../../../data/datasources/remote/zone_stock_check_remote_ds.dart';
 import '../../../domain/entities/daily_order_row.dart';
+import '../../../domain/entities/inventory_page.dart';
 import '../../../domain/entities/stock_check_task.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
@@ -30,6 +31,7 @@ import '../../auth/bloc/auth_state.dart';
 import '../../inventory_dashboard/page/additional_order_analysis_page.dart'
     show AdditionalAnalysisDateRangePickerDialog;
 import '../../inventory_dashboard/page/sales_report_page.dart';
+import '../../inventory_dashboard/widgets/stock_management_navigation.dart';
 import '../widgets/zone_stock_workspace.dart';
 import '../../orders/widgets/orders_grid_controller.dart';
 import '../../orders/widgets/orders_table.dart';
@@ -75,6 +77,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
   String? _error;
   int _page = 0;
   bool _canReadAllStock = false;
+  InventoryPageType _stockPage = InventoryPageType.stockManagement;
   int _stockAccessRequest = 0;
   Timer? _stockAccessTimer;
   StreamSubscription<dynamic>? _stockAuthSubscription;
@@ -1416,6 +1419,12 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     await _loadZoneReport(page);
   }
 
+  void _selectStockPage(InventoryPageType page) {
+    if (!_canReadAllStock || !ZoneStockWorkspace.pages.contains(page)) return;
+    setState(() => _stockPage = page);
+    unawaited(_changePage(11));
+  }
+
   Future<void> _loadZoneReport(int page, {bool force = false}) async {
     if (page != 1 && page != 2) return;
     if (!force && page == 1 && _mismatch.isNotEmpty) return;
@@ -1722,6 +1731,8 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
                       zoneName: _zoneLabel,
                       onChanged: _changePage,
                       canReadAllStock: _canReadAllStock,
+                      selectedStockPage: _stockPage,
+                      onStockSelected: _selectStockPage,
                     ),
                   ),
                 ),
@@ -1747,7 +1758,13 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
   }
 
   Widget _buildBody() {
-    if (_page == 11) return ZoneStockWorkspace(authorized: _canReadAllStock);
+    if (_page == 11) {
+      return ZoneStockWorkspace(
+        authorized: _canReadAllStock,
+        selectedPage: _stockPage,
+        onSelected: _selectStockPage,
+      );
+    }
     if (_page == 10) return const SalesReportPage(zonal: true);
     return Column(
       children: [
@@ -1828,23 +1845,29 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
 
 class _ZoneDrawer extends StatelessWidget {
   // Drawer order is independent of the page IDs used by navigation and loaders.
-  static const _pageOrder = [0, 1, 2, 3, 4, 5, 10, 6, 7, 8, 9];
+  static const _pageOrder = [0, 11, 1, 2, 3, 4, 5, 10, 6, 7, 8, 9];
 
   final int currentPage;
   final String zoneName;
   final ValueChanged<int> onChanged;
   final bool canReadAllStock;
+  final InventoryPageType selectedStockPage;
+  final ValueChanged<InventoryPageType> onStockSelected;
 
   const _ZoneDrawer({
     required this.currentPage,
     required this.zoneName,
     required this.onChanged,
     this.canReadAllStock = false,
+    required this.selectedStockPage,
+    required this.onStockSelected,
   });
 
   @override
   Widget build(BuildContext context) {
-    final pageOrder = [..._pageOrder, if (canReadAllStock) 11];
+    final pageOrder = _pageOrder
+        .where((page) => page != 11 || canReadAllStock)
+        .toList(growable: false);
     return Container(
       width: 270,
       color: Colors.white,
@@ -1906,6 +1929,18 @@ class _ZoneDrawer extends StatelessWidget {
               itemCount: pageOrder.length,
               itemBuilder: (_, index) {
                 final pageId = pageOrder[index];
+                if (pageId == 11) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: StockManagementNavigation(
+                      selectedPage: currentPage == 11
+                          ? selectedStockPage
+                          : InventoryPageType.dashboard,
+                      showOnlineOverview: false,
+                      onSelected: onStockSelected,
+                    ),
+                  );
+                }
                 final page = _ZoneManagerPageState._pages[pageId];
                 final selected = currentPage == pageId;
                 return Padding(

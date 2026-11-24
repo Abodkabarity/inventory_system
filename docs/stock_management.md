@@ -26,6 +26,11 @@ not include Online Overview. Main cannot rebuild snapshots, trigger expiry
 discovery or write expiry notes/reviews. Its ordinary zone screens and Sales
 Report continue to use their existing zone filters and scope.
 
+Main's Stock Management menu sits directly below Dashboard and uses the same
+expandable drawer section as View and Category. Its four pages are selected in
+the drawer, without a second tab strip above the stock page. The selected page
+and its drawer highlight stay in sync, including the MRN-to-Near-Expiry shortcut.
+
 Two additional SELECT policies allow Main to read network sales evidence used
 by stock details from `sales_history` and `sales_last_45_days`; all other zones
 retain their existing source restrictions. The stock access check polls each
