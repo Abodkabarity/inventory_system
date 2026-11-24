@@ -329,7 +329,9 @@ void main() {
             ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('19 receipts · 250 Qty · Details'), findsOneWidget);
+      expect(find.text('19 receipts · 250 Qty · Details'), findsNothing);
+      expect(find.text('View month details'), findsNothing);
+      expect(find.byKey(const ValueKey('monthly-receipt-details')), findsNothing);
       expect(
         tester.getSize(find.byType(CatalogMonthlyChart)).height,
         closeTo(initialHeight, .1),
@@ -340,19 +342,11 @@ void main() {
         findsOneWidget,
       );
       expect(tester.takeException(), isNull);
-      await tester.tap(find.byKey(const ValueKey('monthly-receipt-details')));
-      await tester.pumpAndSettle();
-      expect(find.text('Month details · 10/2026'), findsOneWidget);
-      expect(find.text('232'), findsOneWidget);
-      expect(find.text('22 Oct 2026'), findsOneWidget);
-      expect(tester.takeException(), isNull);
       await catalog.capture(
         tester,
         boundary,
         'stock_supply_timeline_${width.toInt()}',
       );
-      await tester.tap(find.byTooltip('Close month details'));
-      await tester.pumpAndSettle();
       expect(
         tester.getSize(find.byType(CatalogMonthlyChart)).height,
         closeTo(initialHeight, .1),

@@ -67,7 +67,7 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
     super.initState();
     _future = _load();
     final source = widget.source;
-    if (source is StockCatalogRemoteDs) {
+    if (source is StockCatalogRemoteDs && !source.hasScopedBranchMetadata) {
       StoreBranchIdentityRegistry.load(source.client);
     }
   }
@@ -99,7 +99,9 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
       final source = widget.source;
       if (rows.any((r) => r.containsKey('branch')) &&
           source is StockCatalogRemoteDs) {
-        await StoreBranchIdentityRegistry.load(source.client);
+        if (!source.hasScopedBranchMetadata) {
+          await StoreBranchIdentityRegistry.load(source.client);
+        }
         if (rows.any(
           (r) => !StoreBranchIdentityRegistry.groups.value.containsKey(
             (r['branch']?.toString() ?? '').trim().toUpperCase(),
@@ -329,7 +331,7 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
                               if (salesPanels == null) ...[
                                 const SizedBox(height: 18),
                                 Text(
-                                  'Snapshot ${catalogDate(stockMap(item.data['meta'])['refreshed_at'])} • Stock ${catalogDate(stockMap(item.data['meta'])['stock_updated_at'])} • Annual branch totals are loaded live. All quantities are net Qty.',
+                                  'Snapshot ${catalogDate(stockMap(item.data['meta'])['refreshed_at'])} • Stock ${catalogDate(stockMap(item.data['meta'])['stock_updated_at'])} • ${stockMap(item.data['meta'])['scope_kind'] == 'zone' ? 'Annual branch totals use your prepared zone snapshot.' : 'Annual branch totals are loaded live.'} All quantities are net Qty.',
                                   style: const TextStyle(
                                     color: catalogMuted,
                                     fontSize: 11,
@@ -702,7 +704,7 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
     key: const ValueKey('monthly-sales-panel'),
     title: 'Monthly sales & momentum',
     subtitle:
-        '2025 to ${catalogSalesYears(item).last} • All source branches • Hover or tap a month for exact values'
+        '2025 to ${catalogSalesYears(item).last} • ${stockMap(item.data['meta'])['scope_kind'] == 'zone' ? 'Your assigned branches' : 'All source branches'} • Hover or tap a month for exact values'
         '${stockMap(item.data['meta'])['monthly_current_source'] == 'sales_last_45_days' ? ' • Current month uses daily sales' : ''}',
     trailing: IconButton(
       onPressed: () => _save(
@@ -766,9 +768,11 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
           ],
         ),
         const SizedBox(height: 10),
-        const Text(
-          'Total = STORE + all branches.',
-          style: TextStyle(color: catalogMuted, fontSize: 11),
+        Text(
+          stockMap(item.data['meta'])['scope_kind'] == 'zone'
+              ? 'Total = STORE + your assigned branches.'
+              : 'Total = STORE + all branches.',
+          style: const TextStyle(color: catalogMuted, fontSize: 11),
           textAlign: TextAlign.center,
         ),
       ],

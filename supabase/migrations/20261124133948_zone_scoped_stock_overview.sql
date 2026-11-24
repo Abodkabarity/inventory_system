@@ -1,0 +1,458 @@
+-- Additive, isolated read-only Overview for non-Main zone managers.
+-- No changes to source tables, global snapshots, Main permissions or old jobs.
+create schema if not exists zone_overview_private;
+revoke all on schema zone_overview_private from public, anon;
+grant usage on schema zone_overview_private to authenticated, service_role;
+
+create table zone_overview_private.scopes (
+  scope_key text primary key,
+  branches jsonb not null,
+  source_version text not null,
+  version text not null,
+  prepared_at timestamptz not null,
+  meta jsonb not null,
+  summary jsonb not null,
+  categories jsonb not null,
+  suppliers jsonb not null
+);
+-- Catalog/STORE facts are shared once, not duplicated for every zone.
+create table zone_overview_private.products (
+  item_code text primary key,
+  facts jsonb not null
+);
+create table zone_overview_private.items (
+  scope_key text not null references zone_overview_private.scopes on delete cascade,
+  item_code text not null,
+  header jsonb not null,
+  detail jsonb not null,
+  primary key (scope_key,item_code)
+);
+alter table zone_overview_private.scopes enable row level security;
+alter table zone_overview_private.products enable row level security;
+alter table zone_overview_private.items enable row level security;
+revoke all on all tables in schema zone_overview_private from public,anon,authenticated,service_role;
+
+-- This helper is NOT callable by clients and does not alter auth.uid()/claims.
+create function zone_overview_private.scope_for(p_user uuid) returns jsonb
+language sql stable security definer set search_path='' as $$
+  with actor as (
+    select u.* from public.app_users u where u.user_id=p_user
+      and u.is_active is true and lower(btrim(u.role::text))='zone_manager'
+  ), permanent as (
+    select z.zone from public.app_user_zones z join actor a on a.user_id=z.user_id
+    union
+    select a.zone from actor a where not exists
+      (select 1 from public.app_user_zones z where z.user_id=a.user_id
+       and nullif(btrim(z.zone),'') is not null)
+  ), zones as (
+    select zone from permanent
+    union
+    select unnest(d.zones) from public.zone_management_delegations d
+      join actor a on d.recipient_user_id=a.user_id
+    where d.status='accepted' and now()>=d.start_at and now()<d.end_at
+  ), branches as (
+    select public._norm_text(b.branch_name) key,max(b.branch_name) name,
+      max(b.branch_group) branch_group,max(b.branch_type) branch_type
+    from public.branches b where b.is_active is true
+      and public._norm_text(b.branch_name) not in
+        ('store','main virtual','new virtual','store - expired item','store-ws')
+      and exists(select 1 from zones z where lower(btrim(z.zone))=lower(btrim(b.zone)))
+      and not exists(select 1 from permanent where lower(btrim(zone))='main')
+    group by public._norm_text(b.branch_name)
+  ), packed as (
+    select jsonb_agg(to_jsonb(b) order by key) value from branches b
+  ) select case when value is not null then
+    jsonb_build_object('key',md5(value::text),'branches',value) end from packed;
+$$;
+revoke all on function zone_overview_private.scope_for(uuid) from public,anon,authenticated,service_role;
+
+-- Public invoker endpoints delegate only to a checked, non-exposed reader.
+create function zone_overview_private.read(
+  p_mode text,p_offset integer default 0,p_limit integer default 5000,
+  p_item_code text default null,p_version text default null,
+  p_known_version text default null
+) returns jsonb language plpgsql stable security definer set search_path='' as $$
+declare ctx jsonb; s zone_overview_private.scopes; payload jsonb; rows jsonb;
+begin
+  if auth.uid() is null then
+    raise exception 'Active zone manager access required' using errcode='42501';
+  end if;
+  ctx:=zone_overview_private.scope_for(auth.uid());
+  if p_mode='access' then return to_jsonb(ctx is not null); end if;
+  if p_mode='context' then return jsonb_build_object('allowed',ctx is not null,'scope_key',ctx->>'key'); end if;
+  if ctx is null then
+    raise exception 'Assigned zone access required' using errcode='42501';
+  end if;
+  select * into s from zone_overview_private.scopes where scope_key=ctx->>'key';
+  if not found or s.branches is distinct from ctx->'branches' then
+    raise exception 'Your zone Overview is being prepared. Please retry shortly.' using errcode='PT409';
+  end if;
+  if p_version is not null and p_version<>s.version then
+    raise exception 'Your zone or snapshot changed. Reload Overview.' using errcode='PT409';
+  end if;
+  if p_mode='header' then
+    return jsonb_build_object('rows','[]'::jsonb,'summary',s.summary,'meta',s.meta,
+      'categories',s.categories,'suppliers',s.suppliers);
+  elsif p_mode='batch' then
+    select coalesce(jsonb_agg(header order by item_code),'[]') into rows from (
+      select i.item_code,p.facts||i.header header from zone_overview_private.items i
+      join zone_overview_private.products p using(item_code)
+      where i.scope_key=s.scope_key order by i.item_code
+      limit least(greatest(p_limit,1),5000) offset greatest(p_offset,0)
+    ) page;
+    return jsonb_build_object('rows',rows,'total',s.summary->'items',
+      'snapshot_at',s.meta->>'refreshed_at','reference_version',s.version);
+  elsif p_mode='item' then
+    select p.facts||i.header||i.detail into payload from zone_overview_private.items i
+      join zone_overview_private.products p using(item_code)
+      where i.scope_key=s.scope_key and i.item_code=p_item_code;
+    if payload is null then return null; end if;
+    if p_known_version=s.version then
+      return jsonb_build_object('_cache_not_modified',true,'_cache_version',s.version);
+    end if;
+    return payload||jsonb_build_object('_cache_version',s.version);
+  elsif p_mode='image_access' then
+    return to_jsonb(exists(select 1 from zone_overview_private.items
+      where scope_key=s.scope_key and item_code=p_item_code));
+  end if;
+  raise exception 'Unsupported zone Overview request' using errcode='22023';
+end; $$;
+revoke all on function zone_overview_private.read(text,integer,integer,text,text,text) from public,anon;
+grant execute on function zone_overview_private.read(text,integer,integer,text,text,text) to authenticated;
+
+create function public.can_read_zone_overview() returns boolean
+language sql stable security invoker set search_path='' as $$
+  select zone_overview_private.read('access')::boolean;
+$$;
+create function public.get_zone_overview_header() returns jsonb
+language sql stable security invoker set search_path='' as $$
+  select zone_overview_private.read('header');
+$$;
+create function public.get_zone_overview_context() returns jsonb
+language sql stable security invoker set search_path='' as $$
+  select zone_overview_private.read('context');
+$$;
+revoke all on function public.get_zone_overview_context() from public,anon;
+grant execute on function public.get_zone_overview_context() to authenticated;
+create function public.get_zone_overview_batch(p_offset integer default 0,
+  p_limit integer default 5000,p_version text default null) returns jsonb
+language sql stable security invoker set search_path='' as $$
+  select zone_overview_private.read('batch',p_offset,p_limit,p_version=>p_version);
+$$;
+create function public.get_zone_overview_item(p_item_code text,p_version text default null,
+  p_known_version text default null) returns jsonb
+language sql stable security invoker set search_path='' as $$
+  select zone_overview_private.read('item',p_item_code=>p_item_code,
+    p_version=>p_version,p_known_version=>p_known_version);
+$$;
+create function public.can_read_zone_overview_image(p_item_code text) returns boolean
+language sql stable security invoker set search_path='' as $$
+  select zone_overview_private.read('image_access',p_item_code=>p_item_code)::boolean;
+$$;
+revoke all on function public.can_read_zone_overview(),public.get_zone_overview_header(),
+  public.get_zone_overview_batch(integer,integer,text),public.get_zone_overview_item(text,text,text),
+  public.can_read_zone_overview_image(text) from public,anon;
+grant execute on function public.can_read_zone_overview(),public.get_zone_overview_header(),
+  public.get_zone_overview_batch(integer,integer,text),public.get_zone_overview_item(text,text,text),
+  public.can_read_zone_overview_image(text) to authenticated;
+
+-- One independent preparation pass shares scans across all required scopes.
+-- Runs only when the existing prepared/source revision or branch sets change.
+create function zone_overview_private.store_evidence(p_data jsonb,p_daily numeric,p_stock numeric)
+returns jsonb language sql immutable set search_path='' as $$
+  select coalesce((select jsonb_object_agg(key,value) from jsonb_each(coalesce(p_data,'{}'))
+    where key=any(array['scope','source','status','through','at_least','gap_days','stock_day',
+      'confidence','current_qty','history_qty','opening_qty','provisional','returned_at','opening_date',
+      'received_qty','opening_basis','archived_through','daily_precision','established_from',
+      'current_qty_basis','endpoint_inferred','endpoint_difference','current_report_present'])),
+      '{"status":"pending","scope":"STORE","confidence":"unavailable"}'::jsonb)
+    ||jsonb_build_object('scope','STORE','current_qty',p_stock,'sales_scope','Your assigned branches',
+      'effective_supply',jsonb_build_object('scope','STORE and your assigned branches',
+        'status',case when p_stock<=0 then 'current_store_empty' when p_daily>0 and p_stock<p_daily*7
+          then 'limited_supply' else 'adequate_supply' end,
+        'daily_qty',p_daily,'recovery_qty',ceil(greatest(coalesce(p_daily,0),0)*7)),
+      'events',coalesce((select jsonb_agg(coalesce((select jsonb_object_agg(key,value)
+        from jsonb_each(event) where key=any(array['from','through','days','at_least','returned_at','received_qty'])),
+        '{}'::jsonb)) from jsonb_array_elements(coalesce(p_data->'events','[]')) event),'[]'::jsonb),
+      'chart_timeline',jsonb_build_object('scope','Reported STORE empty periods','confidence',p_data->'confidence',
+        'periods',coalesce((select jsonb_agg(jsonb_build_object(
+          'from',event->'from','through',coalesce(nullif(event->>'through','')::date,
+            nullif(event->>'returned_at','')::date-1,nullif(p_data->>'through','')::date),
+          'days',event->'days','months',floor(coalesce((event->>'days')::numeric,0)/30),
+          'remaining_days',mod(coalesce((event->>'days')::numeric,0),30),
+          'at_least',event->'at_least','returned_at',event->'returned_at','received_qty',event->'received_qty'))
+          from jsonb_array_elements(coalesce(p_data->'events','[]')) event),'[]'::jsonb)));
+$$;
+revoke all on function zone_overview_private.store_evidence(jsonb,numeric,numeric) from public,anon,authenticated,service_role;
+
+create function zone_overview_private.prepare() returns jsonb
+language plpgsql security definer set search_path='' set enable_nestloop='off'
+set work_mem='16MB' set max_parallel_workers_per_gather='0' set jit='off' as $$
+declare v_source text; v_meta jsonb; v_start date; v_end date; v_month date;
+  v_days integer; v_recent integer; v_baseline integer; v_scope record;
+  v_token text; v_now timestamptz:=clock_timestamp(); v_count integer:=0;
+begin
+  if coalesce(current_setting('role',true),'none') not in ('none','postgres','service_role') then
+    raise exception 'Maintenance access required' using errcode='42501';
+  end if;
+  if not pg_try_advisory_xact_lock(hashtext('zone_overview_private.prepare')) then
+    return jsonb_build_object('status','busy');
+  end if;
+  if exists(select 1 from public.stock_catalog_refresh_state where singleton
+    and status in ('queued','running')) then
+    return jsonb_build_object('status','waiting_for_overview');
+  end if;
+  v_source:=stock_management_private.catalog_cache_version(true);
+  select payload->'meta' into v_meta from public.stock_catalog_snapshot limit 1;
+  if v_source is null or v_meta is null then
+    raise exception 'Prepared Overview is unavailable' using errcode='PT409';
+  end if;
+  v_start:=(v_meta->>'demand_from')::date; v_end:=(v_meta->>'demand_through')::date;
+  v_month:=(v_meta->>'monthly_current_month')::date;
+  v_recent:=(v_meta->>'recent_days')::integer;
+  v_baseline:=(v_meta->>'baseline_days')::integer;
+  v_days:=v_recent+v_baseline;
+
+  create temporary table zov_scopes on commit drop as
+    select distinct s->>'key' scope_key,s->'branches' branches
+    from public.app_users u cross join lateral zone_overview_private.scope_for(u.user_id) s
+    where u.is_active is true and lower(btrim(u.role::text))='zone_manager' and s is not null;
+  if not exists(select 1 from pg_temp.zov_scopes x
+    left join zone_overview_private.scopes old using(scope_key)
+    where old.source_version is distinct from v_source or old.branches is distinct from x.branches) then
+    return jsonb_build_object('status','unchanged');
+  end if;
+  create temporary table zov_catalog on commit drop as
+    select s.item_code,s.payload,
+      coalesce((select jsonb_object_agg(e.key,e.value) from jsonb_each(s.payload) e
+        where e.key=any(array['item_code','item_name','category','supplier','company','unit','brand',
+          'is_upp','retail','status','barcode','subunit','is_block','haad_code','unit_type','indication',
+          'item_status','tax_percent','product_type','sub_category','concentration','item_priority',
+          'subunit_count','insurance_tier','min_order_unit','added_date_time','main_ingredient',
+          'pack_size_volume','store_classification','store_receipt','store_stock'])), '{}') facts
+    from public.stock_catalog_snapshot s;
+  create unique index on pg_temp.zov_catalog(item_code);
+  insert into zone_overview_private.products select item_code,facts from pg_temp.zov_catalog
+    on conflict(item_code) do update set facts=excluded.facts;
+  create temporary table zov_reference on commit drop as
+    with latest as (
+      select btrim(m.item_code) item_code,max(m.mrn_date) mrn_date
+      from public.mrn_apg_2026 m join pg_temp.zov_catalog c on c.item_code=btrim(m.item_code)
+      where lower(btrim(m.status))='approved' and lower(btrim(m.warehouse))='store'
+      group by btrim(m.item_code)
+    ) select l.item_code,string_agg(distinct nullif(btrim(m.reference),''),' · ') reference,
+      sum(coalesce(m.total_qty,0)) total_qty,sum(coalesce(m.bonus,0)) bonus
+    from latest l join public.mrn_apg_2026 m on btrim(m.item_code)=l.item_code and m.mrn_date=l.mrn_date
+    where lower(btrim(m.status))='approved' and lower(btrim(m.warehouse))='store'
+    group by l.item_code;
+  create unique index on pg_temp.zov_reference(item_code);
+  create temporary table zov_purchase on commit drop as
+    select p.item_code,string_agg(distinct nullif(btrim(p.status_name),''),' · ') status_name
+    from public.availability_kpi_purchase_status p join pg_temp.zov_catalog c using(item_code)
+    group by p.item_code;
+  create unique index on pg_temp.zov_purchase(item_code);
+  create temporary table zov_branches on commit drop as
+    select distinct value->>'key' branch_key,value->>'name' branch,
+      value->>'branch_group' branch_group,value->>'branch_type' branch_type
+    from pg_temp.zov_scopes cross join lateral jsonb_array_elements(branches);
+  create unique index on pg_temp.zov_branches(branch_key);
+  create temporary table zov_daily on commit drop as
+    select btrim(r.item_code) item_code,public._norm_text(r.branch_name) branch_key,r.inv_date,
+      case when lower(regexp_replace(btrim(coalesce(r.inv_type,'')),'[[:space:]]+',' ','g'))
+        in ('insurance','direct insurance','dirict insurance') then
+          case lower(regexp_replace(btrim(coalesce(r.customer_name,'')),'[[:space:]]+',' ','g'))
+            when 'national health insurance company - daman basic' then 'insurance_basic'
+            when 'national health insurance company - daman thiqa' then 'insurance_thiqa'
+            else 'other_insurance' end
+        when lower(btrim(coalesce(r.sales_type,''))) in ('delivery invoice','return delivery invoice')
+          then 'online' else 'cash' end channel,sum(coalesce(r.qty,0)) qty
+    from public.sales_last_45_days r
+    join pg_temp.zov_catalog c on c.item_code=btrim(r.item_code)
+    join pg_temp.zov_branches b on b.branch_key=public._norm_text(r.branch_name)
+    where r.inv_date between least(v_start,v_month) and v_end
+    group by btrim(r.item_code),public._norm_text(r.branch_name),r.inv_date,channel;
+  create index on pg_temp.zov_daily(branch_key,item_code);
+  create temporary table zov_months on commit drop as
+    select item_code,branch_key,month_start,sum(cash) cash,sum(insurance) insurance,sum(online) online,
+      sum(cash+insurance+online) total from (
+      select btrim(h.item_code) item_code,public._norm_text(h.branch_name) branch_key,
+        to_date(h.month,'MM/YYYY') month_start,coalesce(h.cash,0) cash,
+        coalesce(h.insurance,0) insurance,coalesce(h.online,0) online
+      from public.sales_history_2025 h join pg_temp.zov_catalog c on c.item_code=btrim(h.item_code)
+      join pg_temp.zov_branches b on b.branch_key=public._norm_text(h.branch_name)
+      where h.month ~ '^(0[1-9]|1[0-2])/2025$' and to_date(h.month,'MM/YYYY')<v_month
+      union all
+      select btrim(h.item_code),public._norm_text(h.branch_name),to_date(h.month,'MM/YYYY'),
+        coalesce(h.cash,0),coalesce(h.insurance,0),coalesce(h.online,0)
+      from public.sales_history h join pg_temp.zov_catalog c on c.item_code=btrim(h.item_code)
+      join pg_temp.zov_branches b on b.branch_key=public._norm_text(h.branch_name)
+      where h.month ~ '^(0[1-9]|1[0-2])/(20[2-9][0-9])$'
+        and to_date(h.month,'MM/YYYY')>=date '2026-01-01' and to_date(h.month,'MM/YYYY')<v_month
+      union all
+      select item_code,branch_key,v_month,
+        case when channel='cash' then qty else 0 end,
+        case when channel in ('insurance_basic','insurance_thiqa','other_insurance') then qty else 0 end,
+        case when channel='online' then qty else 0 end
+      from pg_temp.zov_daily where inv_date>=v_month
+    ) raw group by item_code,branch_key,month_start;
+  create index on pg_temp.zov_months(branch_key,item_code);
+  create temporary table zov_annual on commit drop as
+    select item_code,branch_key,sum(total) filter(where extract(year from month_start)=2025) y25,
+      sum(total) filter(where extract(year from month_start)=2026) y26
+    from pg_temp.zov_months group by item_code,branch_key;
+  create unique index on pg_temp.zov_annual(item_code,branch_key);
+  create temporary table zov_orders on commit drop as
+    select distinct public._norm_text(d.branch) branch_key from public.daily_order d
+    where d.run_date=(v_meta->>'order_run_date')::date;
+  create unique index on pg_temp.zov_orders(branch_key);
+  analyze pg_temp.zov_catalog; analyze pg_temp.zov_daily; analyze pg_temp.zov_months;
+  analyze pg_temp.zov_annual; analyze pg_temp.zov_branches;
+
+  for v_scope in select * from pg_temp.zov_scopes loop
+    if exists(select 1 from zone_overview_private.scopes s where s.scope_key=v_scope.scope_key
+      and s.source_version=v_source and s.branches=v_scope.branches) then continue; end if;
+    v_token:=md5(v_source||v_scope.scope_key||v_now::text);
+    insert into zone_overview_private.scopes values(v_scope.scope_key,v_scope.branches,v_source,v_token,v_now,
+      v_meta||jsonb_build_object('scope_kind','zone','scope','STORE + your assigned branches',
+        'scope_token',v_scope.scope_key,'catalog_cache_version',v_token,'reference_version',v_token,
+        'source_snapshot_at',v_meta->'refreshed_at','branch_annual_source','prepared_zone',
+        'refreshed_at',v_now,'prepared_at',v_now), '{}'::jsonb,'[]'::jsonb,'[]'::jsonb)
+    on conflict(scope_key) do update set source_version=excluded.source_version,version=excluded.version,
+      prepared_at=excluded.prepared_at,meta=excluded.meta,branches=excluded.branches;
+    delete from zone_overview_private.items where scope_key=v_scope.scope_key;
+    insert into zone_overview_private.items(scope_key,item_code,header,detail)
+    with b as materialized (
+      select value->>'key' branch_key,value->>'name' branch,value->>'branch_group' branch_group,
+        (lower(coalesce(value->>'branch_type',''))<>'online' or exists
+          (select 1 from pg_temp.zov_orders o where o.branch_key=value->>'key')) expected
+      from jsonb_array_elements(v_scope.branches)
+    ), bf as materialized (
+      select s.item_code,b.*,
+        coalesce((s.payload->'branch_stock'->b.branch_key->>'stock')::numeric,0) stock,
+        coalesce((s.payload->'branch_stock'->b.branch_key->>'base_stock')::numeric,0) base_stock,
+        coalesce((s.payload->'branch_stock'->b.branch_key->>'final_reorder')::numeric,0) allocated,
+        coalesce((s.payload->'branch_demand'->b.branch_key->>'recent_sales')::numeric,0) recent_sales,
+        coalesce((s.payload->'branch_demand'->b.branch_key->>'last_3_sales')::numeric,0) last_3_sales,
+        coalesce((s.payload->'branch_demand'->b.branch_key->>'baseline_sales')::numeric,0) baseline_sales,
+        s.payload->'distribution_orders' ? b.branch_key observed,
+        coalesce((s.payload->'distribution_orders'->b.branch_key->>'eligible')::boolean,false) distribution_eligible,
+        coalesce((s.payload->'distribution_orders'->b.branch_key->>'reorder_qty')::numeric,0) reorder_qty,
+        coalesce((s.payload->'distribution_orders'->b.branch_key->>'final_qty')::numeric,0) final_qty,
+        coalesce(y.y25,0) sales_2025,coalesce(y.y26,0) sales_2026
+      from pg_temp.zov_catalog s cross join b
+      left join pg_temp.zov_annual y on y.item_code=s.item_code and y.branch_key=b.branch_key
+    ), totals as (
+      select item_code,sum(stock) branches_stock,sum(base_stock) branches_base_stock,
+        sum(allocated) branches_final_reorder,sum(stock) filter(where branch_group='71') stock_71,
+        sum(stock) filter(where branch_group='APG') apg_branches_stock,
+        sum(recent_sales) recent_sales,sum(last_3_sales) last_3_sales,sum(baseline_sales) baseline_sales,
+        jsonb_agg(to_jsonb(bf)-array['item_code','branch_key','expected','observed','allocated','base_stock']
+          order by recent_sales desc,branch) branches,
+        jsonb_build_object('run_date',v_meta->'order_run_date','as_of',(v_now at time zone 'Asia/Dubai')::date,
+          'observed',count(*) filter(where expected and observed),'active',count(*) filter(where expected),
+          'complete',count(*) filter(where expected and observed)=count(*) filter(where expected),
+          'eligible',count(*) filter(where expected and distribution_eligible),
+          'stocked',count(*) filter(where expected and distribution_eligible and stock>0),
+          'covered',count(*) filter(where expected and distribution_eligible and stock>0),
+          'uncovered',count(*) filter(where expected and distribution_eligible and stock<=0),
+          'reorder',count(*) filter(where expected and distribution_eligible and reorder_qty>0),
+          'final',count(*) filter(where expected and distribution_eligible and final_qty>0),
+          'reorder_qty',coalesce(sum(reorder_qty) filter(where expected and distribution_eligible),0),
+          'final_qty',coalesce(sum(final_qty) filter(where expected and distribution_eligible),0)) distribution
+      from bf group by item_code
+    ), monthly as materialized (
+      select m.item_code,m.month_start,sum(cash) cash,sum(insurance) insurance,sum(online) online,sum(total) total
+      from pg_temp.zov_months m join b using(branch_key) group by m.item_code,m.month_start
+    ), year_totals as (
+      select item_code,extract(year from month_start)::integer yr,sum(cash) cash,sum(insurance) insurance,
+        sum(online) online,sum(total) total from monthly group by item_code,extract(year from month_start)
+    ), best as (
+      select distinct on(item_code,extract(year from month_start)) item_code,
+        extract(year from month_start)::integer yr,to_char(month_start,'MM/YYYY') best_month,total best_qty
+      from monthly where total>0 order by item_code,extract(year from month_start),total desc,month_start
+    ), years as (
+      select y.item_code,jsonb_object_agg(y.yr::text,jsonb_build_object('cash',cash,'insurance',insurance,
+        'online',online,'total',total,'best_month',best_month,'best_qty',best_qty)) years
+      from year_totals y left join best using(item_code,yr) group by y.item_code
+    ), months as (
+      select item_code,jsonb_agg(jsonb_build_object('month',to_char(month_start,'MM/YYYY'),
+        'cash',cash,'insurance',insurance,'online',online,'total',total,
+        'source',case when month_start=v_month then 'sales_last_45_days' else 'sales_history' end,
+        'through',case when month_start=v_month then v_end else (month_start+interval '1 month'-interval '1 day')::date end)
+        order by month_start) monthly_sales from monthly group by item_code
+    ), daily as (
+      select d.item_code,d.inv_date,sum(qty) filter(where channel='cash') cash,
+        sum(qty) filter(where channel='online') online,
+        sum(qty) filter(where channel='insurance_basic') insurance_basic,
+        sum(qty) filter(where channel='insurance_thiqa') insurance_thiqa,
+        sum(qty) filter(where channel='other_insurance') other_insurance,sum(qty) total
+      from pg_temp.zov_daily d join b using(branch_key) where inv_date between v_start and v_end
+      group by d.item_code,d.inv_date
+    ), series as (
+      select item_code,jsonb_agg(jsonb_build_object('date',inv_date,'cash',coalesce(cash,0),
+        'online',coalesce(online,0),'insurance_basic',coalesce(insurance_basic,0),
+        'insurance_thiqa',coalesce(insurance_thiqa,0),'other_insurance',coalesce(other_insurance,0),
+        'total',total) order by inv_date) days from daily group by item_code
+    ), metric as (
+      select s.*,t.branches,t.distribution,t.branches_stock,t.branches_base_stock,t.branches_final_reorder,
+        coalesce(t.stock_71,0) stock_71,coalesce(t.apg_branches_stock,0) apg_branches_stock,
+        coalesce((s.facts->>'store_stock')::numeric,0)+t.branches_stock total_stock,
+        t.recent_sales,t.last_3_sales,t.baseline_sales,
+        t.recent_sales/nullif(v_days,0) daily_sales,t.last_3_sales/nullif(v_recent,0) recent_daily,
+        t.baseline_sales/nullif(v_baseline,0) baseline_daily
+      from pg_temp.zov_catalog s join totals t using(item_code)
+    ), result as (
+      select m.item_code,jsonb_build_object('item_code',m.item_code,
+        'store_stock',coalesce((facts->>'store_stock')::numeric,0),'branches_stock',branches_stock,
+        'branches_base_stock',branches_base_stock,'branches_final_reorder',branches_final_reorder,
+        'total_stock',total_stock,'stock_71',stock_71,'apg_branches_stock',apg_branches_stock,
+        'apg_stock',total_stock,'recent_sales',recent_sales,'last_3_sales',last_3_sales,
+        'baseline_sales',baseline_sales,'daily_sales',daily_sales,'recent_daily',recent_daily,
+        'baseline_daily',baseline_daily,'growth_percent',case when baseline_daily>0 then (recent_daily/baseline_daily-1)*100 end,
+        'days_on_hand',case when total_stock<=0 then 0 when daily_sales>0 then total_stock/daily_sales end,
+        'stock_status',case when total_stock<=0 then 'no_stock' when coalesce(daily_sales,0)<=0 then 'no_sales'
+          when total_stock/daily_sales<30 then 'low_cover' else 'in_stock' end,
+        'demand_surge',coalesce(last_3_sales>=3 and baseline_daily>0 and recent_daily>=2*baseline_daily,false),
+        'new_demand',coalesce(last_3_sales>=3 and baseline_daily<=0 and v_baseline>0,false),
+        'distribution',distribution,'years',coalesce(y.years,'{}'::jsonb),
+        'reference',coalesce(ref.reference,''),'total_qty',coalesce(ref.total_qty,0),'bonus',coalesce(ref.bonus,0),
+        'received_qty',coalesce(ref.total_qty,0),'received_quantity',coalesce(ref.total_qty,0),
+        'last_mrn_qty',coalesce(ref.total_qty,0),'purchase_status_items',coalesce(p.status_name,'Not assigned'),
+        'supply_insight',zone_overview_private.store_evidence(si.detail,daily_sales,
+          coalesce((facts->>'store_stock')::numeric,0))
+      ) header,jsonb_build_object('branches',branches,'monthly_sales',coalesce(mo.monthly_sales,'[]'::jsonb),
+        'daily_sales_45d',coalesce(ds.days,'[]'::jsonb),'daily_sales_45d_available',true,
+        'meta',(select meta from zone_overview_private.scopes where scope_key=v_scope.scope_key)) detail
+      from metric m left join years y using(item_code) left join months mo using(item_code)
+      left join series ds using(item_code)
+      left join public.stock_supply_insights si using(item_code)
+      left join pg_temp.zov_reference ref using(item_code)
+      left join pg_temp.zov_purchase p using(item_code)
+    ) select v_scope.scope_key,item_code,header-array['supply_insight']||jsonb_build_object(
+      'supply_insight',(header->'supply_insight')-array['events','chart_timeline']),
+      detail||jsonb_build_object('supply_insight',header->'supply_insight') from result;
+    get diagnostics v_count=row_count;
+    if v_count<>(select count(*) from pg_temp.zov_catalog) then
+      raise exception 'Incomplete zonal snapshot; previous results preserved' using errcode='PT409';
+    end if;
+    update zone_overview_private.scopes s set summary=q.summary,categories=q.categories,suppliers=q.suppliers
+    from (
+      select jsonb_build_object('items',count(*),'total_stock',sum((header->>'total_stock')::numeric),
+        'surge',count(*) filter(where (header->>'demand_surge')::boolean or (header->>'new_demand')::boolean),
+        'shortage',count(*) filter(where (header->>'recent_sales')::numeric>(header->>'total_stock')::numeric),
+        'low_cover',count(*) filter(where header->>'stock_status'='low_cover')) summary,
+        coalesce(jsonb_agg(distinct p.facts->'category') filter(where coalesce(p.facts->>'category','')<>''),'[]') categories,
+        coalesce(jsonb_agg(distinct p.facts->'supplier') filter(where coalesce(p.facts->>'supplier','')<>''),'[]') suppliers
+      from zone_overview_private.items i join zone_overview_private.products p using(item_code)
+      where i.scope_key=v_scope.scope_key
+    ) q where s.scope_key=v_scope.scope_key;
+  end loop;
+  if stock_management_private.catalog_cache_version(true) is distinct from v_source then
+    raise exception 'Source changed during zonal preparation; retry next run' using errcode='PT409';
+  end if;
+  delete from zone_overview_private.scopes where scope_key not in(select scope_key from pg_temp.zov_scopes);
+  delete from zone_overview_private.products where item_code not in(select item_code from pg_temp.zov_catalog);
+  return jsonb_build_object('status','complete','prepared_at',v_now,'last_scope_items',v_count);
+end; $$;
+revoke all on function zone_overview_private.prepare() from public,anon,authenticated;
+grant execute on function zone_overview_private.prepare() to service_role;

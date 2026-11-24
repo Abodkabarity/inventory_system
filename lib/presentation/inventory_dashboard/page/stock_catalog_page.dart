@@ -9,7 +9,6 @@ import '../widgets/stock_distribution_widgets.dart';
 import '../../../core/utils/stock_catalog_export.dart';
 import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../../data/datasources/remote/stock_catalog_remote_ds.dart';
-import '../../../data/datasources/remote/stock_product_image_service.dart';
 import '../../../core/config/stock_product_image_config.dart';
 import '../../../domain/entities/stock_catalog.dart';
 import '../../../domain/entities/stock_management.dart';
@@ -22,11 +21,13 @@ class StockCatalogPage extends StatefulWidget {
   final StockCatalogDataSource? dataSource;
   final bool readOnly;
   final bool active;
+  final bool showNeedsDistributionCard;
   const StockCatalogPage({
     super.key,
     this.dataSource,
     this.readOnly = false,
     this.active = true,
+    this.showNeedsDistributionCard = true,
   });
   @override
   State<StockCatalogPage> createState() => _StockCatalogPageState();
@@ -57,9 +58,7 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
     }
     _hoverImageBusy = true;
     try {
-      final images = await StockProductImageService.forClient(
-        source.client,
-      ).gallery(item.code);
+      final images = await source.imageService.gallery(item.code);
       if (!mounted || images.isEmpty) return;
       await precacheImage(
         NetworkImage(
@@ -528,24 +527,18 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
                                     resolveImage:
                                         StockProductImageConfig.enabled &&
                                             _source is StockCatalogRemoteDs
-                                        ? StockProductImageService.forClient(
-                                            _source.client,
-                                          ).resolve
+                                        ? _source.imageService.resolve
                                         : null,
                                     resolveImageGallery:
                                         StockProductImageConfig.enabled &&
                                             _source is StockCatalogRemoteDs
-                                        ? StockProductImageService.forClient(
-                                            _source.client,
-                                          ).gallery
+                                        ? _source.imageService.gallery
                                         : null,
                                     uploadProductImage:
                                         !widget.readOnly &&
                                             StockProductImageConfig.enabled &&
                                             _source is StockCatalogRemoteDs
-                                        ? StockProductImageService.forClient(
-                                            _source.client,
-                                          ).addImage
+                                        ? _source.imageService.addImage
                                         : null,
                                   ),
                                 ),
@@ -658,7 +651,9 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
         ? 2
         : width < 1100
         ? 3
-        : 5;
+        : widget.showNeedsDistributionCard
+        ? 5
+        : 4;
     final w = (width - (count - 1) * 12) / count;
     final columnRows = _columnRows;
     final summary = columnRows == null
@@ -679,14 +674,15 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
       runSpacing: 12,
       children: [
         for (final spec in [
-          (
-            'distribution',
-            'NEEDS DISTRIBUTION',
-            'New ≤${_distributionRules.maxAgeDays} days · STORE ≥${catalogQty(_distributionRules.minStoreStock)} · ≤${_distributionRules.maxCoveredBranches} branches',
-            catalogOrange,
-            Icons.local_shipping_outlined,
-            'distribution',
-          ),
+          if (widget.showNeedsDistributionCard)
+            (
+              'distribution',
+              'NEEDS DISTRIBUTION',
+              'New ≤${_distributionRules.maxAgeDays} days · STORE ≥${catalogQty(_distributionRules.minStoreStock)} · ≤${_distributionRules.maxCoveredBranches} branches',
+              catalogOrange,
+              Icons.local_shipping_outlined,
+              'distribution',
+            ),
           (
             'items',
             _search.text.isNotEmpty ||

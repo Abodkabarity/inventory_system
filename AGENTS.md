@@ -1,5 +1,20 @@
 # Project instructions
 
+## Ordinary zone Overview — scoped release (2026-11-24)
+
+- Ordinary zone managers receive Overview only, using the same design with the
+  Needs Distribution card hidden. Main retains its global four-page workspace.
+- Scope all stock, demand, yearly/monthly/daily sales, details, images and exports
+  to current effective authorized branches plus STORE stock. Derive permissions
+  server-side from active accounts, authoritative assignments and live handovers.
+  Never accept a client scope or fall back to global Overview data.
+- Preserve original stock/sales tables, existing RLS, global/Main functions and
+  existing jobs. Only the isolated zone_overview_private cache is writable by its
+  maintenance. Its backend, read-only gallery and independent job are installed.
+- The user requested View month details hidden for every role. Keep its shared
+  action disabled; month selection, chart values and exports remain available.
+- Architecture and verification: docs/zone_scoped_overview.md.
+
 ## Bulk loading
 
 - Use 5,000 rows as the default batch size for bulk data loading in new or

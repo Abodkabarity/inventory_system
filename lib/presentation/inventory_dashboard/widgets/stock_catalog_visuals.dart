@@ -509,6 +509,8 @@ class CatalogMonthlyChart extends StatefulWidget {
 }
 
 class _CatalogMonthlyChartState extends State<CatalogMonthlyChart> {
+  // Hidden for every role at the user's request. Keep the action reversible.
+  static const _showMonthDetailsAction = false;
   int? _hover;
   final _scroll = ScrollController();
   @override
@@ -793,7 +795,9 @@ class _CatalogMonthlyChartState extends State<CatalogMonthlyChart> {
                     ),
                   ),
                 ),
-              if (active != null && widget.showStockDetails)
+              if (_showMonthDetailsAction &&
+                  active != null &&
+                  widget.showStockDetails)
                 SizedBox(
                   height: 36 * scale,
                   child: TextButton.icon(

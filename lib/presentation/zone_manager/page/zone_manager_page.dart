@@ -22,6 +22,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/stock_check_excel_exporter.dart';
 import '../../../data/datasources/remote/orders_remote_ds.dart';
 import '../../../data/datasources/remote/zone_stock_check_remote_ds.dart';
+import '../../../data/datasources/remote/zone_stock_catalog_remote_ds.dart';
 import '../../../domain/entities/daily_order_row.dart';
 import '../../../domain/entities/inventory_page.dart';
 import '../../../domain/entities/stock_check_task.dart';
@@ -31,6 +32,7 @@ import '../../auth/bloc/auth_state.dart';
 import '../../inventory_dashboard/page/additional_order_analysis_page.dart'
     show AdditionalAnalysisDateRangePickerDialog;
 import '../../inventory_dashboard/page/sales_report_page.dart';
+import '../../inventory_dashboard/page/stock_catalog_page.dart';
 import '../../inventory_dashboard/widgets/stock_management_navigation.dart';
 import '../widgets/zone_stock_workspace.dart';
 import '../../orders/widgets/orders_grid_controller.dart';
@@ -77,6 +79,9 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
   String? _error;
   int _page = 0;
   bool _canReadAllStock = false;
+  bool _canReadZoneOverview = false;
+  String? _zoneOverviewScope;
+  ZoneStockCatalogRemoteDs? _zoneOverviewSource;
   InventoryPageType _stockPage = InventoryPageType.stockManagement;
   int _stockAccessRequest = 0;
   Timer? _stockAccessTimer;
@@ -196,6 +201,9 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
       if (!mounted) return;
       setState(() {
         _canReadAllStock = false;
+        _canReadZoneOverview = false;
+        _zoneOverviewScope = null;
+        _zoneOverviewSource = null;
         if (_page == 11) _page = 0;
       });
       unawaited(_refreshStockAccess());
@@ -258,9 +266,18 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
     final request = ++_stockAccessRequest;
     final userId = _client.auth.currentUser?.id;
     var allowed = false;
+    var zoneAllowed = false;
+    String? zoneScope;
     if (userId != null) {
       try {
         allowed = await _client.rpc('can_read_main_zone_stock') == true;
+        if (!allowed) {
+          final context = await _client.rpc('get_zone_overview_context');
+          zoneAllowed = context is Map && context['allowed'] == true;
+          zoneScope = zoneAllowed ? context['scope_key']?.toString() : null;
+          zoneAllowed =
+              zoneAllowed && zoneScope != null && zoneScope.isNotEmpty;
+        }
       } catch (_) {
         // Fail closed if the server cannot confirm the Main exception.
       }
@@ -270,10 +287,15 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
         userId != _client.auth.currentUser?.id) {
       return;
     }
-    if (_canReadAllStock != allowed) {
+    if (_canReadAllStock != allowed ||
+        _canReadZoneOverview != zoneAllowed ||
+        _zoneOverviewScope != zoneScope) {
       setState(() {
         _canReadAllStock = allowed;
-        if (!allowed && _page == 11) _page = 0;
+        _canReadZoneOverview = zoneAllowed;
+        _zoneOverviewScope = zoneScope;
+        if (!allowed) _stockPage = InventoryPageType.stockManagement;
+        if (!allowed && !zoneAllowed && _page == 11) _page = 0;
       });
     }
   }
@@ -1392,7 +1414,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
   }
 
   Future<void> _changePage(int page) async {
-    if (page == 11 && !_canReadAllStock) return;
+    if (page == 11 && !_canReadAllStock && !_canReadZoneOverview) return;
     final leavingDailyOrder = _page == 3 && page != 3;
     if (_page != page) {
       _search.clear();
@@ -1420,7 +1442,12 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
   }
 
   void _selectStockPage(InventoryPageType page) {
-    if (!_canReadAllStock || !ZoneStockWorkspace.pages.contains(page)) return;
+    if ((!_canReadAllStock &&
+            (!_canReadZoneOverview ||
+                page != InventoryPageType.stockManagement)) ||
+        !ZoneStockWorkspace.pages.contains(page)) {
+      return;
+    }
     setState(() => _stockPage = page);
     unawaited(_changePage(11));
   }
@@ -1731,6 +1758,7 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
                       zoneName: _zoneLabel,
                       onChanged: _changePage,
                       canReadAllStock: _canReadAllStock,
+                      canReadZoneOverview: _canReadZoneOverview,
                       selectedStockPage: _stockPage,
                       onStockSelected: _selectStockPage,
                     ),
@@ -1759,6 +1787,17 @@ class _ZoneManagerPageState extends State<ZoneManagerPage> {
 
   Widget _buildBody() {
     if (_page == 11) {
+      if (!_canReadAllStock) {
+        if (!_canReadZoneOverview) return const SizedBox.shrink();
+        return StockCatalogPage(
+          key: ValueKey(
+            'zone-overview:${_client.auth.currentUser?.id}:$_zoneOverviewScope',
+          ),
+          dataSource: _zoneOverviewSource ??= ZoneStockCatalogRemoteDs(_client),
+          readOnly: true,
+          showNeedsDistributionCard: false,
+        );
+      }
       return ZoneStockWorkspace(
         authorized: _canReadAllStock,
         selectedPage: _stockPage,
@@ -1851,6 +1890,7 @@ class _ZoneDrawer extends StatelessWidget {
   final String zoneName;
   final ValueChanged<int> onChanged;
   final bool canReadAllStock;
+  final bool canReadZoneOverview;
   final InventoryPageType selectedStockPage;
   final ValueChanged<InventoryPageType> onStockSelected;
 
@@ -1859,6 +1899,7 @@ class _ZoneDrawer extends StatelessWidget {
     required this.zoneName,
     required this.onChanged,
     this.canReadAllStock = false,
+    this.canReadZoneOverview = false,
     required this.selectedStockPage,
     required this.onStockSelected,
   });
@@ -1866,7 +1907,7 @@ class _ZoneDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pageOrder = _pageOrder
-        .where((page) => page != 11 || canReadAllStock)
+        .where((page) => page != 11 || canReadAllStock || canReadZoneOverview)
         .toList(growable: false);
     return Container(
       width: 270,
@@ -1937,6 +1978,7 @@ class _ZoneDrawer extends StatelessWidget {
                           ? selectedStockPage
                           : InventoryPageType.dashboard,
                       showOnlineOverview: false,
+                      overviewOnly: !canReadAllStock,
                       onSelected: onStockSelected,
                     ),
                   );

@@ -3,6 +3,7 @@ import '../../../core/config/stock_management_load_config.dart';
 import '../../../domain/entities/stock_catalog.dart';
 import '../../../domain/entities/stock_management.dart';
 import 'stock_catalog_memory_cache.dart';
+import 'stock_product_image_service.dart';
 
 abstract class StockCatalogDataSource {
   Future<StockCatalogResult> fetchPage(StockCatalogQuery query);
@@ -128,14 +129,21 @@ class _CatalogClientMemory {
 }
 
 class StockCatalogRemoteDs implements StockCatalogDataSource {
-  static final _memories = Expando<_CatalogClientMemory>();
+  static final _memories = Expando<Map<String, _CatalogClientMemory>>();
   final SupabaseClient client;
-  const StockCatalogRemoteDs(this.client);
+  final String cacheNamespace;
+  const StockCatalogRemoteDs(this.client, {this.cacheNamespace = 'global'});
+
+  StockCatalogMemoryCache get memoryCache => _memory;
+  bool get hasScopedBranchMetadata => false;
+  StockProductImageService get imageService =>
+      StockProductImageService.forClient(client);
 
   StockCatalogResult? get previewRegister => _memory.previewRegister;
 
   StockCatalogMemoryCache get _memory {
-    final existing = _memories[client];
+    final namespaces = _memories[client] ??= {};
+    final existing = namespaces[cacheNamespace];
     if (existing != null) {
       existing.synchronize(client.auth.currentSession?.accessToken);
       return existing.cache;
@@ -143,7 +151,7 @@ class StockCatalogRemoteDs implements StockCatalogDataSource {
     final memory = _CatalogClientMemory(
       client.auth.currentSession?.accessToken,
     );
-    _memories[client] = memory;
+    namespaces[cacheNamespace] = memory;
     client.auth.onAuthStateChange.listen(
       // Auth notifications may be queued. Compare the current session rather
       // than invalidating a new request for an already-handled login event.

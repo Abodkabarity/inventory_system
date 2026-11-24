@@ -8,12 +8,14 @@ class StockManagementNavigation extends StatefulWidget {
   final ValueChanged<InventoryPageType> onSelected;
   final bool showOnlineOverview;
   final String? onlineUserId;
+  final bool overviewOnly;
   const StockManagementNavigation({
     super.key,
     required this.selectedPage,
     required this.onSelected,
     this.showOnlineOverview = true,
     this.onlineUserId,
+    this.overviewOnly = false,
   });
   @override
   State<StockManagementNavigation> createState() =>
@@ -23,6 +25,7 @@ class StockManagementNavigation extends StatefulWidget {
 class _StockManagementNavigationState extends State<StockManagementNavigation> {
   bool _expanded = true;
   bool get _onlineAllowed =>
+      !widget.overviewOnly &&
       widget.showOnlineOverview &&
       OnlineOverviewLocalConfig.canAccess(
         widget.onlineUserId ?? OnlineOverviewLocalConfig.currentUserId,
@@ -142,27 +145,29 @@ class _StockManagementNavigationState extends State<StockManagementNavigation> {
                         'All products & demand insights',
                         Icons.space_dashboard_outlined,
                       ),
-                      const SizedBox(height: 5),
-                      _entry(
-                        InventoryPageType.mrnOverview,
-                        'MRN Overview',
-                        'Receipts, stock & sales',
-                        Icons.receipt_long_outlined,
-                      ),
-                      const SizedBox(height: 5),
-                      _entry(
-                        InventoryPageType.mrnCdOverview,
-                        'MRN CD Overview',
-                        'Branch receipts, stock & sales',
-                        Icons.local_shipping_outlined,
-                      ),
-                      const SizedBox(height: 5),
-                      _entry(
-                        InventoryPageType.nearExpiry,
-                        'Near Expiry',
-                        'Expiry checks & notes',
-                        Icons.event_available_outlined,
-                      ),
+                      if (!widget.overviewOnly) ...[
+                        const SizedBox(height: 5),
+                        _entry(
+                          InventoryPageType.mrnOverview,
+                          'MRN Overview',
+                          'Receipts, stock & sales',
+                          Icons.receipt_long_outlined,
+                        ),
+                        const SizedBox(height: 5),
+                        _entry(
+                          InventoryPageType.mrnCdOverview,
+                          'MRN CD Overview',
+                          'Branch receipts, stock & sales',
+                          Icons.local_shipping_outlined,
+                        ),
+                        const SizedBox(height: 5),
+                        _entry(
+                          InventoryPageType.nearExpiry,
+                          'Near Expiry',
+                          'Expiry checks & notes',
+                          Icons.event_available_outlined,
+                        ),
+                      ],
                       if (_onlineAllowed && widget.showOnlineOverview) ...[
                         const SizedBox(height: 5),
                         _entry(
