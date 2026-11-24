@@ -760,10 +760,6 @@ class _StockCatalogProductDialogState extends State<StockCatalogProductDialog> {
               'Branches ${catalogQty(item.number('branches_stock'))}',
             ),
             CatalogPill(
-              'APG ${catalogQty(item.number('apg_stock'))}',
-              color: catalogPurple,
-            ),
-            CatalogPill(
               '71 ${catalogQty(item.number('stock_71'))}',
               color: catalogOrange,
             ),

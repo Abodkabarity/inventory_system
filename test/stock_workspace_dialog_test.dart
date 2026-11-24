@@ -86,6 +86,13 @@ void main() {
         await tester.tap(find.text('Open product'));
         await tester.pumpAndSettle();
         expect(find.byType(StockCatalogProductDialog), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('stock-sales-panel')),
+            matching: find.textContaining(RegExp(r'^APG\s')),
+          ),
+          findsNothing,
+        );
         expect(find.byType(StockMrnReceiptSummary), findsOneWidget);
         if (size.width >= 1000) {
           expect(

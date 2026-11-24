@@ -21,7 +21,13 @@ import 'stock_catalog_product_dialog.dart';
 class StockCatalogPage extends StatefulWidget {
   final StockCatalogDataSource? dataSource;
   final bool readOnly;
-  const StockCatalogPage({super.key, this.dataSource, this.readOnly = false});
+  final bool active;
+  const StockCatalogPage({
+    super.key,
+    this.dataSource,
+    this.readOnly = false,
+    this.active = true,
+  });
   @override
   State<StockCatalogPage> createState() => _StockCatalogPageState();
 }
@@ -103,6 +109,14 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
     _applyFilters();
   }
 
+  @override
+  void didUpdateWidget(covariant StockCatalogPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active && !oldWidget.active && !_loading) {
+      unawaited(_load(background: _complete != null));
+    }
+  }
+
   Future<void> _editDistributionRules() async {
     final rules = await showStockDistributionRules(context, _distributionRules);
     if (!mounted || rules == null) return;
@@ -128,10 +142,10 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
     super.dispose();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool background = false}) async {
     final request = ++_request;
     setState(() {
-      _loading = true;
+      _loading = !background;
       _loaded = 0;
       _loadTotal = 0;
       _error = null;
@@ -149,17 +163,18 @@ class _StockCatalogPageState extends State<StockCatalogPage> {
         },
       );
       if (!mounted || request != _request) return;
+      final sameRows = identical(_complete?.rows, result.rows);
       setState(() {
         _complete = result;
         _previewing = false;
         _loading = false;
       });
-      _applyFilters();
+      if (!sameRows) _applyFilters();
     } catch (e) {
       if (mounted && request == _request) {
         setState(() {
           _error = 'Unable to load Overview. $e';
-          if (_previewing) {
+          if (_previewing || background) {
             _complete = null;
             _result = null;
             _columnRows = null;

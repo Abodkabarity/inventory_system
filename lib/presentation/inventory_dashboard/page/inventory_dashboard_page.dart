@@ -16,6 +16,7 @@ import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
 import '../widgets/inventory_dashboard_body.dart';
 import '../widgets/inventory_drawer.dart';
+import '../widgets/inventory_overview_stack.dart';
 import 'additional_order_analysis_page.dart';
 import 'inventory_additional_orders_page.dart';
 import 'allocation_page.dart';
@@ -168,11 +169,22 @@ class _InventoryDashboardViewState extends State<InventoryDashboardView> {
                     ),
 
                     Expanded(
-                      child: _buildPage(
-                        context,
-                        state,
-                        isSubmitted,
-                        widget.runDate,
+                      child: InventoryOverviewStack(
+                        key: ValueKey(
+                          Supabase.instance.client.auth.currentUser?.id,
+                        ),
+                        selectedPage: state.currentPage,
+                        pageBuilder: (context, page) =>
+                            page == InventoryPageType.stockManagement
+                            ? StockCatalogPage(
+                                active: state.currentPage == page,
+                              )
+                            : _buildPage(
+                                context,
+                                state,
+                                isSubmitted,
+                                widget.runDate,
+                              ),
                       ),
                     ),
                   ],

@@ -178,10 +178,10 @@ the dedicated Excel export contains every date, all five channels and total Qty.
 - Branches Stock: all active registered branches, excluding warehouses and STORE.
 - STORE Stock: STORE warehouse balance. Duplicate item/branch balances use MAX,
   matching the existing stock workspace. Signed balances remain signed.
-- Total Stock = STORE + Branches. The overlapping APG Stock column was removed
-  from the Overview register and export on 2026-11-20. APG branch-only and group
-  71 balances remain available in exports/details. The prepared `apg_stock`
-  field is retained for compatibility with existing clients and detail views.
+- Total Stock = STORE + Branches. The overlapping APG Stock column and detail
+  badge are removed; APG branch-only and group 71 balances remain available in
+  exports/details. The prepared `apg_stock` field is retained for compatibility
+  with existing clients.
 - Farabi MC belongs to APG; its authoritative `branches.branch_group` was
   corrected from NULL to APG on 2026-11-20.
 - Annual 2025/2026 Cash, Insurance and Online are signed net units from
@@ -234,6 +234,15 @@ tables, so monetary totals are not invented. Branch recent/stock data share the
 snapshot; branch annual totals load live for one product using existing indexes.
 
 ## Validated memory reuse
+
+Inventory keeps Overview mounted after its first visit, preserving toolbar and
+column filters, sorting, widths and scroll while other Inventory pages retain
+their normal closing behavior. Returning immediately shows the retained table
+and validates the snapshot through the normal guarded metadata read in the
+background. Unchanged rows keep the existing grid state; changed snapshots use
+the complete validated loader. Failed validation removes the retained rows and
+shows the retry path. Reload and rebuild completion keep their usual behavior.
+The retained host is keyed to the current account and clears on account changes.
 
 Overview keeps one complete register in session memory. Reopening still makes the
 existing metadata request and checks its inventory RLS, row count and transactional
