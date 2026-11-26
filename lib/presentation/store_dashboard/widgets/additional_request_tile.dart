@@ -1,9 +1,12 @@
 import 'package:daily_order/core/theme/app_colors.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 
 import '../../../domain/entities/additional_request_group.dart';
 import 'additional_request_dialog.dart';
+import '../bloc/store_bloc.dart';
+import '../bloc/store_event.dart';
 import 'store_branch_identity.dart';
 
 class AdditionalRequestTile extends StatelessWidget {
@@ -123,8 +126,9 @@ class AdditionalRequestTile extends StatelessWidget {
               : AppColors.secondaryColor,
         ),
 
-        onTap: () {
-          showDialog(
+        onTap: () async {
+          final bloc = context.read<StoreBloc>();
+          await showDialog(
             context: context,
             builder: (_) => AdditionalRequestDialog(
               groupId: request.groupId,
@@ -132,6 +136,9 @@ class AdditionalRequestTile extends StatelessWidget {
               sourceTable: request.sourceTable,
             ),
           );
+          if (!bloc.isClosed) {
+            bloc.add(LoadStoreDashboard(bloc.runDate, silent: true));
+          }
         },
       ),
     );

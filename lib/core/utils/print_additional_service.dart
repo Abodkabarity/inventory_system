@@ -6,7 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'store_branch_identity_registry.dart';
 
 class PrintAdditionalService {
-  static Future<void> printBatch(
+  static Future<bool> printBatch(
     Map<String, List<Map<String, dynamic>>> batch,
   ) async {
     await StoreBranchIdentityRegistry.load(Supabase.instance.client);
@@ -59,7 +59,7 @@ class PrintAdditionalService {
       );
     }
 
-    await Printing.layoutPdf(onLayout: (format) async => pdf.save());
+    return Printing.layoutPdf(onLayout: (format) async => pdf.save());
   }
 
   static void _addSection({

@@ -2,19 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/app_colors.dart';
-import 'store_branch_identity.dart';
 import '../../../core/utils/print_additional_service.dart';
+import '../../../data/repositories/store_additional_request_repository.dart';
+import '../../../domain/entities/store_additional_request_status.dart';
+import 'store_branch_identity.dart';
+
+typedef AdditionalRequestPrinter =
+    Future<bool> Function(Map<String, List<Map<String, dynamic>>> batch);
 
 class AdditionalRequestDialog extends StatefulWidget {
-  final String groupId;
-  final String branch;
-  final String sourceTable;
+  final String groupId, branch, sourceTable;
+  final SupabaseClient? client;
+  final AdditionalRequestPrinter? printer;
 
   const AdditionalRequestDialog({
     super.key,
     required this.groupId,
     required this.branch,
     this.sourceTable = 'additional_requests',
+    this.client,
+    this.printer,
   });
 
   @override
@@ -23,249 +30,368 @@ class AdditionalRequestDialog extends StatefulWidget {
 }
 
 class _AdditionalRequestDialogState extends State<AdditionalRequestDialog> {
-  final client = Supabase.instance.client;
-
-  List<Map<String, dynamic>> items = [];
-
-  bool loading = true;
-  bool approved = false;
-
-  final Map<String, TextEditingController> qtyControllers = {};
-  final Map<String, TextEditingController> noteControllers = {};
-
-  /// ✅ NEW: processing state
-  bool isProcessing = false;
+  late final _repository = StoreAdditionalRequestRepository(
+    widget.client ?? Supabase.instance.client,
+    groupId: widget.groupId,
+    branch: widget.branch,
+    sourceTable: widget.sourceTable,
+  );
+  List<Map<String, dynamic>> _items = [];
+  bool _loading = true, _printing = false, _changed = false;
+  String? _error, _message;
+  StoreAdditionalRequestStatus get _status =>
+      StoreAdditionalRequestStatus(_items);
 
   @override
   void initState() {
     super.initState();
-    _loadItems();
+    _load();
   }
 
-  Future<void> _loadItems() async {
-    final inventoryOrder = widget.sourceTable == 'additional_order_inventory';
-    final res = inventoryOrder
-        ? await client
-              .from(widget.sourceTable)
-              .select()
-              .eq('request_group_id', widget.groupId)
-              .order('branch_name')
-              .order('item_name')
-        : await client
-              .from(widget.sourceTable)
-              .select()
-              .eq('request_group_id', widget.groupId)
-              .eq('branch_name', widget.branch)
-              .order('item_name');
-
-    items = List<Map<String, dynamic>>.from(res);
-    print('GROUP ${widget.groupId}');
-    for (final e in items) {
-      print(
-        '${e['item_name']} | inventory_qty=${e['inventory_qty']} | status=${e['status']}',
-      );
-    }
-    items = items.where((e) {
-      final inv = e['inventory_qty'];
-
-      if (inv == null) return true;
-
-      return inv > 0;
-    }).toList();
-
-    if (items.isNotEmpty) {
-      final status = items.first['status'] ?? '';
-      approved = status == 'done' || status == 'rejected';
-
-      /// ✅ IMPORTANT FIX
-      isProcessing = items.any((e) => e['store_status'] == 'processing');
-    }
-
-    for (var item in items) {
-      final id = item['id'].toString();
-
-      final inventoryQty = item['inventory_qty'];
-      final fulfilledQty = item['fulfilled_qty'];
-      final requestQty = item['request_qty'];
-
-      final qty = inventoryQty ?? fulfilledQty ?? requestQty ?? 0;
-
-      qtyControllers[id] = TextEditingController(text: qty.toString());
-
-      noteControllers[id] = TextEditingController(
-        text: (item['store_note'] ?? '').toString(),
-      );
-    }
-
+  Future<void> _load() async {
     setState(() {
-      loading = false;
+      _loading = true;
+      _error = null;
+      _message = null;
     });
+    try {
+      final rows = await _repository.load();
+      if (mounted) setState(() => _items = rows);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Could not load this request. Please refresh.');
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
-  Future<void> _printAndProcess() async {
+  Future<void> _print() async {
+    if (_printing || _loading) return;
+    setState(() {
+      _printing = true;
+      _error = null;
+      _message = null;
+    });
+    var printAccepted = false;
     try {
+      // Another Store user may have confirmed lines while this dialog was open.
+      final fresh = await _repository.load();
+      if (!mounted) return;
+      setState(() => _items = fresh);
+      final status = StoreAdditionalRequestStatus(fresh);
+      final printable = status.printable;
+      if (printable.isEmpty) {
+        setState(
+          () => _message =
+              'No pending items to print. The request has been refreshed.',
+        );
+        return;
+      }
       final batch = <String, List<Map<String, dynamic>>>{};
-      for (final item in items) {
+      for (final item in printable) {
         final branch = (item['branch_name'] ?? widget.branch).toString();
-        batch.putIfAbsent(branch, () => []).add(item);
+        batch
+            .putIfAbsent(branch, () => [])
+            .add(Map<String, dynamic>.from(item));
       }
-
-      await PrintAdditionalService.printBatch(batch);
-
-      for (var item in items) {
-        final id = item['id'];
-
-        await client
-            .from(widget.sourceTable)
-            .update({'store_status': 'processing'})
-            .eq('id', id);
-
-        /// ✅ update local
-        item['store_status'] = 'processing';
+      printAccepted =
+          await (widget.printer ?? PrintAdditionalService.printBatch)(batch);
+      if (!printAccepted) {
+        if (mounted) {
+          setState(
+            () => _message =
+                'Printing cancelled. Request status was not changed.',
+          );
+        }
+        return;
       }
-
+      // Reprints of processing lines are read-only. Only the exact pending
+      // lines sent to the printer can transition; completed lines never do.
+      final changed = await _repository.markPrinted(printable);
+      _changed = _changed || changed > 0;
+      final refreshed = await _repository.load();
+      if (!mounted) return;
       setState(() {
-        approved = true;
-        isProcessing = true;
+        _items = refreshed;
+        _message =
+            changed <
+                printable.where(StoreAdditionalRequestStatus.waiting).length
+            ? 'Printing opened. Some items changed during printing; the request has been refreshed.'
+            : 'Printing opened. Confirm sent Qty in Additional Confirm.';
       });
-    } catch (e) {
-      print("PRINT + UPDATE ERROR: $e");
+    } catch (_) {
+      if (!mounted) return;
+      setState(
+        () => _error = printAccepted
+            ? 'Printing opened, but its status could not be verified. Refresh before retrying.'
+            : 'Could not print this request. Please refresh and try again.',
+      );
+      // A failed write may have committed. Never replay it automatically.
+      if (printAccepted) {
+        _changed = true;
+        try {
+          final refreshed = await _repository.load();
+          if (mounted) setState(() => _items = refreshed);
+        } catch (_) {
+          /* Keep the error visible and require an explicit refresh. */
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _printing = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.grey.shade100,
-      child: Container(
-        width: 950,
-        height: 620,
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            Row(
+    final status = _status;
+    final rows = [...status.items]
+      ..sort(
+        (a, b) => (a['item_name'] ?? '').toString().compareTo(
+          (b['item_name'] ?? '').toString(),
+        ),
+      );
+    return PopScope(
+      canPop: !_printing,
+      child: Dialog(
+        backgroundColor: Colors.grey.shade100,
+        child: SizedBox(
+          width: 950,
+          height: 620,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
               children: [
-                if (widget.sourceTable == 'additional_order_inventory')
-                  const Text(
-                    'Additional Order - From Inventory',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  )
-                else
-                  StoreBranchLabel(
-                    branchName: widget.branch,
-                    suffix: 'Additional Order',
-                    compactBadge: false,
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-
-            const Divider(color: AppColors.primaryColor),
-
-            if (loading)
-              const Expanded(
-                child: Center(
-                  child: CircularProgressIndicator(
-                    color: AppColors.primaryColor,
-                  ),
-                ),
-              )
-            else
-              Expanded(
-                child: ListView(
-                  children: [for (var item in items) _buildItem(item)],
-                ),
-              ),
-
-            const SizedBox(height: 10),
-
-            /// ✅ FIXED CONDITION
-            if (approved || isProcessing)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: items.any((e) => e['status'] == 'rejected')
-                      ? Colors.red.shade100
-                      : Colors.green.shade100,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
+                Row(
                   children: [
-                    Icon(
-                      items.any((e) => e['status'] == 'rejected')
-                          ? Icons.cancel
-                          : Icons.check_circle,
-                      color: items.any((e) => e['status'] == 'rejected')
-                          ? Colors.red
-                          : Colors.green,
+                    Expanded(
+                      child: widget.sourceTable == 'additional_order_inventory'
+                          ? const Text(
+                              'Additional Order - From Inventory',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            )
+                          : StoreBranchLabel(
+                              branchName: widget.branch,
+                              suffix: 'Additional Order',
+                              compactBadge: false,
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                     ),
-                    const SizedBox(width: 10),
-
-                    /// ✅ FIXED TEXT
-                    Text(
-                      isProcessing
-                          ? "Already Print"
-                          : items.any((e) => e['status'] == 'rejected')
-                          ? "Rejected"
-                          : "Done",
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    IconButton(
+                      tooltip: 'Close',
+                      color: Colors.black,
+                      onPressed: _printing
+                          ? null
+                          : () => Navigator.pop(context, _changed),
+                      icon: const Icon(Icons.close),
                     ),
                   ],
                 ),
-              ),
-
-            const SizedBox(height: 10),
-
-            Align(
-              alignment: Alignment.centerRight,
-              child: (approved)
-                  ? ElevatedButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryColor,
-                      ),
-                      child: const Text(
-                        "Close",
-                        style: TextStyle(color: Colors.white),
-                      ),
-                    )
-                  : ElevatedButton.icon(
-                      onPressed: _printAndProcess,
-                      icon: const Icon(Icons.print, color: AppColors.white),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryColor,
-                      ),
-                      label: const Text(
-                        "Print",
-                        style: TextStyle(
-                          color: AppColors.white,
-                          fontWeight: FontWeight.bold,
+                const Divider(color: AppColors.primaryColor),
+                Expanded(
+                  child: _loading
+                      ? const Center(
+                          child: CircularProgressIndicator(
+                            color: AppColors.primaryColor,
+                          ),
+                        )
+                      : rows.isEmpty
+                      ? const Center(child: Text('No approved items'))
+                      : ListView.builder(
+                          itemCount: rows.length,
+                          itemBuilder: (_, index) => _item(rows[index]),
                         ),
+                ),
+                const SizedBox(height: 10),
+                if (!_loading &&
+                    (status.complete ||
+                        (status.pending.isEmpty && status.printed.isNotEmpty)))
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: status.allRejected
+                          ? Colors.red.shade100
+                          : Colors.green.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          status.allRejected
+                              ? Icons.cancel
+                              : Icons.check_circle,
+                          color: status.allRejected ? Colors.red : Colors.green,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            status.complete ? status.label : 'Already printed',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (_error != null || _message != null) ...[
+                  const SizedBox(height: 8),
+                  Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      _error ?? _message!,
+                      style: TextStyle(
+                        color: _error == null
+                            ? AppColors.secondaryColor
+                            : Colors.red.shade800,
                       ),
                     ),
+                  ),
+                ],
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      if (_error != null || _message != null)
+                        TextButton.icon(
+                          onPressed: _loading || _printing ? null : _load,
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.black,
+                          ),
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Refresh'),
+                        ),
+                      if (!_loading && status.printable.isNotEmpty)
+                        ElevatedButton.icon(
+                          onPressed: _printing || _error != null
+                              ? null
+                              : _print,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primaryColor,
+                            foregroundColor: Colors.white,
+                          ),
+                          icon: _printing
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.print),
+                          label: Text(
+                            _printing
+                                ? 'Printing...'
+                                : status.pending.isNotEmpty
+                                ? 'Print pending (${status.printable.length})'
+                                : 'Reprint processing (${status.printable.length})',
+                          ),
+                        )
+                      else
+                        ElevatedButton(
+                          onPressed: _printing
+                              ? null
+                              : () => Navigator.pop(context, _changed),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primaryColor,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Close'),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildItem(Map<String, dynamic> item) {
-    final id = item['id'].toString();
-    final isUrgent = item['contact_logistic'] == 'urgent';
-    final inventoryOrder = widget.sourceTable == 'additional_order_inventory';
-    for (var e in items) {
-      print("ITEM => ${e['item_name']} | ${e['contact_logistic']}");
-    }
+  InputDecoration _fieldDecoration(String label) => InputDecoration(
+    labelText: label,
+    filled: true,
+    fillColor: AppColors.backgroundWidget,
+    labelStyle: const TextStyle(color: AppColors.secondaryColor),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: const BorderSide(color: AppColors.primaryColor),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: const BorderSide(color: AppColors.primaryColor),
+    ),
+  );
+
+  Widget _item(Map<String, dynamic> item) {
+    final finished = StoreAdditionalRequestStatus.finished(item);
+    final (
+      statusLabel,
+      statusColor,
+    ) = switch (StoreAdditionalRequestStatus.status(item)) {
+      'done' => ('Done', Colors.green.shade700),
+      'rejected' => ('Rejected', Colors.red.shade700),
+      'sent_to_store' when StoreAdditionalRequestStatus.processing(item) => (
+        'Processing',
+        AppColors.primaryColor,
+      ),
+      'sent_to_store' => ('Pending', Colors.orange.shade800),
+      _ => ('Awaiting review', AppColors.subText),
+    };
+    final qty = finished
+        ? item['fulfilled_qty'] ?? 0
+        : item['inventory_qty'] ?? item['request_qty'] ?? 0;
+    final note = (item['store_note'] ?? '').toString();
+    final requested = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text('Requested: '),
+        Text(
+          '${item['inventory_qty'] ?? item['request_qty'] ?? 0}',
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.red,
+            fontSize: 15,
+          ),
+        ),
+      ],
+    );
+    final qtyField = SizedBox(
+      width: 120,
+      child: TextFormField(
+        key: ValueKey('additional-qty-${item['id']}-$qty'),
+        initialValue: qty.toString(),
+        readOnly: true,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          fontWeight: FontWeight.bold,
+          color: AppColors.secondaryColor,
+        ),
+        decoration: _fieldDecoration('Sent Qty'),
+      ),
+    );
+    final noteField = TextFormField(
+      key: ValueKey('additional-note-${item['id']}-$note'),
+      initialValue: note,
+      readOnly: true,
+      style: const TextStyle(
+        fontWeight: FontWeight.bold,
+        color: AppColors.secondaryColor,
+      ),
+      decoration: _fieldDecoration('Store Note'),
+    );
     return Card(
+      key: ValueKey('additional-item-${item['id']}'),
       color: Colors.white,
       shadowColor: AppColors.primaryColor,
       elevation: 3,
@@ -278,18 +404,15 @@ class _AdditionalRequestDialogState extends State<AdditionalRequestDialog> {
             Row(
               children: [
                 Text(
-                  "${item['item_code'] ?? ''}",
+                  '${item['item_code'] ?? ''}',
                   style: TextStyle(
                     fontSize: 13,
                     color: Colors.grey.shade800,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-
                 const SizedBox(width: 10),
-
-                /// 🔥 URGENT BADGE
-                if (isUrgent)
+                if (item['contact_logistic'] == 'urgent') ...[
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
@@ -300,7 +423,7 @@ class _AdditionalRequestDialogState extends State<AdditionalRequestDialog> {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: const Text(
-                      "URGENT",
+                      'URGENT',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 11,
@@ -308,24 +431,36 @@ class _AdditionalRequestDialogState extends State<AdditionalRequestDialog> {
                       ),
                     ),
                   ),
-
-                const SizedBox(width: 20),
-
+                  const SizedBox(width: 10),
+                ],
                 Expanded(
-                  child: Text(
-                    item['item_name'] ?? '',
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  child: Wrap(
+                    spacing: 12,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        '${item['item_name'] ?? ''}',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        statusLabel,
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
-
             const SizedBox(height: 15),
-
-            if (inventoryOrder) ...[
+            if (widget.sourceTable == 'additional_order_inventory') ...[
               Row(
                 children: [
                   const Text(
@@ -337,7 +472,7 @@ class _AdditionalRequestDialogState extends State<AdditionalRequestDialog> {
                   ),
                   Expanded(
                     child: StoreBranchLabel(
-                      branchName: (item['branch_name'] ?? '').toString(),
+                      branchName: '${item['branch_name'] ?? ''}',
                       compactBadge: false,
                       style: const TextStyle(
                         color: AppColors.secondaryColor,
@@ -349,87 +484,31 @@ class _AdditionalRequestDialogState extends State<AdditionalRequestDialog> {
               ),
               const SizedBox(height: 12),
             ],
-
-            Row(
-              children: [
-                const Text("Requested: "),
-                Text(
-                  "${item['inventory_qty'] ?? item['request_qty'] ?? 0}",
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.red,
-                    fontSize: 15,
-                  ),
-                ),
-
-                const SizedBox(width: 20),
-
-                SizedBox(
-                  width: 120,
-                  child: TextField(
-                    controller: qtyControllers[id],
-                    readOnly: approved || isProcessing,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.secondaryColor,
-                    ),
-                    decoration: InputDecoration(
-                      labelText: "Sent Qty",
-                      filled: true,
-                      fillColor: AppColors.backgroundWidget,
-                      labelStyle: const TextStyle(
-                        color: AppColors.secondaryColor,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(
-                          color: AppColors.primaryColor,
+            LayoutBuilder(
+              builder: (context, constraints) => constraints.maxWidth >= 620
+                  ? Row(
+                      children: [
+                        requested,
+                        const SizedBox(width: 20),
+                        qtyField,
+                        const SizedBox(width: 20),
+                        Expanded(child: noteField),
+                      ],
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            requested,
+                            const SizedBox(width: 12),
+                            Expanded(child: qtyField),
+                          ],
                         ),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(
-                          color: AppColors.primaryColor,
-                        ),
-                      ),
+                        const SizedBox(height: 12),
+                        noteField,
+                      ],
                     ),
-                  ),
-                ),
-
-                const SizedBox(width: 20),
-
-                Expanded(
-                  child: TextField(
-                    controller: noteControllers[id],
-                    readOnly: approved || isProcessing,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.secondaryColor,
-                    ),
-                    decoration: InputDecoration(
-                      labelText: "Store Note",
-                      filled: true,
-                      fillColor: AppColors.backgroundWidget,
-                      labelStyle: const TextStyle(
-                        color: AppColors.secondaryColor,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(
-                          color: AppColors.primaryColor,
-                        ),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(
-                          color: AppColors.primaryColor,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
             ),
           ],
         ),
