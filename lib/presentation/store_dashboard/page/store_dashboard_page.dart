@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -5,6 +7,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/print_additional_service.dart';
 import '../../../data/datasources/remote/store_remote_ds.dart';
+import '../../../data/datasources/remote/tibah_order_remote_ds.dart';
+import '../../../core/config/tibah_max_config.dart';
 import '../../../data/repositories/store_repository_impl.dart';
 import '../../../domain/repositories/store_repository.dart';
 import '../bloc/store_bloc.dart';
@@ -35,7 +39,10 @@ class StoreDashboardPage extends StatelessWidget {
     final StoreRepository repo = StoreRepositoryImpl(remote);
 
     return BlocProvider(
-      create: (_) => StoreBloc(repo)..add(LoadStoreDashboard(runDate)),
+      create: (_) => StoreBloc(
+        repo,
+        tibah: TibahMaxConfig.enabled ? TibahOrderRemoteDs(client) : null,
+      )..add(LoadStoreDashboard(runDate)),
       child: StoreDashboardView(
         runDate: runDate,
         pendingStockCheckCount: pendingStockCheckCount,
@@ -65,6 +72,7 @@ class StoreDashboardView extends StatefulWidget {
 }
 
 class _StoreDashboardViewState extends State<StoreDashboardView> {
+  Timer? _tibahPoll;
   RealtimeChannel? channel;
 
   bool firstLoad = true;
@@ -73,6 +81,11 @@ class _StoreDashboardViewState extends State<StoreDashboardView> {
   void initState() {
     super.initState();
     _startRealtime();
+    if (TibahMaxConfig.enabled) {
+      _tibahPoll = Timer.periodic(const Duration(seconds: 15), (_) {
+        context.read<StoreBloc>().add(RefreshTibahOrder());
+      });
+    }
   }
 
   void _startRealtime() {
@@ -110,6 +123,7 @@ class _StoreDashboardViewState extends State<StoreDashboardView> {
 
   @override
   void dispose() {
+    _tibahPoll?.cancel();
     if (channel != null) {
       Supabase.instance.client.removeChannel(channel!);
     }

@@ -2,8 +2,12 @@ import 'package:equatable/equatable.dart';
 
 import '../../../domain/entities/additional_request_group.dart';
 import '../../../domain/entities/store_order_item.dart';
+import '../../../domain/entities/tibah_order.dart';
 
 class StoreState extends Equatable {
+  final Map<String, TibahOrder> tibahOrders;
+  final TibahOrder? selectedTibahOrder;
+  final bool tibahItemsLoaded;
   final List<String> branches;
 
   final String? selectedBranch;
@@ -44,6 +48,9 @@ class StoreState extends Equatable {
   final bool isLoading;
 
   const StoreState({
+    this.tibahOrders = const {},
+    this.selectedTibahOrder,
+    this.tibahItemsLoaded = false,
     required this.branches,
     required this.selectedBranch,
     required this.items,
@@ -69,7 +76,10 @@ class StoreState extends Equatable {
     this.errorMessage,
     required this.processingList,
     required this.filteredList,
-    required this.dialogOpened, required this.printedBranches, required this.submitStartHours, required this.submitEndHours,
+    required this.dialogOpened,
+    required this.printedBranches,
+    required this.submitStartHours,
+    required this.submitEndHours,
   });
 
   /// INITIAL STATE
@@ -109,6 +119,11 @@ class StoreState extends Equatable {
 
   /// COPY WITH
   StoreState copyWith({
+    Map<String, TibahOrder>? tibahOrders,
+    TibahOrder? selectedTibahOrder,
+    bool? tibahItemsLoaded,
+    bool clearTibahSelection = false,
+    bool clearSelectedBranch = false,
     List<String>? branches,
     String? selectedBranch,
     List<String>? submittedBranches,
@@ -141,8 +156,15 @@ class StoreState extends Equatable {
     bool? isPrinting,
   }) {
     return StoreState(
+      tibahOrders: tibahOrders ?? this.tibahOrders,
+      selectedTibahOrder: clearTibahSelection
+          ? null
+          : selectedTibahOrder ?? this.selectedTibahOrder,
+      tibahItemsLoaded: tibahItemsLoaded ?? this.tibahItemsLoaded,
       branches: branches ?? this.branches,
-      selectedBranch: selectedBranch ?? this.selectedBranch,
+      selectedBranch: clearSelectedBranch
+          ? null
+          : selectedBranch ?? this.selectedBranch,
       items: items ?? this.items,
       additionalRequests: additionalRequests ?? this.additionalRequests,
       additionalHistory: additionalHistory ?? this.additionalHistory,
@@ -164,11 +186,9 @@ class StoreState extends Equatable {
       isOpeningDialog: isOpeningDialog ?? this.isOpeningDialog,
       isPrintingMain: isPrintingMain ?? this.isPrintingMain,
       confirmingItems: confirmingItems ?? this.confirmingItems,
-      submitStartHours:
-      submitStartHours ?? this.submitStartHours,
+      submitStartHours: submitStartHours ?? this.submitStartHours,
 
-      submitEndHours:
-      submitEndHours ?? this.submitEndHours,
+      submitEndHours: submitEndHours ?? this.submitEndHours,
       isPrinting: isPrinting ?? this.isPrinting,
       processingList: processingList ?? this.processingList,
       filteredList: filteredList ?? this.filteredList,
@@ -179,6 +199,9 @@ class StoreState extends Equatable {
 
   @override
   List<Object?> get props => [
+    tibahOrders,
+    selectedTibahOrder,
+    tibahItemsLoaded,
     branches,
     selectedBranch,
     items,

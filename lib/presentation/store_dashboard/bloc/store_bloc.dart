@@ -3,9 +3,12 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/utils/operational_date_helper.dart';
+import '../../../core/utils/store_branch_identity_registry.dart';
 import '../../../core/utils/print_additional_service.dart';
 import '../../../core/utils/web_notification.dart';
 import '../../../domain/repositories/store_repository.dart';
+import '../../../domain/entities/tibah_order.dart';
+import '../../../data/datasources/remote/tibah_order_remote_ds.dart';
 import 'store_event.dart';
 import 'store_state.dart';
 
@@ -15,8 +18,12 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
 
   final AudioPlayer _player = AudioPlayer();
   String runDate = '';
+  final TibahOrderRemoteDs? tibah;
+  bool _refreshingTibah = false;
+  int _branchSelectionVersion = 0;
 
-  StoreBloc(this.repo) : super(StoreState.initial()) {
+  StoreBloc(this.repo, {this.tibah}) : super(StoreState.initial()) {
+    on<RefreshTibahOrder>(_onRefreshTibah);
     on<LoadStoreDashboard>(_onLoad);
 
     on<SelectBranch>(_onSelectBranch);
@@ -141,6 +148,8 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
       for (final row in branchRows) {
         final branch = row['branch_name'].toString();
 
+        if (tibah != null && TibahOrder.isBranch(branch)) continue;
+
         branches.add(branch);
 
         startHours[branch] = row['submit_start_hour'] ?? 0;
@@ -158,6 +167,8 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
 
       for (final row in submittedRows) {
         final branch = row['branch_name'].toString();
+
+        if (tibah != null && TibahOrder.isBranch(branch)) continue;
 
         submitted.add(branch);
 
@@ -224,6 +235,7 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
           isLoading: false,
         ),
       );
+      if (tibah != null) add(RefreshTibahOrder());
     } catch (e) {
       emit(state.copyWith(isLoading: false));
       print("StoreBloc Load Error: $e");
@@ -238,13 +250,78 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
     Emitter<StoreState> emit,
   ) async {
     final branch = event.branch;
+    final selectionVersion = ++_branchSelectionVersion;
+
+    if (tibah != null && TibahOrder.isBranch(branch)) {
+      emit(
+        state.copyWith(
+          selectedBranch: branch,
+          items: [],
+          isLoading: true,
+          clearTibahSelection: true,
+          tibahItemsLoaded: false,
+        ),
+      );
+      try {
+        final order = await tibah!.current(TibahOrderType.forBranch(branch)!);
+        if (selectionVersion != _branchSelectionVersion ||
+            state.selectedBranch != branch) {
+          return;
+        }
+        if (order == null || !order.isPending) {
+          emit(state.copyWith(isLoading: false));
+          add(RefreshTibahOrder());
+          return;
+        }
+        emit(
+          state.copyWith(
+            tibahOrders: {...state.tibahOrders, order.branch: order},
+            selectedTibahOrder: order,
+            isLoading: order.isReady,
+          ),
+        );
+        if (!order.isReady) return;
+        final items = await tibah!.items(order);
+        if (selectionVersion != _branchSelectionVersion ||
+            state.selectedBranch != branch ||
+            state.selectedTibahOrder?.id != order.id) {
+          return;
+        }
+        emit(
+          state.copyWith(
+            items: items,
+            isLoading: false,
+            tibahItemsLoaded: true,
+          ),
+        );
+      } catch (error) {
+        if (selectionVersion == _branchSelectionVersion &&
+            state.selectedBranch == branch) {
+          emit(
+            state.copyWith(
+              items: [],
+              isLoading: false,
+              tibahItemsLoaded: false,
+              errorMessage: '$error',
+            ),
+          );
+        }
+      }
+      return;
+    }
 
     if (state.selectedBranch == branch) return;
 
     final bool isSubmitted = state.submittedBranches.contains(branch);
 
     emit(
-      state.copyWith(selectedBranch: branch, items: [], isLoading: isSubmitted),
+      state.copyWith(
+        selectedBranch: branch,
+        items: [],
+        isLoading: isSubmitted,
+        clearTibahSelection: true,
+        tibahItemsLoaded: false,
+      ),
     );
 
     if (!isSubmitted) return;
@@ -255,6 +332,11 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
         branch: branch,
       );
 
+      if (selectionVersion != _branchSelectionVersion ||
+          state.selectedBranch != branch) {
+        return;
+      }
+
       await repo.markBranchPrinted(runDate: runDate, branch: branch);
 
       add(LoadStoreDashboard(runDate, silent: true));
@@ -263,6 +345,58 @@ class StoreBloc extends Bloc<StoreEvent, StoreState> {
     } catch (e) {
       emit(state.copyWith(isLoading: false));
       print("SelectBranch Error: $e");
+    }
+  }
+
+  Future<void> _onRefreshTibah(
+    RefreshTibahOrder event,
+    Emitter<StoreState> emit,
+  ) async {
+    if (tibah == null || _refreshingTibah) return;
+    _refreshingTibah = true;
+    try {
+      final orders = await tibah!.currentOrders();
+      if (orders.any(
+        (order) => state.tibahOrders[order.branch]?.id != order.id,
+      )) {
+        await StoreBranchIdentityRegistry.load(tibah!.client, force: true);
+      }
+      final branches = state.branches
+          .where((b) => !TibahOrder.isBranch(b))
+          .toList();
+      final submitted = state.submittedBranches
+          .where((b) => !TibahOrder.isBranch(b))
+          .toList();
+      for (final order in orders.where((o) => o.isPending)) {
+        branches.add(order.branch);
+        submitted.add(order.branch);
+      }
+      final byBranch = {for (final order in orders) order.branch: order};
+      final order = byBranch[state.selectedBranch];
+      final selected =
+          state.selectedBranch != null &&
+          TibahOrder.isBranch(state.selectedBranch!);
+      final changed = selected && state.selectedTibahOrder != order;
+      emit(
+        state.copyWith(
+          branches: branches,
+          submittedBranches: submitted,
+          submittedCount: submitted.length,
+          tibahOrders: byBranch,
+          selectedTibahOrder: selected && order?.isPending == true
+              ? order
+              : null,
+          clearTibahSelection: selected && order?.isPending != true,
+          clearSelectedBranch: selected && order?.isPending != true,
+          items: changed ? [] : null,
+          tibahItemsLoaded: changed ? false : null,
+        ),
+      );
+      if (changed && order?.isPending == true) add(SelectBranch(order!.branch));
+    } catch (error) {
+      emit(state.copyWith(errorMessage: 'Could not refresh Tibah: $error'));
+    } finally {
+      _refreshingTibah = false;
     }
   }
 

@@ -24,6 +24,8 @@ class SelectBranch extends StoreEvent {
   List<Object?> get props => [branch];
 }
 
+class RefreshTibahOrder extends StoreEvent {}
+
 class ApproveAdditionalRequest extends StoreEvent {
   final String requestId;
   final num qty;

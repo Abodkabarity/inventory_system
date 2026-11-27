@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -5,6 +7,7 @@ import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../domain/entities/store_order_item.dart';
+import '../../../domain/entities/tibah_order.dart';
 import 'store_branch_identity_registry.dart';
 
 class PrintService {
@@ -12,9 +15,28 @@ class PrintService {
     required String branch,
     required List<StoreOrderItem> items,
     required bool isGeneral,
+    TibahOrder? tibahOrder,
   }) async {
-    await StoreBranchIdentityRegistry.load(Supabase.instance.client);
+    await StoreBranchIdentityRegistry.load(
+      Supabase.instance.client,
+      force: tibahOrder != null,
+    );
 
+    final bytes = await buildOrdersPdf(
+      branch: branch,
+      items: items,
+      isGeneral: isGeneral,
+      tibahOrder: tibahOrder,
+    );
+    await Printing.layoutPdf(onLayout: (format) async => bytes);
+  }
+
+  static Future<Uint8List> buildOrdersPdf({
+    required String branch,
+    required List<StoreOrderItem> items,
+    required bool isGeneral,
+    TibahOrder? tibahOrder,
+  }) async {
     final pdf = pw.Document();
 
     final filtered = items.where((e) {
@@ -74,7 +96,7 @@ class PrintService {
         margin: const pw.EdgeInsets.fromLTRB(15, 10, 10, 60),
 
         /// HEADER
-        header: (context) => _header(branch),
+        header: (context) => _header(branch, isGeneral, tibahOrder),
 
         /// FOOTER
         footer: (context) {
@@ -107,27 +129,71 @@ class PrintService {
       ),
     );
 
-    await Printing.layoutPdf(onLayout: (format) async => pdf.save());
+    return pdf.save();
   }
 
-  static pw.Widget _header(String branch) {
+  static pw.Widget _header(String branch, bool isGeneral, TibahOrder? order) {
     final date = DateTime.now().toLocal();
 
     return pw.Container(
       padding: const pw.EdgeInsets.only(bottom: 5),
 
-      child: pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+      child: pw.Column(
         children: [
-          _printedBranchHeading(branch),
+          if (order != null)
+            pw.Container(
+              width: double.infinity,
+              margin: const pw.EdgeInsets.only(bottom: 7),
+              padding: const pw.EdgeInsets.all(9),
+              decoration: pw.BoxDecoration(
+                color: order.type == TibahOrderType.upp
+                    ? PdfColor.fromHex('#6D28D9')
+                    : PdfColor.fromHex('#1E40AF'),
+                border: pw.Border.all(color: PdfColors.black, width: 1),
+              ),
+              child: pw.Column(
+                children: [
+                  pw.Text(
+                    order.type.printLabel(isGeneral).toUpperCase(),
+                    style: pw.TextStyle(
+                      fontSize: 22,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.white,
+                    ),
+                  ),
+                  pw.Text(
+                    'Order ${order.id.substring(0, 8)} | ${_uploadDate(order.uploadedAt)}',
+                    style: const pw.TextStyle(
+                      fontSize: 9,
+                      color: PdfColors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              _printedBranchHeading(branch),
 
-          pw.Text(
-            "${date.day}/${date.month}/${date.year}",
-            style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
+              pw.Text(
+                "${date.day}/${date.month}/${date.year}",
+                style: pw.TextStyle(
+                  fontSize: 12,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
+  }
+
+  static String _uploadDate(DateTime? value) {
+    if (value == null) return '';
+    final date = value.toUtc().add(const Duration(hours: 4));
+    return '${date.day}/${date.month}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')} UAE';
   }
 
   static pw.Widget _printedBranchHeading(String branch) {

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/print_service.dart';
 import '../../../domain/entities/store_order_item.dart';
+import '../../../domain/entities/tibah_order.dart';
+import 'tibah_order_toolbar.dart';
 import 'store_branch_identity.dart';
 
 class OrdersPanel extends StatelessWidget {
@@ -11,6 +13,10 @@ class OrdersPanel extends StatelessWidget {
   final bool isSubmitted;
   final bool isLoading;
   final VoidCallback? onClose;
+  final TibahOrder? tibahOrder;
+  final bool tibahItemsLoaded;
+  final VoidCallback? onRefresh;
+  final String? loadError;
   const OrdersPanel({
     super.key,
     required this.items,
@@ -18,6 +24,10 @@ class OrdersPanel extends StatelessWidget {
     required this.isSubmitted,
     required this.isLoading,
     this.onClose,
+    this.tibahOrder,
+    this.tibahItemsLoaded = false,
+    this.onRefresh,
+    this.loadError,
   });
 
   @override
@@ -89,7 +99,33 @@ class OrdersPanel extends StatelessWidget {
               ),
             ),
 
-          if (isSubmitted)
+          if (tibahOrder != null)
+            TibahOrderToolbar(
+              key: ValueKey(tibahOrder!.id),
+              order: tibahOrder!,
+              items: items,
+              loaded: tibahItemsLoaded,
+              onRefresh: onRefresh ?? () {},
+              onClose: onClose,
+            ),
+          if (TibahOrder.isBranch(branch!) && loadError != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Text(
+                loadError!,
+                style: const TextStyle(color: Color(0xFF9F1239)),
+              ),
+            ),
+          if (TibahOrder.isBranch(branch!) && tibahOrder == null && !isLoading)
+            TextButton.icon(
+              style: TextButton.styleFrom(foregroundColor: Colors.black),
+              onPressed: onRefresh,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Refresh order'),
+            ),
+          if (isSubmitted &&
+              tibahOrder == null &&
+              !TibahOrder.isBranch(branch!))
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -97,6 +133,7 @@ class OrdersPanel extends StatelessWidget {
                   icon: const Icon(Icons.print, color: AppColors.white),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primaryColor,
+                    foregroundColor: Colors.white,
                   ),
                   label: const Text(
                     "Print Medicine",
@@ -127,6 +164,7 @@ class OrdersPanel extends StatelessWidget {
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primaryColor,
+                    foregroundColor: Colors.white,
                   ),
                   onPressed: items.isEmpty
                       ? null
@@ -163,6 +201,10 @@ class OrdersPanel extends StatelessWidget {
       return const Center(
         child: CircularProgressIndicator(color: AppColors.primaryColor),
       );
+    }
+
+    if (tibahOrder != null && !tibahOrder!.isReady) {
+      return const Center(child: Text('Preparing order quantities...'));
     }
 
     if (items.isEmpty) {

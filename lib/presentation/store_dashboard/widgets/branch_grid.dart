@@ -3,11 +3,13 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/operational_date_helper.dart';
+import '../../../domain/entities/tibah_order.dart';
 import '../bloc/store_bloc.dart';
 import '../bloc/store_event.dart';
 import '../bloc/store_state.dart';
 import 'order_panel.dart';
 import 'store_branch_identity.dart';
+import 'tibah_order_window.dart';
 
 class BranchGrid extends StatelessWidget {
   final List<String> branches;
@@ -69,6 +71,9 @@ class BranchGrid extends StatelessWidget {
                     .printedBranches
                     .contains(branch);
                 final blocState = context.read<StoreBloc>().state;
+                final tibahOrder = TibahOrder.isBranch(branch)
+                    ? blocState.tibahOrders[branch]
+                    : null;
 
                 final startHour = blocState.submitStartHours[branch] ?? 0;
 
@@ -129,6 +134,17 @@ class BranchGrid extends StatelessWidget {
                                   ),
 
                                   child: OrdersPanel(
+                                    tibahOrder: state.selectedTibahOrder,
+                                    tibahItemsLoaded: state.tibahItemsLoaded,
+                                    loadError: state.errorMessage,
+                                    onRefresh: () {
+                                      bloc.add(RefreshTibahOrder());
+                                      if (state.selectedBranch != null) {
+                                        bloc.add(
+                                          SelectBranch(state.selectedBranch!),
+                                        );
+                                      }
+                                    },
                                     items: state.items,
 
                                     branch: state.selectedBranch,
@@ -234,7 +250,14 @@ class BranchGrid extends StatelessWidget {
                                   String statusText;
                                   Color statusColor;
 
-                                  if (isPrinted) {
+                                  if (tibahOrder != null) {
+                                    statusText =
+                                        '${tibahOrder.type.label.toUpperCase()} — ${tibahOrder.isReady ? 'READY' : 'PREPARING'}';
+                                    statusColor =
+                                        tibahOrder.type == TibahOrderType.upp
+                                        ? const Color(0xFF6D28D9)
+                                        : const Color(0xFF1E40AF);
+                                  } else if (isPrinted) {
                                     statusText = "PRINTED";
                                     statusColor = Colors.green.shade800;
                                   } else if (isSubmitted) {
@@ -265,12 +288,20 @@ class BranchGrid extends StatelessWidget {
 
                               const SizedBox(height: 7),
 
-                              _DeadlinePill(
-                                hour: endHour,
-                                isSelected: isSelected,
-                                isLate: isLate,
-                                isPrinted: isPrinted,
-                              ),
+                              if (tibahOrder != null)
+                                TibahOrderWindow(
+                                  order: tibahOrder,
+                                  compact: true,
+                                  selected: isSelected,
+                                ),
+
+                              if (tibahOrder == null)
+                                _DeadlinePill(
+                                  hour: endHour,
+                                  isSelected: isSelected,
+                                  isLate: isLate,
+                                  isPrinted: isPrinted,
+                                ),
                             ],
                           ),
                         ),

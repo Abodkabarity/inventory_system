@@ -5,15 +5,19 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/store_branch_identity_registry.dart';
+import '../../../core/config/tibah_max_config.dart';
+import '../../../domain/entities/tibah_order.dart';
 import '../bloc/inventory_bloc.dart';
 import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
 import '../widgets/import_process_dialog.dart';
 import '../widgets/max_adj_data_source.dart';
 import '../widgets/max_adj_history_dialog.dart';
+import '../widgets/tibah_max_upload_dialog.dart';
 
 class MaxAdjustmentPage extends StatefulWidget {
   const MaxAdjustmentPage({super.key});
@@ -271,7 +275,7 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage>
                 onPressed: state.isImporting ? null : _showImportDialog,
                 style: OutlinedButton.styleFrom(
                   backgroundColor: AppColors.secondaryColor,
-                  foregroundColor: AppColors.secondaryColor,
+                  foregroundColor: Colors.white,
                   side: const BorderSide(color: Colors.white),
                   padding: const EdgeInsets.symmetric(
                     horizontal: 18,
@@ -312,6 +316,33 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage>
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              children: [
+                if (TibahMaxConfig.enabled)
+                  for (final type in TibahOrderType.values)
+                    FilledButton.icon(
+                      onPressed: state.isImporting
+                          ? null
+                          : () => _showTibahUpload(type),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: type == TibahOrderType.upp
+                            ? const Color(0xFF6D28D9)
+                            : const Color(0xFF1E40AF),
+                        foregroundColor: Colors.white,
+                      ),
+                      icon: const Icon(Icons.upload_file_rounded),
+                      label: Text(
+                        'Upload ${StoreBranchIdentityRegistry.displayName(type.branchName)}',
+                      ),
+                    ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -334,6 +365,24 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage>
         child: const ImportProgressDialog(type: ImportType.maxAdj),
       ),
     );
+  }
+
+  Future<void> _showTibahUpload(TibahOrderType type) async {
+    await StoreBranchIdentityRegistry.load(
+      Supabase.instance.client,
+      force: true,
+    );
+    if (!mounted) return;
+    final saved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => TibahMaxUploadDialog(type: type),
+    );
+    if (saved == true && mounted) {
+      context.read<InventoryBloc>().add(
+        LoadMaxAdjustment(query: _searchController.text),
+      );
+    }
   }
 
   Widget _buildTable(InventoryState state) {
