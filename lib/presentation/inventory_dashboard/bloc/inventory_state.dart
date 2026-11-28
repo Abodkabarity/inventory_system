@@ -122,6 +122,9 @@ class InventoryState extends Equatable {
 
   final bool isMaxAdjLoading;
   final String maxAdjLoadError;
+  final int maxAdjLoadedRows;
+  final int maxAdjLoadingTotal;
+  final double maxAdjExportProgress;
 
   final int additionalMonthCount;
 
@@ -235,6 +238,9 @@ class InventoryState extends Equatable {
     required this.maxAdjTotalRows,
     required this.isMaxAdjLoading,
     this.maxAdjLoadError = '',
+    this.maxAdjLoadedRows = 0,
+    this.maxAdjLoadingTotal = 0,
+    this.maxAdjExportProgress = 0,
     required this.additionalMonthCount,
     required this.mismatchTracker,
     required this.allChanges,
@@ -470,6 +476,9 @@ class InventoryState extends Equatable {
     int? maxAdjTotalRows,
     bool? isMaxAdjLoading,
     String? maxAdjLoadError,
+    int? maxAdjLoadedRows,
+    int? maxAdjLoadingTotal,
+    double? maxAdjExportProgress,
     int? additionalMonthCount,
     List<Map<String, dynamic>>? mismatchTracker,
     List<Map<String, dynamic>>? allChanges,
@@ -591,6 +600,9 @@ class InventoryState extends Equatable {
       maxAdjTotalRows: maxAdjTotalRows ?? this.maxAdjTotalRows,
       isMaxAdjLoading: isMaxAdjLoading ?? this.isMaxAdjLoading,
       maxAdjLoadError: maxAdjLoadError ?? this.maxAdjLoadError,
+      maxAdjLoadedRows: maxAdjLoadedRows ?? this.maxAdjLoadedRows,
+      maxAdjLoadingTotal: maxAdjLoadingTotal ?? this.maxAdjLoadingTotal,
+      maxAdjExportProgress: maxAdjExportProgress ?? this.maxAdjExportProgress,
       additionalMonthCount: additionalMonthCount ?? this.additionalMonthCount,
       mismatchTracker: mismatchTracker ?? this.mismatchTracker,
       allChanges: allChanges ?? this.allChanges,
@@ -704,6 +716,9 @@ class InventoryState extends Equatable {
     maxAdjTotalRows,
     isMaxAdjLoading,
     maxAdjLoadError,
+    maxAdjLoadedRows,
+    maxAdjLoadingTotal,
+    maxAdjExportProgress,
     additionalMonthCount,
     mismatchTracker,
     allChanges,

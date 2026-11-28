@@ -24,8 +24,8 @@ import '../../../core/utils/tma_export.dart';
 import '../../../core/utils/web_notification.dart';
 import '../../../domain/entities/additional_request_group.dart';
 import '../../../domain/entities/allocation_result_row.dart';
-import '../../../domain/entities/allocation_source_row.dart';
 import '../../../domain/entities/daily_order_query.dart';
+import '../../../domain/entities/allocation_source_row.dart';
 import '../../../domain/entities/inventory_page.dart';
 import '../../../domain/entities/mismatch_item.dart';
 import '../../../domain/repositories/inventory_repository.dart';
@@ -43,6 +43,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   RealtimeChannel? formularyChannel;
   int _formularyLoadToken = 0;
   int _maxAdjLoadToken = 0;
+  DateTime? _maxAdjLoadedAt;
+  String? _maxAdjLoadedQuery;
   bool _maxAdjImportRunning = false;
   List<List<dynamic>>? _pendingMaxAdjCsvRows;
   late final _maxAdjRefresh = MaxAdjustmentRefreshCoordinator(
@@ -342,6 +344,17 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         emit(state.copyWith(maxAdjSearch: event.query));
         return;
       }
+      // Reopening the page can reuse a recent complete result. Explicit retry,
+      // searches and realtime changes still force a server read.
+      if (state.isMaxAdjLoading && event.query == state.maxAdjSearch) return;
+      if (event.reuseRecent &&
+          _maxAdjLoadedQuery == event.query &&
+          _maxAdjLoadedAt != null &&
+          DateTime.now().difference(_maxAdjLoadedAt!) <
+              const Duration(seconds: 30) &&
+          state.maxAdjLoadError.isEmpty) {
+        return;
+      }
       final requestToken = ++_maxAdjLoadToken;
       _maxAdjRefresh.beginLoad();
 
@@ -350,6 +363,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           state.copyWith(
             isLoading: true,
             isMaxAdjLoading: true,
+            maxAdjLoadedRows: 0,
+            maxAdjLoadingTotal: 0,
             maxAdjLoadError: '',
             maxAdjSearch: event.query,
             importMessage: state.importMessage,
@@ -359,6 +374,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         emit(
           state.copyWith(
             isMaxAdjLoading: true,
+            maxAdjLoadedRows: 0,
+            maxAdjLoadingTotal: 0,
             maxAdjSearch: event.query,
             maxAdjLoadError: '',
           ),
@@ -369,9 +386,21 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         final rows = await _readMaxAdjustmentRows(
           query: event.query,
           isCancelled: () => requestToken != _maxAdjLoadToken || isClosed,
+          onProgress: (loaded, total) {
+            if (!emit.isDone && requestToken == _maxAdjLoadToken) {
+              emit(
+                state.copyWith(
+                  maxAdjLoadedRows: loaded,
+                  maxAdjLoadingTotal: total,
+                ),
+              );
+            }
+          },
         );
 
         if (rows == null || requestToken != _maxAdjLoadToken) return;
+        _maxAdjLoadedAt = DateTime.now();
+        _maxAdjLoadedQuery = event.query;
 
         emit(
           state.copyWith(
@@ -406,6 +435,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
             schema: 'public',
             table: 'max_adj',
             callback: (payload) {
+              _maxAdjLoadedAt = null;
               _maxAdjRefresh.changed();
             },
           )
@@ -1904,21 +1934,56 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         state.copyWith(
           isExporting: true,
           exportMessage: 'Fetching current adjustment records...',
+          maxAdjExportProgress: 0,
         ),
       );
-      final data = await repo.fetchMaxAdjExport();
+      final data = await repo.fetchMaxAdjExport(
+        onProgress: (loaded, total) {
+          if (!emit.isDone) {
+            emit(
+              state.copyWith(
+                exportMessage:
+                    'Fetching current adjustments: $loaded of $total...',
+                maxAdjExportProgress: total == 0 ? .4 : .4 * loaded / total,
+              ),
+            );
+          }
+        },
+      );
       emit(
         state.copyWith(
           isExporting: true,
           exportMessage: 'Building Excel file for ${data.length} records...',
         ),
       );
-      await MaxAdjExcelExporter.export(rows: data, includeHistory: false);
+      await MaxAdjExcelExporter.export(
+        rows: data,
+        includeHistory: false,
+        onProgress: (message, fraction) {
+          if (!emit.isDone) {
+            emit(
+              state.copyWith(
+                exportMessage: message,
+                maxAdjExportProgress: .4 + .6 * fraction,
+              ),
+            );
+          }
+        },
+      );
       emit(
-        state.copyWith(isExporting: false, exportMessage: 'Export completed'),
+        state.copyWith(
+          isExporting: false,
+          exportMessage: 'Export completed',
+          maxAdjExportProgress: 1,
+        ),
       );
     } catch (e) {
-      emit(state.copyWith(isExporting: false, exportMessage: 'Export failed'));
+      emit(
+        state.copyWith(
+          isExporting: false,
+          exportMessage: _maxAdjExportError(e),
+        ),
+      );
       print("Export Current Error: $e");
     }
   }
@@ -1933,10 +1998,36 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         state.copyWith(
           isExporting: true,
           exportMessage: 'Fetching current adjustments and history...',
+          maxAdjExportProgress: 0,
         ),
       );
-      final current = await repo.fetchMaxAdjExport();
-      final log = await repo.fetchMaxAdjLogExport();
+      final current = await repo.fetchMaxAdjExport(
+        onProgress: (loaded, total) {
+          if (!emit.isDone) {
+            emit(
+              state.copyWith(
+                exportMessage:
+                    'Fetching current adjustments: $loaded of $total...',
+                maxAdjExportProgress: total == 0 ? .2 : .2 * loaded / total,
+              ),
+            );
+          }
+        },
+      );
+      final log = await repo.fetchMaxAdjLogExport(
+        onProgress: (loaded, total) {
+          if (!emit.isDone) {
+            emit(
+              state.copyWith(
+                exportMessage: 'Fetching history: $loaded of $total...',
+                maxAdjExportProgress: total == 0
+                    ? .5
+                    : .2 + .3 * loaded / total,
+              ),
+            );
+          }
+        },
+      );
 
       final merged = [...current, ...log];
 
@@ -1946,14 +2037,44 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
           exportMessage: 'Building Excel file for ${merged.length} records...',
         ),
       );
-      await MaxAdjExcelExporter.export(rows: merged, includeHistory: true);
+      await MaxAdjExcelExporter.export(
+        rows: merged,
+        includeHistory: true,
+        onProgress: (message, fraction) {
+          if (!emit.isDone) {
+            emit(
+              state.copyWith(
+                exportMessage: message,
+                maxAdjExportProgress: .5 + .5 * fraction,
+              ),
+            );
+          }
+        },
+      );
       emit(
-        state.copyWith(isExporting: false, exportMessage: 'Export completed'),
+        state.copyWith(
+          isExporting: false,
+          exportMessage: 'Export completed',
+          maxAdjExportProgress: 1,
+        ),
       );
     } catch (e) {
-      emit(state.copyWith(isExporting: false, exportMessage: 'Export failed'));
+      emit(
+        state.copyWith(
+          isExporting: false,
+          exportMessage: _maxAdjExportError(e),
+        ),
+      );
       print("Export History Error: $e");
     }
+  }
+
+  String _maxAdjExportError(Object error) {
+    if (error is TimeoutException) {
+      return 'Export timed out. Please retry; no incomplete file was downloaded.';
+    }
+    if (error is StateError) return 'Export failed: ${error.message}';
+    return 'Export failed. Please retry.';
   }
 
   Future<void> _onResolveImportDuplicates(
@@ -2124,6 +2245,8 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
         },
       );
       if (rows == null || query != state.maxAdjSearch) continue;
+      _maxAdjLoadedAt = DateTime.now();
+      _maxAdjLoadedQuery = query;
       emit(
         state.copyWith(
           maxAdjustment: rows,
@@ -2144,6 +2267,7 @@ class InventoryBloc extends Bloc<InventoryEvent, InventoryState> {
   ) async {
     if (_maxAdjImportRunning || state.isImporting) return;
     _maxAdjImportRunning = true;
+    _maxAdjLoadedAt = null;
     ++_maxAdjLoadToken; // Invalidate any read that started before the import.
     _maxAdjRefresh.pause();
     var writesAttempted = false;

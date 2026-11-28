@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../core/utils/max_adjustment_export_loader.dart';
 import '../../domain/entities/additional_request_group.dart';
 import '../../domain/entities/allocation_result_row.dart';
 import '../../domain/entities/allocation_source_row.dart';
@@ -312,66 +313,22 @@ class InventoryRepositoryImpl implements InventoryRepository {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> fetchMaxAdjExport() async {
-    final List<Map<String, dynamic>> all = [];
-
-    int from = 0;
-    const int batch = 5000;
-
-    while (true) {
-      final res = await remote.client
-          .from('max_adj')
-          .select()
-          .range(from, from + batch - 1);
-
-      final data = List<Map<String, dynamic>>.from(res);
-
-      print("max_adj batch: ${data.length}");
-
-      if (data.isEmpty) break;
-
-      all.addAll(data);
-
-      if (data.length < batch) break;
-
-      from += batch;
-    }
-
-    print("TOTAL max_adj: ${all.length}");
-
-    return all;
-  }
+  Future<List<Map<String, dynamic>>> fetchMaxAdjExport({
+    void Function(int loaded, int total)? onProgress,
+  }) => loadMaxAdjustmentExport(
+    client: remote.client,
+    history: false,
+    onProgress: onProgress,
+  );
 
   @override
-  Future<List<Map<String, dynamic>>> fetchMaxAdjLogExport() async {
-    final List<Map<String, dynamic>> all = [];
-
-    int from = 0;
-    const int batch = 5000;
-
-    while (true) {
-      final res = await remote.client
-          .from('max_adj_log')
-          .select()
-          .range(from, from + batch - 1);
-
-      final data = List<Map<String, dynamic>>.from(res);
-
-      print("max_adj_log batch: ${data.length}");
-
-      if (data.isEmpty) break;
-
-      all.addAll(data);
-
-      if (data.length < batch) break;
-
-      from += batch;
-    }
-
-    print("TOTAL max_adj_log: ${all.length}");
-
-    return all;
-  }
+  Future<List<Map<String, dynamic>>> fetchMaxAdjLogExport({
+    void Function(int loaded, int total)? onProgress,
+  }) => loadMaxAdjustmentExport(
+    client: remote.client,
+    history: true,
+    onProgress: onProgress,
+  );
 
   @override
   @override
@@ -971,6 +928,7 @@ class InventoryRepositoryImpl implements InventoryRepository {
         .eq('item_code', itemCode)
         .eq('branch_name', branch);
   }
+
   @override
   Future<DailyOrderBatch> fetchDailyOrderBatch(
     DailyOrderQuery query, {

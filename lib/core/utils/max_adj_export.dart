@@ -4,19 +4,59 @@ import 'dart:typed_data';
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
 import 'store_branch_identity_registry.dart';
 import 'max_adj_export_rows.dart';
+import 'max_adj_excel_report.dart';
+import 'stock_check_kpi_export_worker.dart';
 
 class MaxAdjExcelExporter {
   static Future<void> export({
     required List<Map<String, dynamic>> rows,
     required bool includeHistory,
+    void Function(String message, double fraction)? onProgress,
   }) async {
-    final workbook = xlsio.Workbook();
-    final sheet = workbook.worksheets[0];
-
     /// =========================
     /// 🔥 DETECT MODE
     /// =========================
     final isCompare = rows.isNotEmpty && rows.first.containsKey('old_max_adj');
+    if (!isCompare) {
+      final report = MaxAdjExcelReport(rows, includeHistory: includeHistory);
+      final bytes = await StockCheckKpiExportWorker.build(
+        summaryHeaders: const [],
+        summaryWidths: const [],
+        summaryRows: const [],
+        detailHeaders: report.headers,
+        detailWidths: report.widths,
+        detailRows: report.values,
+        totalRows: rows.length,
+        job: KpiExportJob(),
+        singleReport: true,
+        sheetName: 'Max Adjustment',
+        columnTypes: report.types,
+        onProgress: (progress) => onProgress?.call(
+          switch (progress.stage) {
+            KpiExportStage.preparing => 'Preparing Excel export...',
+            KpiExportStage.writing =>
+              'Writing Excel: ${progress.processed} of ${progress.total} records...',
+            KpiExportStage.packaging =>
+              'Compressing Excel file: ${rows.length} records...',
+            KpiExportStage.downloading => 'Downloading Excel file...',
+          },
+          switch (progress.stage) {
+            KpiExportStage.preparing => 0,
+            KpiExportStage.writing =>
+              progress.total == 0
+                  ? .9
+                  : .9 * progress.processed / progress.total,
+            KpiExportStage.packaging => .95,
+            KpiExportStage.downloading => .98,
+          },
+        ),
+      );
+      onProgress?.call('Downloading Excel file...', .98);
+      await _saveExcelBytes(bytes);
+      return;
+    }
+    final workbook = xlsio.Workbook();
+    final sheet = workbook.worksheets[0];
     final displayRows = isCompare ? rows : maxAdjExportRows(rows);
 
     /// =========================
@@ -173,6 +213,24 @@ class MaxAdjExcelExporter {
       ..click();
 
     html.Url.revokeObjectUrl(url);
+  }
+
+  static Future<void> _saveExcelBytes(Uint8List bytes) async {
+    final url = html.Url.createObjectUrlFromBlob(
+      html.Blob([
+        bytes,
+      ], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+    );
+    try {
+      final anchor = html.AnchorElement(href: url)
+        ..download = 'max_adjustment.xlsx';
+      html.document.body?.append(anchor);
+      anchor.click();
+      anchor.remove();
+      await Future<void>.delayed(const Duration(seconds: 1));
+    } finally {
+      html.Url.revokeObjectUrl(url);
+    }
   }
 
   /// =========================

@@ -9,6 +9,8 @@ enum TibahOrderType {
   final String label;
   String get branchName =>
       this == TibahOrderType.upp ? 'tibah upp' : 'tibah regular';
+  String get branchTitle =>
+      this == TibahOrderType.upp ? 'Tibah UPP' : 'Tibah Regular';
 
   static TibahOrderType? forBranch(String branch) =>
       switch (branch.trim().toLowerCase()) {

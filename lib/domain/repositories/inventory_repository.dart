@@ -78,8 +78,12 @@ abstract class InventoryRepository {
     String itemCode,
     String branch,
   );
-  Future<List<Map<String, dynamic>>> fetchMaxAdjExport();
-  Future<List<Map<String, dynamic>>> fetchMaxAdjLogExport();
+  Future<List<Map<String, dynamic>>> fetchMaxAdjExport({
+    void Function(int loaded, int total)? onProgress,
+  });
+  Future<List<Map<String, dynamic>>> fetchMaxAdjLogExport({
+    void Function(int loaded, int total)? onProgress,
+  });
   Future<bool> importMaxAdjRow({
     required Map<String, dynamic> data,
     required bool forceApply,

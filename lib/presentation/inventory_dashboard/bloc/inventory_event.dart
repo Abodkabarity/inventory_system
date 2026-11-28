@@ -160,11 +160,16 @@ class LoadBranchAllChanges extends InventoryEvent {
 class LoadMaxAdjustment extends InventoryEvent {
   final String query;
   final bool silent;
+  final bool reuseRecent;
 
-  LoadMaxAdjustment({this.query = '', this.silent = false});
+  LoadMaxAdjustment({
+    this.query = '',
+    this.silent = false,
+    this.reuseRecent = false,
+  });
 
   @override
-  List<Object?> get props => [query, silent];
+  List<Object?> get props => [query, silent, reuseRecent];
 }
 
 class SearchMaxAdjustment extends InventoryEvent {

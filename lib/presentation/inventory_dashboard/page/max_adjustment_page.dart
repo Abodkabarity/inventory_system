@@ -9,14 +9,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/store_branch_identity_registry.dart';
-import '../../../core/config/tibah_max_config.dart';
 import '../../../domain/entities/tibah_order.dart';
+import '../../../core/config/tibah_max_config.dart';
 import '../bloc/inventory_bloc.dart';
 import '../bloc/inventory_event.dart';
 import '../bloc/inventory_state.dart';
 import '../widgets/import_process_dialog.dart';
 import '../widgets/max_adj_data_source.dart';
 import '../widgets/max_adj_history_dialog.dart';
+import '../widgets/max_adjustment_load_progress.dart';
 import '../widgets/tibah_max_upload_dialog.dart';
 
 class MaxAdjustmentPage extends StatefulWidget {
@@ -75,7 +76,13 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage>
     );
     WidgetsBinding.instance.addObserver(this);
     StoreBranchIdentityRegistry.groups.addListener(_onBranchMetadata);
-    bloc.add(LoadMaxAdjustment(query: _searchController.text));
+    bloc.add(
+      LoadMaxAdjustment(
+        query: _searchController.text,
+        silent: true,
+        reuseRecent: true,
+      ),
+    );
   }
 
   @override
@@ -98,9 +105,10 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage>
           previous.maxAdjTotalRows != current.maxAdjTotalRows ||
           previous.isMaxAdjLoading != current.isMaxAdjLoading ||
           previous.maxAdjLoadError != current.maxAdjLoadError ||
+          previous.maxAdjLoadedRows != current.maxAdjLoadedRows ||
+          previous.maxAdjLoadingTotal != current.maxAdjLoadingTotal ||
           previous.isImporting != current.isImporting ||
-          previous.isExporting != current.isExporting ||
-          previous.exportMessage != current.exportMessage,
+          previous.isExporting != current.isExporting,
       builder: (context, state) {
         return Column(
           children: [
@@ -123,6 +131,9 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage>
                             ),
                           ),
                           TextButton(
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.black,
+                            ),
                             onPressed:
                                 state.isImporting || state.isMaxAdjLoading
                                 ? null
@@ -137,8 +148,12 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage>
                       ),
                     if (state.isMaxAdjLoading &&
                         state.filteredMaxAdjustment.isNotEmpty)
-                      const LinearProgressIndicator(
-                        color: AppColors.primaryColor,
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: MaxAdjustmentLoadProgress(
+                          loaded: state.maxAdjLoadedRows,
+                          total: state.maxAdjLoadingTotal,
+                        ),
                       ),
                     Expanded(child: _buildTable(state)),
                     const SizedBox(height: 6),
@@ -224,12 +239,17 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage>
               ),
               _HeaderMetric(
                 label: 'Records',
-                value: '${state.maxAdjTotalRows}',
+                value: state.isMaxAdjLoading
+                    ? (state.maxAdjLoadingTotal > 0
+                          ? '${state.maxAdjLoadingTotal}'
+                          : '—')
+                    : '${state.maxAdjTotalRows}',
               ),
               const SizedBox(width: 8),
               _HeaderMetric(
                 label: 'Loaded',
-                value: '${state.filteredMaxAdjustment.length}',
+                value:
+                    '${state.isMaxAdjLoading ? state.maxAdjLoadedRows : state.filteredMaxAdjustment.length}',
               ),
             ],
           ),
@@ -337,7 +357,7 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage>
                       ),
                       icon: const Icon(Icons.upload_file_rounded),
                       label: Text(
-                        'Upload ${StoreBranchIdentityRegistry.displayName(type.branchName)}',
+                        'Upload ${StoreBranchIdentityRegistry.displayName(type.branchTitle)}',
                       ),
                     ),
               ],
@@ -388,14 +408,13 @@ class _MaxAdjustmentPageState extends State<MaxAdjustmentPage>
   Widget _buildTable(InventoryState state) {
     final data = state.filteredMaxAdjustment;
     if (state.isMaxAdjLoading && data.isEmpty) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(color: AppColors.primaryColor),
-            SizedBox(height: 10),
-            Text('Loading max adjustments...'),
-          ],
+      return Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: MaxAdjustmentLoadProgress(
+            loaded: state.maxAdjLoadedRows,
+            total: state.maxAdjLoadingTotal,
+          ),
         ),
       );
     }
@@ -580,10 +599,12 @@ class _MaxAdjExportDialog extends StatelessWidget {
     return BlocBuilder<InventoryBloc, InventoryState>(
       buildWhen: (previous, current) =>
           previous.isExporting != current.isExporting ||
+          previous.maxAdjExportProgress != current.maxAdjExportProgress ||
           previous.exportMessage != current.exportMessage,
       builder: (context, state) {
         final exporting = state.isExporting;
         return Dialog(
+          backgroundColor: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
@@ -629,6 +650,7 @@ class _MaxAdjExportDialog extends StatelessWidget {
                         ),
                       ),
                       IconButton(
+                        color: Colors.black,
                         onPressed: exporting
                             ? null
                             : () => Navigator.pop(context),
@@ -658,14 +680,18 @@ class _MaxAdjExportDialog extends StatelessWidget {
                       ExportMaxAdjWithHistory(),
                     ),
                   ),
-                  if (exporting) ...[
+                  if (state.exportMessage?.isNotEmpty ?? false) ...[
                     const SizedBox(height: 20),
-                    const LinearProgressIndicator(
-                      color: AppColors.primaryColor,
-                    ),
+                    if (exporting)
+                      LinearProgressIndicator(
+                        value: state.maxAdjExportProgress,
+                        color: AppColors.primaryColor,
+                      ),
                     const SizedBox(height: 9),
                     Text(
-                      state.exportMessage ?? 'Preparing your Excel file...',
+                      exporting
+                          ? '${state.exportMessage ?? 'Preparing your Excel file...'} (${(state.maxAdjExportProgress * 100).floor()}%)'
+                          : state.exportMessage ?? '',
                       style: const TextStyle(
                         color: AppColors.subText,
                         fontWeight: FontWeight.w600,
@@ -709,7 +735,7 @@ class _ExportOption extends StatelessWidget {
           padding: const EdgeInsets.all(15),
           child: Row(
             children: [
-              Icon(icon, color: AppColors.primaryColor),
+              Icon(icon, color: Colors.black),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -719,7 +745,7 @@ class _ExportOption extends StatelessWidget {
                       title,
                       style: const TextStyle(
                         fontWeight: FontWeight.w800,
-                        color: AppColors.text,
+                        color: Colors.black,
                       ),
                     ),
                     const SizedBox(height: 3),
@@ -733,7 +759,7 @@ class _ExportOption extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, color: AppColors.subText),
+              const Icon(Icons.chevron_right_rounded, color: Colors.black),
             ],
           ),
         ),

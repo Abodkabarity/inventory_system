@@ -81,7 +81,7 @@ class _TibahMaxUploadDialogState extends State<TibahMaxUploadDialog> {
         _saved = true;
         _message =
             '$rowCount products saved as ${widget.type.label}. '
-            '${StoreBranchIdentityRegistry.displayName(widget.type.branchName)} is now visible in Store. Printing becomes available after the next order calculation.';
+            '${StoreBranchIdentityRegistry.displayName(widget.type.branchTitle)} is now visible in Store. Printing becomes available after the next order calculation.';
       });
     } catch (error) {
       if (mounted) {
@@ -103,7 +103,7 @@ class _TibahMaxUploadDialogState extends State<TibahMaxUploadDialog> {
       title: ValueListenableBuilder<Map<String, String>>(
         valueListenable: StoreBranchIdentityRegistry.groups,
         builder: (_, groups, child) => Text(
-          '${StoreBranchIdentityRegistry.displayName(widget.type.branchName, groups)} — Max',
+          '${StoreBranchIdentityRegistry.displayName(widget.type.branchTitle, groups)} — Max',
         ),
       ),
       content: SizedBox(
@@ -118,7 +118,7 @@ class _TibahMaxUploadDialogState extends State<TibahMaxUploadDialog> {
               ),
               const SizedBox(height: 12),
               Text(
-                'After choosing a file, previous Max and the Store request for ${StoreBranchIdentityRegistry.displayName(widget.type.branchName)} are cleared before checking the file. They stay cleared if checking or uploading fails. The other branches keep their records.',
+                'After choosing a file, previous Max and the Store request for ${StoreBranchIdentityRegistry.displayName(widget.type.branchTitle)} are cleared before checking the file. They stay cleared if checking or uploading fails. The other branches keep their records.',
               ),
               if (_busy) ...[
                 const SizedBox(height: 16),
